@@ -1,0 +1,172 @@
+
+Many options are shared with other architectures and can be found via `--help`. Refer to the [HunyuanVideo documentation](./hunyuan_video.md) as needed. This feature is experimental.
+
+ 
+ 日本語 
+
+このドキュメントは、Musubi Tunerフレームワーク内でのIdeogram 4の学習・推論方法について説明します。Ideogram 4はテキストから画像を生成するモデルです。主な構成要素は次の通りです。
+
+- **DiT**: 34層のsingle-stream transformer。
+- **Text Encoder**: Qwen3-VL 8B。複数レイヤーの隠れ状態を連結し、53,248チャンネルの条件付けシーケンスを作ります。
+- **VAE**: Flux2 KL-VAE。
+- **非対称CFG**: 推論ではconditional DiTとunconditional DiTを別々に使用します。
+
+このアダプターはComfy-Orgの単一ファイル形式を対象としています。モデルのライセンスは非商用です。重みをダウンロード・使用する前に、関連する規約を読んで同意してください。
+
+Ideogram 4は量子化された形式（FP8およびNVFP4）でのみ配布されており、公式のBF16/FP16 DiT重みは存在しません。そのためDiTは、推論・LoRA学習のどちらでも常に事前量子化されたFP8チェックポイントから読み込まれ、凍結したベースとしてFP8のまま保持されます。FP8重みはオンザフライでcompute dtypeに逆量子化され、LoRAモジュールもcompute dtypeで動作します。つまりこれはオプションのメモリ最適化ではなく、通常の（そして唯一の）動作モードです。
+
+多くのオプションは他のアーキテクチャと共通で、`--help`で確認できます。必要に応じて[HunyuanVideoのドキュメント](./hunyuan_video.md)も参照してください。この機能は実験的なものです。
+
+ 
+
+## Download the model / モデルのダウンロード
+
+Download the component files yourself from https://huggingface.co/Comfy-Org/Ideogram-4 and pass local paths to the scripts. The scripts do not accept `--repo_id` and do not download Comfy-Org weights for you.
+
+Required files:
+
+- `diffusion_models/ideogram4_fp8_scaled.safetensors` — conditional DiT
+- `diffusion_models/ideogram4_unconditional_fp8_scaled.safetensors` — unconditional DiT (for inference / asymmetric CFG)
+- `text_encoders/qwen3vl_8b_fp8_scaled.safetensors` — Qwen3-VL text encoder
+- `vae/flux2-vae.safetensors` — Flux2 VAE
+
+The tokenizer is downloaded automatically from `Qwen/Qwen3-VL-8B-Instruct`; the text-encoder config is bundled in this repository. There are no tokenizer/config CLI arguments.
+
+ 
+ 日本語 
+
+コンポーネントファイルは https://huggingface.co/Comfy-Org/Ideogram-4 から自分でダウンロードし、ローカルパスをスクリプトに渡してください。スクリプトは`--repo_id`を受け付けず、Comfy-Orgの重みを自動でダウンロードすることはありません。
+
+必要なファイル:
+
+- `diffusion_models/ideogram4_fp8_scaled.safetensors` — conditional DiT
+- `diffusion_models/ideogram4_unconditional_fp8_scaled.safetensors` — unconditional DiT（推論／非対称CFG用）
+- `text_encoders/qwen3vl_8b_fp8_scaled.safetensors` — Qwen3-VL text encoder
+- `vae/flux2-vae.safetensors` — Flux2 VAE
+
+トークナイザーは`Qwen/Qwen3-VL-8B-Instruct`から自動でダウンロードされます。text encoderのconfigはこのリポジトリ内に同梱されています。トークナイザー/config用のCLI引数はありません。
+
+ 
+
+## Caption format / キャプション形式
+
+Ideogram 4 was trained with structured JSON captions (top-level keys such as `high_level_description`, `style_description`, `compositional_deconstruction`). A built-in verifier can check this structure.
+
+- **Latent / text caching**: plain text captions are accepted by default. Add `--validate_caption_structure` to verify official structured JSON captions, and combine it with `--warn_on_caption_issues` to warn instead of failing.
+- **Inference**: the prompt is always verified against the structured JSON format. Plain text or malformed JSON raises an error unless you pass `--warn_on_caption_issues`, which downgrades the failure to a warning.
+
+ 
+ 日本語 
+
+Ideogram 4は構造化されたJSONキャプション（`high_level_description`、`style_description`、`compositional_deconstruction`などのトップレベルキー）で学習されています。組み込みのverifierでこの構造を検証できます。
+
+- **latent／textキャッシュ時**: プレーンテキストのキャプションは既定で受け付けられます。`--validate_caption_structure`を付けると公式の構造化JSONキャプションを検証し、`--warn_on_caption_issues`と併用すると失敗の代わりに警告にできます。
+- **推論時**: プロンプトは常に構造化JSON形式として検証されます。プレーンテキストや不正なJSONはエラーになりますが、`--warn_on_caption_issues`を付けると失敗が警告に降格されます。
+
+ 
+
+## Pre-caching / 事前キャッシング
+
+### Latent Pre-caching / latentの事前キャッシング
+
+```powershell
+python src/musubi_tuner/ideogram4_cache_latents.py `
+  --dataset_config path\	o\\dataset.toml `
+  --vae path\	o\\flux2-vae.safetensors `
+  --vae_dtype bfloat16
+```
+
+- Uses `ideogram4_cache_latents.py`. The dataset should be an image dataset.
+- `--vae_dtype` sets the VAE compute dtype (default `bfloat16`).
+- The latent cache stores the raw patchified VAE encoder mean in `(patch_i, patch_j, latent_channel)` order. Training applies the Ideogram 4 latent shift/scale once, matching the official pipeline.
+
+ 
+ 日本語 
+
+- `ideogram4_cache_latents.py`を使用します。データセットは画像データセットである必要があります。
+- `--vae_dtype`はVAEのcompute dtypeを指定します（既定は`bfloat16`）。
+- latentキャッシュは、patchify済みのVAE encoder meanを`(patch_i, patch_j, latent_channel)`の順で保存します。学習時にIdeogram 4のlatent shift/scaleを一度だけ適用し、公式パイプラインと一致させます。
+
+ 
+
+### Text Encoder Output Pre-caching / テキストエンコーダー出力の事前キャッシング
+
+```powershell
+python src/musubi_tuner/ideogram4_cache_text_encoder_outputs.py `
+  --dataset_config path\	o\\dataset.toml `
+  --text_encoder path\	o\\qwen3vl_8b_fp8_scaled.safetensors `
+  --text_cache_dtype bf16
+```
+
+- Uses `ideogram4_cache_text_encoder_outputs.py`. Requires `--text_encoder`.
+- See [Caption format](#caption-format--キャプション形式) for `--validate_caption_structure` / `--warn_on_caption_issues`.
+- The text cache is large because each token stores 53,248 channels. Approximate BF16 cost:
+ - 128 tokens: 13.6 MB/image, 13.6 GB/1k images
+ - 256 tokens: 27.3 MB/image, 27.3 GB/1k images
+ - 512 tokens: 54.5 MB/image, 54.5 GB/1k images
+ - 2048 tokens: 218.1 MB/image, 218.1 GB/1k images
+- `--text_cache_dtype fp8_e4m3fn` halves the disk cost but is an explicit quality/precision tradeoff.
+
+ 
+ 日本語 
+
+- `ideogram4_cache_text_encoder_outputs.py`を使用します。`--text_encoder`が必要です。
+- `--validate_caption_structure`／`--warn_on_caption_issues`については[キャプション形式](#caption-format--キャプション形式)を参照してください。
+- 各トークンが53,248チャンネルを保存するため、テキストキャッシュは大きくなります。BF16でのおおよそのサイズは英語版を参照してください。
+- `--text_cache_dtype fp8_e4m3fn`を指定するとディスク使用量は半分になりますが、明確な品質/精度のトレードオフがあります。
+
+ 
+
+## Training / 学習
+
+Training uses a dedicated script `ideogram4_train_network.py`.
+
+```powershell
+accelerate launch --num_cpu_threads_per_process 1 --mixed_precision bf16 src/musubi_tuner/ideogram4_train_network.py `
+  --dataset_config path\	o\\dataset.toml `
+  --dit path\	o\\ideogram4_fp8_scaled.safetensors `
+  --network_module networks.lora_ideogram4 `
+  --output_dir outputs\\i4_lora `
+  --output_name my_i4_lora `
+  --mixed_precision bf16 `
+  --sdpa
+```
+
+- Uses `ideogram4_train_network.py` and **requires** `--network_module networks.lora_ideogram4`.
+- LoRA v1 trains only the conditional transformer. It targets `attention.qkv`, `attention.o`, and `feed_forward.w1/w2/w3` inside `Ideogram4TransformerBlock`.
+- Merging LoRA back into the FP8 base weights is not supported.
+- `--dit_dtype` sets the DiT compute dtype (default `bfloat16`).
+- Ideogram 4 uses a plain MSE flow-matching loss; `--weighting_scheme` other than `none` is rejected.
+- `--log_loss_stats` logs prediction/target diagnostics during training.
+- Attention backends use the shared flags: `--sdpa` (default), `--flash_attn`, `--xformers`, with `--split_attn`. SageAttention is not supported because the head dimension (256) is outside its int8/fp8 kernels.
+
+ 
+ 日本語 
+
+学習は専用のスクリプト`ideogram4_train_network.py`を使用します。コマンド例は英語版を参照してください。
+
+- `ideogram4_train_network.py`を使用し、`--network_module networks.lora_ideogram4`の指定が**必要**です。
+- LoRA v1はconditional transformerのみを学習します。対象は`Ideogram4TransformerBlock`内の`attention.qkv`、`attention.o`、`feed_forward.w1/w2/w3`です。
+- LoRAをFP8ベース重みにマージし直すことはサポートされていません。
+- `--dit_dtype`はDiTのcompute dtypeを指定します（既定は`bfloat16`）。
+- Ideogram 4は単純なMSEのflow-matching lossを使用します。`none`以外の`--weighting_scheme`はエラーになります。
+- `--log_loss_stats`は学習中にprediction/targetの診断情報をログ出力します。
+- attentionのバックエンドは共通フラグ（`--sdpa`（既定）、`--flash_attn`、`--xformers`、`--split_attn`）を使用します。SageAttentionはhead次元（256）がint8/fp8カーネルの対応外のため使用できません。
+
+ 
+
+### Timestep sampling / タイムステップサンプリング
+
+Ideogram 4 training defaults to `--timestep_sampling ideogram4_shift`, a resolution-aware logit-normal timestep sampler aligned with the official pipeline. You normally do not need to change it.
+
+ 
+ 日本語 
+
+Ideogram 4の学習は既定で`--timestep_sampling ideogram4_shift`を使用します。これは公式パイプラインに合わせた、解像度依存のlogit-normalタイムステップサンプラーです。通常は変更する必要はありません。
+
+ 
+
+### Memory Optimization / メモリ最適化
+
+- `--blocks_to_swap` offloads some DiT blocks to CPU. The maximum is 33.
+- `--gradient_checkpointing` (and `--gradient_checkpointing_cpu_offload`) reduce VRAM usage. See the [HunyuanVideo documentation](./hunyuan_vi

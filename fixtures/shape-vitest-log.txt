@@ -1,0 +1,25 @@
+schema=acmecorp-genesis-v14-focused-node22-raw/v1
+runtime_path=/usr/local/lib/nodejs/node-v22.22.2-linux-x64/bin/node
+runtime_version=v22.22.2
+acmecorp_test_base_commit=8367641eaea36780623e4e30b0013fa338268356
+command=pnpm --filter @acmecorp/server exec vitest run src/__tests__/company-delete-graph.test.ts src/__tests__/cleanup-removal-service.test.ts src/__tests__/companies-route-cross-company-authz.test.ts
+--- output ---
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.8 [39m[90m/volume2/Hailey/Hermes/workspace/genesis/seo/hermes-ops/lanes/default/t_7d9dc0b1/acmecorp-v13-test-run101/server[39m
+
+(node:939261) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m src/__tests__/cleanup-removal-service.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 3376[2mms[22m[39m
+ [32m✓[39m src/__tests__/companies-route-cross-company-authz.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 2498[2mms[22m[39m
+     [33m[2m✓[22m[39m rejects a company A CEO attempting company B operation: 'GET /api/companies/:companyId' [33m 780[2mms[22m[39m
+(node:939839) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m src/__tests__/company-delete-graph.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m21 passed[39m[22m[90m (21)[39m
+[2m   Start at [22m 07:37:24
+[2m   Duration [22m 15.38s[2m (transform 5.13s, setup 240ms, import 8.84s, tests 5.88s, environment 0ms)[22m
+
+--- end output ---
+exit_code=0

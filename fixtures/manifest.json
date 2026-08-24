@@ -1,0 +1,13 @@
+{
+  "example-config-engine": {
+    "source": "example_config.yaml",
+    "query_next": "which compaction engine is actually selected?",
+    "query_empty": "",
+    "query_unrelated": "database connection string",
+    "gold": [
+      "engine: default"
+    ],
+    "chars": 22643,
+    "gold_in_source": true
+  }
+}
