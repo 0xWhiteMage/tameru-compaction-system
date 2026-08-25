@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
 
-REPO = Path("/volume2/Hailey/Hermes/repo")
+REPO = Path(os.environ.get("HERMES_REPO_ROOT", "/volume2/Hailey/Hermes/repo"))
+if not REPO.is_dir():
+    raise unittest.SkipTest("Hermes-specific test (set HERMES_REPO_ROOT)")
 sys.path.insert(0, str(REPO))
 
 from plugins.context_engine import load_context_engine  # noqa: E402
@@ -51,6 +54,8 @@ class ExtractiveEngineE2ETests(unittest.TestCase):
         self.assertEqual(out[0]["content"], "You are Hailey.")
         self.assertIn("SNS-061", by_id["old"]["content"])
         self.assertNotIn("SNS-000", by_id["old"]["content"])
+        self.assertNotIn("[CC-Retrieve:", by_id["old"]["content"])
+        self.assertNotIn("[§", by_id["old"]["content"])
         self.assertIn("fresh-tail-marker", by_id["new"]["content"])
 
     def test_jp_old_log_collapses_and_keeps_host(self):
@@ -69,6 +74,13 @@ class ExtractiveEngineE2ETests(unittest.TestCase):
         self.assertGreater(n, 0)
         self.assertIn("db-tokyo-3", out[2]["content"])
         self.assertLess(out[2]["content"].count("INFO ok"), 5)
+
+    def test_explicit_zero_tokens_does_not_reuse_stale_total(self):
+        """An explicit zero is a real reading, not an unset sentinel."""
+        self.engine.threshold_tokens = 100
+        self.engine.last_prompt_tokens = 500
+        self.engine.last_total_tokens = 500
+        self.assertFalse(self.engine.should_compress(0))
 
 
 if __name__ == "__main__":

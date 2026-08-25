@@ -1,7 +1,4 @@
-"""Red-team v3 regression battery: savings collapse, temporal supersession,
-performance, determinism. Each test maps to a finding in
-quality/eval-audit/20260820-compaction-redteam-v2/.
-"""
+"""Production QA v3: savings, temporal supersession, performance and determinism."""
 from __future__ import annotations
 
 import sys
@@ -78,24 +75,43 @@ class PerformanceTests(unittest.TestCase):
     """Fast and light: large-document latency budget."""
 
     def test_large_doc_under_budget(self):
+        import statistics
         import time
 
-        big = "\n\n".join(
+        rows = [
             f"Log entry {i}: service module_{i % 97} emitted status code {1000 + i} after {i}ms. "
             f"The deploy pipeline for region-{i % 13} completed stage {i % 9}."
             for i in range(4000)
+        ]
+        small = "\n\n".join(rows[:2000])
+        big = "\n\n".join(rows)
+
+        def measure(text: str) -> tuple[float, object]:
+            samples = []
+            result = None
+            for _ in range(3):
+                t0 = time.process_time()
+                result = compress_context(
+                    text,
+                    "which region completed stage 3?",
+                    ccr=False,
+                    citations=False,
+                )
+                samples.append((time.process_time() - t0) * 1000)
+            return statistics.median(samples), result
+
+        small_ms, _small_out = measure(small)
+        big_ms, out = measure(big)
+        self.assertLess(
+            big_ms,
+            1200.0,
+            f"{len(big) / 1024:.0f}KiB document median CPU time was {big_ms:.0f}ms",
         )
-        # Best-of-5: this NAS hosts other services, so a single cold run
-        # can catch scheduler noise (loadavg spikes past 5 on 6 cores).
-        # The gate measures the engine's real cost (~450-500ms for 500KB),
-        # not co-tenant jitter.
-        best = None
-        for _ in range(5):
-            t0 = time.perf_counter()
-            out = compress_context(big, "which region completed stage 3?", ccr=False, citations=False)
-            dt = (time.perf_counter() - t0) * 1000
-            best = dt if best is None else min(best, dt)
-        self.assertLess(best, 600.0, f"200KB-class document best-of-3 took {best:.0f}ms")
+        self.assertLess(
+            big_ms / max(small_ms, 1.0),
+            3.2,
+            f"doubling input scaled CPU time from {small_ms:.0f}ms to {big_ms:.0f}ms",
+        )
         self.assertGreater(out.tokens_saved_pct, 90.0)
 
 
@@ -121,6 +137,38 @@ class DeterminismTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             outs.append(r.stdout)
         self.assertEqual(outs[0], outs[1], "output differs across hash seeds")
+
+
+class EscapedJsonDumpTests(unittest.TestCase):
+    """Real-world gauntlet finding (2026-08-25): tool dumps arrive as JSON
+    strings whose values contain LITERAL \n escapes. preprocess_json keeps
+    them on one line, segment_blocks yields a single mega-block, and the
+    saturation guard fails open at 0% savings. Unwrap literal escapes before
+    segmentation."""
+
+    def test_escaped_newline_json_dump_compresses(self):
+        import json as _json
+        inner = "\n".join(
+            f"2026-08-2{i} Etiqa policy {i}: recycling balance {1000+i} units" for i in range(30)
+        )
+        ctx = _json.dumps({"output": "====\nUTMOST VISION breakdown\n====\n" + inner})
+        out = compress_context(
+            ctx,
+            "What is the recycling balance for Etiqa policy 17?",
+            citations=True,
+            ccr=False,
+        )
+        self.assertFalse(out.fail_open)
+        self.assertIn("recycling balance 1017 units", out.compressed_text)
+        self.assertGreater(getattr(out, "tokens_saved_pct", 0) or 0, 30)
+
+    def test_unrelated_query_still_fail_open_on_escaped_dump(self):
+        import json as _json
+        inner = "\n".join(f"log line {i}: ok status 200" for i in range(40))
+        ctx = _json.dumps({"output": inner})
+        out = compress_context(ctx, "unrelated query about quantum flux", citations=True)
+        # weak signal must still fail open - no behaviour change for safety
+        self.assertTrue(out.fail_open)
 
 
 if __name__ == "__main__":

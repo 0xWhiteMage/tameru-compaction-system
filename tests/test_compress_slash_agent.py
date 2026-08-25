@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-REPO = Path("/volume2/Hailey/Hermes/repo")
+REPO = Path(_os.environ.get("HERMES_REPO_ROOT") or _os.environ["AGENT_REPO_ROOT"])
 sys.path.insert(0, str(REPO))
 
 
@@ -60,7 +60,7 @@ class CompressSlashAgentTests(unittest.TestCase):
                 enabled_toolsets=["memory"],
             )
         cc = agent.context_compressor
-        self.assertEqual(getattr(cc, "name", None), "extractive")
+        self.assertEqual(getattr(cc, "name", None), "tameru")
 
         old = _catalog()
         msgs = [

@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-REPO = Path("/volume2/Hailey/Hermes/repo")
+REPO = Path(_os.environ.get("HERMES_REPO_ROOT") or _os.environ["AGENT_REPO_ROOT"])
+FIX = Path(__file__).resolve().parents[1] / "fixtures"
 sys.path.insert(0, str(REPO))
 
 

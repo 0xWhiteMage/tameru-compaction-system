@@ -2,7 +2,7 @@
 
 These cases are IMPOSSIBLE for the lexical engine (no shared vocabulary
 between query and evidence/distractor) — the documented honest limit since
-the red-team v2 report. With a tier attached they become decidable.
+the production QA v2 report. With a tier attached they become decidable.
 
 All tests skip cleanly when sentence-transformers isn't installed, so the
 zero-dep contract holds for default installs.

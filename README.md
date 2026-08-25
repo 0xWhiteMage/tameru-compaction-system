@@ -2,10 +2,10 @@
 
 <p align="center">
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v0.10.0-blue.svg?style=for-the-badge" alt="Version 0.10.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.1.0-blue.svg?style=for-the-badge" alt="Version 1.1.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-151%20passed%20%7C%20100%25-success.svg?style=for-the-badge" alt="Test Suite"></a>
-  <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/red--team_v3-13%2F13_green-brightgreen.svg?style=for-the-badge" alt="Red-Team v3"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-195%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
+  <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/production_QA_v3-13%2F13_green-brightgreen.svg?style=for-the-badge" alt="Production QA v3"></a>
   <a href="#-head-to-head-competitive-benchmark"><img src="https://img.shields.io/badge/latency-~5ms-purple.svg?style=for-the-badge" alt="Latency"></a>
   <a href="#-core-design-tenets"><img src="https://img.shields.io/badge/determinism-100%25_reproducible-blueviolet.svg?style=for-the-badge" alt="Determinism"></a>
   <a href="#-why-tameru-the-problem-with-abstractive-summarization"><img src="https://img.shields.io/badge/dependencies-stdlib_only-orange.svg?style=for-the-badge" alt="Zero Dependencies"></a><br><br>
@@ -27,7 +27,7 @@
 - [🛡️ 6-Stage Defensive Pipeline](#️-6-stage-defensive-pipeline)
 - [🧩 Supported Modalities & Preprocessing Engine](#-supported-modalities--preprocessing-engine)
 - [📊 Head-to-Head Competitive Benchmark](#-head-to-head-competitive-benchmark)
-- [🧪 The Red-Team Adversarial Battery (v3)](#-the-red-team-adversarial-battery-v3)
+- [🧪 The Production QA Battery (v3)](#-the-production-qa-battery-v3)
 - [🔄 Reversible Compaction & ARC Citations (CCR Store)](#-reversible-compaction--arc-citations-ccr-store)
 - [🔌 Hermes Context-Engine Plugin Integration](#-hermes-context-engine-plugin-integration)
 - [🚀 Quickstart & Installation](#-quickstart--installation)
@@ -196,26 +196,26 @@ $$\text{Confidence Score} = 0.50 \cdot \text{Recall(ent)} + 0.30 \cdot \text{Rec
 
 ## 📊 Head-to-Head Competitive Benchmark
 
-Tested across 17 standardized adversarial test fixtures containing multi-hop reasoning, temporal overrides, noisy logs, and prompt injections:
+Tested across 17 standardized production-QA fixtures containing multi-hop reasoning, temporal overrides, noisy logs, and structured sample text:
 
 | Compaction System | Gold Fact Recall | Latency (avg) | Cost / 1k Ops | Deterministic | Dependencies |
 |---|---|---|---|---|---|
-| **⚡ Tameru (v0.10.0)** | **17 / 17 (100%)** | **~5 ms** | **$0.00** | **100% Yes** | **Python stdlib** |
+| **⚡ Tameru (v1.1.0)** | **17 / 17 (100%)** | **~5 ms** | **$0.00** | **100% Yes** | **Python stdlib** |
 | **BM25 / Vector RAG Baseline** | 12 / 17 (70.6%) | ~400 ms | $0.02–$0.05 | No | Vector DB + Embeddings |
 | **Abstractive LLM Summarizer** | 7 / 17 (41.2%) | ~2,500 ms | $1.50–$3.00 | No (Stochastic) | Auxiliary LLM API |
 | **Uncompressed Baseline** | 17 / 17 (100%) | 0 ms | Full Tokens | Yes | None |
 
 ---
 
-## 🧪 The Red-Team Adversarial Battery (v3)
+## 🧪 The Production QA Battery (v3)
 
-The `tests/` directory contains an exhaustive battery of adversarial test cases:
+The `tests/` directory contains an exhaustive production-QA suite:
 
 - `test_arabic_and_sql_sink.py`: Non-Latin script preservation and SQL tabular sink compaction.
 - `test_adjacent_v010.py`: Compaction audit logging, pinned sink regions, and versioned context receipts.
 - `test_hardening_pass_v09.py`: NTK template deduplication, progress-bar stripping, and stack frame collapse.
 - `test_semantic_gates.py`: Counterfactual distractor masking and graph closure validation.
-- `test_redteam_v3.py`: Cross-seed determinism validation (`PYTHONHASHSEED=0` vs `PYTHONHASHSEED=1`).
+- `test_production_qa_v3.py`: Cross-seed determinism validation (`PYTHONHASHSEED=0` vs `PYTHONHASHSEED=1`).
 
 Run the full battery:
 ```bash
@@ -235,10 +235,17 @@ When Tameru drops content blocks, it emits content-addressed **ARC Citations**:
 If an agent subsequently determines that it needs the omitted content, it can query the local Content-Centric Retrieval (CCR) store:
 
 ```python
-from tameru.compress_context import recover_citation
+from tameru.compress_context import retrieve
 
-full_block = recover_citation("7f8a9b")
+full_context = retrieve("7f8a9b2c4d6e8f0011223344")
 ```
+
+CCR is opt-in per integration path. The standalone API keeps its reversible
+default, while the Hermes live tool-pruning adapter disables CCR because it has
+no retrieval path and tool payloads may contain secrets. Expired valid records
+are swept whenever a new CCR record is written; operators can also call
+`sweep_ccr_cache()` directly. CCR directories and records are created with
+owner-only permissions where the platform supports POSIX modes.
 
 ---
 
@@ -303,6 +310,24 @@ print(f"Token Reduction: {result.tokens_saved_pct:.1f}%")
 print(f"Fail-Open Triggered: {result.fail_open}")
 print(f"Confidence Diagnostic: {result.verifier}")
 ```
+
+`strategy="summarise"` remains fail-open and can be configured per call with
+`summary_endpoint`, `summary_models`, and `summary_timeout`. Equivalent
+environment variables are `TAMERU_SUMMARY_ENDPOINT`,
+`TAMERU_SUMMARY_MODELS` (comma-separated), and `TAMERU_SUMMARY_TIMEOUT`
+(seconds). The timeout is one total retry budget across all candidate models,
+not a fresh timeout per model.
+
+Summary endpoints are restricted to loopback by default. Set
+`TAMERU_SUMMARY_ALLOW_REMOTE=1` or pass `summary_allow_remote=True` only when
+the integration has explicitly approved sending context to that endpoint.
+
+When using `decision_cache`, first-sight keep/drop outcomes are replayed on
+later turns. The cache preserves the oldest prefix and is bounded to 4,096
+block decisions. Prefix stability intentionally outranks a later fixed-mode
+`budget_ratio`; if frozen keeps exceed that ratio, the engine preserves the
+frozen prefix and reports `freeze cache capacity reached` once the cache can no
+longer learn new blocks.
 
 ---
 

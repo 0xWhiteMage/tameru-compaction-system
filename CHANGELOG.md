@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.1.0] - 2026-08-25
+
+### Fixed
+- Enforced freeze-on-first-sight keep/drop outcomes and bounded the decision cache to 4,096 blocks.
+- Prevented fixed/adaptive head, tail, and neighbour stitching from re-admitting annotated blocks unless explicitly pinned.
+- Recognised Docker `Step N/M` progress lines and preserved query-selected volatile log records during template collapse.
+- Disabled CCR persistence for the Hermes live tool-pruning path; added expiry sweeping and owner-only cache permissions.
+- Rejects invalid CCR timestamps/TTLs instead of retaining or serving records forever.
+- Structurally unwraps escaped Hermes JSON strings without rewriting literal backslash bytes.
+- Made the optional LLM summariser endpoint, model candidates, and total timeout budget configurable.
+- Removed the duplicate `CompressResult.receipt` declaration.
+- Made malformed structured-input scanning linear and persisted decision caches query-scoped and schema-safe.
+- Made CCR writes atomic and owner-only, constrained recovery to validated records, bounded retention work, rejected future timestamps, and preserved exact caller bytes.
+- Required factual validation for optional summaries and explicit opt-in for non-local summary endpoints.
+- Made Hermes integration tests portable and canonicalised the `tameru` engine identifier.
+- Added private atomic sidecar writes and disabled unrecoverable drop previews in the Hermes adapter.
+
+### Tests
+- Added regression coverage for every release finding, including explicit zero token readings, escaped JSON log selection, exact newline preservation, summary answer-value checks, and cache-schema compatibility.
+
+### Release verification
+- 195 pytest tests passed; 203 unittest tests passed.
+- 12 Hermes integration tests passed and the production-QA battery passed 13/13 cases.
+- Wheel: `tameru_compaction_system-1.1.0-py3-none-any.whl`.
+- Wheel SHA-256: `335b9e1ccab3ba8af52ebbed493a41e3fde635e1eaa330767137af25cabdb676`.
+
+---
+
 ## [0.10.0] - 2026-08-25
 
 ### Added

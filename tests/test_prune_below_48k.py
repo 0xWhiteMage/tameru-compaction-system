@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
 
-REPO = Path("/volume2/Hailey/Hermes/repo")
+_repo_root = os.environ.get("HERMES_REPO_ROOT") or os.environ.get("AGENT_REPO_ROOT")
+if not _repo_root:
+    raise unittest.SkipTest("Hermes-specific test (needs HERMES_REPO_ROOT)")
+REPO = Path(_repo_root)
 sys.path.insert(0, str(REPO))
 
 from plugins.context_engine import load_context_engine  # noqa: E402

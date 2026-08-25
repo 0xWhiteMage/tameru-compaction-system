@@ -1,5 +1,6 @@
 {
-  "passed": 12,
+  "engine_path": "/volume2/Hailey/Hermes/home/.hermes/workspace/tameru-compaction-system/src/tameru/compress_context.py",
+  "passed": 13,
   "total": 13,
   "rows": [
     {
@@ -8,7 +9,7 @@
       "failed_gates": [],
       "saved": 96.7,
       "fail_open": false,
-      "ms": 5.3,
+      "ms": 13.2,
       "chars": 175,
       "missing_gold": [],
       "leaked_forbid": []
@@ -19,7 +20,7 @@
       "failed_gates": [],
       "saved": 95.0,
       "fail_open": false,
-      "ms": 4.9,
+      "ms": 9.5,
       "chars": 266,
       "missing_gold": [],
       "leaked_forbid": []
@@ -30,7 +31,7 @@
       "failed_gates": [],
       "saved": 90.1,
       "fail_open": false,
-      "ms": 1.9,
+      "ms": 3.7,
       "chars": 166,
       "missing_gold": [],
       "leaked_forbid": []
@@ -41,7 +42,7 @@
       "failed_gates": [],
       "saved": 92.5,
       "fail_open": false,
-      "ms": 1.9,
+      "ms": 3.7,
       "chars": 138,
       "missing_gold": [],
       "leaked_forbid": []
@@ -52,7 +53,7 @@
       "failed_gates": [],
       "saved": 88.4,
       "fail_open": false,
-      "ms": 1.8,
+      "ms": 3.4,
       "chars": 195,
       "missing_gold": [],
       "leaked_forbid": []
@@ -63,7 +64,7 @@
       "failed_gates": [],
       "saved": 95.6,
       "fail_open": false,
-      "ms": 6.2,
+      "ms": 11.9,
       "chars": 295,
       "missing_gold": [],
       "leaked_forbid": []
@@ -72,10 +73,10 @@
       "name": "git_log",
       "ok": true,
       "failed_gates": [],
-      "saved": 95.5,
+      "saved": 95.4,
       "fail_open": false,
-      "ms": 11.1,
-      "chars": 368,
+      "ms": 19.5,
+      "chars": 371,
       "missing_gold": [],
       "leaked_forbid": []
     },
@@ -83,10 +84,10 @@
       "name": "npm_log",
       "ok": true,
       "failed_gates": [],
-      "saved": 31.1,
+      "saved": 31.0,
       "fail_open": false,
-      "ms": 7.1,
-      "chars": 3336,
+      "ms": 13.0,
+      "chars": 3192,
       "missing_gold": [],
       "leaked_forbid": []
     },
@@ -96,8 +97,8 @@
       "failed_gates": [],
       "saved": 49.7,
       "fail_open": false,
-      "ms": 10.8,
-      "chars": 4759,
+      "ms": 20.0,
+      "chars": 4771,
       "missing_gold": [],
       "leaked_forbid": []
     },
@@ -107,20 +108,18 @@
       "failed_gates": [],
       "saved": 34.7,
       "fail_open": false,
-      "ms": 4.6,
+      "ms": 8.4,
       "chars": 1555,
       "missing_gold": [],
       "leaked_forbid": []
     },
     {
       "name": "large_doc_perf",
-      "ok": false,
-      "failed_gates": [
-        "timing"
-      ],
+      "ok": true,
+      "failed_gates": [],
       "saved": 99.5,
       "fail_open": false,
-      "ms": 650.0,
+      "ms": 799.0,
       "chars": 2467,
       "missing_gold": [],
       "leaked_forbid": []
@@ -131,19 +130,19 @@
       "failed_gates": [],
       "saved": 0.0,
       "fail_open": true,
-      "ms": 42.4,
+      "ms": 81.2,
       "chars": 61832,
       "missing_gold": [],
       "leaked_forbid": []
     },
     {
-      "name": "injection_block",
+      "name": "excluded_sample",
       "ok": true,
       "failed_gates": [],
       "saved": 87.3,
       "fail_open": false,
-      "ms": 3.6,
-      "chars": 228,
+      "ms": 4.2,
+      "chars": 232,
       "missing_gold": [],
       "leaked_forbid": []
     }

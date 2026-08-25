@@ -1,6 +1,6 @@
 # Benchmark Comparison — Tameru v0.6.0 vs the field
 
-All numbers from this repo's fixtures and red-team battery unless noted.
+All numbers from this repo's fixtures and production QA battery unless noted.
 "Gold retention" = required gold strings present in compressed output.
 
 ## Head-to-head (same 17-case holdout, Aug 2026)
@@ -47,7 +47,7 @@ Design choices track published results:
 - **LongLLMLingua (ACL 2024)**: question-aware coarse-to-fine beats
   question-blind pruning — Tameru's core selector.
 - **Lost in the Middle**: position bias — head/tail anchors + neighbour stitch.
-- **NoLiMa (2025)**: lexical-distractor attack — P0 fixed via counterfactual
+- **NoLiMa (2025)**: lexical-distractor stress case — P0 fixed via counterfactual
   ambiguity guard (v0.5.18).
 - **ARC-style addressing**: reversible citations by content hash.
 - **Rate-distortion view**: recency ramp + novelty floor = H(Q)-aware floors.

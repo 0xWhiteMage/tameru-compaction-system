@@ -44,7 +44,10 @@ def apply_extractive_tool_prune(
         content = msg.get("content")
         if not isinstance(content, str) or len(content) < min_chars:
             continue
-        result = compress_context(content, q, ccr=True, citations=True)
+        # Live tool payloads can contain credentials or other secrets. This
+        # adapter has no retrieval path, so persisting originals in CCR only
+        # adds exposure, unbounded disk retention, and a semantic marker.
+        result = compress_context(content, q, ccr=False, citations=False)
         new = result.compressed_text
         if result.fail_open or new == content or len(new) >= len(content):
             continue

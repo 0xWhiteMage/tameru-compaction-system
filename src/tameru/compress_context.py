@@ -10,8 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import stat
+import tempfile
 import time
+import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -31,6 +35,19 @@ except ImportError:  # direct-script use without package context
 
 DEFAULT_CCR_DIR = Path.home() / ".hermes" / "cache" / "context-compress-ccr"
 CCR_TTL_SECONDS = 6 * 60 * 60
+CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
+FREEZE_MAX_DECISIONS = 4096
+MAX_QUERY_TEMPLATE_MATCHES = 64
+CCR_SWEEP_MAX_RECORDS = 256
+MAX_SUMMARY_RESPONSE_BYTES = 1_000_000
+DEFAULT_SUMMARY_ENDPOINT = "http://127.0.0.1:18000/v1/chat/completions"
+DEFAULT_SUMMARY_MODELS = (
+    "Qwen3.8-27B-NVFP4",
+    "Qwen3.6 APEX MTP Compact",
+    "DeepSeek V4 Flash 0713",
+)
+DEFAULT_SUMMARY_TIMEOUT = 30.0
+_CCR_HASH_RE = re.compile(r"^[0-9a-f]{24}$")
 
 _STOP = {
     "what", "how", "does", "do", "the", "is", "are", "was", "were", "why",
@@ -79,7 +96,6 @@ class CompressResult:
     frozen_blocks: int = 0
     reasons: list[str] = field(default_factory=list)
     verifier: Optional[dict[str, Any]] = None
-    receipt: Optional[dict[str, Any]] = None
     receipt: Optional[dict[str, Any]] = None
 
     def __post_init__(self) -> None:
@@ -181,7 +197,7 @@ _PROGRESS_RE = re.compile(
     r"|^Downloading\b"
     r"|^Downloading crates"
     r"|^Pulling fs layer"
-    r"^Step \d+/\d+",
+    r"|^Step \d+/\d+",
 )
 
 _ERROR_RE = re.compile(
@@ -215,7 +231,7 @@ def _is_progress_bar(line: str) -> bool:
     return bool(re.match(r"^Compiling [\w-]+ ", t))
 
 
-def preprocess_logs(lines: list[str]) -> list[str]:
+def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     """v0.9.0 log preprocessing (NTK layer1 filter adoption):
 
     - progress bars / build spam deleted (N4)
@@ -229,6 +245,8 @@ def preprocess_logs(lines: list[str]) -> list[str]:
     """
     out: list[str] = []
     trace: list[str] = []
+    query_match_indices: set[int] = set()
+    query_selectors = distinctive_query_terms(query or "")
 
     def flush_trace() -> None:
         nonlocal trace
@@ -244,6 +262,28 @@ def preprocess_logs(lines: list[str]) -> list[str]:
 
     # First pass: drop progress bars but remember whether we saw any.
     kept_lines = [ln for ln in lines if not _is_progress_bar(ln)]
+
+    query_match_source_indices: set[int] = set()
+    if query_selectors:
+        candidates = [
+            idx
+            for idx, line in enumerate(kept_lines)
+            if any(
+                _term_in_text(selector, line.casefold())
+                for selector in query_selectors
+            )
+        ]
+        if len(candidates) <= MAX_QUERY_TEMPLATE_MATCHES:
+            query_match_source_indices = set(candidates)
+        else:
+            # Evenly sample the full match span. This retains head/tail and
+            # representative middle records without turning one common
+            # selector (for example "stage 3") into thousands of blocks.
+            last = len(candidates) - 1
+            query_match_source_indices = {
+                candidates[(slot * last) // (MAX_QUERY_TEMPLATE_MATCHES - 1)]
+                for slot in range(MAX_QUERY_TEMPLATE_MATCHES)
+            }
 
     seen: dict[str, int] = {}
     exemplar_idx: dict[str, int] = {}
@@ -261,6 +301,13 @@ def preprocess_logs(lines: list[str]) -> list[str]:
             i += 1
             continue
         flush_trace()
+        if i in query_match_source_indices:
+            # Volatile values can be the selector (for example "policy 17").
+            # Keep the exact matching record outside numeric-template collapse.
+            query_match_indices.add(len(out))
+            out.append(line)
+            i += 1
+            continue
         fp = _log_fingerprint(line)
         if fp and len(fp) > 12:
             if fp in exemplar_idx:
@@ -275,7 +322,10 @@ def preprocess_logs(lines: list[str]) -> list[str]:
 
     # Attach counts: replace exemplar line with counted variant.
     counted_out: list[str] = []
-    for ln in out:
+    for idx, ln in enumerate(out):
+        if idx in query_match_indices:
+            counted_out.append(ln)
+            continue
         fp = _log_fingerprint(ln)
         cnt = seen.get(fp, 1) if fp else 1
         if fp and cnt > 1 and not ln.lstrip().startswith("[\u00d7"):
@@ -352,6 +402,11 @@ def _crush_value(val: Any, depth: int, query_needles: list[str]) -> Any:
             if isinstance(v, str) and len(v) > 120 and not re.search(r"\s", v):
                 continue
             if isinstance(v, str) and len(v) > 200:
+                if query_needles and any(
+                    n.casefold() in v.casefold() for n in query_needles
+                ):
+                    out[k] = v
+                    continue
                 out[k] = v[:100] + f"... [{len(v) - 100} more chars]"
                 continue
             out[k] = _crush_value(v, depth + 1, query_needles)
@@ -464,6 +519,14 @@ _TRUST_EXCLUDE_CUE_RE = re.compile(
 )
 
 
+def _normalise_instruction_text(text: str) -> str:
+    """Normalise width and remove invisible formatting before classification."""
+    normalised = unicodedata.normalize("NFKC", str(text or ""))
+    return "".join(
+        char for char in normalised if unicodedata.category(char) != "Cf"
+    )
+
+
 def preprocess_filler_comments(text: str, query: str) -> str:
     """Drop `-- filler` / `# filler` comments unless the query names them."""
     if "filler" in (query or "").casefold():
@@ -499,11 +562,18 @@ def preprocess(text: str, query: str) -> tuple[list[str], str]:
     lines = _norm_newlines(text).split("\n")
     kind = route_content_type(lines)
     if kind == "log":
-        return preprocess_logs(lines), kind
+        return preprocess_logs(lines, query), kind
     if kind == "code":
         return _collapse_blanks(lines), kind
     if kind == "json":
-        return preprocess_json(text, query).split("\n"), kind
+        # Decode recognised Hermes content/output wrappers structurally before
+        # JSON crushing. json.loads distinguishes escaped newlines from literal
+        # backslash-n bytes; a blanket text replacement cannot.
+        unwrapped = unwrap_hermes_tool(text)
+        if unwrapped != text:
+            return preprocess(unwrapped, query)
+        processed = preprocess_json(text, query)
+        return processed.split("\n"), kind
     return _collapse_blanks(lines), kind
 
 
@@ -890,12 +960,6 @@ def score_blocks(blocks: list[dict[str, Any]], query: str) -> list[dict[str, Any
         # still gets the uniqueness floor.
         weak_boost = 0.0 if distinctive > 0 or len(topic) >= 2 else 1.0
 
-    # v0.6.0: an explicit exclude-cue in the query ("trust nothing from
-    # untrusted sources") cancels the include-override — the risk flag
-    # stays ON and untrusted blocks are filtered as usual.
-    trust_query = bool(_TRUST_QUERY_RE.search(query or "")) and not bool(
-        _TRUST_EXCLUDE_CUE_RE.search(query or "")
-    )
     scored = []
     for idx, b in enumerate(blocks):
         score = 0.0
@@ -910,7 +974,11 @@ def score_blocks(blocks: list[dict[str, Any]], query: str) -> list[dict[str, Any
                 score += 1.4 + 4.6 * math.log((n + 1) / (df + 1))
                 reason = "query entity"
         lower = b["text"].lower()
-        trust_risk = bool(_TRUST_RISK_RE.search(b["text"])) and not trust_query
+        # Classification belongs to the block, never to question wording.
+        # An intentional override must be explicit through pin_patterns.
+        trust_risk = bool(
+            _TRUST_RISK_RE.search(_normalise_instruction_text(b["text"]))
+        )
         for t in terms:
             if _term_in_text(t, lower):
                 term_hits += 1
@@ -1111,7 +1179,7 @@ def _important(blocks: list[dict[str, Any]]) -> set[int]:
             continue
         # v0.6.0: trust-risk blocks are never "important" — previously the
         # trace/high-score/definition passes ignored the flag, letting an
-        # untrusted instruction block into the keep-set (red-team v3
+        # untrusted instruction block into the keep-set (production QA v3
         # injection finding). The rare-candidate loop above already skips.
         if b.get("trust_risk"):
             continue
@@ -1190,7 +1258,13 @@ def _stitch_neighbors(blocks: list[dict[str, Any]], kept: set[int]) -> set[int]:
                         continue
                     break
                 break
-    return kept | extra
+    # Structural closure must never undo trust gating. Explicit caller pins
+    # remain the sole opt-in override.
+    return {
+        bid
+        for bid in kept | extra
+        if not by_id[bid].get("trust_risk") or by_id[bid].get("pinned")
+    }
 
 
 def _block_link_terms(text: str) -> set[str]:
@@ -1345,7 +1419,7 @@ def _counterfactual_overlap_ambiguity(
     # present, a single distractor cannot meaningfully mask it.  The guard
     # only fires when the kept set is small (<10% of the document) AND the
     # winner is a single high-scoring block (not a coherent multi-block
-    # chain).  This targets the narrow red-team P0: one distractor block
+    # chain).  This targets the narrow production QA P0: one distractor block
     # outscoring a linked answer chain that was evicted.
     if len(kept) / max(1, len(blocks)) >= 0.10:
         return False
@@ -1496,7 +1570,8 @@ def select_adaptive(
             return {b["id"] for b in blocks}, True, "high"
         use = safe_use
         kept = set(use)
-        kept.add(blocks[0]["id"])
+        if not blocks[0].get("trust_risk") or blocks[0].get("pinned"):
+            kept.add(blocks[0]["id"])
         if (
             not _is_sink_noise(blocks[-1]["text"])
             and not blocks[-1].get("trust_risk")
@@ -1515,7 +1590,8 @@ def select_adaptive(
         # the query-hit core — the needle path's contract is a tight set.
         if len(kept) > max(len(use) * 2, 16) and len(kept) / len(blocks) > 0.6:
             kept = set(use)
-            kept.add(blocks[0]["id"])
+            if not blocks[0].get("trust_risk") or blocks[0].get("pinned"):
+                kept.add(blocks[0]["id"])
         kept = _stitch_neighbors(blocks, kept)
         if _counterfactual_overlap_ambiguity(
             blocks, kept, query=query, link_terms=link_terms_map, semantic_tier=semantic_tier
@@ -1536,7 +1612,7 @@ def select_adaptive(
     for b in safe_blocks:
         if b["score"] >= floor:
             kept.add(b["id"])
-    # Saturation guard (v0.6.0, red-team v3 perf finding): on huge
+    # Saturation guard (v0.6.0, production QA v3 performance finding): on huge
     # homogeneous dumps every line matches a broad query, so the floor
     # keeps everything and the payload never shrinks. When the floor pass
     # keeps nearly all blocks AND the query is broad (no distinctive
@@ -1550,7 +1626,10 @@ def select_adaptive(
     # Keep the head. A trust-risk tail is not a safe recency sink.
     # Exception (leanctx old-error purge): a stale-error head is handled
     # history — citations preserve its fact; don't re-admit the dump.
-    if blocks[0].get("reason") != "stale error" or len(kept) == 0:
+    if (
+        (blocks[0].get("reason") != "stale error" or len(kept) == 0)
+        and (not blocks[0].get("trust_risk") or blocks[0].get("pinned"))
+    ):
         kept.add(blocks[0]["id"])
     if (
         not _is_sink_noise(blocks[-1]["text"])
@@ -1585,7 +1664,8 @@ def select_adaptive(
         }
         if not kept:
             return {b["id"] for b in blocks}, True, "high"
-        kept.add(blocks[0]["id"])
+        if not blocks[0].get("trust_risk") or blocks[0].get("pinned"):
+            kept.add(blocks[0]["id"])
         if (
             not _is_sink_noise(blocks[-1]["text"])
             and not blocks[-1].get("trust_risk")
@@ -1632,8 +1712,12 @@ def select_fixed(blocks: list[dict[str, Any]], budget_ratio: float) -> tuple[set
         used += b["tokens"]
         if used >= budget and len(kept) >= max(2, len(important)):
             break
-    kept.add(blocks[0]["id"])
-    if not _is_sink_noise(blocks[-1]["text"]):
+    if not blocks[0].get("trust_risk") or blocks[0].get("pinned"):
+        kept.add(blocks[0]["id"])
+    if (
+        not _is_sink_noise(blocks[-1]["text"])
+        and (not blocks[-1].get("trust_risk") or blocks[-1].get("pinned"))
+    ):
         kept.add(blocks[-1]["id"])
     kept = _stitch_neighbors(blocks, kept)
     return kept, False, "low"
@@ -1846,19 +1930,20 @@ def cache_wrap(compressed: str, query: str) -> str:
 
 
 def _block_fingerprint(block: dict[str, Any]) -> str:
-    """Stable fingerprint for freeze-on-first-sight: content + type + position.
+    """Stable fingerprint for freeze-on-first-sight: type + id + content.
 
-    Position is relative to block count (not absolute line number) so that
-    prepending a new turn does not shift all fingerprints.
+    The block id distinguishes repeated identical records that can receive
+    different head/middle/tail decisions. Appending turns preserves prior ids.
     """
     content_hash = hashlib.sha256(block["text"].encode("utf-8")).hexdigest()[:12]
-    return f"{block['type']}:{content_hash}"
+    return f"{block['type']}:{block.get('id', '?')}:{content_hash}"
 
 
 def _apply_freeze(
     decision_cache: dict,
     scored: list[dict[str, Any]],
     original_text: str,
+    query: str = "",
 ) -> list[dict[str, Any]]:
     """Replay stored keep/drop decisions for blocks whose fingerprint matches.
 
@@ -1866,42 +1951,182 @@ def _apply_freeze(
     session, the first turn that sees a block makes the decision; later turns
     replay it byte-identically so the provider prompt cache stays warm.
 
-    New blocks (no fingerprint in cache) get a fresh scoring decision and are
-    recorded in the cache for future turns.
+    New blocks remain undecided until selection has completed. Their actual
+    keep/drop outcome is recorded by :func:`_record_freeze_decisions`.
     """
     cache_key = "decisions"
-    if cache_key not in decision_cache:
+    schema_version = decision_cache.get("schema_version")
+    if schema_version is not None and schema_version != 1:
+        for stale_key in (
+            cache_key,
+            "query_hash",
+            "ctx_hash",
+            "ctx_prefix_len",
+        ):
+            decision_cache.pop(stale_key, None)
+    if not isinstance(decision_cache.get(cache_key), dict):
         decision_cache[cache_key] = {}
     decisions: dict = decision_cache[cache_key]
+    decision_cache["schema_version"] = 1
 
-    # Also store the original text's context hash so we can detect if the
-    # context was fundamentally replaced (not just appended to).
-    ctx_hash = hashlib.sha256(original_text[:500].encode("utf-8")).hexdigest()[:12]
+    query_hash = hashlib.sha256((query or "").encode("utf-8")).hexdigest()[:12]
+    cached_query_hash = decision_cache.get("query_hash")
+    if isinstance(cached_query_hash, str) and cached_query_hash != query_hash:
+        decisions = {}
+        decision_cache[cache_key] = decisions
+    decision_cache["query_hash"] = query_hash
+
+    # Store a hash and length for the original prefix. Length matters when the
+    # first turn is shorter than 500 chars: hashing a fresh 500-char slice on
+    # the next turn would include appended content and falsely invalidate the
+    # cache. No plaintext context is retained in the decision cache.
+    cached_prefix_len = decision_cache.get("ctx_prefix_len")
+    if not isinstance(cached_prefix_len, int) or cached_prefix_len < 0:
+        cached_prefix_len = min(len(original_text), 500)
+        decision_cache["ctx_prefix_len"] = cached_prefix_len
+    ctx_hash = hashlib.sha256(
+        original_text[:cached_prefix_len].encode("utf-8")
+    ).hexdigest()[:12]
     if "ctx_hash" not in decision_cache:
         decision_cache["ctx_hash"] = ctx_hash
     elif decision_cache["ctx_hash"] != ctx_hash:
         # Context changed fundamentally — clear decisions to avoid stale replay.
-        decision_cache[cache_key] = {}
+        decisions = {}
+        decision_cache[cache_key] = decisions
+        cached_prefix_len = min(len(original_text), 500)
+        decision_cache["ctx_prefix_len"] = cached_prefix_len
+        ctx_hash = hashlib.sha256(
+            original_text[:cached_prefix_len].encode("utf-8")
+        ).hexdigest()[:12]
         decision_cache["ctx_hash"] = ctx_hash
-        return scored
 
-    # Record new decisions, replay old ones.
+    # Tag old decisions for enforcement after the normal selector runs.
     result = []
     for b in scored:
         fp = _block_fingerprint(b)
-        if fp in decisions:
-            # Replay: keep the frozen decision, preserve score for reporting.
-            result.append({**b, "frozen": True})
-        else:
-            # New block: record its score so future turns know the decision.
-            decisions[fp] = "keep" if b["score"] > 0 else "drop"
-            result.append({**b, "frozen": False})
+        decision = decisions.get(fp)
+        if decision not in {"keep", "drop"}:
+            decision = None
+        result.append(
+            {
+                **b,
+                "frozen": decision is not None,
+                "freeze_decision": decision,
+            }
+        )
     return result
+
+
+def _enforce_frozen_decisions(
+    scored: list[dict[str, Any]], kept: set[int]
+) -> set[int]:
+    """Apply cached decisions without allowing them to bypass trust or pins."""
+    enforced = set(kept)
+    for b in scored:
+        bid = b["id"]
+        if b.get("pinned"):
+            enforced.add(bid)
+            continue
+        decision = b.get("freeze_decision")
+        if decision == "drop":
+            enforced.discard(bid)
+        elif decision == "keep" and not b.get("trust_risk"):
+            enforced.add(bid)
+    return enforced
+
+
+def _record_freeze_decisions(
+    decision_cache: dict,
+    scored: list[dict[str, Any]],
+    kept: set[int],
+) -> bool:
+    """Record first-sight outcomes, preserving the oldest bounded prefix."""
+    decisions = decision_cache.setdefault("decisions", {})
+    if not isinstance(decisions, dict):
+        decisions = {}
+        decision_cache["decisions"] = decisions
+    saturated = False
+    for b in scored:
+        fp = _block_fingerprint(b)
+        if fp in decisions:
+            continue
+        if len(decisions) >= FREEZE_MAX_DECISIONS:
+            saturated = True
+            break
+        decisions[fp] = "keep" if b["id"] in kept else "drop"
+    return saturated
+
+
+def _ccr_metadata(data: Any) -> tuple[float, float] | None:
+    """Return validated ``(stored_at, ttl)`` metadata for a CCR record."""
+    if not isinstance(data, dict):
+        return None
+    try:
+        stored = float(data["stored_at"])
+        ttl = float(data.get("ttl", CCR_TTL_SECONDS))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (
+        not math.isfinite(stored)
+        or not math.isfinite(ttl)
+        or stored <= 0
+        or ttl <= 0
+    ):
+        return None
+    return stored, ttl
+
+
+def sweep_ccr_cache(
+    ccr_dir: str | Path = DEFAULT_CCR_DIR,
+    *,
+    now: float | None = None,
+    max_records: int | None = None,
+) -> int:
+    """Delete expired valid CCR records and return the removal count.
+
+    Malformed or unreadable files are left untouched: retention maintenance is
+    best-effort and must not destroy data it cannot validate.
+    """
+    root = Path(ccr_dir)
+    if not root.is_dir():
+        return 0
+    current = time.time() if now is None else float(now)
+    removed = 0
+    processed = 0
+    limit = None if max_records is None else max(0, int(max_records))
+    for fp in root.glob("*.json"):
+        if limit is not None and processed >= limit:
+            break
+        processed += 1
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        metadata = _ccr_metadata(data)
+        if (
+            metadata is not None
+            and metadata[0] <= current + CCR_MAX_CLOCK_SKEW_SECONDS
+            and current - metadata[0] <= metadata[1]
+        ):
+            continue
+        try:
+            fp.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any]:
     path = Path(ccr_dir)
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if path.is_symlink() or not path.is_dir():
+        raise OSError(f"CCR directory must be a real directory: {path}")
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
+    sweep_ccr_cache(path, max_records=CCR_SWEEP_MAX_RECORDS)
     digest = hashlib.sha256(original.encode("utf-8")).hexdigest()[:24]
     payload = {
         "hash": digest,
@@ -1909,8 +2134,68 @@ def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any]:
         "ttl": CCR_TTL_SECONDS,
         "original": original,
     }
-    (path / f"{digest}.json").write_text(json.dumps(payload), encoding="utf-8")
-    return {"hash": digest, "path": str(path / f"{digest}.json")}
+    record = path / f"{digest}.json"
+    encoded = json.dumps(payload).encode("utf-8")
+    fd: int | None = None
+    temporary: str | None = None
+    try:
+        fd, temporary = tempfile.mkstemp(prefix=".ccr-", dir=path)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fd = None
+            fh.write(encoded)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, record)
+        temporary = None
+        record.chmod(0o600)
+    except OSError:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        raise
+    finally:
+        if temporary is not None:
+            try:
+                Path(temporary).unlink()
+            except OSError:
+                pass
+    return {"hash": digest, "path": str(record)}
+
+
+def _write_private_atomic(path: str | Path, content: str) -> None:
+    """Atomically replace a UTF-8 sidecar with owner-only permissions."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        target.parent.chmod(0o700)
+    except OSError:
+        pass
+    fd: int | None = None
+    temporary: str | None = None
+    try:
+        fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fd = None
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, target)
+        temporary = None
+        target.chmod(0o600)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if temporary is not None:
+            try:
+                Path(temporary).unlink()
+            except OSError:
+                pass
 
 
 def _clear_tool_payloads(text: str) -> str:
@@ -1995,10 +2280,22 @@ def _clear_tool_payloads(text: str) -> str:
     return "\n".join(out)
 
 
-def _summarise_with_llm(text: str, query: str, target_ratio: float = 0.25) -> Optional[str]:
+def _summarise_with_llm(
+    text: str,
+    query: str,
+    target_ratio: float = 0.25,
+    *,
+    endpoint: str | None = None,
+    model_candidates: Iterable[str] | str | None = None,
+    timeout: float | None = None,
+    allow_remote: bool | None = None,
+) -> Optional[str]:
     """Strategy='summarise': use a local LLM to compress the context.
 
-    Calls the SGLang endpoint at 127.0.0.1:18000 (OpenAI-compatible).
+    Calls an OpenAI-compatible endpoint. Endpoint, model candidates, and the
+    total retry budget can be supplied directly or through the
+    ``TAMERU_SUMMARY_ENDPOINT``, ``TAMERU_SUMMARY_MODELS``, and
+    ``TAMERU_SUMMARY_TIMEOUT`` environment variables.
     Returns the summarised text, or None on any failure (fail-open).
 
     The prompt asks the model to produce a faithful summary that:
@@ -2013,6 +2310,7 @@ def _summarise_with_llm(text: str, query: str, target_ratio: float = 0.25) -> Op
     """
     import urllib.request
     import urllib.error
+    import urllib.parse
 
     # Target length in tokens
     target_tokens = max(50, int(estimate_tokens(text) * target_ratio))
@@ -2027,17 +2325,52 @@ def _summarise_with_llm(text: str, query: str, target_ratio: float = 0.25) -> Op
         f"CONTEXT:\n{text[:60000]}"  # Cap input at 60k chars to avoid overflow
     )
 
-    # Try each available model in order of preference.
-    model_candidates = [
-        "Qwen3.8-27B-NVFP4",
-        "Qwen3.6 APEX MTP Compact",
-        "DeepSeek V4 Flash 0713",
-    ]
+    endpoint = endpoint or os.environ.get("TAMERU_SUMMARY_ENDPOINT") or DEFAULT_SUMMARY_ENDPOINT
+    if allow_remote is None:
+        allow_remote = os.environ.get("TAMERU_SUMMARY_ALLOW_REMOTE", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+    try:
+        parsed_endpoint = urllib.parse.urlsplit(endpoint)
+    except (TypeError, ValueError):
+        return None
+    if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.hostname:
+        return None
+    local_hosts = {"127.0.0.1", "::1", "localhost"}
+    if parsed_endpoint.hostname.casefold() not in local_hosts and not allow_remote:
+        return None
+    if model_candidates is None:
+        configured = os.environ.get("TAMERU_SUMMARY_MODELS", "")
+        models = tuple(m.strip() for m in configured.split(",") if m.strip())
+        if not models:
+            models = DEFAULT_SUMMARY_MODELS
+    elif isinstance(model_candidates, str):
+        models = tuple(m.strip() for m in model_candidates.split(",") if m.strip())
+    else:
+        models = tuple(str(m).strip() for m in model_candidates if str(m).strip())
+    if not models:
+        return None
+    if timeout is None:
+        try:
+            timeout = float(os.environ.get("TAMERU_SUMMARY_TIMEOUT", DEFAULT_SUMMARY_TIMEOUT))
+        except (TypeError, ValueError):
+            timeout = DEFAULT_SUMMARY_TIMEOUT
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(timeout) or timeout <= 0:
+        return None
+    timeout = max(0.1, timeout)
+    deadline = time.monotonic() + timeout
 
-    for model in model_candidates:
+    for model in models:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
             req = urllib.request.Request(
-                "http://127.0.0.1:18000/v1/chat/completions",
+                endpoint,
                 data=json.dumps({
                     "model": model,
                     "messages": [
@@ -2049,34 +2382,141 @@ def _summarise_with_llm(text: str, query: str, target_ratio: float = 0.25) -> Op
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=90) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            with urllib.request.urlopen(req, timeout=remaining) as resp:
+                raw = resp.read(MAX_SUMMARY_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_SUMMARY_RESPONSE_BYTES:
+                    continue
+                data = json.loads(raw.decode("utf-8"))
+            if not isinstance(data, dict):
+                continue
+            choices = data.get("choices")
+            if not isinstance(choices, list) or not choices:
+                continue
+            choice = choices[0]
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content", "")
+            if not isinstance(content, str):
+                continue
             if not content or len(content.strip()) < 20:
                 continue
             return content.strip()
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, IndexError, TimeoutError):
+        except (
+            urllib.error.URLError,
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+            KeyError,
+            IndexError,
+            TimeoutError,
+            TypeError,
+            AttributeError,
+            OverflowError,
+        ):
             continue
     return None
 
 
+_SUMMARY_STRUCTURED_TOKEN_RE = re.compile(
+    r"\b(?:[A-Za-z][A-Za-z0-9_.:/-]*\d[A-Za-z0-9_.:/-]*|\d+(?:[.:/-]\d+)*)\b"
+)
+
+
+def _summary_preserves_required_facts(
+    source: str, summary: str, query: str
+) -> tuple[bool, float]:
+    """Conservative factual gate for the optional model-summary strategy."""
+    source_fold = source.casefold()
+    summary_fold = summary.casefold()
+    required: list[str] = []
+    candidates = (
+        _SUMMARY_STRUCTURED_TOKEN_RE.findall(query or "")
+        + _extract_entities(query or "")
+        + _extract_terms(query or "")
+    )
+    for item in candidates:
+        token = str(item).strip().casefold()
+        if token and token in source_fold and token not in required:
+            required.append(token)
+
+    # Values answering the question often appear only in the matching source
+    # line, not in the question itself (for example query host db-prod-01 and
+    # answer port 5432). Preserve structured values from source segments tied
+    # to a query identifier, or to at least two lexical query terms.
+    query_ids = {
+        token.casefold()
+        for token in _SUMMARY_STRUCTURED_TOKEN_RE.findall(query or "")
+    }
+    query_terms = {
+        token.casefold()
+        for token in (_extract_entities(query or "") + _extract_terms(query or ""))
+        if token
+    }
+    for segment in re.split(r"[\r\n]+|(?<=[.!?])\s+", source):
+        segment_fold = segment.casefold()
+        id_match = bool(query_ids) and any(
+            token in segment_fold for token in query_ids
+        )
+        term_hits = sum(1 for token in query_terms if token in segment_fold)
+        if not id_match and term_hits < 2:
+            continue
+        for item in _SUMMARY_STRUCTURED_TOKEN_RE.findall(segment):
+            token = item.casefold()
+            if token not in required:
+                required.append(token)
+    kept = sum(1 for token in required if token in summary_fold)
+    recall = kept / len(required) if required else 1.0
+
+    source_ids = {
+        token.casefold() for token in _SUMMARY_STRUCTURED_TOKEN_RE.findall(source)
+    }
+    summary_ids = {
+        token.casefold() for token in _SUMMARY_STRUCTURED_TOKEN_RE.findall(summary)
+    }
+    no_novel_ids = summary_ids.issubset(source_ids)
+    return recall == 1.0 and no_novel_ids, recall
+
+
 def retrieve(ccr_hash: str, ccr_dir: str | Path = DEFAULT_CCR_DIR) -> Optional[str]:
-    fp = Path(ccr_dir) / f"{ccr_hash}.json"
-    if not fp.is_file():
+    if not isinstance(ccr_hash, str) or not _CCR_HASH_RE.fullmatch(ccr_hash):
+        return None
+    root = Path(ccr_dir)
+    if root.is_symlink() or not root.is_dir():
+        return None
+    fp = root / f"{ccr_hash}.json"
+    try:
+        info = fp.lstat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
         return None
     try:
         data = json.loads(fp.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    stored = float(data.get("stored_at") or 0)
-    ttl = float(data.get("ttl") or CCR_TTL_SECONDS)
-    if stored and time.time() - stored > ttl:
+    if not isinstance(data, dict) or data.get("hash") != ccr_hash:
+        return None
+    metadata = _ccr_metadata(data)
+    current = time.time()
+    if (
+        metadata is None
+        or metadata[0] > current + CCR_MAX_CLOCK_SKEW_SECONDS
+        or current - metadata[0] > metadata[1]
+    ):
         try:
             fp.unlink()
         except OSError:
             pass
         return None
-    return data.get("original")
+    original = data.get("original")
+    if not isinstance(original, str):
+        return None
+    if hashlib.sha256(original.encode("utf-8")).hexdigest()[:24] != ccr_hash:
+        return None
+    return original
 
 
 # ---------------------------------------------------------------------------
@@ -2128,7 +2568,11 @@ def _detect_json_payloads(text: str) -> list[tuple[int, int, str]]:
                     payloads.append((i, j + 1, candidate))
                 i = j + 1
             else:
-                i += 1
+                # The first unmatched opener already scanned the remaining
+                # suffix. Restarting at every later opener makes malformed
+                # input quadratic. Stop and preserve the original text; the
+                # caller's fail-open path is safer than speculative recovery.
+                break
         else:
             i += 1
     return payloads
@@ -2297,8 +2741,13 @@ def compress_context(
     semantic_tier: Any = None,
     log_dir: str | Path | None = None,
     pin_patterns: Optional[list[str]] = None,
+    summary_endpoint: str | None = None,
+    summary_models: Iterable[str] | str | None = None,
+    summary_timeout: float | None = None,
+    summary_allow_remote: bool | None = None,
 ) -> CompressResult:
-    original_text = _norm_newlines(context or "")
+    caller_text = str(context or "")
+    original_text = _norm_newlines(caller_text)
     text = strip_ansi(original_text)
     text = unwrap_hermes_tool(text)
     text = preprocess_test_runner(text, query or "")
@@ -2318,7 +2767,7 @@ def compress_context(
     #   'clear'     — drops tool-result payloads before scoring (regex-only,
     #                 zero LLM cost). Cheapest.
     #   'extract'   — default. Query-aware block scoring.
-    #   'summarise' — calls a local LLM (SGLang at 127.0.0.1:18000) to
+    #   'summarise' — calls a configurable OpenAI-compatible local LLM to
     #                 produce a faithful summary. Falls back to 'extract'
     #                 on any LLM failure (model down, timeout, empty response).
     #                 Highest quality, highest cost.
@@ -2329,19 +2778,47 @@ def compress_context(
     if strategy_norm == "clear":
         text = _clear_tool_payloads(text)
     elif strategy_norm == "summarise":
-        summary = _summarise_with_llm(text, query or "")
-        if summary is not None and estimate_tokens(summary) < estimate_tokens(text):
+        summary = _summarise_with_llm(
+            text,
+            query or "",
+            endpoint=summary_endpoint,
+            model_candidates=summary_models,
+            timeout=summary_timeout,
+            allow_remote=summary_allow_remote,
+        )
+        summary_valid = False
+        summary_recall = 0.0
+        if summary is not None:
+            summary_valid, summary_recall = _summary_preserves_required_facts(
+                text, summary, query or ""
+            )
+        if (
+            summary is not None
+            and summary_valid
+            and estimate_tokens(summary) < estimate_tokens(text)
+        ):
             # LLM summary is shorter than the original — use it.
             # Store the original in CCR for reversibility.
             ccr_info = None
             ccr_marker = ""
             if ccr:
-                ccr_info = _ccr_store(text, ccr_dir)
-                ccr_marker = f"\n[CC-Retrieve: {ccr_info['hash']}]"
+                try:
+                    ccr_info = _ccr_store(caller_text, ccr_dir)
+                except OSError:
+                    ccr_info = None
+                if ccr_info is not None:
+                    ccr_marker = f"\n[CC-Retrieve: {ccr_info['hash']}]"
             result_text = summary + ccr_marker
             original_tokens = estimate_tokens(original_text)
             kept_tokens = estimate_tokens(result_text)
             keep_ratio = kept_tokens / max(1, original_tokens)
+            summary_verifier = {
+                "query_fact_recall": round(summary_recall, 3),
+                "structured_ids_grounded": True,
+                "risk": "medium",
+                "score": round(summary_recall, 3),
+            }
+            summary_risk = "medium"
             return CompressResult(
                 compressed_text=result_text,
                 original_tokens=original_tokens,
@@ -2353,13 +2830,29 @@ def compress_context(
                 tokens_saved=original_tokens - kept_tokens,
                 kept_line_ratio=1.0,
                 cache_prefix_applied=False,
-                compression_risk="low",
-                confidence=0.8,
+                compression_risk=(
+                    summary_risk if summary_risk in {"medium", "high"} else "medium"
+                ),
+                confidence=round(
+                    min(summary_recall, float(summary_verifier.get("score", 0.0))),
+                    3,
+                ),
                 ccr=ccr_info,
                 content_type="text",
                 fail_open=False,
                 frozen_blocks=0,
-                reasons=["llm summary"],
+                reasons=["llm summary", "query facts verified"],
+                verifier=summary_verifier,
+                receipt={
+                    "schema_version": "1",
+                    "engine": "tameru",
+                    "policy": "summarise-llm",
+                    "query_hash": hashlib.sha256(
+                        (query or "").encode("utf-8")
+                    ).hexdigest()[:12],
+                    "savings_pct": round((1.0 - keep_ratio) * 100.0, 2),
+                    "risk": summary_risk,
+                },
             )
         # LLM failed or returned a longer result — fall through to extract.
         strategy_norm = "extract"
@@ -2388,8 +2881,10 @@ def compress_context(
     # fingerprints match prior turns, replay the stored keep/drop decisions
     # byte-identically. This keeps the provider prompt cache warm across a
     # multi-turn session (the prefix doesn't churn when new turns arrive).
+    if decision_cache is not None and not isinstance(decision_cache, dict):
+        decision_cache = None
     if decision_cache is not None:
-        scored = _apply_freeze(decision_cache, scored, text)
+        scored = _apply_freeze(decision_cache, scored, text, query or "")
     mode_norm = (mode or "adaptive").strip().lower()
     _reorder = bool(reorder_best)
     if mode_norm in {"compiler", "precision"}:
@@ -2412,6 +2907,8 @@ def compress_context(
         # earlier kept block stale (now/obsolete/override/newer date) prunes
         # it. Prune-only, so it cannot rescue distractors.
         kept = apply_supersession(scored, kept)
+        if decision_cache is not None:
+            kept = _enforce_frozen_decisions(scored, kept)
     if ambiguity_fail_open:
         fail_open = True
         risk = "high"
@@ -2438,11 +2935,25 @@ def compress_context(
         risk = "high"
 
     collapsed = "\n".join(lines)
+    if decision_cache is not None and not fail_open:
+        kept = _enforce_frozen_decisions(scored, kept)
     if fail_open:
+        annotated_ids = {
+            b["id"] for b in scored if b.get("trust_risk") and not b.get("pinned")
+        }
+        if annotated_ids:
+            # Restore ordinary data when uncertain, but never undo a block
+            # annotation. Explicitly pinned blocks remain eligible.
+            kept = {b["id"] for b in scored if b["id"] not in annotated_ids}
+            compressed = _render(
+                lines, scored, kept, citations=citations, reorder_best=_reorder
+            )
+            fail_open = False
+            risk = "high"
         # Do not undo a useful structured collapse (repeated INFO lines).
         # SuperCompress wins on JP/KO heartbeats by keeping the error and
         # dropping repeats; restoring original bytes here threw that away.
-        if (
+        elif (
             not ambiguity_fail_open
             and collapsed != original_text
             and len(collapsed) < 0.7 * max(1, len(original_text))
@@ -2465,15 +2976,23 @@ def compress_context(
                 continue
             if any(_soft_has(b["text"], k) for k in keys):
                 kept.add(b["id"])
+        if decision_cache is not None:
+            kept = _enforce_frozen_decisions(scored, kept)
         compressed = _render(lines, scored, kept, citations=citations, reorder_best=_reorder)
         recall = _entity_recall(text, compressed, query or "")
-        trust_risks = {b["id"] for b in scored if b.get("trust_risk")}
+        trust_risks = {
+            b["id"]
+            for b in scored
+            if b.get("trust_risk") and not b.get("pinned")
+        }
         if trust_risks:
             # Filter the CURRENT selection down by trust risks — do not
             # rebuild it as "everything except risks". Rebuilding discards
             # the selector's careful small keep-set and re-inflates the
-            # payload to near-original size (v0.5.19 red-team finding).
+            # payload to near-original size (v0.5.19 production QA finding).
             kept = {bid for bid in kept if bid not in trust_risks}
+            if decision_cache is not None:
+                kept = _enforce_frozen_decisions(scored, kept)
             compressed = _render(lines, scored, kept, citations=citations, reorder_best=_reorder)
             risk = "high"
         elif recall < 0.5:
@@ -2484,11 +3003,13 @@ def compress_context(
 
     if fail_open:
         risk = "high"
+        compressed = caller_text
 
     original_tokens = estimate_tokens(original_text)
     kept_tokens = estimate_tokens(compressed)
     trust_filtered = any(
-        b.get("trust_risk") and b["id"] not in kept for b in scored
+        b.get("trust_risk") and not b.get("pinned") and b["id"] not in kept
+        for b in scored
     )
 
     # Cost gate: if the compressed output is LARGER than the original
@@ -2520,6 +3041,14 @@ def compress_context(
             risk = "high"
             kept_tokens = estimate_tokens(compressed)
 
+    if fail_open and compressed != caller_text:
+        compressed = caller_text
+        kept_tokens = estimate_tokens(compressed)
+
+    freeze_cache_saturated = False
+    if decision_cache is not None and not fail_open:
+        freeze_cache_saturated = _record_freeze_decisions(decision_cache, scored, kept)
+
     keep_ratio = kept_tokens / max(1, original_tokens)
     line_keep = 0
     if lines:
@@ -2531,19 +3060,26 @@ def compress_context(
         line_keep = len(kept_line_idx) / max(1, len(lines))
 
     reasons = sorted({scored[i]["reason"] for i in kept if i < len(scored)})
+    if freeze_cache_saturated:
+        reasons.append("freeze cache capacity reached")
     result_text = compressed
     cache_applied = False
-    if cache_prefix:
+    if cache_prefix and not fail_open:
         result_text = cache_wrap(compressed, query or "")
         cache_applied = True
 
     ccr_info = None
     ccr_marker = ""
-    if ccr:
-        ccr_info = _ccr_store(text, ccr_dir)
-        ccr_marker = f"\n[CC-Retrieve: {ccr_info['hash']}]\n"
-        if "[CC-Retrieve:" not in result_text:
-            result_text = result_text.rstrip() + ccr_marker
+    if ccr and not fail_open and compressed != original_text:
+        try:
+            # Recovery means the caller's exact bytes, not a preprocessed view.
+            ccr_info = _ccr_store(caller_text, ccr_dir)
+        except OSError:
+            ccr_info = None
+        if ccr_info is not None:
+            ccr_marker = f"\n[CC-Retrieve: {ccr_info['hash']}]\n"
+            if "[CC-Retrieve:" not in result_text:
+                result_text = result_text.rstrip() + ccr_marker
 
     savings = round((1 - kept_tokens / max(original_tokens, 1)) * 100, 2)
     policy = f"local-{content_type}"
@@ -2557,6 +3093,11 @@ def compress_context(
     verifier = None
     if not fail_open and compressed and original_tokens > 50:
         verifier = verify_compression(text, compressed, query or "")
+        risk_order = {"low": 0, "medium": 1, "high": 2}
+        verifier_risk = str(verifier.get("risk", "high"))
+        if risk_order.get(verifier_risk, 2) > risk_order.get(risk, 2):
+            risk = verifier_risk
+        recall = min(recall, float(verifier.get("score", 0.0)))
     __cr = CompressResult(
         compressed_text=result_text,
         original_tokens=original_tokens,
@@ -2596,7 +3137,11 @@ def compress_context(
     if log_dir:
         try:
             log_path = Path(log_dir)
-            log_path.mkdir(parents=True, exist_ok=True)
+            log_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                log_path.chmod(0o700)
+            except OSError:
+                pass
             top_dropped = sorted(
                 (
                     {"id": b["id"], "score": round(float(b.get("score", 0.0)), 2)}
@@ -2616,7 +3161,11 @@ def compress_context(
                 "fail_open": fail_open,
                 "top_dropped": top_dropped,
             }
-            with open(log_path / "compactions.jsonl", "a", encoding="utf-8") as fh:
+            log_file = log_path / "compactions.jsonl"
+            fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
             pass  # logging must never break compression
@@ -2663,6 +3212,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 decision_cache = json.loads(dc_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 decision_cache = {}
+            if not isinstance(decision_cache, dict):
+                decision_cache = {}
         else:
             decision_cache = {}
     out = compress_context(
@@ -2685,8 +3236,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     # Persist decision cache if provided
     if args.decision_cache and decision_cache is not None:
         dc_path = Path(args.decision_cache)
-        dc_path.parent.mkdir(parents=True, exist_ok=True)
-        dc_path.write_text(json.dumps(decision_cache, ensure_ascii=False), encoding="utf-8")
+        _write_private_atomic(
+            dc_path,
+            json.dumps(decision_cache, ensure_ascii=False),
+        )
     return 0
 if __name__ == "__main__":
     raise SystemExit(main())
