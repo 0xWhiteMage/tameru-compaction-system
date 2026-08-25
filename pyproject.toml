@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tameru-compaction-system"
-version = "0.9.0"
+version = "1.0.0"
 description = "Query-aware extractive context compaction for LLM agents - deterministic, local-only, fail-open, reversible"
 readme = "README.md"
 license = {text = "MIT"}
