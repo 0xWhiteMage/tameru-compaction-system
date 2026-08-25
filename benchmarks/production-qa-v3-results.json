@@ -1,0 +1,150 @@
+{
+  "engine_path": "src/tameru/compress_context.py",
+  "passed": 13,
+  "total": 13,
+  "rows": [
+    {
+      "name": "lexical_distractor",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 96.7,
+      "fail_open": false,
+      "ms": 15.6,
+      "chars": 175,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "multi_hop_chain",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 95.0,
+      "fail_open": false,
+      "ms": 0.0,
+      "chars": 266,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "current_value",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 90.1,
+      "fail_open": false,
+      "ms": 0.0,
+      "chars": 166,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "negation_override",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 92.5,
+      "fail_open": false,
+      "ms": 0.0,
+      "chars": 138,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "no_marker_keeps_both",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 88.4,
+      "fail_open": false,
+      "ms": 0.0,
+      "chars": 195,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "evidence_chain_holdout",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 95.6,
+      "fail_open": false,
+      "ms": 15.6,
+      "chars": 295,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "git_log",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 95.4,
+      "fail_open": false,
+      "ms": 15.6,
+      "chars": 371,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "npm_log",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 31.0,
+      "fail_open": false,
+      "ms": 0.0,
+      "chars": 3192,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "jp_musubi",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 49.7,
+      "fail_open": false,
+      "ms": 0.0,
+      "chars": 4771,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "travis_yaml",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 34.7,
+      "fail_open": false,
+      "ms": 0.0,
+      "chars": 1555,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "large_doc_perf",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 99.5,
+      "fail_open": false,
+      "ms": 468.8,
+      "chars": 2467,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "empty_query_failopen",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 0.0,
+      "fail_open": true,
+      "ms": 62.5,
+      "chars": 61832,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "excluded_sample",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 87.3,
+      "fail_open": false,
+      "ms": 15.6,
+      "chars": 232,
+      "missing_gold": [],
+      "leaked_forbid": []
+    }
+  ]
+}

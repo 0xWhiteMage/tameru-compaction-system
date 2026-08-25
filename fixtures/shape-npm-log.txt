@@ -1,0 +1,75 @@
+0 verbose cli /usr/local/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.8.2
+2 info using node@v20.20.2
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/workspace/runs/ci-job-1234/.npmrc
+5 silly config load:file:/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm exec playwright@1.55.0 --version
+8 verbose argv "exec" "--yes" "--" "playwright@1.55.0" "--version"
+9 verbose logfile logs-max:10 dir:/workspace/runs/ci-job-1234/.npm-cache/_logs/2026-08-02T08_37_43_365Z-
+10 verbose logfile /workspace/runs/ci-job-1234/.npm-cache/_logs/2026-08-02T08_37_43_365Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+13 http fetch GET 200 https://registry.npmjs.org/npm 144ms
+14 http fetch GET 200 https://registry.npmjs.org/playwright 334ms (cache miss)
+15 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+16 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+17 silly idealTree buildDeps
+18 silly fetch manifest playwright@1.55.0
+19 silly packumentCache full:https://registry.npmjs.org/playwright cache-miss
+20 http fetch GET 200 https://registry.npmjs.org/playwright 397ms (cache miss)
+21 silly packumentCache full:https://registry.npmjs.org/playwright set size:undefined disposed:false
+22 silly placeDep ROOT playwright@1.55.0 OK for:  want: 1.55.0
+23 silly fetch manifest playwright-core@1.55.0
+24 silly packumentCache full:https://registry.npmjs.org/playwright-core cache-miss
+25 silly fetch manifest fsevents@2.3.2
+26 silly packumentCache full:https://registry.npmjs.org/fsevents cache-miss
+27 http fetch GET 200 https://registry.npmjs.org/fsevents 36ms (cache miss)
+28 silly packumentCache full:https://registry.npmjs.org/fsevents set size:undefined disposed:false
+29 http fetch GET 200 https://registry.npmjs.org/playwright-core 382ms (cache miss)
+30 silly packumentCache full:https://registry.npmjs.org/playwright-core set size:undefined disposed:false
+31 silly placeDep ROOT fsevents@2.3.2 OK for: playwright@1.55.0 want: 2.3.2
+32 silly placeDep ROOT playwright-core@1.55.0 OK for: playwright@1.55.0 want: 1.55.0
+33 silly reify moves {}
+34 silly audit bulk request {
+34 silly audit   playwright: [ '1.55.0' ],
+34 silly audit   fsevents: [ '2.3.2' ],
+34 silly audit   'playwright-core': [ '1.55.0' ]
+34 silly audit }
+35 verbose reify failed optional dependency /workspace/runs/ci-job-1234/.npm-cache/_npx/fd3bca3c548369c0/node_modules/fsevents
+36 silly reify mark deleted [
+36 silly reify   '/workspace/runs/ci-job-1234/.npm-cache/_npx/fd3bca3c548369c0/node_modules/fsevents'
+36 silly reify ]
+37 silly tarball no local data for playwright-core@https://registry.npmjs.org/playwright-core/-/playwright-core-1.55.0.tgz. Extracting by manifest.
+38 silly tarball no local data for playwright@https://registry.npmjs.org/playwright/-/playwright-1.55.0.tgz. Extracting by manifest.
+39 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 191ms
+40 silly audit report {
+40 silly audit report   playwright: [
+40 silly audit report     {
+40 silly audit report       id: 1109208,
+40 silly audit report       url: 'https://github.com/advisories/GHSA-7mvr-c777-76hp',
+40 silly audit report       title: 'Playwright downloads and installs browsers without verifying the authenticity of the SSL certificate',
+40 silly audit report       severity: 'high',
+40 silly audit report       vulnerable_versions: '<1.55.1',
+40 silly audit report       cwe: [Array],
+40 silly audit report       cvss: [Object]
+40 silly audit report     }
+40 silly audit report   ]
+40 silly audit report }
+41 silly packumentCache corgi:https://registry.npmjs.org/playwright cache-miss
+42 http fetch GET 200 https://registry.npmjs.org/playwright 41ms (cache hit)
+43 silly packumentCache corgi:https://registry.npmjs.org/playwright set size:8055922 disposed:false
+44 http fetch GET 200 https://registry.npmjs.org/playwright/-/playwright-1.55.0.tgz 709ms (cache miss)
+45 http fetch GET 200 https://registry.npmjs.org/playwright-core/-/playwright-core-1.55.0.tgz 788ms (cache miss)
+46 verbose cwd /workspace/runs/ci-job-1234
+47 verbose os Linux 6.12.30+
+48 verbose node v20.20.2
+49 verbose npm  v10.8.2
+50 notice
+50 notice New major version of npm available! 10.8.2 -> 12.0.2
+50 notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+50 notice To update run: npm install -g npm@12.0.2
+50 notice  { force: true, [Symbol(proc-log.meta)]: true }
+51 verbose exit 0
+52 info ok

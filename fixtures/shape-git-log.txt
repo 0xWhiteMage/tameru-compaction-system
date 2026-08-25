@@ -1,0 +1,80 @@
+8f97ae9aec 2026-08-17 Merge pull request #88202 from opensource-dev/docs-installation-migration-routing
+bceda18df0 2026-08-16 docs: document MCP sanitization and tool-result annotations from the feature-xyz wave
+b202293125 2026-08-17 Merge pull request #87604 from contributor/fix/open-toolkit-env-reliability
+cecb3a6ed7 2026-08-17 fmt(js): `npm run fix` on merge (#88206)
+2038d4034d 2026-08-16 fix(desktop): prevent deleted profile respawn
+9adc900ab2 2026-08-16 fix(bot-mode): route bot-to-bot sends through --create-if-missing
+e0ce06e358 2026-08-11 fix(test): drive MCP identity-header tests through sdk_httpx(), not httpx directly
+77ed1bbf40 2026-08-02 fix(mcp): seed MCP-Protocol-Version from the handshake version, not the latest
+2e1d724e3e 2026-08-02 fix(mcp): accept both SDK generations' streamable-HTTP transport arity
+48470f8628 2026-08-02 test(mcp): port the slash-worker discovery probe to MCPServer
+11a9dcf567 2026-08-02 feat(mcp): migrate to the mcp 2.x SDK
+7a2ad9ae55 2026-08-16 chore: map contributor emails for PYTHONPATH salvage (Yiipu, mmchuangyt-ai)
+8e7a5f63b5 2026-08-05 test(terminal): cover Check 3 depth=1 and depth=2 boundaries
+2824899321 2026-08-05 fix(terminal): correct off-by-one in _hermes_repo_root path resolution
+43c463fa95 2026-07-09 fix(terminal): strip Hermes-venv site-packages from terminal subprocess PYTHONPATH to prevent cross-version ABI conflicts
+f4d8a0c5e9 2026-08-17 docs: route getting-started and updating readers to backup/export migration paths
+93ed11379b 2026-08-08 fix(desktop): recover the tile and regenerate paths from a dead runtime id
+243352e7b8 2026-08-13 fix(desktop): unbind session tiles from a reclaimed runtime so they self-recover
+de29f46bab 2026-08-16 chore: map contributor emails for salvage of #85421
+134bf66b3b 2026-08-14 test(telegram): cover the lazy-install rebind path
+a85e45da13 2026-08-14 fix(telegram): rebind TypeHandler in the deferred SDK import
+acaac9a18c 2026-08-16 fix(config): extend structured-value parsing to multi-line YAML blocks with a conservative trigger
+6f2a4676a9 2026-07-02 fix(config): parse list/mapping literals in hermes config set
+5099a65a05 2026-08-16 fix(desktop): re-resume session tiles with live runtime ids after sleep/wake
+c59c1de36c 2026-08-16 fix(draw-your-font): shorten description to authoring hardline (<=60 chars)
+a98ae1929f 2026-08-06 feat(optional-skills): add draw-your-font — handwriting photo to installable font
+0e378e59aa 2026-08-06 Port from acmecorp/project#10978: skip locally-edited hub skills on update unless --force
+3ef63373f8 2026-08-06 Port from acmecorp/project#10875: route all dashboard copy actions through the HTTP-safe clipboard helper
+66312aec48 2026-08-06 Port from can1357/oh-my-pi#7553: allow quoted shell metacharacters in allowlist matching
+d5167831b8 2026-08-06 Port from can1357/oh-my-pi#7306: reject answer-shaped auto-title output
+0043a484e7 2026-08-06 Inspired by Copilot CLI: /worktree — create isolated git worktrees mid-session
+1002dcd3cc 2026-08-16 fix(simple-english): shorten description to authoring hardline (<=60 chars)
+56182cf8f7 2026-08-06 feat(optional-skills): add simple-english — ASD-STE100 Simplified Technical English writing skill
+2e4d771c69 2026-08-06 Inspired by Factory Droid: accept unique ID prefixes in process tool lookups
+ea29702749 2026-08-16 feat(cron): --continuity / --no-continuity flags on hermes cron create/edit
+0b13cafffa 2026-08-16 feat(cron): continuity toggle across dashboard, Bot Mode routines, and TUI cron RPC
+2e7a46cc27 2026-08-16 feat(cron): continuity=true/false flag as the user-facing surface for self-context
+47d7661aa8 2026-08-06 Inspired by Amp: cron self-context — context_from='self' gives recurring jobs run-to-run continuity
+35598d8e8e 2026-08-06 Inspired by Perplexity Computer: sessions pin/unpin/pinned CLI (#52955)
+07a5179158 2026-08-06 Inspired by Poke: nudge review of repeatedly-failing recurring cron jobs
+bd4b709258 2026-08-06 Inspired by Copilot CLI: /rollback keeps user hand-edits by default
+9d139320d4 2026-08-16 test(plugins): accept scan_decision_cb in _install_plugin_core test stubs
+d44a295492 2026-08-06 Inspired by Claude Cowork: security scanning for plugin install/update
+341d5aebc6 2026-08-06 Port from MoonshotAI/kimi-code#2647: read UTF-16 text files by transcoding to UTF-8
+c031fec365 2026-08-06 Port from MoonshotAI/kimi-code#2596/#2600: surface MCP tool-result _meta to the model, minus protocol-reserved keys
+8bbda8ff33 2026-08-06 Port from block/goose#10746: strip invisible Unicode TAG chars from MCP content
+4be4b9866e 2026-08-06 Port from earendil-works/pi#7494: preserve Gemini 3 tool call IDs
+a8d5e16ccf 2026-08-06 Port from earendil-works/pi#7681: support AGENTS.override.md context override
+08d9828503 2026-08-06 feat(approval): coalesce identical concurrent gateway approval prompts
+7533630150 2026-08-06 fix(error_classifier): classify connect/DNS failure messages on generic exception types
+ff7c951151 2026-08-06 fix: suppress windows-footgun false positive on binary tomllib open
+64cfa38fa6 2026-08-06 Port from PrimeIntellect-ai/prime-agent#630: report version transition after hermes update
+1995207470 2026-08-06 Port from PrimeIntellect-ai/prime-agent#628: resolve symlink aliases in ACP cwd comparison
+a35625d7c5 2026-08-06 fix(search): zero-match probes return the file paths they found, not just counts
+efe41abde0 2026-08-06 feat(curator): per-mutation audit ledger + single-edit rollback
+070c6a5f8d 2026-07-12 fix(curator): abort rollback when safety snapshot fails
+184cddb449 2026-08-06 fix(delegation): honor pinned delegation.provider — no silent parent-fallback substitution
+b7329647a9 2026-08-06 feat(cli): expose delegate_task subagent model in the auxiliary-models picker
+ad02425470 2026-08-06 fix(web): gate keyboard-inset scroll pin on chat page visibility (salvage follow-up for #74579)
+67710548ec 2026-07-30 fix(web): keep the chat terminal input line above the mobile soft keyboard (NS-434)
+c7727540f3 2026-08-06 test: strengthen empty-response guard tests (salvage follow-up for #75115)
+d10f87245e 2026-07-31 refactor(agent): move empty-response guard settings from env vars to config.yaml
+ac06c2ff8b 2026-07-31 fix(agent): stop re-billing deterministic empty responses (NS-503)
+204302bd64 2026-08-03 feat(terminal): interpret signal-termination exit codes for the model
+25851e6e58 2026-08-05 fix: resolve semantic merge conflict — startHermes update-wait moved into runPrimaryBackendStartup (waitForLocalStart); drop duplicated waitForUpdateToFinish call, keep login-shell PATH merge before backend resolve
+c13105a8c5 2026-07-22 Port from cline/cline#12482 era: login-shell PATH resolution for GUI-launched desktop (cline/cline#12429)
+77ed972f48 2026-08-16 fix(kanban): drop --force from worktree remove so git re-verifies dirtiness (TOCTOU)
+395eedb189 2026-08-16 fix(kanban): kill tmux worker before removing its worktree cwd
+bbe9175577 2026-08-16 chore: normalize contributors/emails/razsoc.01@gmail.com to LF line endings
+89bf7f182e 2026-08-16 chore: map razsoc.01@gmail.com contributor email to Cossackx
+00c184170b 2026-08-16 fix(kanban): reap worktree workspaces at task completion and archive
+0e4552199a 2026-08-16 fix(status): keep fatal platform entries visible when gateway startup failed
+3b9a963b8e 2026-08-16 refactor(xai): lift API-key precedence into resolve_xai_http_credentials behind prefer_api_key
+32170dd1a2 2026-08-17 fix(x_search): prefer an explicit API key over subscription OAuth
+1826310f49 2026-08-17 fmt(js): `npm run fix` on merge (#88128)
+55db6187e5 2026-08-16 chore(contributors): map skip-agent's commit email for attribution
+b2cc4ceef0 2026-08-16 fix(cron): attribute cloud-path refusals to the cloud-synced script, not a lifecycle command
+42a96e7543 2026-08-16 fix(cron): move cloud-placeholder refusal into _read_referenced_script and cover ~/Library/CloudStorage
+e6f59e5b77 2026-08-16 fix(terminal): avoid FileProvider reads in lifecycle guard
+f8f43c9523 2026-08-16 fix(desktop): make git worktrees work end-to-end on a remote gateway backend

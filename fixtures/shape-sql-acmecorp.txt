@@ -1,0 +1,52 @@
+-- acmecorp company graph
+CREATE TABLE companies (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+);
+CREATE TABLE company_members (
+  company_id TEXT REFERENCES companies(id),
+  account_id TEXT NOT NULL
+);
+SELECT c.id, c.name FROM companies c
+ WHERE c.id = 'acmecorp-genesis-v14-focused-node22-raw';
+-- noise
+-- filler audit row 0
+-- filler audit row 1
+-- filler audit row 2
+-- filler audit row 3
+-- filler audit row 4
+-- filler audit row 5
+-- filler audit row 6
+-- filler audit row 7
+-- filler audit row 8
+-- filler audit row 9
+-- filler audit row 10
+-- filler audit row 11
+-- filler audit row 12
+-- filler audit row 13
+-- filler audit row 14
+-- filler audit row 15
+-- filler audit row 16
+-- filler audit row 17
+-- filler audit row 18
+-- filler audit row 19
+-- filler audit row 20
+-- filler audit row 21
+-- filler audit row 22
+-- filler audit row 23
+-- filler audit row 24
+-- filler audit row 25
+-- filler audit row 26
+-- filler audit row 27
+-- filler audit row 28
+-- filler audit row 29
+-- filler audit row 30
+-- filler audit row 31
+-- filler audit row 32
+-- filler audit row 33
+-- filler audit row 34
+-- filler audit row 35
+-- filler audit row 36
+-- filler audit row 37
+-- filler audit row 38
+-- filler audit row 39
