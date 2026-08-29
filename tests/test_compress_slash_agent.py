@@ -10,7 +10,6 @@ if not _os.environ.get("HERMES_REPO_ROOT") and not _os.environ.get("AGENT_REPO_R
     raise unittest.SkipTest("Hermes-specific test (needs HERMES_REPO_ROOT)")
 
 import json
-import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -27,7 +26,6 @@ def _catalog() -> str:
 
 class CompressSlashAgentTests(unittest.TestCase):
     def test_throwaway_agent_prunes_like_slash_compress(self):
-        os.chdir(str(Path.home() / ".hermes"))
         from agent.agent_init import init_agent
         from agent.context_compressor import ContextCompressor
         from run_agent import AIAgent

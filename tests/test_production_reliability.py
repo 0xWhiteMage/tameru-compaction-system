@@ -46,6 +46,38 @@ class StructuredInputRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_deep_json_fails_open_without_recursion_error(self):
+        from tameru.compress_context import compress_context
+
+        text = ("[" * 1_000) + "0" + ("]" * 1_000)
+        result = compress_context(
+            text,
+            "find identifier REL-2026",
+            ccr=False,
+            citations=False,
+        )
+        self.assertTrue(result.fail_open)
+        self.assertEqual(result.compressed_text, text)
+
+    def test_embedded_json_uses_exact_numeric_selector(self):
+        from tameru.compress_context import compress_context
+
+        items = [
+            {"id": index, "sku": f"SNS-{index:03d}", "name": f"widget-{index}"}
+            for index in range(200)
+        ]
+        payload = json.dumps({"catalog": {"parts": items}})
+        context = f"TOOL OUTPUT START\n{payload}\nTOOL OUTPUT END"
+        result = compress_context(
+            context,
+            "What is the SKU for widget-12?",
+            ccr=False,
+            citations=False,
+        )
+
+        self.assertIn("SNS-012", result.compressed_text)
+        self.assertNotIn("SNS-120", result.compressed_text)
+
 
 class LocalCacheFileTests(unittest.TestCase):
     def test_retrieve_rejects_noncanonical_identifier(self):
@@ -105,6 +137,73 @@ class LocalCacheFileTests(unittest.TestCase):
             removed = sweep_ccr_cache(td, max_records=7)
             self.assertEqual(removed, 7)
             self.assertEqual(len(list(Path(td).glob("*.json"))), 33)
+
+    def test_bounded_cleanup_advances_across_calls(self):
+        from tameru.compress_context import sweep_ccr_cache
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current = time.time()
+            for index in range(600):
+                digest = f"{index:024x}"
+                (root / f"{digest}.json").write_text(
+                    json.dumps(
+                        {"stored_at": current, "ttl": 3600, "original": "record"}
+                    ),
+                    encoding="utf-8",
+                )
+            target = list(root.glob("*.json"))[-1]
+            target.write_text(
+                json.dumps({"stored_at": 0, "ttl": 1, "original": "old"}),
+                encoding="utf-8",
+            )
+            for _ in range(3):
+                sweep_ccr_cache(root, max_records=256)
+            self.assertFalse(target.exists())
+
+    def test_bounded_cleanup_progress_is_independent_of_glob_order(self):
+        import tameru.compress_context as cc
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current = time.time()
+            for index in range(512):
+                digest = f"{index:024x}"
+                (root / f"{digest}.json").write_text(
+                    json.dumps(
+                        {"stored_at": current, "ttl": 3600, "original": "record"}
+                    ),
+                    encoding="utf-8",
+                )
+            records = sorted(root.glob("*.json"), key=lambda path: path.name)
+            target = root / f"{511:024x}.json"
+            target.write_text(
+                json.dumps({"stored_at": 0, "ttl": 1, "original": "old"}),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(cc, "_CCR_SWEEP_CURSOR", 0),
+                patch.object(
+                    Path,
+                    "glob",
+                    side_effect=[iter(records), iter(reversed(records))],
+                ),
+            ):
+                cc.sweep_ccr_cache(root, max_records=256)
+                cc.sweep_ccr_cache(root, max_records=256)
+            self.assertFalse(target.exists())
+
+    def test_deep_malformed_cache_record_does_not_raise(self):
+        from tameru.compress_context import _ccr_store, retrieve, sweep_ccr_cache
+
+        with tempfile.TemporaryDirectory() as td:
+            digest = "f" * 24
+            record = Path(td) / f"{digest}.json"
+            record.write_text(("[" * 1_000) + "0" + ("]" * 1_000), encoding="utf-8")
+            self.assertEqual(sweep_ccr_cache(td), 0)
+            self.assertIsNone(retrieve(digest, td))
+            stored = _ccr_store("fresh payload", td)
+            self.assertEqual(retrieve(stored["hash"], td), "fresh payload")
 
     def test_retrieve_revalidates_original_digest(self):
         from tameru.compress_context import retrieve
@@ -215,6 +314,27 @@ class InstructionClassificationTests(unittest.TestCase):
 
 
 class SummaryReliabilityTests(unittest.TestCase):
+    def test_plain_text_answer_from_matching_source_line_is_required(self):
+        from tameru.compress_context import compress_context
+
+        context = "\n\n".join(
+            [f"Archive {i}: ordinary note." for i in range(30)]
+            + ["Device Orion paint color is ultraviolet."]
+        )
+        with patch(
+            "tameru.compress_context._summarise_with_llm",
+            return_value="Device Orion has a documented paint color.",
+        ):
+            result = compress_context(
+                context,
+                "What paint color is Device Orion?",
+                strategy="summarise",
+                ccr=False,
+                citations=False,
+            )
+        self.assertNotEqual(result.policy_name, "summarise-llm")
+        self.assertIn("ultraviolet", result.compressed_text)
+
     def test_answer_value_from_matching_source_line_is_required(self):
         from tameru.compress_context import compress_context
 
@@ -339,6 +459,403 @@ class SummaryReliabilityTests(unittest.TestCase):
                 )
             )
             mocked_open.assert_not_called()
+
+
+class JsonValueRetentionTests(unittest.TestCase):
+    def test_query_matched_record_keeps_long_opaque_value(self):
+        from tameru.compress_context import compress_context
+
+        answer = "tok_" + ("A" * 240)
+        rows = [
+            {"part": f"part-{i}", "token": f"short-{i}"}
+            for i in range(60)
+        ]
+        rows[17] = {"part": "target-part-17", "token": answer}
+        result = compress_context(
+            json.dumps({"parts": rows}),
+            "What token belongs to target-part-17?",
+            ccr=False,
+            citations=False,
+        )
+        self.assertIn(answer, result.compressed_text)
+
+    def test_pure_json_uses_only_the_full_document_preprocessor(self):
+        import tameru.compress_context as cc
+
+        rows = [
+            {"part": f"part-{i}", "value": f"value-{i}"}
+            for i in range(60)
+        ]
+        text = json.dumps({"parts": rows})
+        with patch.object(cc, "_preprocess_json", wraps=cc._preprocess_json) as embedded:
+            result = cc.compress_context(
+                text,
+                "What is part-17?",
+                ccr=False,
+                citations=False,
+            )
+        embedded.assert_not_called()
+        self.assertIn("part-17", result.compressed_text)
+
+
+class CsvSelectorTests(unittest.TestCase):
+    def test_numeric_selector_does_not_match_larger_csv_values(self):
+        from tameru.compress_context import compress_context
+
+        rows = ["sku,name,status"] + [
+            f"{value},widget-{value},active"
+            for value in (12, 120, 212, 312, 412, 512)
+        ]
+        result = compress_context(
+            "\n".join(rows),
+            "Show SKU 12.",
+            ccr=False,
+            citations=False,
+        )
+        self.assertIn("12,widget-12,active", result.compressed_text)
+        self.assertNotIn("312,widget-312,active", result.compressed_text)
+        self.assertNotIn("120,widget-120,active", result.compressed_text)
+
+
+class FlatRecordSelectorTests(unittest.TestCase):
+    def test_query_selected_flat_record_does_not_keep_unrelated_rows(self):
+        from tameru.compress_context import compress_context
+
+        context = "\n".join(
+            f"{'needle-record-77' if i == 77 else f'noise-key-{i}'}: value-{i}"
+            for i in range(120)
+        )
+        result = compress_context(
+            context,
+            "What is needle-record-77?",
+            ccr=False,
+            citations=False,
+        )
+        self.assertEqual(result.compressed_text, "needle-record-77: value-77")
+
+
+class PublicParameterValidationTests(unittest.TestCase):
+    def test_unknown_mode_is_rejected(self):
+        from tameru.compress_context import compress_context
+
+        with self.assertRaisesRegex(ValueError, "unknown mode"):
+            compress_context("record-17: active", "record-17", mode="bogus")
+
+    def test_unknown_mode_is_rejected_before_successful_summary(self):
+        from tameru.compress_context import compress_context
+
+        context = "\n\n".join(
+            [f"Archive {index}: ordinary note." for index in range(30)]
+            + ["device-77 color is cobalt."]
+        )
+        with patch(
+            "tameru.compress_context._summarise_with_llm",
+            return_value="device-77 color is cobalt.",
+        ):
+            with self.assertRaisesRegex(ValueError, "unknown mode"):
+                compress_context(
+                    context,
+                    "What color is device-77?",
+                    mode="bogus",
+                    strategy="summarise",
+                    ccr=False,
+                    citations=False,
+                )
+
+    def test_compiler_reports_requested_mode(self):
+        from tameru.compress_context import compress_context
+
+        context = "\n\n".join(
+            [f"Archive {i}: ordinary note." for i in range(20)]
+            + ["compiler-record-91 answer is cobalt."]
+        )
+        result = compress_context(
+            context,
+            "What is compiler-record-91 answer?",
+            mode="compiler",
+            ccr=False,
+            citations=False,
+        )
+        self.assertEqual(result.mode, "compiler")
+
+
+class FinalTokenAccountingTests(unittest.TestCase):
+    def test_metrics_include_cache_wrapper_and_recovery_marker(self):
+        from tameru.compress_context import compress_context, estimate_tokens
+
+        context = "\n\n".join(
+            [f"Archive {i}: ordinary note." for i in range(60)]
+            + ["accounting-record-52 answer is indigo."]
+        )
+        with tempfile.TemporaryDirectory() as td:
+            result = compress_context(
+                context,
+                "What is accounting-record-52 answer?",
+                cache_prefix=True,
+                ccr=True,
+                citations=False,
+                ccr_dir=td,
+            )
+        final_tokens = estimate_tokens(result.compressed_text)
+        self.assertEqual(result.kept_tokens, final_tokens)
+        self.assertEqual(result.tokens_saved, result.original_tokens - final_tokens)
+        expected_pct = round(
+            (1 - final_tokens / max(result.original_tokens, 1)) * 100,
+            2,
+        )
+        self.assertEqual(result.tokens_saved_pct, expected_pct)
+        self.assertIsNotNone(result.receipt)
+        assert result.receipt is not None
+        self.assertEqual(result.receipt["savings_pct"], expected_pct)
+
+
+class FreezeSupersessionTests(unittest.TestCase):
+    def test_new_override_beats_cached_keep(self):
+        from tameru.compress_context import compress_context
+
+        old = "payment-timeout-77 is 30 seconds."
+        new = (
+            "payment-timeout-77 is now 5 seconds; "
+            "the previous 30-second value is obsolete."
+        )
+        filler = "\n\n".join(
+            f"Archive {i}: ordinary payment note." for i in range(20)
+        )
+        cache: dict = {}
+        compress_context(
+            f"{filler}\n\n{old}",
+            "What is payment-timeout-77?",
+            ccr=False,
+            citations=False,
+            decision_cache=cache,
+        )
+        result = compress_context(
+            f"{filler}\n\n{old}\n\n{new}",
+            "What is payment-timeout-77?",
+            ccr=False,
+            citations=False,
+            decision_cache=cache,
+        )
+        self.assertIn(new, result.compressed_text)
+        self.assertNotIn(old, result.compressed_text)
+
+
+class HermesSummaryGuardTests(unittest.TestCase):
+    def test_valid_assistant_summary_is_accepted(self):
+        from tameru.hermes_extractive_engine import (
+            bulky_tools_dropped,
+            query_facts_lost,
+        )
+
+        payload = (
+            "catalog " * 150
+            + " titanium-torsion-rod has exact SKU SNS-061"
+        )
+        before = [
+            {"role": "user", "content": "What is the SKU of titanium-torsion-rod?"},
+            {"role": "tool", "content": payload},
+        ]
+        after = [
+            {
+                "role": "assistant",
+                "content": "The titanium-torsion-rod SKU is SNS-061.",
+            }
+        ]
+        self.assertFalse(
+            query_facts_lost(before, after, "What is the SKU of titanium-torsion-rod?")
+        )
+        self.assertFalse(bulky_tools_dropped(before, after))
+        self.assertTrue(bulky_tools_dropped(before, []))
+
+    def test_summary_missing_answer_is_rejected(self):
+        from tameru.hermes_extractive_engine import query_facts_lost
+
+        before = [
+            {
+                "role": "tool",
+                "content": "titanium-torsion-rod has exact SKU SNS-061",
+            }
+        ]
+        after = [
+            {"role": "assistant", "content": "The titanium-torsion-rod has a SKU."}
+        ]
+        self.assertTrue(
+            query_facts_lost(before, after, "What is the SKU of titanium-torsion-rod?")
+        )
+
+    def test_nonempty_generic_summary_cannot_hide_total_bulky_tool_loss(self):
+        from tameru.hermes_extractive_engine import bulky_tools_dropped
+
+        before = [
+            {"role": "user", "content": "summarize status"},
+            {"role": "tool", "content": ("X" * 900) + " secret-tail"},
+        ]
+        after = [
+            {"role": "user", "content": "summarize status"},
+            {"role": "assistant", "content": "Summary: status reviewed."},
+        ]
+        self.assertTrue(bulky_tools_dropped(before, after))
+
+    def test_each_bulky_tool_must_retain_a_distinctive_anchor(self):
+        from tameru.hermes_extractive_engine import bulky_tools_dropped
+
+        before = [
+            {"role": "tool", "content": ("A" * 900) + " TOKEN-ALPHA-12345678"},
+            {"role": "tool", "content": ("B" * 900) + " TOKEN-BETA-87654321"},
+        ]
+        partial = [
+            {"role": "assistant", "content": "Retained TOKEN-ALPHA-12345678."}
+        ]
+        complete = [
+            {
+                "role": "assistant",
+                "content": "Retained TOKEN-ALPHA-12345678 and TOKEN-BETA-87654321.",
+            }
+        ]
+
+        self.assertTrue(bulky_tools_dropped(before, partial))
+        self.assertFalse(bulky_tools_dropped(before, complete))
+
+    def test_valid_summary_of_matching_json_record_is_accepted(self):
+        from tameru.hermes_extractive_engine import query_facts_lost
+
+        items = [
+            {"id": index, "sku": f"SNS-{index:03d}", "name": f"widget-{index}"}
+            for index in range(80)
+        ]
+        items[61]["name"] = "titanium-torsion-rod"
+        before = [
+            {"role": "tool", "content": json.dumps({"catalog": {"parts": items}})}
+        ]
+        after = [
+            {
+                "role": "assistant",
+                "content": "The titanium-torsion-rod SKU is SNS-061.",
+            }
+        ]
+        self.assertFalse(
+            query_facts_lost(before, after, "What is the SKU of titanium-torsion-rod?")
+        )
+
+    def test_numeric_json_selector_does_not_match_longer_identifier(self):
+        from tameru.compress_context import compress_context
+        from tameru.hermes_extractive_engine import (
+            _json_query_answers,
+            query_facts_lost,
+        )
+
+        items = [
+            {"id": index, "sku": f"SNS-{index:03d}", "name": f"widget-{index}"}
+            for index in range(200)
+        ]
+        content = json.dumps({"catalog": {"parts": items}})
+        query = "What is the SKU for widget-12?"
+        after = [
+            {"role": "assistant", "content": "The SKU for widget-12 is SNS-012."}
+        ]
+
+        self.assertEqual(_json_query_answers(content, query), {"SNS-012"})
+        self.assertFalse(
+            query_facts_lost([{"role": "tool", "content": content}], after, query)
+        )
+        result = compress_context(content, query, ccr=False, citations=False)
+        self.assertIn("SNS-012", result.compressed_text)
+        self.assertNotIn("SNS-120", result.compressed_text)
+
+    def test_boolean_json_answer_preserves_polarity(self):
+        from tameru.hermes_extractive_engine import (
+            _json_query_answers,
+            query_facts_lost,
+        )
+
+        query = "Is widget-12 enabled?"
+        cases = (
+            (
+                True,
+                ("widget-12 is enabled.",),
+                ("widget-12 is not enabled.", "widget-12 is disabled."),
+            ),
+            (
+                False,
+                ("widget-12 is not enabled.", "widget-12 is disabled."),
+                ("widget-12 is enabled.",),
+            ),
+        )
+        for value, accepted, rejected in cases:
+            content = json.dumps({"name": "widget-12", "enabled": value})
+            before = [{"role": "tool", "content": content}]
+            with self.subTest(value=value, answers=True):
+                self.assertEqual(
+                    _json_query_answers(content, query),
+                    {str(value).casefold()},
+                )
+            for summary in accepted:
+                with self.subTest(value=value, summary=summary, accepted=True):
+                    self.assertFalse(
+                        query_facts_lost(
+                            before,
+                            [{"role": "assistant", "content": summary}],
+                            query,
+                        )
+                    )
+            for summary in rejected + ("widget-12 was checked.",):
+                with self.subTest(value=value, summary=summary, accepted=False):
+                    self.assertTrue(
+                        query_facts_lost(
+                            before,
+                            [{"role": "assistant", "content": summary}],
+                            query,
+                        )
+                    )
+
+    def test_wrapped_json_summary_guard_uses_embedded_payload(self):
+        from tameru.hermes_extractive_engine import (
+            _json_query_answers,
+            query_facts_lost,
+        )
+
+        items = [
+            {"id": index, "sku": f"SNS-{index:03d}", "name": f"widget-{index}"}
+            for index in range(200)
+        ]
+        payload = json.dumps({"catalog": {"parts": items}})
+        content = f"TOOL OUTPUT START\n{payload}\nTOOL OUTPUT END"
+        query = "What is the SKU for widget-12?"
+        before = [{"role": "tool", "content": content}]
+
+        self.assertEqual(_json_query_answers(content, query), {"SNS-012"})
+        self.assertFalse(
+            query_facts_lost(
+                before,
+                [{"role": "assistant", "content": "widget-12 SKU is SNS-012."}],
+                query,
+            )
+        )
+        self.assertTrue(
+            query_facts_lost(
+                before,
+                [{"role": "assistant", "content": "widget-12 was reviewed."}],
+                query,
+            )
+        )
+
+    def test_preserve_every_detail_rejects_generic_summary(self):
+        from tameru.hermes_extractive_engine import query_facts_lost
+
+        before = [
+            {
+                "role": "tool",
+                "content": "engine: default\nprovider: local\nretry_limit: 4",
+            }
+        ]
+        after = [{"role": "assistant", "content": "Summary: config reviewed."}]
+        self.assertTrue(
+            query_facts_lost(before, after, "keep every detail for the next chat")
+        )
+        retained = [{"role": "assistant", "content": before[0]["content"]}]
+        self.assertFalse(
+            query_facts_lost(before, retained, "keep every detail for the next chat")
+        )
 
 
 class CcrSemanticTests(unittest.TestCase):

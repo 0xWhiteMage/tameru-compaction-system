@@ -1,4 +1,4 @@
-"""Release-artifact consistency checks for Tameru 1.1.0."""
+"""Release-artifact consistency checks for Tameru 1.1.1."""
 from __future__ import annotations
 
 import tomllib
@@ -14,7 +14,7 @@ class ReleaseArtifactTests(unittest.TestCase):
     def test_package_and_plugin_versions_match(self):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         version = project["project"]["version"]
-        self.assertEqual(version, "1.1.0")
+        self.assertEqual(version, "1.1.1")
         for name in ("tameru", "extractive"):
             metadata = (BUNDLE / name / "plugin.yaml").read_text(encoding="utf-8")
             self.assertIn(f"version: {version}", metadata)

@@ -1,11 +1,11 @@
-# Benchmark Comparison — Tameru v1.1.0 vs the field
+# Benchmark Comparison — Tameru v1.1.1 vs the field
 
 All numbers from this repo's fixtures and production QA battery unless noted.
 "Gold retention" = required gold strings present in compressed output.
 
 ## Head-to-head (same 17-case holdout, Aug 2026)
 
-| Metric | **Tameru v1.1.0** | BM25 / Vector RAG Baseline | LLM summarise | LCM |
+| Metric | **Tameru v1.1.1** | BM25 / Vector RAG Baseline | LLM summarise | LCM |
 |---|---|---|---|---|
 | Gold retention | **17/17** | 12/17 | 7/17 | 3–7/17 |
 | Regression rate (right→wrong flips) | **0.0%** | ~8% | ~40% | n/a |
@@ -55,6 +55,6 @@ Design choices track published results:
 ## Reproduce
 
 ```bash
-pytest tests/ -q          # 121 passed, 5 skipped (Hermes-specific)
+PYTHONPATH=src python -m pytest -q  # 217 passed, 9 skipped standalone
 python benchmarks/run_battery.py   # adversarial battery + timing table
 ```

@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [Unreleased]
+
+---
+
+## [1.1.1] - 2026-08-30
+
+### Added
+- Added regression coverage for exact structured selectors, wrapped JSON, boolean polarity, per-tool evidence retention, cache maintenance, and public accounting.
+
+### Fixed
+- Preserved complete fenced code blocks, plain-text answer values, long JSON scalars, exact CSV selectors, and query-selected flat records.
+- Made frozen supersession authoritative, deeply nested JSON fail open, and bounded CCR cleanup advance across repeated calls.
+- Reused one factual-preservation gate for Hermes parent summaries, accepted retained facts in assistant/system summaries, and rejected total or partial loss of unrecoverable bulky tool evidence.
+- Preserved scalar and boolean answer polarity from pure and wrapped JSON without substring collisions such as `widget-12` matching `widget-120`.
+- Reported requested compiler mode and calculated token/savings diagnostics from the exact returned text, including wrappers and recovery markers.
+- Rejected unsupported public modes and removed an unsupported Hermes activation command from the README.
+
+### Changed
+- Pure JSON now uses one full-document preprocessing path, while shared selector rules handle embedded and full JSON consistently.
+- Hermes integration tests no longer depend on a profile-specific working directory.
+
+---
+
 ## [1.1.0] - 2026-08-25
 
 ### Fixed
@@ -122,3 +145,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Initial release of the Tameru byte-deterministic extractive compaction engine.
 - Fast, local-only, zero-LLM context compaction.
 - Fail-open safety contract.
+
+[Unreleased]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v0.10.0...v1.1.0

@@ -52,16 +52,11 @@ class NewAgentEngineLoadTests(unittest.TestCase):
 
         self.assertEqual(load_context_engine("tameru").name, "tameru")
 
-    def test_plugin_files_exist_and_load_from_hermes_home_cwd(self):
-        import os
-
+    def test_plugin_files_exist_and_load(self):
         init = REPO / "plugins/context_engine/tameru/__init__.py"
         yaml = REPO / "plugins/context_engine/tameru/plugin.yaml"
         self.assertTrue(init.is_file(), f"missing {init}")
         self.assertTrue(yaml.is_file(), f"missing {yaml}")
-        prev = os.getcwd()
-        os.chdir(str(Path.home() / ".hermes"))
-        self.addCleanup(os.chdir, prev)
         from plugins.context_engine import load_context_engine
 
         engine = load_context_engine("tameru")

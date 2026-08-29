@@ -9,7 +9,6 @@ import unittest
 if not _os.environ.get("HERMES_REPO_ROOT") and not _os.environ.get("AGENT_REPO_ROOT"):
     raise unittest.SkipTest("Hermes-specific test (needs HERMES_REPO_ROOT)")
 
-import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -20,7 +19,6 @@ sys.path.insert(0, str(REPO))
 
 class InitAgentSelectsExtractiveTests(unittest.TestCase):
     def test_init_agent_sets_extractive_compressor(self):
-        os.chdir(str(Path.home() / ".hermes"))
         from agent.agent_init import init_agent
         from run_agent import AIAgent
 

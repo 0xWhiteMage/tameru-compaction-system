@@ -105,6 +105,25 @@ class StructuralVerbatimTests(unittest.TestCase):
         out = compress_context(ctx, "deploy function edge timeout", ccr=False, citations=False)
         self.assertIn(code, out.compressed_text)
 
+    def test_fenced_code_block_survives_when_intro_matches_query(self):
+        code = (
+            "```python\n"
+            "def parser_77(x):\n"
+            '    return {"port": 7123, "value": x}\n'
+            "```"
+        )
+        filler = "\n\n".join(
+            f"Note {i}: ordinary background chatter." for i in range(15)
+        )
+        ctx = filler + "\n\nConfig parser-77 implementation:\n" + code + "\n\n" + filler
+        out = compress_context(
+            ctx,
+            "Show parser-77 implementation and port.",
+            ccr=False,
+            citations=False,
+        )
+        self.assertIn(code, out.compressed_text)
+
     def test_traceback_block_survives_untouched_when_kept(self):
         tb = (
             "Traceback (most recent call last):\n"

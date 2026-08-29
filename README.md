@@ -2,9 +2,9 @@
 
 <p align="center">
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.1.0-blue.svg?style=for-the-badge" alt="Version 1.1.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.1.1-blue.svg?style=for-the-badge" alt="Version 1.1.1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-195%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-217%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
   <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/production_QA_v3-13%2F13_green-brightgreen.svg?style=for-the-badge" alt="Production QA v3"></a>
   <a href="#-head-to-head-competitive-benchmark"><img src="https://img.shields.io/badge/latency-~5ms-purple.svg?style=for-the-badge" alt="Latency"></a>
   <a href="#-core-design-tenets"><img src="https://img.shields.io/badge/determinism-100%25_reproducible-blueviolet.svg?style=for-the-badge" alt="Determinism"></a>
@@ -200,7 +200,7 @@ Tested across 17 standardized production-QA fixtures containing multi-hop reason
 
 | Compaction System | Gold Fact Recall | Latency (avg) | Cost / 1k Ops | Deterministic | Dependencies |
 |---|---|---|---|---|---|
-| **⚡ Tameru (v1.1.0)** | **17 / 17 (100%)** | **~5 ms** | **$0.00** | **100% Yes** | **Python stdlib** |
+| **⚡ Tameru (v1.1.1)** | **17 / 17 (100%)** | **~5 ms** | **$0.00** | **100% Yes** | **Python stdlib** |
 | **BM25 / Vector RAG Baseline** | 12 / 17 (70.6%) | ~400 ms | $0.02–$0.05 | No | Vector DB + Embeddings |
 | **Abstractive LLM Summarizer** | 7 / 17 (41.2%) | ~2,500 ms | $1.50–$3.00 | No (Stochastic) | Auxiliary LLM API |
 | **Uncompressed Baseline** | 17 / 17 (100%) | 0 ms | Full Tokens | Yes | None |
@@ -221,6 +221,13 @@ Run the full battery:
 ```bash
 python -m unittest discover -s tests
 ```
+
+Current v1.1.1 release verification:
+
+- **217 passed, 9 skipped** with pytest; **226 passed, 9 skipped** with unittest discovery.
+- **13/13** production-QA cases passed, including the large-document latency gate.
+- **232 passed, 1 intentional skip** against current Hermes, with **15/15** explicit rollout tests.
+- Independent final release review: **PASS**, with no must-fix blockers.
 
 ---
 
@@ -258,10 +265,6 @@ Tameru integrates directly into **Hermes Agent** as a pluggable context engine:
    ```yaml
    context:
      engine: tameru
-   ```
-3. Or launched via CLI:
-   ```bash
-   hermes --context-engine tameru
    ```
 
 ---
@@ -336,6 +339,7 @@ longer learn new blocks.
 All notable changes, version milestones, and migration notes are tracked in **[CHANGELOG.md](CHANGELOG.md)**.
 
 Highlights:
+- **v1.1.1**: Comprehensive factual-retention, fail-open, cache-progression, public-metrics, and current-Hermes integration hardening.
 - **v1.1.0**: Production QA hardening, Docker progress recognition, CCR security & expiry sweep, bounded decision caching, loopback summary boundary.
 - **v0.10.0**: Compaction audit logs, pinned sink regions, versioned context receipts.
 - **v0.9.0**: NTK layer-1 log dedup, error invariants, progress-bar stripping, lost-in-the-middle reordering.

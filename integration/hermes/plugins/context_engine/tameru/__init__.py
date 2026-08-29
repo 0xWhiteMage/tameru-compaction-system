@@ -1,4 +1,4 @@
-"""Hermes context-engine adapter for Tameru 1.1.0."""
+"""Hermes context-engine adapter for Tameru 1.1.1."""
 from __future__ import annotations
 
 from typing import Any
@@ -66,7 +66,7 @@ class ExtractiveContextEngine(ContextCompressor):
             force=force,
             memory_context=memory_context,
         )
-        if query_facts_lost(pruned, summarised, query) or bulky_tools_dropped(
+        if query_facts_lost(messages, summarised, query) or bulky_tools_dropped(
             pruned, summarised
         ):
             return pruned

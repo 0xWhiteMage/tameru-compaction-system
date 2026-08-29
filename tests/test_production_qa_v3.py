@@ -87,22 +87,24 @@ class PerformanceTests(unittest.TestCase):
         small = "\n\n".join(rows[:2000])
         big = "\n\n".join(rows)
 
-        def measure(text: str) -> tuple[float, object]:
-            samples = []
-            result = None
-            for _ in range(3):
+        samples = {"small": [], "big": []}
+        results = {}
+        inputs = {"small": small, "big": big}
+        for attempt in range(5):
+            order = ("small", "big") if attempt % 2 == 0 else ("big", "small")
+            for name in order:
                 t0 = time.process_time()
-                result = compress_context(
-                    text,
+                results[name] = compress_context(
+                    inputs[name],
                     "which region completed stage 3?",
                     ccr=False,
                     citations=False,
                 )
-                samples.append((time.process_time() - t0) * 1000)
-            return statistics.median(samples), result
+                samples[name].append((time.process_time() - t0) * 1000)
 
-        small_ms, _small_out = measure(small)
-        big_ms, out = measure(big)
+        small_ms = statistics.median(samples["small"])
+        big_ms = statistics.median(samples["big"])
+        out = results["big"]
         self.assertLess(
             big_ms,
             1200.0,

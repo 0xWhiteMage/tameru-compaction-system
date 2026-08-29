@@ -1,10 +1,10 @@
-# Hermes rollout bundle — Tameru 1.1.0
+# Hermes rollout bundle — Tameru 1.1.1
 
 This directory is the reviewed deployment input for a Hermes repository. It does not modify a live checkout by itself.
 
 ## Required sequence
 
-1. Build and install the `tameru-compaction-system==1.1.0` wheel in the Hermes runtime environment.
+1. Build and install the `tameru-compaction-system==1.1.1` wheel in the Hermes runtime environment.
 2. Copy `integration/hermes/plugins/context_engine/tameru/` to `plugins/context_engine/tameru/` in the target Hermes branch.
 3. For a staged migration, also copy `integration/hermes/plugins/context_engine/extractive/`. It is a deprecated compatibility alias for one release only.
 4. Change every selected `context.engine: extractive` profile to `context.engine: tameru`.
@@ -29,4 +29,4 @@ python -m pytest \
   tests/test_extractive_engine_e2e.py -q
 ```
 
-The rollout is blocked if a profile still selects `extractive` without the compatibility alias installed, if the plugin metadata is not `1.1.0`, or if any required Hermes-facing test is skipped or fails.
+The rollout is blocked if a profile still selects `extractive` without the compatibility alias installed, if the plugin metadata is not `1.1.1`, or if any required Hermes-facing test is skipped or fails.
