@@ -6,10 +6,8 @@ These tests define the contract. They do not call SuperCompress.
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 import unittest
-from pathlib import Path
 
 
 from tameru.compress_context import (  # noqa: E402
@@ -356,7 +354,7 @@ class FreezeOnFirstSightTests(unittest.TestCase):
 
         # Fundamentally different context (different first 500 chars)
         ctx_b = "COMPLETELY DIFFERENT CONTENT about quantum computing and " * 50
-        b = compress_context(ctx_b, "quantum computing", decision_cache=dc)
+        compress_context(ctx_b, "quantum computing", decision_cache=dc)
         # Old decisions should be cleared, new ones recorded
         # The context hash changed, so the cache was invalidated
         self.assertIn("decisions", dc)

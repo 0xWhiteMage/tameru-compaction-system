@@ -1,8 +1,6 @@
 """Real harvested JP/KO tool dumps must compress, not fail-open."""
 from __future__ import annotations
 
-import json
-import sys
 import unittest
 from pathlib import Path
 

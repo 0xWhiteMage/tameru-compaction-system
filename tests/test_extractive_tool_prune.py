@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import json
-import sys
 import unittest
-from pathlib import Path
 
 
 from tameru.hermes_extractive_engine import apply_extractive_tool_prune, last_user_text  # noqa: E402

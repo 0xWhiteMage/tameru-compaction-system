@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from tameru.compress_context import (  # noqa: E402
     compress_context,
-    estimate_tokens,
 )
 
 

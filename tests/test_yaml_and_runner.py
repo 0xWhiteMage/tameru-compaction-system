@@ -1,7 +1,6 @@
 """YAML lists and test-runner dumps: drop unmatched records, keep gold."""
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 

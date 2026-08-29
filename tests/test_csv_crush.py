@@ -1,9 +1,7 @@
 """CSV row crush: distinctive selectors only, no first-N cliff."""
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
 
 from tameru.compress_context import compress_context  # noqa: E402

@@ -7,7 +7,6 @@ coder. compress_context.py is wired by the orchestrator after that file exists.
 from __future__ import annotations
 
 import json
-import sys
 import unittest
 from pathlib import Path
 

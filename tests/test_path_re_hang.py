@@ -1,7 +1,6 @@
 """Hyphenated ids must not hang entity extraction (PATH_RE backtrack)."""
 from __future__ import annotations
 
-import sys
 import time
 import unittest
 from pathlib import Path

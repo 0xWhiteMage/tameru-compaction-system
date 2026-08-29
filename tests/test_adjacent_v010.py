@@ -5,6 +5,7 @@ RED first: none of these exist in v0.9.0."""
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -28,7 +29,7 @@ class CompactionLogTests(unittest.TestCase):
                 _archive(30)
                 + "\n\nThe Selene failover endpoint is DB-77-Z."
             )
-            out = compress_context(
+            compress_context(
                 ctx,
                 "Selene endpoint?",
                 ccr=False,
@@ -52,8 +53,6 @@ class CompactionLogTests(unittest.TestCase):
 
     def test_no_log_dir_no_file(self):
         # default stays light: no filesystem writes regardless of outcome.
-        import tempfile, os
-        before = set()
         with tempfile.TemporaryDirectory() as td:
             before = set(os.listdir(td))
             compress_context(_archive(20), "anything?", ccr=False, citations=False)
@@ -69,7 +68,6 @@ class PinPatternsTests(unittest.TestCase):
             + _archive(40)
         )
         q = "summarise the archive"  # unrelated to the policy line
-        base = compress_context(ctx, q, ccr=False, citations=False)
         pinned = compress_context(
             ctx,
             q,

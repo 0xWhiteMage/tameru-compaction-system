@@ -1,7 +1,6 @@
 """Line-oriented dumps (git log, npm verbose) must drop non-matching records."""
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 

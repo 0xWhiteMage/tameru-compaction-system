@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- Modernized package licence metadata to an SPDX expression and raised the build-only setuptools floor to 77.
+
 ---
 
 ## [1.1.1] - 2026-08-30

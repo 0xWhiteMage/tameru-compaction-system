@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import json
-import sys
 import unittest
-from pathlib import Path
 
 
 from tameru.compress_context import compress_context  # noqa: E402

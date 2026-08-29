@@ -1,17 +1,15 @@
-from __future__ import annotations
-import os as _os
-import unittest
-
 """Hermes-specific integration test — skipped unless HERMES_REPO_ROOT is set."""
 
-# import pytest
+from __future__ import annotations
+
+import copy
+import os as _os
+import sys
+import unittest
+from pathlib import Path
 
 if not _os.environ.get("HERMES_REPO_ROOT") and not _os.environ.get("AGENT_REPO_ROOT"):
     raise unittest.SkipTest("Hermes-specific test (needs HERMES_REPO_ROOT)")
-
-import copy
-import sys
-from pathlib import Path
 
 REPO = Path(_os.environ.get("HERMES_REPO_ROOT") or _os.environ["AGENT_REPO_ROOT"])
 sys.path.insert(0, str(REPO))
@@ -27,7 +25,6 @@ class NewAgentEngineLoadTests(unittest.TestCase):
 
     def test_agent_init_selection_prefers_tameru_over_lcm(self):
         """Mirror agent_init.py: repo plugin first; LCM only if names match."""
-        from hermes_cli.config import load_config_readonly
         from plugins.context_engine import load_context_engine
 
         engine_name = "tameru"

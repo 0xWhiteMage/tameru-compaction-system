@@ -1,18 +1,16 @@
-from __future__ import annotations
-import os as _os
-import unittest
-
 """Hermes-specific integration test — skipped unless HERMES_REPO_ROOT is set."""
 
-# import pytest
+from __future__ import annotations
+
+import json
+import os as _os
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 if not _os.environ.get("HERMES_REPO_ROOT") and not _os.environ.get("AGENT_REPO_ROOT"):
     raise unittest.SkipTest("Hermes-specific test (needs HERMES_REPO_ROOT)")
-
-import json
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 REPO = Path(_os.environ.get("HERMES_REPO_ROOT") or _os.environ["AGENT_REPO_ROOT"])
 sys.path.insert(0, str(REPO))
