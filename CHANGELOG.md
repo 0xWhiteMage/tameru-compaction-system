@@ -8,8 +8,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] - 2026-08-31
+
+### Added
+- Added bounded industrial input profiles, configurable character/line/record/field/query/block/bidi limits, deterministic hashed receipts, and CLI controls.
+- Added Unicode grapheme, script, direction, bidi-control, vertical-layout, and multilingual token accounting for 20 script/language families.
+- Added exact extractive adapters for NDJSON, CSV, TSV, Markdown, YAML, line-oriented XML/HTML, SQL, INI/TOML-style sections, and vertical OCR columns.
+- Added large-input SLOs, 20,000-record selection tests, multilingual adversarial fixtures, and an industrial architecture specification.
+
 ### Changed
 - Modernized package licence metadata to an SPDX expression and raised the build-only setuptools floor to 77.
+- Moved format-specific compaction and Unicode policy into dedicated modules while retaining the v1.1.1 scorer, verifier, CCR, and fail-open fallback.
+- Upgraded non-ASCII token estimates and query matching without changing returned logical text order.
+- Bounded large receipt ID sets with count/head/tail/SHA-256 manifests and added source/output/config hashes to every receipt path.
+- Removed an O(gaps × Unicode-tokeniser) citation-accounting hotspot while preserving citation output.
+
+### Security
+- Added exact fail-open for malformed surrogates, oversized inputs, excessive bidi controls/overrides, malformed structured records, and adapter limit violations.
 
 ---
 
@@ -149,6 +166,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Fast, local-only, zero-LLM context compaction.
 - Fail-open safety contract.
 
-[Unreleased]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v0.10.0...v1.1.0

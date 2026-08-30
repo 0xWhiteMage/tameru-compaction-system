@@ -1,15 +1,15 @@
-# Benchmark Comparison — Tameru v1.1.1 vs the field
+# Benchmark Comparison — Tameru v1.2.0 vs the field
 
 All numbers from this repo's fixtures and production QA battery unless noted.
 "Gold retention" = required gold strings present in compressed output.
 
 ## Head-to-head (same 17-case holdout, Aug 2026)
 
-| Metric | **Tameru v1.1.1** | BM25 / Vector RAG Baseline | LLM summarise | LCM |
+| Metric | **Tameru v1.2.0** | BM25 / Vector RAG Baseline | LLM summarise | LCM |
 |---|---|---|---|---|
 | Gold retention | **17/17** | 12/17 | 7/17 | 3–7/17 |
 | Regression rate (right→wrong flips) | **0.0%** | ~8% | ~40% | n/a |
-| Median latency | **~5 ms** | ~400 ms | ~2,000 ms | ~0 ms |
+| Observed latency | **4–956 ms by workload; <1.2 s at 500 KB** | ~400 ms | ~2,000 ms | ~0 ms |
 | Cost per call | **$0** | $0.02–0.05 | $$ | $0 |
 | Deterministic | ✅ byte-identical | ❌ | ❌ | partial |
 | Runs fully local | ✅ | ❌ (Vercel API; context leaves box) | varies | ✅ |
@@ -55,6 +55,6 @@ Design choices track published results:
 ## Reproduce
 
 ```bash
-PYTHONPATH=src python -m pytest -q  # 217 passed, 9 skipped standalone
+PYTHONPATH=src python -m pytest -q  # 272 passed, 9 skipped standalone
 python benchmarks/run_battery.py   # adversarial battery + timing table
 ```

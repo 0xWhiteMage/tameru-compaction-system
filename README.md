@@ -1,12 +1,12 @@
-# ⚡ Tameru (貯める) — High-Precision Extractive Context Compaction for LLM Agents
+# ⚡ Tameru (貯める) — Industrial Extractive Context Compaction for LLM Agents
 
 <p align="center">
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.1.1-blue.svg?style=for-the-badge" alt="Version 1.1.1"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.2.0-blue.svg?style=for-the-badge" alt="Version 1.2.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-217%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-272%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
   <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/production_QA_v3-13%2F13_green-brightgreen.svg?style=for-the-badge" alt="Production QA v3"></a>
-  <a href="#-head-to-head-competitive-benchmark"><img src="https://img.shields.io/badge/latency-~5ms-purple.svg?style=for-the-badge" alt="Latency"></a>
+  <a href="#-head-to-head-competitive-benchmark"><img src="https://img.shields.io/badge/large_case-%3C1.2s-purple.svg?style=for-the-badge" alt="Large-case latency"></a>
   <a href="#-core-design-tenets"><img src="https://img.shields.io/badge/determinism-100%25_reproducible-blueviolet.svg?style=for-the-badge" alt="Determinism"></a>
   <a href="#-why-tameru-the-problem-with-abstractive-summarization"><img src="https://img.shields.io/badge/dependencies-stdlib_only-orange.svg?style=for-the-badge" alt="Zero Dependencies"></a><br><br>
   <a href="https://x.com/0xWhiteMage" target="_blank"><img src="https://img.shields.io/badge/Follow_on_X-@0xWhiteMage-000000?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X"></a>&nbsp;&nbsp;•&nbsp;&nbsp;
@@ -14,7 +14,7 @@
 </p>
 
 > **Named from 貯める (*tameru*) — Japanese for *"to save, store up, or accumulate."***  
-> Tameru is a query-aware, deterministic, purely extractive context compaction engine designed for autonomous LLM agents. It compresses bulky tool results, massive terminal outputs, database dumps, and multi-turn conversational histories by **85–98% in ~5ms** without external LLM calls, GPU dependencies, or hallucination risks.
+> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. v1.2 adds bounded industrial preflight, Unicode-aware logical-order matching across 20 script/language families, exact format adapters, direction/security profiles, and configurable scale limits—without external LLM calls, GPU dependencies, or runtime dependencies.
 
 ---
 
@@ -26,6 +26,8 @@
 - [📐 Mathematical Formulation & Scoring Engine](#-mathematical-formulation--scoring-engine)
 - [🛡️ 6-Stage Defensive Pipeline](#️-6-stage-defensive-pipeline)
 - [🧩 Supported Modalities & Preprocessing Engine](#-supported-modalities--preprocessing-engine)
+- [🌍 Unicode, Direction & Vertical Text](#-unicode-direction--vertical-text)
+- [🏭 Industrial Limits & Format Contracts](#-industrial-limits--format-contracts)
 - [📊 Head-to-Head Competitive Benchmark](#-head-to-head-competitive-benchmark)
 - [🧪 The Production QA Battery (v3)](#-the-production-qa-battery-v3)
 - [🔄 Reversible Compaction & ARC Citations (CCR Store)](#-reversible-compaction--arc-citations-ccr-store)
@@ -63,7 +65,7 @@ Traditional context reduction approaches fail in mission-critical agent workflow
 │  [Build Logs (80k)]  [Git History (40k)]  [JSON (120k)]  [Diffs (60k)] ...   │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
-                        ⚡ TAMERU ENGINE (<5ms, $0)
+                        ⚡ TAMERU ENGINE (<1.2s at 500 KB, $0)
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -87,6 +89,8 @@ Tameru adheres to a strict engineering contract:
 - **Reversible by Design**: Omitted sections are replaced with content-addressed ARC citation anchors (`[A hash] "head"..."tail"`), backed by a local Content-Centric Retrieval (CCR) store.
 - **Zero External Dependencies**: Pure Python standard library (`re`, `json`, `difflib`, `math`, `typing`). No PyTorch, no HuggingFace, no network required for core operations.
 - **Multi-Hop & Temporal Integrity**: Solves graph closure ($A \to B \to C$) across isolated tool outputs and prunes superseded obsolete statements.
+- **Logical-Order Unicode Safety**: Profiles LTR, RTL, mixed and vertical-source text without visually reordering or rewriting caller bytes.
+- **Bounded Industrial Work**: Enforces input, line, record, field, profile and bidi-control limits before expensive transforms.
 
 ---
 
@@ -97,19 +101,18 @@ Tameru adheres to a strict engineering contract:
                                       │
                                       ▼
                       ┌───────────────────────────────┐
-                      │ 1. PRE-FLIGHT INSPECT & GATE  │
-                      │    • inspect_compressibility  │
-                      │    • ANSI / Progress Strip    │
-                      │    • Distinctive Term Extract │
+                      │ 1. INDUSTRIAL PREFLIGHT       │
+                      │    • Size / Line / Bidi Limits│
+                      │    • Script / Direction Profile│
+                      │    • Format Detection         │
                       └───────────────┬───────────────┘
                                       │
                                       ▼
                       ┌───────────────────────────────┐
-                      │ 2. CONTENT-SPECIFIC PARSERS   │
-                      │    • JSON Structural Crusher  │
-                      │    • Log Dedup [A-N] Templater│
-                      │    • CSV Header-Aware Pruner  │
-                      │    • Stack Frame Run Collapse │
+                      │ 2. EXACT FORMAT ADAPTERS      │
+                      │    • JSON/NDJSON / CSV / TSV  │
+                      │    • Markdown / YAML / XML    │
+                      │    • HTML / SQL / INI / OCR   │
                       └───────────────┬───────────────┘
                                       │
                                       ▼
@@ -186,11 +189,80 @@ $$\text{Confidence Score} = 0.50 \cdot \text{Recall(ent)} + 0.30 \cdot \text{Rec
 | Modality | Specialized Processing | Typical Reduction |
 |---|---|---|
 | **Terminal & Build Logs** | Count-preserving deduplication, ANSI stripping, stack frame collapse | **90–96%** |
-| **JSON Schemas & APIs** | Key-preserving array crushing, leaf node deduplication | **75–88%** |
+| **JSON Schemas & APIs** | Key-preserving array crushing, bounded nesting, exact selector matching | **75–88%** |
+| **NDJSON / JSONL** | Per-record validation and exact raw-line selection | **80–99%** |
+| **CSV / TSV** | Quote-aware record framing, header retention, embedded-newline safety | **70–95%** |
+| **Markdown** | Heading ancestry and atomic fenced-code sections | **60–90%** |
+| **YAML** | Parent-key plus matching-subtree retention; conservative decline on ambiguous prose | **60–90%** |
+| **XML / HTML** | Exact line-oriented child selection with preserved wrappers; unsafe multiline shapes decline | **50–90%** |
+| **SQL** | Quote/comment/dollar-string-aware statement selection | **60–95%** |
+| **INI / TOML-style sections** | Complete matching-section retention | **60–95%** |
 | **Git Dumps & Commit Logs** | Commit hash retention, author/subject line-record filtering | **80–92%** |
-| **SQL Queries & Tables** | Header-aware column pruning, query result truncation | **70–85%** |
 | **Code Diffs & Patches** | Structural fence invariant, changed-line hunk isolation | **65–80%** |
-| **Multilingual (CJK/Arabic/Thai)** | Script-aware character N-gram tokenization, RTL text preservation | **70–85%** |
+| **Multilingual / Mixed Direction** | Grapheme-safe logical-order matching across 20 script/language families | **60–95%** |
+| **Vertical OCR Columns** | Blank-column framing with logical-source-order matching | **50–90%** |
+
+---
+
+## 🌍 Unicode, Direction & Vertical Text
+
+Tameru never applies visual bidi reordering and never rewrites output into a
+different normalisation form. Original substrings remain the source of truth.
+A separate NFKC/case-folded matching shadow is used only for search.
+
+- Extended grapheme tailoring keeps combining marks, variation selectors,
+  emoji modifiers, flags, Indic virama sequences and ZWJ/ZWNJ sequences atomic.
+- Direction profiles report `ltr`, `rtl`, `mixed`, or `neutral` using Unicode
+  bidi classes. Explicit controls and overrides are counted separately.
+- Script-aware query units cover Arabic, Hebrew, Persian/Urdu, Devanagari,
+  Bengali, Tamil, Telugu, Thai, Lao, Khmer, Myanmar, Han, Kana, Hangul,
+  Greek, Cyrillic, Armenian, Georgian, Ethiopic and Mongolian families.
+- Space-free scripts use bounded grapheme n-grams; spaced scripts use logical
+  word runs. ASCII keeps the original compiled-regex fast path.
+- CSS `writing-mode` and one/two-grapheme OCR columns are metadata hints only;
+  they never reverse or rotate source text.
+
+See [`docs/industrial-compaction-v1.2.md`](docs/industrial-compaction-v1.2.md)
+for the standards, tailoring decisions and invariants.
+
+---
+
+## 🏭 Industrial Limits & Format Contracts
+
+Default limits are deliberately conservative and configurable per call:
+
+| Limit | Default |
+|---|---:|
+| Input characters | 8,000,000 |
+| Logical lines | 250,000 |
+| Structured records | 100,000 |
+| Characters per record | 1,000,000 |
+| Fields per structured record | 4,096 |
+| Unicode profile sample | 16,384 chars at each edge |
+| Bidi controls | 10,000 |
+| Bidi overrides | 128 |
+
+If a hard limit, malformed surrogate, parser invariant, or structure check
+fails, Tameru returns the caller's exact text before CCR writes or lossy work.
+Adapters only activate when they produce a shorter structurally valid exact
+subset; otherwise the v1.1 scorer remains the fallback.
+
+```python
+from tameru import IndustrialLimits
+from tameru.compress_context import compress_context
+
+limits = IndustrialLimits(
+    max_input_chars=4_000_000,
+    max_records=50_000,
+    max_bidi_overrides=16,
+)
+result = compress_context(context_data, query, limits=limits)
+profile = result.receipt["industrial"]["profile"]
+```
+
+Equivalent CLI controls are available as `--max-input-chars`, `--max-lines`,
+`--max-records`, `--max-record-chars`, `--max-fields`,
+`--max-profile-chars`, `--max-bidi-controls`, and `--max-bidi-overrides`.
 
 ---
 
@@ -200,7 +272,7 @@ Tested across 17 standardized production-QA fixtures containing multi-hop reason
 
 | Compaction System | Gold Fact Recall | Latency (avg) | Cost / 1k Ops | Deterministic | Dependencies |
 |---|---|---|---|---|---|
-| **⚡ Tameru (v1.1.1)** | **17 / 17 (100%)** | **~5 ms** | **$0.00** | **100% Yes** | **Python stdlib** |
+| **⚡ Tameru (v1.2.0)** | **17 / 17 (100%)** | **4–956 ms observed; <1.2 s at 500 KB** | **$0.00** | **100% Yes** | **Python stdlib** |
 | **BM25 / Vector RAG Baseline** | 12 / 17 (70.6%) | ~400 ms | $0.02–$0.05 | No | Vector DB + Embeddings |
 | **Abstractive LLM Summarizer** | 7 / 17 (41.2%) | ~2,500 ms | $1.50–$3.00 | No (Stochastic) | Auxiliary LLM API |
 | **Uncompressed Baseline** | 17 / 17 (100%) | 0 ms | Full Tokens | Yes | None |
@@ -222,12 +294,13 @@ Run the full battery:
 python -m unittest discover -s tests
 ```
 
-Current v1.1.1 release verification:
+Current v1.2.0 release verification:
 
-- **217 passed, 9 skipped** with pytest; **226 passed, 9 skipped** with unittest discovery.
-- **13/13** production-QA cases passed, including the large-document latency gate.
-- **232 passed, 1 intentional skip** against current Hermes, with **15/15** explicit rollout tests.
-- Independent final release review: **PASS**, with no must-fix blockers.
+- **272 passed, 9 skipped** with pytest; **281 passed, 9 skipped** with unittest discovery.
+- **13/13** production-QA cases passed; the 500 KB citation case saved **99.5%** under the **1.2 s** gate (**675–956 ms** observed across independent runs).
+- **53/53** dedicated industrial Unicode, language, format, property, pipeline and scale tests passed.
+- Vendored Hermes package: **53/53** industrial tests plus **15/15** explicit rollout tests passed through actual plugin discovery.
+- Independent final GPT-5.4 release review: **PASS**, with no must-fix blockers.
 
 ---
 
@@ -339,6 +412,7 @@ longer learn new blocks.
 All notable changes, version milestones, and migration notes are tracked in **[CHANGELOG.md](CHANGELOG.md)**.
 
 Highlights:
+- **v1.2.0**: Bounded industrial preflight, logical-order Unicode across 20 script/language families, ten exact format adapters, deterministic receipt hashes and large-input SLOs.
 - **v1.1.1**: Comprehensive factual-retention, fail-open, cache-progression, public-metrics, and current-Hermes integration hardening.
 - **v1.1.0**: Production QA hardening, Docker progress recognition, CCR security & expiry sweep, bounded decision caching, loopback summary boundary.
 - **v0.10.0**: Compaction audit logs, pinned sink regions, versioned context receipts.
