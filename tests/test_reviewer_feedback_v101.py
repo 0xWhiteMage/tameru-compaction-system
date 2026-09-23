@@ -159,7 +159,7 @@ class FreezeDecisionContractTests(unittest.TestCase):
 
 
 class CcrPrivacyRegressionTests(unittest.TestCase):
-    @patch("tameru.hermes_extractive_engine.compress_context")
+    @patch("tameru.transcript.compress_context")
     def test_live_tool_prune_disables_ccr_and_marker_mutation(self, mocked_compress):
         mocked_compress.return_value = SimpleNamespace(
             compressed_text="short safe result", fail_open=False

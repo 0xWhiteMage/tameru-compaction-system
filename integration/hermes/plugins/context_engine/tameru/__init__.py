@@ -1,4 +1,4 @@
-"""Hermes context-engine adapter for Tameru 1.2.0."""
+"""Hermes context-engine adapter for Tameru 1.2.1."""
 from __future__ import annotations
 
 from typing import Any

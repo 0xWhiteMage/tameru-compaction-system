@@ -451,6 +451,24 @@ Further ecosystem-research hardening (deterministic, always-on unless noted):
   falls back to `extract` on any LLM failure, so the worst case is one
   extra deterministic pass. CLI: `--strategy auto`.
 
+### Harness integration
+
+Tameru ships harness-agnostic. Three integration paths, cheapest first —
+see **[harnesses/README.md](harnesses/README.md)** for the full contract:
+
+- **Python API** — `pip install tameru-compaction-system`, then call
+  `compress_context(text, query)` for raw payloads or
+  `tameru.transcript.apply_extractive_tool_prune(messages)` for
+  OpenAI-style `role`/`content` conversation lists (Hermes, OpenCode,
+  Codex, and most agent loops share that shape).
+- **CLI** — `tameru-compress` reads a file or stdin, writes compacted
+  text, and emits JSON stats with `--stats`; the universal shell-out for
+  non-Python harnesses.
+- **Vendored plugin** — copy `src/tameru/*.py` into the plugin dir and
+  keep it current with `python scripts/sync_to_harness.py <plugin_dir>
+  --manifest plugin.yaml`. Upstream owns every module except
+  `__init__.py`; the harness owns registration glue and the manifest.
+
 ---
 
 ## 📜 Changelog

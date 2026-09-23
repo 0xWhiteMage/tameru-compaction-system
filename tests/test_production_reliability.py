@@ -1096,7 +1096,7 @@ class HermesAdapterReliabilityTests(unittest.TestCase):
             fail_open=False,
         )
         with patch(
-            "tameru.hermes_extractive_engine.compress_context",
+            "tameru.transcript.compress_context",
             return_value=fake,
         ) as mocked_compress:
             out, changed = apply_extractive_tool_prune(messages)

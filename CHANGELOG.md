@@ -6,9 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased]
+## [1.2.1] - 2026-09-23
 
 ### Added
+- Added `tameru.transcript`: generic OpenAI-style transcript adapter (`apply_extractive_tool_prune`, `query_facts_lost`, `bulky_tools_dropped`). Harness-agnostic — works on any `role`/`content` message list. `hermes_extractive_engine` and `agent_extractive_engine` are now thin compatibility shims.
 - Added `pin_recent`: unconditional positional pinning of the opening block and the newest N blocks, exempt from selection, freeze, supersession, and trust-filter paths.
 - Added `min_savings_ratio` (default `0.10`): caller-configurable savings floor — compaction that shrinks less than the ratio fails open, and `0` disables the floor.
 - Added opt-in `degraded_view`: on input size-limit breaches (`max_input_chars`, `max_lines`), blocks are scored on a bounded head+tail view while emitted output stays byte-exact. Safety limits (bidi controls, malformed surrogates, oversize query) remain hard failures; total work stays bounded by a 4× grace factor. Receipts report `degraded_view: true`.
@@ -18,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added a recursion guard: input already carrying Tameru output markers (`<compressed_context`, `[CC-Retrieve:`) returns unchanged with `policy_name="local-noop-recursion"`, preventing wrapper nesting and protecting the retrieval pointer that makes earlier drops recoverable.
 - Added CCR recall tooling: `list_ccr(ccr_dir, offset=, limit=)` lists live records newest-first with hash/stored_at/ttl/chars/preview metadata, and `retrieve(hash, offset=, limit=)` paginates large originals.
 - Added `selection` to every receipt: the selector path that decided the keep-set (`needle`, `floor`, `floor-saturated`, `line-records`, `fixed`, or a `*-failopen` variant), so silent degradation is visible to callers.
+- Added `scripts/sync_to_harness.py`: one-command vendored sync — copies `src/tameru` modules (excluding `__init__.py`) into a harness plugin dir and stamps the plugin manifest version, so vendored integrations track releases without manual copying.
+- Added `harnesses/README.md`: the integration contract for agent harnesses (pip API, CLI shell-out, vendored plugin) with file ownership rules.
 
 ### Changed
 - In `mode="fixed"`, pinned blocks are now immovable and excluded from the `budget_ratio` base — the ratio governs compressible tokens only. Behavior is unchanged when no pins are present.
