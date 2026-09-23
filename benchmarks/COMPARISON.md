@@ -25,16 +25,16 @@ keep-probability questions to System One, the same protocol
 `fast-jev-compaction` uses); Laya is its local decision-model backend
 (`convaiinnovations/laya-multilingual`, CPU); headroom is its Rust
 `TextCrusher` (extractive BM25, `headroom-ai` 0.38.0); tfidf is a stdlib
-paragraph-retrieval baseline. JEV and Laya arms skipped on the
-4,000-block perf case (API cost / CPU time for zero information).
+paragraph-retrieval baseline. The JEV arm skipped the 4,000-block perf
+case (API cost); Laya ran it — 3,379 s (~56 min) on CPU.
 
 | Metric | **Tameru v1.3.0** | lcc → JEV | lcc → Laya (local) | lcc mechanical | headroom TextCrusher | TF-IDF baseline |
 |---|---|---|---|---|---|---|
-| Gold retention | **12/12** | 11/11 | 11/11 | 12/12 | 10/12 | 11/12 |
+| Gold retention | **12/12** | 11/11 † | 12/12 | 12/12 | 10/12 | 11/12 |
 | Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
 | Deterministic | ✅ byte-identical | ❌ (output varied) | ✅ | ✅ | ✅ | ✅ |
-| Median latency | **18 ms** | 767 ms | **15,943 ms** | 7 ms | 1 ms | <1 ms |
-| Mean savings | **81.0%** | 63.4% | 11.7% | 48.4% | 49.6% | 55.2% |
+| Median latency | **10.75 ms** | 591 ms † | 8,675 ms | 4.5 ms | 0.5 ms | <1 ms |
+| Mean savings | **81.0%** | 63.6% | 10.7% | 48.4% | 49.6% | 55.2% |
 | Structured dumps (git/npm/yaml) | 30–95% saved | 0–12% | 0% | 0% | 49–56% | 0–61% |
 | Cost per call | **$0** | API-priced input | $0 | $0 | $0 | $0 |
 | Runs fully local | ✅ | ❌ (context leaves box) | ✅ | ✅ | ✅ | ✅ |
@@ -51,9 +51,12 @@ paragraph-retrieval baseline. JEV and Laya arms skipped on the
   exclusion cues. Tameru encodes all three, which is why it's the only
   arm at 0 leaks.
 - **Semantic caution has a price.** Laya (the free local model) barely
-  dropped anything — 0–19% savings on most cases at 15–70 s per case on
-  CPU. A 1K-param decision model is a weak judge on adversarial corpora;
-  it exists to prove the path works offline, not to win.
+  dropped anything — ~0–11% savings per case at an 8.7 s median on CPU,
+  and ~56 minutes on the 4,000-block case. A 1K-param decision model is a
+  weak judge on adversarial corpora; it exists to prove the path works
+  offline, not to win.
+
+† The JEV arm ran 11 cases — `large_doc_perf` skipped for API cost.
 - **Fixed-ratio crushers can't read.** Headroom's TextCrusher landed at
   ~50% savings on virtually every case — a target-ratio squeeze, not
   content-aware selection. It dropped gold on `git_log` and `travis_yaml`

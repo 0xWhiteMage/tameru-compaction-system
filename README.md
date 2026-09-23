@@ -14,7 +14,7 @@
 </p>
 
 > **Named from 貯める (*tameru*) — Japanese for *"to save, store up, or accumulate."***  
-> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. v1.3 adds typed-edge dependency restoration, a SelfCompact-style timing gate, plan-aware multi-query, qualifier-aware structured trimming, a derived-objective mode for empty queries, and a context-calibrated compression ceiling — without external LLM calls, GPU dependencies, or runtime dependencies.
+> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. v1.3 adds typed-edge dependency restoration, a SelfCompact-style timing gate, plan-aware multi-query, qualifier-aware structured trimming, a derived-objective mode for empty queries, and a context-calibrated compression ceiling — all without external LLM calls, GPU dependencies, or runtime dependencies in the deterministic extract path (the opt-in `summarise` tier is the only exception, and it falls back to `extract` on any LLM failure).
 
 ---
 
@@ -97,10 +97,11 @@ exits through the same fail-open door — the caller's exact bytes come back.
 | 6 | **Self-check verifier** | output → receipt | entity/keyword/critical-line recall; risk floor; `selection` path + `sufficiency_restored` reporting | low recall → risk raised, never silently |
 
 Cross-cutting gates sit beside the pipeline rather than inside it: the
-**timing gate** (transcript adapter) decides *whether to compact at all* —
-pending tool calls and stuck loops suppress the whole pass; the **secrets
-screen** can veto CCR persistence; the **recursion guard** refuses to compact
-Tameru's own output.
+**timing gate** (transcript adapter) suppresses the *Tameru prune pass* on
+pending tool calls and stuck loops — in Hermes it gates
+`apply_extractive_tool_prune` only, not any other compaction the host may
+run; the **secrets screen** can veto CCR persistence; the **recursion
+guard** refuses to compact Tameru's own output.
 
 ---
 
@@ -247,12 +248,14 @@ TextCrusher, and a stdlib TF-IDF retrieval baseline:
 
 | Metric | **Tameru (v1.3.0)** | lcc → JEV | lcc → Laya | lcc mechanical | headroom | TF-IDF |
 |---|---|---|---|---|---|---|
-| Gold retention | **12/12** | 11/11 | 11/11 | 12/12 | 10/12 | 11/12 |
+| Gold retention | **12/12** | 11/11 † | 12/12 | 12/12 | 10/12 | 11/12 |
 | Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
 | Deterministic | ✅ byte-identical | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Median latency | **18 ms** | 767 ms | 15,943 ms | 7 ms | 1 ms | <1 ms |
-| Mean savings | **81.0%** | 63.4% | 11.7% | 48.4% | 49.6% | 55.2% |
+| Median latency | **10.75 ms** | 591 ms † | 8,675 ms | 4.5 ms | 0.5 ms | <1 ms |
+| Mean savings | **81.0%** | 63.6% | 10.7% | 48.4% | 49.6% | 55.2% |
 | Cost / runs local | **$0 / ✅** | API-priced / ❌ | $0 / ✅ | $0 / ✅ | $0 / ✅ | $0 / ✅ |
+
+† JEV skipped the 4,000-block perf case (API cost); Laya ran it — ~56 min on CPU.
 
 The decisive gap isn't relevance — most judges kept the gold. It's
 **admissibility**: every non-Tameru arm kept planted distractors,
@@ -456,11 +459,11 @@ Second research round (v1.3.0 — lcc internals, SelfCompact, PAACE, TPC, Compac
   long JSON string whose cut tail carries a qualifier cue — a longer safe
   value beats a shorter misleading one.
 - **Timing gate (transcript adapter)**: `tameru.transcript.trajectory_gate`
-  suppresses pruning mid-derivation (pending tool calls) and on stuck
-  loops (the last 3 assistant turns issued identical calls — diagnose,
-  don't erase evidence). On by default via
+  suppresses the Tameru prune pass mid-derivation (pending tool calls) and
+  on stuck loops (the last 3 assistant turns issued identical calls —
+  diagnose, don't erase evidence). On by default via
   `apply_extractive_tool_prune(..., timing_gate=True)`; it only ever
-  suppresses.
+  suppresses that prune step — downstream host compaction is unaffected.
 - **Plan-aware multi-query**: `compress_context(ctx, [q1, q2, ...])` scores
   blocks against the union of current + planned tasks.
 - **Derived objective** (`derive_query=True`, CLI `--derive-query`): an
