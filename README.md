@@ -277,6 +277,28 @@ Tested across 17 standardized production-QA fixtures containing multi-hop reason
 | **Abstractive LLM Summarizer** | 7 / 17 (41.2%) | ~2,500 ms | $1.50–$3.00 | No (Stochastic) | Auxiliary LLM API |
 | **Uncompressed Baseline** | 17 / 17 (100%) | 0 ms | Full Tokens | Yes | None |
 
+### ⚔️ Live comparison vs TypeSafe JEV (`jev-1.13.0`, Sep 2026)
+
+Same corpus, measured via [`benchmarks/jev_comparison.py`](benchmarks/jev_comparison.py)
+with [LCC](https://github.com/lucasmartins-ai/lcc) as the JEV client
+(typed `noul` keep-probability questions — the real System One protocol):
+
+| Metric | **Tameru (v1.2.1)** | lcc → JEV | lcc mechanical |
+|---|---|---|---|
+| Gold retention | **12/12** | 11/11 | 12/12 |
+| Forbidden distractors kept | **0** | **5** | 5 |
+| Deterministic | ✅ byte-identical | ❌ | ✅ |
+| Median latency | **10 ms** | 568 ms | 8 ms |
+| Mean savings | **81.0%** | 63.8% | 48.4% |
+| Cost / runs local | **$0 / ✅** | API-priced / ❌ | $0 / ✅ |
+
+The decisive gap isn't relevance — both judges kept the gold. It's
+**admissibility**: JEV kept every planted distractor, including a stale
+superseded config and `EXCLUDED-HOST` inside a block labeled "UNTRUSTED
+SAMPLE", plus ~0% savings on structured logs. A keep-probability judge
+has no trust, supersession, or line-record model; Tameru encodes all
+three. Full table and methodology: **[benchmarks/COMPARISON.md](benchmarks/COMPARISON.md)**.
+
 ---
 
 ## 🧪 The Production QA Battery (v3)

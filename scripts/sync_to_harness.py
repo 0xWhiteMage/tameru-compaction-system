@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import py_compile
 import re
-import shutil
 import sys
 from pathlib import Path
 
@@ -78,11 +77,14 @@ def main(argv: list[str] | None = None) -> int:
     changed = []
     for src in sources:
         dst = target / src.name
-        if dst.is_file() and dst.read_bytes() == src.read_bytes():
+        # Normalize to LF so vendored files match git blobs regardless of
+        # the platform checkout's line-ending convention.
+        payload = src.read_bytes().replace(b"\r\n", b"\n")
+        if dst.is_file() and dst.read_bytes().replace(b"\r\n", b"\n") == payload:
             continue
         changed.append(src.name)
         if not args.dry_run:
-            shutil.copyfile(src, dst)
+            dst.write_bytes(payload)
 
     # Remove stale vendored modules that no longer exist upstream.
     stale = [

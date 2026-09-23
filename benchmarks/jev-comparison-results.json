@@ -1,0 +1,445 @@
+{
+  "lexical_distractor": {
+    "tameru": {
+      "savings_pct": 96.78,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 11.6,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 96.6,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 51.0,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 96.6,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 1073.0,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 8,
+      "deterministic": true
+    }
+  },
+  "multi_hop_chain": {
+    "tameru": {
+      "savings_pct": 95.02,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 9.3,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 98.41,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 9.0,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 98.41,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 1147.7,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 8,
+      "deterministic": true
+    }
+  },
+  "current_value": {
+    "tameru": {
+      "savings_pct": 91.11,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 6.5,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 93.09,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 6.5,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 93.09,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 568.2,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 3,
+      "deterministic": true
+    }
+  },
+  "negation_override": {
+    "tameru": {
+      "savings_pct": 92.47,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 5.4,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 94.82,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 5.9,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 94.82,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 618.2,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 3,
+      "deterministic": true
+    }
+  },
+  "no_marker_keeps_both": {
+    "tameru": {
+      "savings_pct": 89.41,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 4.5,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 94.35,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 5.1,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 94.35,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 586.8,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 3,
+      "deterministic": true
+    }
+  },
+  "evidence_chain_holdout": {
+    "tameru": {
+      "savings_pct": 95.86,
+      "gold": "3/3",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 12.8,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 98.44,
+      "gold": "3/3",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 15.9,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 98.44,
+      "gold": "3/3",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 1640.9,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 10,
+      "deterministic": true
+    }
+  },
+  "git_log": {
+    "tameru": {
+      "savings_pct": 95.38,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 54.4,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 0.0,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 17.5,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 0.0,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 439.8,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 1,
+      "deterministic": true
+    }
+  },
+  "npm_log": {
+    "tameru": {
+      "savings_pct": 30.5,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 11.6,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 0.0,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 5.7,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 0.0,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 501.8,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 1,
+      "deterministic": true
+    }
+  },
+  "jp_musubi": {
+    "tameru": {
+      "savings_pct": 34.55,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 152.4,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 5.57,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 11.2,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 20.79,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 548.8,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 4,
+      "deterministic": false
+    }
+  },
+  "travis_yaml": {
+    "tameru": {
+      "savings_pct": 64.1,
+      "gold": "2/2",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 8.6,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 0.0,
+      "gold": "2/2",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 5.0,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 12.3,
+      "gold": "2/2",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 476.2,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 1,
+      "deterministic": true
+    }
+  },
+  "large_doc_perf": {
+    "tameru": {
+      "savings_pct": 99.51,
+      "gold": "0/0",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 603.3,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 0.0,
+      "gold": "0/0",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 3710.4,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    }
+  },
+  "excluded_sample": {
+    "tameru": {
+      "savings_pct": 87.61,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 0,
+      "latency_ms": 5.4,
+      "deterministic": true,
+      "fail_open": false,
+      "provider": "tameru-extract"
+    },
+    "lcc-mech": {
+      "savings_pct": 0.0,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 5.0,
+      "provider": "mechanical",
+      "degraded": false,
+      "guarantee": "none",
+      "jev_model": null,
+      "calls": 0,
+      "deterministic": true
+    },
+    "lcc-jev": {
+      "savings_pct": 92.79,
+      "gold": "1/1",
+      "gold_ok": true,
+      "forbid_leaks": 1,
+      "latency_ms": 559.8,
+      "provider": "jev",
+      "degraded": false,
+      "guarantee": "judged",
+      "jev_model": "jev-1.13.0",
+      "calls": 3,
+      "deterministic": true
+    }
+  }
+}

@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added `selection` to every receipt: the selector path that decided the keep-set (`needle`, `floor`, `floor-saturated`, `line-records`, `fixed`, or a `*-failopen` variant), so silent degradation is visible to callers.
 - Added `scripts/sync_to_harness.py`: one-command vendored sync — copies `src/tameru` modules (excluding `__init__.py`) into a harness plugin dir and stamps the plugin manifest version, so vendored integrations track releases without manual copying.
 - Added `harnesses/README.md`: the integration contract for agent harnesses (pip API, CLI shell-out, vendored plugin) with file ownership rules.
+- Added `benchmarks/jev_comparison.py`: live head-to-head harness vs the TypeSafe JEV provider (via LCC's `compact_context` client) on the production-QA corpus — measures gold retention, forbidden-distractor leakage, savings, latency, determinism, and provider degradation. Results in `benchmarks/COMPARISON.md`.
 
 ### Changed
 - In `mode="fixed"`, pinned blocks are now immovable and excluded from the `budget_ratio` base — the ratio governs compressible tokens only. Behavior is unchanged when no pins are present.
