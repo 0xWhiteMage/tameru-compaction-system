@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added `benchmarks/threshold_sweep.py`: Waxmell-style operating-point replay — sweeps `budget_ratio` across the QA corpus and reports gold retention, distractor leaks, savings, and restorations per ratio so operating points are chosen on evidence.
 - Added multilingual battery cases `zh_needle` (Chinese) and `ar_needle` (Arabic) to `run_battery.py` — the Lost-in-Compression audit showed English-tuned compressors silently fail on CJK/RTL scripts.
 - Added two more benchmark arms to `jev_comparison.py`: headroom-ai's Rust `TextCrusher` and a stdlib TF-IDF baseline, plus the Laya local-model arm (`convaiinnovations/laya-multilingual`).
+- Added **context-calibrated ceiling** to `inspect_compressibility()` (Compactor-style): reports `guaranteed_savings_pct` — the duplicate-surplus share removable with zero judgement — and `ceiling_class` (`dedupe-heavy`/`moderate`/`sparse`) so callers see how much headroom a context actually has.
+- Added opt-in **derived objective** (`derive_query=True`, CLI `--derive-query`): when the query is empty or generic, infers a conservative task descriptor from the document's recurring rare terms (deterministic frequency statistics over a bounded strided sample). Receipts mark `query_source: "derived"` + `derived_terms`, the compression-risk floor becomes `medium`, and documents with no stable term structure keep the normal empty-query fail-open. Propagates through `strategy="auto"`.
 
 ### Fixed
 - None (verified `estimate_tokens` already prices CJK/no-space scripts correctly at ~1 token/char via `token_units` — the Headroom a35fe86 bug does not apply).

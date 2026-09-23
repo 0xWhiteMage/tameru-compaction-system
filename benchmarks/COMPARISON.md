@@ -1,4 +1,4 @@
-# Benchmark Comparison — Tameru v1.2.0 vs the field
+# Benchmark Comparison — Tameru v1.3.0 vs the field
 
 All numbers from this repo's fixtures and production QA battery unless noted.
 "Gold retention" = required gold strings present in compressed output.
@@ -28,7 +28,7 @@ keep-probability questions to System One, the same protocol
 paragraph-retrieval baseline. JEV and Laya arms skipped on the
 4,000-block perf case (API cost / CPU time for zero information).
 
-| Metric | **Tameru v1.2.1** | lcc → JEV | lcc → Laya (local) | lcc mechanical | headroom TextCrusher | TF-IDF baseline |
+| Metric | **Tameru v1.3.0** | lcc → JEV | lcc → Laya (local) | lcc mechanical | headroom TextCrusher | TF-IDF baseline |
 |---|---|---|---|---|---|---|
 | Gold retention | **12/12** | 11/11 | 11/11 | 12/12 | 10/12 | 11/12 |
 | Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
@@ -114,8 +114,9 @@ Design choices track published results:
 ## Reproduce
 
 ```bash
-PYTHONPATH=src python -m pytest -q  # 272 passed, 9 skipped standalone
-python benchmarks/run_battery.py   # adversarial battery + timing table
+PYTHONPATH=src python -m pytest -q  # 326 passed, 14 skipped standalone
+python benchmarks/run_battery.py    # adversarial battery + timing table (15/15)
 python benchmarks/jev_comparison.py # Tameru vs JEV-provider arms
-                                   # (needs lcc + TYPESAFE_API_KEY for the JEV arm)
+                                    # (needs lcc + TYPESAFE_API_KEY for the JEV arm)
+python benchmarks/threshold_sweep.py # operating-point replay across ratios
 ```

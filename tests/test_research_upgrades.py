@@ -7,7 +7,11 @@ from __future__ import annotations
 
 import unittest
 
-from tameru.compress_context import _crush_value, compress_context
+from tameru.compress_context import (
+    _crush_value,
+    compress_context,
+    inspect_compressibility,
+)
 from tameru.transcript import apply_extractive_tool_prune, trajectory_gate
 
 FILLER = (
@@ -191,6 +195,93 @@ class MultiQueryTests(unittest.TestCase):
     def test_empty_list_behaves_like_empty_query(self):
         r = compress_context("Some text here.", [], ccr=False)
         self.assertTrue(r.fail_open)
+
+
+class InspectCeilingTests(unittest.TestCase):
+    def test_guaranteed_savings_reflects_duplicate_surplus(self):
+        # Half the bytes are surplus copies of the same line pattern.
+        dup = "worker heartbeat ok status nominal" * 8
+        uniq = "unique fact alpha-beta-gamma checkpoint"
+        ctx = "\n".join([dup, uniq] * 200)
+        info = inspect_compressibility(ctx, "anything")
+        self.assertGreater(info["guaranteed_savings_pct"], 0.3)
+        self.assertEqual(info["ceiling_class"], "dedupe-heavy")
+
+    def test_sparse_context_reports_sparse_ceiling(self):
+        # Digit-normalisation collapses "line 5" and "line 7" — genuinely
+        # distinct lines need varying alpha content, not varying numbers.
+        ctx = "\n".join(
+            f"entry {chr(97 + i % 26)}{chr(97 + (i // 26) % 26)}{chr(97 + (i // 676) % 26)} content differs per line for real"
+            for i in range(300)
+        )
+        info = inspect_compressibility(ctx, "anything")
+        self.assertEqual(info["ceiling_class"], "sparse")
+        self.assertLess(info["guaranteed_savings_pct"], 0.15)
+
+    def test_early_returns_carry_schema(self):
+        for ctx in ("tiny", ""):
+            info = inspect_compressibility(ctx, "q")
+            self.assertIn("guaranteed_savings_pct", info)
+            self.assertIn("ceiling_class", info)
+
+
+class DeriveQueryTests(unittest.TestCase):
+    def _themed_doc(self):
+        # Rare terms recur in a minority of paragraph-blocks: thematic.
+        # Blocks are paragraph-sized (segment_blocks granularity), so the
+        # theme must concentrate in blocks to be selectable.
+        parts = []
+        for i in range(30):
+            parts.append(
+                f"generic worker paragraph {chr(97 + i % 26)}{chr(97 + (i // 26) % 26)} "
+                f"with plain filler text spanning a couple of lines\n"
+                f"and a second filler sentence for block weight"
+            )
+            if i % 6 == 0:
+                parts.append(
+                    "zephyr fluxgate checkpoint flush completed\n"
+                    "fluxgate readings nominal zephyr steady"
+                )
+        return "\n\n".join(parts)
+
+    def test_derived_query_compresses_instead_of_failing_open(self):
+        ctx = self._themed_doc()
+        plain = compress_context(ctx, "", ccr=False)
+        self.assertTrue(plain.fail_open)
+        r = compress_context(ctx, "", ccr=False, derive_query=True)
+        rec = r.receipt
+        self.assertEqual(rec.get("query_source"), "derived")
+        self.assertIn("zephyr", rec.get("derived_terms", []))
+        self.assertFalse(r.fail_open)
+
+    def test_no_term_structure_keeps_fail_open(self):
+        # Every line unique, no recurring rare terms → derivation yields
+        # nothing and the normal empty-query fail-open stands.
+        ctx = "\n".join(f"line {i} token{i}x" for i in range(80))
+        r = compress_context(ctx, "", ccr=False, derive_query=True)
+        self.assertTrue(r.fail_open)
+        self.assertEqual(r.receipt.get("query_source"), "caller")
+
+    def test_distinctive_query_untouched(self):
+        ctx = self._themed_doc()
+        r = compress_context(ctx, "zephyr-kx status", ccr=False, derive_query=True)
+        self.assertEqual(r.receipt.get("query_source"), "caller")
+        self.assertEqual(r.receipt.get("derived_terms"), [])
+
+    def test_derived_risk_floor_medium(self):
+        ctx = self._themed_doc()
+        r = compress_context(ctx, "", ccr=False, derive_query=True)
+        if not r.fail_open:
+            self.assertIn(r.compression_risk, ("medium", "high"))
+
+    def test_derive_is_deterministic(self):
+        ctx = self._themed_doc()
+        a = compress_context(ctx, "", ccr=False, derive_query=True)
+        b = compress_context(ctx, "", ccr=False, derive_query=True)
+        self.assertEqual(a.compressed_text, b.compressed_text)
+        self.assertEqual(
+            a.receipt.get("derived_terms"), b.receipt.get("derived_terms")
+        )
 
 
 if __name__ == "__main__":

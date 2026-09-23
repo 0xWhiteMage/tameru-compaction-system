@@ -2,10 +2,10 @@
 
 <p align="center">
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.2.0-blue.svg?style=for-the-badge" alt="Version 1.2.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.3.0-blue.svg?style=for-the-badge" alt="Version 1.3.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-272%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
-  <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/production_QA_v3-13%2F13_green-brightgreen.svg?style=for-the-badge" alt="Production QA v3"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-326%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
+  <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/production_QA-15%2F15_green-brightgreen.svg?style=for-the-badge" alt="Production QA"></a>
   <a href="#-head-to-head-competitive-benchmark"><img src="https://img.shields.io/badge/large_case-%3C1.2s-purple.svg?style=for-the-badge" alt="Large-case latency"></a>
   <a href="#-core-design-tenets"><img src="https://img.shields.io/badge/determinism-100%25_reproducible-blueviolet.svg?style=for-the-badge" alt="Determinism"></a>
   <a href="#-why-tameru-the-problem-with-abstractive-summarization"><img src="https://img.shields.io/badge/dependencies-stdlib_only-orange.svg?style=for-the-badge" alt="Zero Dependencies"></a><br><br>
@@ -14,7 +14,7 @@
 </p>
 
 > **Named from 貯める (*tameru*) — Japanese for *"to save, store up, or accumulate."***  
-> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. v1.2 adds bounded industrial preflight, Unicode-aware logical-order matching across 20 script/language families, exact format adapters, direction/security profiles, and configurable scale limits—without external LLM calls, GPU dependencies, or runtime dependencies.
+> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. v1.3 adds typed-edge dependency restoration, a SelfCompact-style timing gate, plan-aware multi-query, qualifier-aware structured trimming, a derived-objective mode for empty queries, and a context-calibrated compression ceiling — without external LLM calls, GPU dependencies, or runtime dependencies.
 
 ---
 
@@ -59,23 +59,11 @@ Traditional context reduction approaches fail in mission-critical agent workflow
 
 **Tameru operates purely extractively.** Instead of generating new summary prose, it scores, filters, and retains original, verbatim text blocks while eliminating noise, repetition, and dead weight.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                             RAW CONTEXT (500 KB)                            │
-│  [Build Logs (80k)]  [Git History (40k)]  [JSON (120k)]  [Diffs (60k)] ...   │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                        ⚡ TAMERU ENGINE (<1.2s at 500 KB, $0)
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      COMPACTED EXTRACTIVE VIEW (12 KB)                      │
-│  ✓ Exact error trace (Lines 42-45 preserved verbatim)                       │
-│  ✓ Active query entity references retained                                  │
-│  ✓ Structural JSON/YAML skeleton preserved                                  │
-│  ✓ 97.6% token reduction | 0 hallucinations | 100% byte-deterministic       │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+| | Raw context (500 KB) | ⚡ Tameru | Compacted extractive view (12 KB) |
+|---|---|---|---|
+| **Contents** | Build logs (80k) · git history (40k) · JSON APIs (120k) · diffs (60k) · … | Query-aware keep/drop scoring — **no generated text** | Exact error trace (lines 42–45, verbatim) · query entity references · JSON/YAML skeleton |
+| **Cost** | full tokens | <1.2 s at 500 KB, $0 | 97.6% token reduction |
+| **Guarantees** | — | deterministic, fail-open, reversible | 0 hallucinations · 100% byte-identical output |
 
 ---
 
@@ -96,53 +84,23 @@ Tameru adheres to a strict engineering contract:
 
 ## 🏗️ Architectural Blueprint & Data Flow
 
-```
-                                  USER QUERY
-                                      │
-                                      ▼
-                      ┌───────────────────────────────┐
-                      │ 1. INDUSTRIAL PREFLIGHT       │
-                      │    • Size / Line / Bidi Limits│
-                      │    • Script / Direction Profile│
-                      │    • Format Detection         │
-                      └───────────────┬───────────────┘
-                                      │
-                                      ▼
-                      ┌───────────────────────────────┐
-                      │ 2. EXACT FORMAT ADAPTERS      │
-                      │    • JSON/NDJSON / CSV / TSV  │
-                      │    • Markdown / YAML / XML    │
-                      │    • HTML / SQL / INI / OCR   │
-                      └───────────────┬───────────────┘
-                                      │
-                                      ▼
-                      ┌───────────────────────────────┐
-                      │ 3. MULTI-SIGNAL SCORING       │
-                      │    • Sublinear BM25-IDF       │
-                      │    • Entity Density Anchoring │
-                      │    • Temporal Supersession    │
-                      │    • Trust & Injection Flags  │
-                      └───────────────┬───────────────┘
-                                      │
-                                      ▼
-                      ┌───────────────────────────────┐
-                      │ 4. GRAPH CLOSURE & RESCUE     │
-                      │    • Multi-Hop BFS Expansion  │
-                      │    • Counterfactual Overlap   │
-                      │    • Error-Signal Invariant   │
-                      └───────────────┬───────────────┘
-                                      │
-                                      ▼
-                      ┌───────────────────────────────┐
-                      │ 5. REVERSIBLE ARC CITATIONS   │
-                      │    • Content-Addressed Hashes │
-                      │    • Lost-in-Middle Reorder   │
-                      │    • Local CCR Persistence    │
-                      └───────────────┬───────────────┘
-                                      │
-                                      ▼
-                             COMPACTED CONTEXT
-```
+One pass, six stages. Every stage is deterministic; every unsafe condition
+exits through the same fail-open door — the caller's exact bytes come back.
+
+| # | Stage | Input → output | Key work | On failure |
+|---|---|---|---|---|
+| 1 | **Industrial preflight** | raw text + query → profile | size/line/record/bidi limits; script, direction & format detection | hard limits → return original |
+| 2 | **Exact format adapters** | profiled text → framed blocks | JSON/NDJSON, CSV/TSV, Markdown, YAML, XML/HTML, SQL, INI, OCR — line-record and subtree framing | malformed structure → generic scorer fallback |
+| 3 | **Multi-signal scoring** | blocks → scored blocks | sublinear BM25-IDF, entity-density anchoring, trust & injection flags, temporal supersession | ambiguous/low-signal → fail-open later |
+| 4 | **Graph closure & rescue** | scored blocks → keep-set | multi-hop BFS on rare shared terms; dependency closure restores qualifier/definition blocks a kept block needs | counterfactual overlap → `ambiguous-failopen` |
+| 5 | **Reversible emission** | keep-set → compacted text | ARC citations `[A hash] "head"…"tail"`, lost-in-middle reorder, CCR write (skipped on secrets) | CCR write fails → pointer removed, text still valid |
+| 6 | **Self-check verifier** | output → receipt | entity/keyword/critical-line recall; risk floor; `selection` path + `sufficiency_restored` reporting | low recall → risk raised, never silently |
+
+Cross-cutting gates sit beside the pipeline rather than inside it: the
+**timing gate** (transcript adapter) decides *whether to compact at all* —
+pending tool calls and stuck loops suppress the whole pass; the **secrets
+screen** can veto CCR persistence; the **recursion guard** refuses to compact
+Tameru's own output.
 
 ---
 
@@ -272,7 +230,7 @@ Tested across 17 standardized production-QA fixtures containing multi-hop reason
 
 | Compaction System | Gold Fact Recall | Latency (avg) | Cost / 1k Ops | Deterministic | Dependencies |
 |---|---|---|---|---|---|
-| **⚡ Tameru (v1.2.0)** | **17 / 17 (100%)** | **4–956 ms observed; <1.2 s at 500 KB** | **$0.00** | **100% Yes** | **Python stdlib** |
+| **⚡ Tameru (v1.3.0)** | **17 / 17 (100%)** | **4–956 ms observed; <1.2 s at 500 KB** | **$0.00** | **100% Yes** | **Python stdlib** |
 | **BM25 / Vector RAG Baseline** | 12 / 17 (70.6%) | ~400 ms | $0.02–$0.05 | No | Vector DB + Embeddings |
 | **Abstractive LLM Summarizer** | 7 / 17 (41.2%) | ~2,500 ms | $1.50–$3.00 | No (Stochastic) | Auxiliary LLM API |
 | **Uncompressed Baseline** | 17 / 17 (100%) | 0 ms | Full Tokens | Yes | None |
@@ -287,7 +245,7 @@ local Laya decision model (`laya-multilingual`, CPU) and mechanical
 fallback, [headroom-ai](https://github.com/headroomlabs-ai/headroom)'s Rust
 TextCrusher, and a stdlib TF-IDF retrieval baseline:
 
-| Metric | **Tameru (v1.2.1)** | lcc → JEV | lcc → Laya | lcc mechanical | headroom | TF-IDF |
+| Metric | **Tameru (v1.3.0)** | lcc → JEV | lcc → Laya | lcc mechanical | headroom | TF-IDF |
 |---|---|---|---|---|---|---|
 | Gold retention | **12/12** | 11/11 | 11/11 | 12/12 | 10/12 | 11/12 |
 | Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
@@ -322,13 +280,12 @@ Run the full battery:
 python -m unittest discover -s tests
 ```
 
-Current v1.2.0 release verification:
+Current v1.3.0 release verification:
 
-- **272 passed, 9 skipped** with pytest; **281 passed, 9 skipped** with unittest discovery.
-- **13/13** production-QA cases passed; the 500 KB citation case saved **99.5%** under the **1.2 s** gate (**675–956 ms** observed across independent runs).
-- **53/53** dedicated industrial Unicode, language, format, property, pipeline and scale tests passed.
-- Vendored Hermes package: **53/53** industrial tests plus **15/15** explicit rollout tests passed through actual plugin discovery.
-- Independent final GPT-5.4 release review: **PASS**, with no must-fix blockers.
+- **326 passed, 14 skipped** with pytest.
+- **15/15** production-QA battery cases passed (`benchmarks/run_battery.py`), including Japanese, Chinese and Arabic needle cases with zero forbidden-distractor leaks.
+- `benchmarks/threshold_sweep.py`: every `budget_ratio` operating point from 0.1–0.7 keeps all gold with **0 leaks** — a clean 77%→25% savings frontier.
+- Six-arm live comparison (Tameru / JEV / Laya / mechanical / headroom / TF-IDF): only arm with **12/12 gold + 0 leaks + deterministic output** — table below.
 
 ---
 
@@ -359,14 +316,18 @@ owner-only permissions where the platform supports POSIX modes.
 
 ## 🔌 Hermes Context-Engine Plugin Integration
 
-Tameru integrates directly into **Hermes Agent** as a pluggable context engine:
+Tameru integrates into **Hermes Agent** as a pluggable context engine —
+no Hermes source changes:
 
-1. Shipped under `plugins/context_engine/tameru/`.
-2. Activated in `config.yaml`:
-   ```yaml
-   context:
-     engine: tameru
-   ```
+- **Standalone plugin** —
+  [`0xWhiteMage/hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin):
+  copy into `~/.hermes/plugins/tameru/` or `pip install` it (auto-discovered
+  via the `hermes_agent.plugins` entry point).
+- Activate in `config.yaml`:
+  ```yaml
+  context:
+    engine: tameru
+  ```
 
 ---
 
@@ -479,7 +440,7 @@ Further ecosystem-research hardening (deterministic, always-on unless noted):
   falls back to `extract` on any LLM failure, so the worst case is one
   extra deterministic pass. CLI: `--strategy auto`.
 
-Second research round (v1.3.0 — lcc internals, SelfCompact, PAACE):
+Second research round (v1.3.0 — lcc internals, SelfCompact, PAACE, TPC, Compactor):
 
 - **Dependency closure (sufficiency restore)**: after selection, a dropped
   block that shares a rare term with a kept block AND carries a qualifier
@@ -502,6 +463,17 @@ Second research round (v1.3.0 — lcc internals, SelfCompact, PAACE):
   suppresses.
 - **Plan-aware multi-query**: `compress_context(ctx, [q1, q2, ...])` scores
   blocks against the union of current + planned tasks.
+- **Derived objective** (`derive_query=True`, CLI `--derive-query`): an
+  empty/generic query normally fails open; with derivation the engine infers
+  a conservative task descriptor from the document's own recurring rare
+  terms (deterministic frequency statistics, bounded sampling). Receipts
+  mark `query_source: "derived"` + `derived_terms`, the risk floor becomes
+  `medium`, and documents with no stable term structure still fail open.
+- **Compression ceiling**: `inspect_compressibility()` now reports
+  `guaranteed_savings_pct` + `ceiling_class` (`dedupe-heavy` / `moderate` /
+  `sparse`) — the share removable by pure dedupe before any relevance
+  judgement, so callers can see how much headroom a given context actually
+  has.
 - **`benchmarks/threshold_sweep.py`**: replays the QA corpus across
   `budget_ratio` values and reports the gold/leak/savings frontier —
   operating points chosen on evidence, not inherited.
@@ -533,6 +505,8 @@ see **[harnesses/README.md](harnesses/README.md)** for the full contract:
 All notable changes, version milestones, and migration notes are tracked in **[CHANGELOG.md](CHANGELOG.md)**.
 
 Highlights:
+- **v1.3.0**: Typed-edge dependency restoration, transcript timing gate, plan-aware multi-query, qualifier-aware trim refusal, `derive_query`, compression-ceiling reporting, threshold-sweep tool, multilingual battery.
+- **v1.2.1**: JEV-inspired hardening — `pin_recent`, `min_savings_ratio`, `degraded_view`, secrets screen, recursion guard, compressible-subset budgeting, CCR recall tooling, selection receipts, `strategy="auto"`.
 - **v1.2.0**: Bounded industrial preflight, logical-order Unicode across 20 script/language families, ten exact format adapters, deterministic receipt hashes and large-input SLOs.
 - **v1.1.1**: Comprehensive factual-retention, fail-open, cache-progression, public-metrics, and current-Hermes integration hardening.
 - **v1.1.0**: Production QA hardening, Docker progress recognition, CCR security & expiry sweep, bounded decision caching, loopback summary boundary.
@@ -558,13 +532,25 @@ Tameru's design was inspired and sharpened by studying remarkable open-source pr
 - **[dsh-jev-prune](https://github.com/yangyu666/dsh-jev-prune)** — Never degrade silently: report which selector path decided, and hard-exclude mutating actions by rule rather than by score.
 - **[dsh-jev-pre-compaction](https://github.com/wjw66/dsh-jev-pre-compaction)** — Scan for secrets before archiving originals; lookahead pressure bands.
 - **[pi-lcm](https://github.com/codexstar69/pi-lcm)** — Persistent append-only memory with self-serve grep/describe/expand recall tools.
+- **[lcc / Local Context Compiler](https://github.com/lucasmartins-ai/lcc)** (MIT) — Typed context-graph closure, post-drop sufficiency verification, qualifier-aware safe trimming, and a well-built JEV/local-model client used as our benchmark harness.
+- **[headroom](https://github.com/headroomlabs-ai/headroom)** — Closest production analog: extractive crushers + reversible CCR + cache alignment; its CJK token-pricing fix prompted our (passing) audit.
+- **[Waxmell114514/jev-compaction](https://github.com/Waxmell114514/jev-compaction)** — Score-only reversible compaction and the threshold-replay tuning methodology behind `benchmarks/threshold_sweep.py`.
+- **[SelfCompact](https://github.com/tianjianl/selfcompact)** — The closed-unit/progress/not-stuck compaction-timing rubric, ported as `tameru.transcript.trajectory_gate`.
 - **Claude Code compaction teardown** ([anneheartrecord/claude-code-docs](https://github.com/anneheartrecord/claude-code-docs)) — Progressive micro→session→full tiers, recursion guards on compaction agents, and circuit breakers after repeated failures.
 
 ### Research Lineage
-- **LongLLMLingua** (Microsoft, ACL 2024) — Question-aware coarse-to-fine compression and positional attention reordering.
+- **LongLLMLingua / LLMLingua-2** (Microsoft, ACL 2024) — Question-aware compression and the preserve/discard token-classification formulation.
 - **Lost in the Middle** (Liu et al., 2023) — Positional attention decay in decoder transformers.
 - **NoLiMa** (2025) — Long-context lexical distractor blind spots.
+- **Context Rot** (Chroma, 2025) — The empirical case for deliberate compression: models degrade as input grows even on simple tasks.
+- **Provence** (2025) — "Zero sentences kept" as a legal answer; pruning and ranking as one operation.
+- **PAACE** (2025) — Plan-aware selection for next-k tasks, ported as multi-query union scoring.
+- **TPC** (2025) — Task-descriptor objectives for question-free compression, ported deterministically as `derive_query`.
+- **Compactor** (2025) — Context-calibrated compression ceilings, ported as `inspect_compressibility` guaranteed-savings reporting.
+- **Lost in Compression** (2026 audit) — Cross-lingual failure modes of English-tuned compressors; drove the multilingual battery.
 - **ARC Citations** — Reversible content-addressed reference anchors.
+
+Full source-by-source digest: **[docs/RESEARCH.md](docs/RESEARCH.md)**.
 
 ---
 
