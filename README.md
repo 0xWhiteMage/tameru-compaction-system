@@ -405,6 +405,52 @@ block decisions. Prefix stability intentionally outranks a later fixed-mode
 frozen prefix and reports `freeze cache capacity reached` once the cache can no
 longer learn new blocks.
 
+Additional caller controls, inspired by transcript-level pruners:
+
+- `pin_recent=N` unconditionally keeps the opening block and the newest N
+  blocks — a working-context floor that no selector, freeze, supersession, or
+  trust path may evict.
+- `min_savings_ratio=R` (default `0.10`) fails open when achieved savings fall
+  below `R`, so callers can decline a compaction that did not shrink enough;
+  `0` disables the floor.
+- `degraded_view=True` rescues input size-limit breaches (`max_input_chars`,
+  `max_lines`): instead of failing open, each oversized block is scored on a
+  bounded head+tail view while emitted output stays byte-exact. Safety limits
+  (bidi controls, malformed surrogates, oversize query) remain hard failures,
+  and work stays bounded by a 4× grace factor over the configured limits. The
+  receipt reports `degraded_view: true` and the risk floor becomes `medium`.
+  CLI: `--degraded-view`.
+
+Further ecosystem-research hardening (deterministic, always-on unless noted):
+
+- **Secrets screen**: if the input contains probable credentials (private
+  key blocks, `AKIA…`, GitHub/Slack/`sk-` tokens, JWTs, long quoted
+  `password`/`api_key`-style assignments), the CCR store is skipped —
+  archival would persist secrets to disk at rest. The result reports
+  `ccr: None`, emits no `[CC-Retrieve:]` marker, and the reason list notes
+  `ccr skipped: secret material detected`.
+- **Recursion guard**: input already carrying Tameru output markers
+  (`<compressed_context`, `[CC-Retrieve:`) returns unchanged with
+  `policy_name="local-noop-recursion"` — compacting compacted output would
+  nest wrappers and could drop the pointer that makes earlier drops
+  recoverable.
+- **Compressible-subset budgeting**: in `mode="fixed"`, pinned blocks are
+  immovable and no longer consume the `budget_ratio` they outrank; the
+  ratio governs only compressible tokens. With no pins, budgeting is
+  unchanged.
+- **CCR recall tooling**: `list_ccr(ccr_dir, offset=, limit=)` lists live
+  records newest-first (hash, stored_at, ttl, chars, preview), and
+  `retrieve(hash, offset=, limit=)` paginates large originals.
+- **Selection transparency**: every receipt reports `selection` — which
+  selector path decided the keep-set (`needle`, `floor`,
+  `floor-saturated`, `line-records`, `fixed`, or a `*-failopen` variant),
+  so silent degradation is visible to callers.
+- `strategy="auto"` runs the progressive ladder: `extract` first, then
+  escalate to `summarise` only when extraction fails open (ambiguity,
+  saturated floors, `min_savings_ratio` undershoot). `summarise` still
+  falls back to `extract` on any LLM failure, so the worst case is one
+  extra deterministic pass. CLI: `--strategy auto`.
+
 ---
 
 ## 📜 Changelog
@@ -432,6 +478,12 @@ Tameru's design was inspired and sharpened by studying remarkable open-source pr
 - **[leanctx](https://github.com/jia-gao/leanctx)** (MIT) — Loss-tolerance routing and structural verbatim code invariants.
 - **[TwoTrim](https://github.com/overseek944/twotrim)** (Apache-2.0) — Lost-in-the-middle mitigation and attention edge anchoring.
 - **[clipforge-PAKT](https://github.com/sriinnu/clipforge-PAKT)** (MIT) — Pre-flight compressibility inspection.
+- **[fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction)** (MIT) — Positional pinning of edge turns, caller-side savings-worthiness gates, and judging on a degraded state while emitting exact spans.
+- **[dsh-argp](https://github.com/yoza10635/dsh-argp)** — Compressible-subset retention budgeting: immovable atoms are excluded from the ratio's base.
+- **[dsh-jev-prune](https://github.com/yangyu666/dsh-jev-prune)** — Never degrade silently: report which selector path decided, and hard-exclude mutating actions by rule rather than by score.
+- **[dsh-jev-pre-compaction](https://github.com/wjw66/dsh-jev-pre-compaction)** — Scan for secrets before archiving originals; lookahead pressure bands.
+- **[pi-lcm](https://github.com/codexstar69/pi-lcm)** — Persistent append-only memory with self-serve grep/describe/expand recall tools.
+- **Claude Code compaction teardown** ([anneheartrecord/claude-code-docs](https://github.com/anneheartrecord/claude-code-docs)) — Progressive micro→session→full tiers, recursion guards on compaction agents, and circuit breakers after repeated failures.
 
 ### Research Lineage
 - **LongLLMLingua** (Microsoft, ACL 2024) — Question-aware coarse-to-fine compression and positional attention reordering.

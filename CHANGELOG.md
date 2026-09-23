@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Added `pin_recent`: unconditional positional pinning of the opening block and the newest N blocks, exempt from selection, freeze, supersession, and trust-filter paths.
+- Added `min_savings_ratio` (default `0.10`): caller-configurable savings floor — compaction that shrinks less than the ratio fails open, and `0` disables the floor.
+- Added opt-in `degraded_view`: on input size-limit breaches (`max_input_chars`, `max_lines`), blocks are scored on a bounded head+tail view while emitted output stays byte-exact. Safety limits (bidi controls, malformed surrogates, oversize query) remain hard failures; total work stays bounded by a 4× grace factor. Receipts report `degraded_view: true`.
+- Added CLI flags `--pin-recent`, `--min-savings-ratio`, and `--degraded-view`.
+- Added `strategy="auto"` progressive ladder: runs `extract` first and escalates to `summarise` only when extraction fails open (ambiguity, saturated floors, savings-floor undershoot). `summarise` still falls back to `extract` on any LLM failure. CLI: `--strategy auto`.
+- Added a secrets screen before CCR archival: inputs containing probable credentials (private key blocks, `AKIA…`, GitHub/Slack/`sk-` tokens, JWTs, long quoted secret-style assignments) are never persisted to the CCR store. Compression proceeds normally; the result reports `ccr: None`, emits no `[CC-Retrieve:]` marker, and notes `ccr skipped: secret material detected` in `reasons`.
+- Added a recursion guard: input already carrying Tameru output markers (`<compressed_context`, `[CC-Retrieve:`) returns unchanged with `policy_name="local-noop-recursion"`, preventing wrapper nesting and protecting the retrieval pointer that makes earlier drops recoverable.
+- Added CCR recall tooling: `list_ccr(ccr_dir, offset=, limit=)` lists live records newest-first with hash/stored_at/ttl/chars/preview metadata, and `retrieve(hash, offset=, limit=)` paginates large originals.
+- Added `selection` to every receipt: the selector path that decided the keep-set (`needle`, `floor`, `floor-saturated`, `line-records`, `fixed`, or a `*-failopen` variant), so silent degradation is visible to callers.
+
+### Changed
+- In `mode="fixed"`, pinned blocks are now immovable and excluded from the `budget_ratio` base — the ratio governs compressible tokens only. Behavior is unchanged when no pins are present.
+
 ---
 
 ## [1.2.0] - 2026-08-31
