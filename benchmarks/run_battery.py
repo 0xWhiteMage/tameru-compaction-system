@@ -57,6 +57,10 @@ CASES = [
     dict(name="git_log", ctx=(FIX / "shape-git-log.txt").read_text(encoding="utf-8"), q="which commit stopped deleted profiles coming back?", gold=["2038d4034d"], forbid=[], min_savings=25),
     dict(name="npm_log", ctx=(FIX / "shape-npm-log.txt").read_text(encoding="utf-8"), q="which playwright version did npm exec request?", gold=["playwright@1.55.0"], forbid=[], min_savings=10),
     dict(name="jp_musubi", ctx=(FIX / "shape-jp-musubi.txt").read_text(encoding="utf-8"), q="Ideogram 4のDiTは何層ですか？", gold=["34層"], forbid=[], min_savings=45),
+    # Lost-in-Compression lesson: compressors tuned on English silently fail
+    # on other scripts — CJK and RTL corpora need their own retention gates.
+    dict(name="zh_needle", ctx=("\n\n".join(f"归档段落 {i}：常规状态记录，没有相关的操作事实。" for i in range(10))) + "\n\n月面仓库使用备份主机 DB-ZH-42，延迟低于 90 毫秒。\n\n" + ("\n\n".join(f"归档段落 {i}：常规状态记录，没有相关的操作事实。" for i in range(10, 20))), q="月面仓库的备份主机是哪一台？", gold=["DB-ZH-42"], forbid=[], min_savings=60),
+    dict(name="ar_needle", ctx=("\n\n".join(f"فقرة الأرشيف {i}: سجل حالة روتيني بدون حقائق تشغيلية." for i in range(10))) + "\n\nمضيف النسخ الاحتياطي هو DB-AR-77 مع زمن استجابة أقل من 90 مللي ثانية.\n\n" + ("\n\n".join(f"فقرة الأرشيف {i}: سجل حالة روتيني بدون حقائق تشغيلية." for i in range(10, 20))), q="ما هو مضيف النسخ الاحتياطي؟", gold=["DB-AR-77"], forbid=[], min_savings=60),
     dict(name="travis_yaml", ctx=(FIX / "shape-yaml-travis.txt").read_text(encoding="utf-8"), q="what apt distro and compiler language is this travis job on?", gold=["dist: xenial", "language: c"], forbid=["libenchant-dev"], min_savings=30),
     # --- scale / robustness ---
     # Same 4,000-record ceiling as tests/test_production_qa_v3.py; that test

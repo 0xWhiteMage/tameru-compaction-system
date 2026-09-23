@@ -1,7 +1,7 @@
 {
   "engine_path": "src/tameru/compress_context.py",
-  "passed": 13,
-  "total": 13,
+  "passed": 15,
+  "total": 15,
   "rows": [
     {
       "name": "lexical_distractor",
@@ -9,7 +9,7 @@
       "failed_gates": [],
       "saved": 96.7,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 15.6,
       "chars": 175,
       "missing_gold": [],
       "leaked_forbid": []
@@ -31,7 +31,7 @@
       "failed_gates": [],
       "saved": 90.1,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 15.6,
       "chars": 166,
       "missing_gold": [],
       "leaked_forbid": []
@@ -64,7 +64,7 @@
       "failed_gates": [],
       "saved": 95.6,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 15.6,
       "chars": 295,
       "missing_gold": [],
       "leaked_forbid": []
@@ -73,10 +73,10 @@
       "name": "git_log",
       "ok": true,
       "failed_gates": [],
-      "saved": 95.4,
+      "saved": 94.0,
       "fail_open": false,
-      "ms": 46.9,
-      "chars": 371,
+      "ms": 62.5,
+      "chars": 487,
       "missing_gold": [],
       "leaked_forbid": []
     },
@@ -86,7 +86,7 @@
       "failed_gates": [],
       "saved": 31.0,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 15.6,
       "chars": 3192,
       "missing_gold": [],
       "leaked_forbid": []
@@ -95,10 +95,32 @@
       "name": "jp_musubi",
       "ok": true,
       "failed_gates": [],
-      "saved": 52.8,
+      "saved": 57.5,
       "fail_open": false,
-      "ms": 140.6,
-      "chars": 5251,
+      "ms": 171.9,
+      "chars": 5193,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "zh_needle",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 90.9,
+      "fail_open": false,
+      "ms": 31.2,
+      "chars": 60,
+      "missing_gold": [],
+      "leaked_forbid": []
+    },
+    {
+      "name": "ar_needle",
+      "ok": true,
+      "failed_gates": [],
+      "saved": 88.6,
+      "fail_open": false,
+      "ms": 15.6,
+      "chars": 125,
       "missing_gold": [],
       "leaked_forbid": []
     },
@@ -108,7 +130,7 @@
       "failed_gates": [],
       "saved": 64.7,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 15.6,
       "chars": 966,
       "missing_gold": [],
       "leaked_forbid": []
@@ -119,7 +141,7 @@
       "failed_gates": [],
       "saved": 99.5,
       "fail_open": false,
-      "ms": 593.8,
+      "ms": 1015.6,
       "chars": 2467,
       "missing_gold": [],
       "leaked_forbid": []
@@ -130,7 +152,7 @@
       "failed_gates": [],
       "saved": 0.0,
       "fail_open": true,
-      "ms": 62.5,
+      "ms": 109.4,
       "chars": 61832,
       "missing_gold": [],
       "leaked_forbid": []
@@ -141,7 +163,7 @@
       "failed_gates": [],
       "saved": 87.3,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 15.6,
       "chars": 232,
       "missing_gold": [],
       "leaked_forbid": []

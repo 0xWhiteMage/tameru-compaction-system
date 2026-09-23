@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.3.0] - 2026-09-23
+
+### Added
+- Added typed-edge **dependency closure** (`_dependency_closure`): after selection, a dropped block that shares a rare term with a kept block AND carries a qualifier/negation cue (`except/unless/only/however/without/until/provided that/if`) or a definition cue (`is defined as/refers to/stands for/namely`) is restored — dropping it would change the meaning of what survives. lcc-style `QUALIFIES`/`DEPENDS_ON` edges, fully deterministic, capped at 8 restorations, never resurrects trust-risk or frozen-drop blocks, and supersession can still evict stale restorations. Fixed mode restores only within the caller's hard budget. Receipts report `sufficiency_restored: [block ids]`.
+- Added **qualifier-aware trim refusal** in `_crush_value`: a long JSON string value whose truncated tail carries a qualifier cue is kept whole — a longer safe value beats a shorter misleading one.
+- Added `trajectory_gate()` in `tameru.transcript` — SelfCompact-style timing rubric, deterministic version: compaction is suppressed when tool calls are pending (`pending-tool-calls`, mid-derivation) or when the last 3 assistant turns issued identical calls (`stuck-loop`, diagnose rather than erase evidence). Wired into `apply_extractive_tool_prune(..., timing_gate=True)`; the gate only ever suppresses, so it defaults on.
+- Added **plan-aware multi-query**: `compress_context` accepts `query` as a string or an iterable of strings (current + next-k planned tasks); all query terms score as a union.
+- Added `benchmarks/threshold_sweep.py`: Waxmell-style operating-point replay — sweeps `budget_ratio` across the QA corpus and reports gold retention, distractor leaks, savings, and restorations per ratio so operating points are chosen on evidence.
+- Added multilingual battery cases `zh_needle` (Chinese) and `ar_needle` (Arabic) to `run_battery.py` — the Lost-in-Compression audit showed English-tuned compressors silently fail on CJK/RTL scripts.
+- Added two more benchmark arms to `jev_comparison.py`: headroom-ai's Rust `TextCrusher` and a stdlib TF-IDF baseline, plus the Laya local-model arm (`convaiinnovations/laya-multilingual`).
+
+### Fixed
+- None (verified `estimate_tokens` already prices CJK/no-space scripts correctly at ~1 token/char via `token_units` — the Headroom a35fe86 bug does not apply).
+
+---
+
 ## [1.2.1] - 2026-09-23
 
 ### Added

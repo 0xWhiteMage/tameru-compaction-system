@@ -45,19 +45,23 @@ design. For measured head-to-head numbers see `benchmarks/COMPARISON.md`.
 | **CompactionRL** (2026) | PPO trains task-execution + summary-generation jointly across compacted rollouts (+7pts SWE-bench Verified). | Training-side, out of scope — but proof the industry treats compaction policy as learnable; keeps our deterministic layer defensible as the *verifier/floor* under any learned policy. |
 | **Memory-in-Agents surveys** (Dec 2025, 2505.00675, 2404.13501) | Memory ops taxonomy: consolidation, updating, indexing, **forgetting**, retrieval, **compression** — compression is one of six ops, not the whole story. | Positions Tameru correctly: we're the compression op; CCR is indexing+retrieval; TTL sweep is forgetting; `list_ccr`/paginate complete the op set. |
 
-## Ranked candidate upgrades (next round)
+## Ranked candidate upgrades — status after the second round (v1.3.0)
 
-Ordered by (expected gain × fit) / cost. All keep determinism + local-first.
+Shipped or verified:
 
-1. **CJK-aware token pricing** — `_approx_tokens` uses chars/4; CJK is ~1.0–1.7 tok/char (cl100k) / 0.6–0.8 (Qwen) vs 0.25 Latin — we under-count ~4–6×, so budget gates fire late on CJK-heavy input (same bug Headroom fixed in PR a35fe86). Small change, real correctness.
-2. **Graph-closure rescue** (from lcc `graph.closure`) — build typed edges (supersession/contradiction/qualifier/shared-entity) deterministically; after selection, pull in blocks linked to kept blocks. Strengthens multi-hop retention without model calls.
-3. **Sufficiency restore pass** (from lcc `sufficiency`) — post-selection check: did we drop a block that a kept block references? Restore it, record `sufficiency_restored` in receipt. Deterministic version of their verifier.
-4. **Qualifier-aware trim refusal** (from lcc `trim`) — when `degraded_view` or any partial view would cut across except/unless/only/not/until/if cues, refuse the trim and keep whole. A cut can invert meaning ("safe for adults" → "safe, except…").
-5. **Threshold-replay tuner** (from Waxmell) — a `benchmarks/` tool that replays `log_dir` receipts at different `min_savings_ratio`/floor values and reports "would-kept vs would-dropped" per case, so operating points are chosen on evidence.
-6. **Compaction-timing gate** (from SelfCompact) — in `tameru.transcript`, suppress compaction when the trajectory is mid-derivation or stuck-looping; compact only at closed-unit boundaries.
-7. **Plan-aware multi-query** (from PAACE) — accept `query=[current, *next_steps]`; score blocks against the union. Straightforward API extension.
-8. **Multilingual battery expansion** (from Lost-in-Compression) — add CJK/ar/fr cases with `forbid` strings; we already pass Japanese but coverage is thin.
-9. **Numeric quantization adapter** (from CompactPrompt) — lossy CSV/table crusher behind `lossy_ok`; deferred until a real use-case asks for it.
-10. **CCR hierarchy** (from pi-lcm DAG) — chained/hierarchical originals for repeated compaction of the same material. Bigger lift; defer.
+1. ~~**CJK-aware token pricing**~~ — **already correct**: `estimate_tokens` uses `token_units`, which emits one unit per no-space-script char (~1 tok/char, matching cl100k 1.0–1.7 and conservative vs Qwen 0.6–0.8). The Headroom a35fe86 bug does not apply to us. Verified 2026-09-23.
+2. ~~**Graph-closure rescue + sufficiency restore**~~ — **shipped** as `_dependency_closure`: rare-term shared entity + qualifier/definition cue → restore. Cap 8, never trust-risk/frozen-drop, budget-bound in fixed mode. `receipt["sufficiency_restored"]`.
+3. ~~**Qualifier-aware trim refusal**~~ — **shipped** in `_crush_value` (the only emission-side cut): tails containing qualifier cues keep the value whole. `degraded_view` needed no change — it only bounds the *scoring* view; emitted spans are always full.
+4. ~~**Threshold-replay tuner**~~ — **shipped** as `benchmarks/threshold_sweep.py` (budget_ratio sweep → gold/leaks/savings frontier).
+5. ~~**Compaction-timing gate**~~ — **shipped** as `tameru.transcript.trajectory_gate` + `timing_gate` param on `apply_extractive_tool_prune` (pending-tool-calls / stuck-loop suppression).
+6. ~~**Plan-aware multi-query**~~ — **shipped**: `compress_context(query=[...])` unions terms across planned tasks.
+7. ~~**Multilingual battery expansion**~~ — **shipped**: `zh_needle` + `ar_needle` cases, battery now 15/15.
+
+Still deferred:
+
+8. **Numeric quantization adapter** (CompactPrompt) — lossy CSV/table crusher behind `lossy_ok`; wait for a real use-case.
+9. **CCR hierarchy** (pi-lcm DAG) — chained/hierarchical originals; bigger lift.
+10. **Context-calibrated ceiling** (Compactor paper) — `inspect_compressibility` could estimate a per-context max-compression bound; research-y, defer.
+11. **Derived-objective path** (TPC paper) — when `query` is empty, derive a conservative task descriptor instead of failing open. Delicate: must stay deterministic and not weaken the empty-query contract. Defer.
 
 Deliberately skipped: KV-cache methods (different layer), RL/fine-tuned compressors (breaks zero-dep determinism — revisit only as opt-in extra like `summarise`), soft-prompt/GIST methods (non-extractive, loses byte-exactness).

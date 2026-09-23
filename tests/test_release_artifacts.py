@@ -37,7 +37,7 @@ class ReleaseArtifactTests(unittest.TestCase):
     def test_package_and_plugin_versions_match(self):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         version = project["project"]["version"]
-        self.assertEqual(version, "1.2.1")
+        self.assertEqual(version, "1.3.0")
         for name in ("tameru", "extractive"):
             metadata = (BUNDLE / name / "plugin.yaml").read_text(encoding="utf-8")
             self.assertIn(f"version: {version}", metadata)

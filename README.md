@@ -479,6 +479,35 @@ Further ecosystem-research hardening (deterministic, always-on unless noted):
   falls back to `extract` on any LLM failure, so the worst case is one
   extra deterministic pass. CLI: `--strategy auto`.
 
+Second research round (v1.3.0 — lcc internals, SelfCompact, PAACE):
+
+- **Dependency closure (sufficiency restore)**: after selection, a dropped
+  block that shares a rare term with a kept block AND carries a qualifier
+  cue (`except`, `unless`, `only`, `however`, `until`, `if`, …) or a
+  definition cue (`is defined as`, `refers to`, `namely`, …) is restored —
+  cutting it would invert the meaning of what survives (e.g. a kept
+  "throughput is nominal" whose dropped sibling says "except during
+  maintenance"). Capped at 8 restorations, never resurrects trust-risk or
+  frozen-drop blocks, supersession can still evict stale restorations, and
+  `mode="fixed"` restores only within the caller's hard budget. Receipts
+  report `sufficiency_restored: [block ids]`.
+- **Qualifier-aware trim refusal**: `_crush_value` no longer truncates a
+  long JSON string whose cut tail carries a qualifier cue — a longer safe
+  value beats a shorter misleading one.
+- **Timing gate (transcript adapter)**: `tameru.transcript.trajectory_gate`
+  suppresses pruning mid-derivation (pending tool calls) and on stuck
+  loops (the last 3 assistant turns issued identical calls — diagnose,
+  don't erase evidence). On by default via
+  `apply_extractive_tool_prune(..., timing_gate=True)`; it only ever
+  suppresses.
+- **Plan-aware multi-query**: `compress_context(ctx, [q1, q2, ...])` scores
+  blocks against the union of current + planned tasks.
+- **`benchmarks/threshold_sweep.py`**: replays the QA corpus across
+  `budget_ratio` values and reports the gold/leak/savings frontier —
+  operating points chosen on evidence, not inherited.
+- **Multilingual coverage**: `zh_needle` + `ar_needle` battery cases —
+  compression tuned on English silently fails other scripts.
+
 ### Harness integration
 
 Tameru ships harness-agnostic. Three integration paths, cheapest first —
