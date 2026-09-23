@@ -4,6 +4,9 @@
 Same corpus as benchmarks/run_battery.py. Arms:
   tameru        — compress_context (deterministic extract)
   lcc-mech      — lcc compact_context(provider="mechanical") — free lexical fallback
+  tfidf         — stdlib TF-IDF paragraph-retrieval baseline
+  headroom      — headroom-ai Rust TextCrusher (extractive BM25)
+  lcc-laya      — lcc compact_context(provider="laya") — local decision model
   lcc-jev       — lcc compact_context(provider="jev") — TypeSafe System One
 
 JEV requires a key: TYPESAFE_API_KEY env var or ~/.config/lcc/typesafe.key.
@@ -41,6 +44,20 @@ try:
     _LCC_OK = True
 except ImportError:  # pragma: no cover - lcc optional
     _LCC_OK = False
+
+try:
+    import laya  # noqa: F401,E402 - lcc's local decision-model backend
+
+    _LAYA_OK = True
+except ImportError:  # pragma: no cover - laya optional
+    _LAYA_OK = False
+
+try:
+    from headroom._core import TextCrusher  # noqa: E402 - headroom-ai Rust ext
+
+    _HEADROOM_OK = True
+except ImportError:  # pragma: no cover - headroom-ai optional
+    _HEADROOM_OK = False
 
 
 def _jev_key_present() -> bool:
@@ -121,6 +138,76 @@ def run_lcc(case: dict, provider: str) -> dict:
     return row
 
 
+def run_headroom(case: dict) -> dict:
+    """headroom-ai's Rust TextCrusher — extractive BM25 prose compression."""
+    tc = TextCrusher()
+    t0 = time.perf_counter()
+    res = tc.compress(case["ctx"], case["q"])
+    ms = (time.perf_counter() - t0) * 1000
+    again = tc.compress(case["ctx"], case["q"])
+    out = res.compressed
+    hits, total = _gold(out, case.get("gold", []))
+    return {
+        "savings_pct": _savings(case["ctx"], out),
+        "gold": f"{hits}/{total}",
+        "gold_ok": hits == total,
+        "forbid_leaks": _leaks(out, case.get("forbid", [])),
+        "latency_ms": round(ms, 1),
+        "deterministic": out == again.compressed,
+        "provider": "headroom-textcrusher",
+    }
+
+
+def _tfidf_terms(text: str) -> dict[str, float]:
+    import re
+    from collections import Counter
+
+    toks = re.findall(r"[a-zA-Z0-9][a-zA-Z0-9_.\-/]{2,}", text.lower())
+    return Counter(toks)
+
+
+def run_tfidf(case: dict) -> dict:
+    """Classical retrieval baseline: keep every paragraph sharing a TF-IDF
+    term with the query (plus the first block), verbatim order preserved."""
+    import math
+    import re
+
+    blocks = [b for b in re.split(r"\n\s*\n", case["ctx"]) if b.strip()]
+    q = _tfidf_terms(case["q"])
+    tfs = [_tfidf_terms(b) for b in blocks]
+    df: dict[str, int] = {}
+    for tf in tfs:
+        for t in tf:
+            df[t] = df.get(t, 0) + 1
+    n = max(1, len(blocks))
+
+    def score(tf: dict[str, float]) -> float:
+        s = 0.0
+        for t, qc in q.items():
+            idf = math.log(1 + n / (1 + df.get(t, 0)))
+            s += qc * idf * tf.get(t, 0)
+        return s
+
+    kept = [i for i, tf in enumerate(tfs) if i == 0 or score(tf) > 0]
+
+    def render() -> str:
+        return "\n\n".join(blocks[i] for i in kept)
+
+    t0 = time.perf_counter()
+    out = render()
+    ms = (time.perf_counter() - t0) * 1000
+    hits, total = _gold(out, case.get("gold", []))
+    return {
+        "savings_pct": _savings(case["ctx"], out),
+        "gold": f"{hits}/{total}",
+        "gold_ok": hits == total,
+        "forbid_leaks": _leaks(out, case.get("forbid", [])),
+        "latency_ms": round(ms, 1),
+        "deterministic": True,  # pure function of the input
+        "provider": "tfidf-baseline",
+    }
+
+
 def main() -> int:
     if not _LCC_OK:
         print("lcc not installed: pip install -e ../lcc", file=sys.stderr)
@@ -128,21 +215,77 @@ def main() -> int:
     _bridge_key_to_env()
     have_jev = _jev_key_present() and bool((__import__("os").environ.get("TYPESAFE_API_KEY") or "").strip())
 
+    if _LCC_OK:
+        # lcc's _no_network_guard monkeypatches socket.connect process-wide
+        # during every tiktoken count. Its JEV scorer runs batches on a
+        # ThreadPoolExecutor, so a concurrent count can kill an in-flight API
+        # call (TokenizerNetworkBlocked inside urllib). Disabling the exact
+        # path makes lcc use its documented heuristic estimator instead —
+        # honest approximate counts, no global socket patching.
+        try:
+            import lcc.token_budget.counters as _counters
+
+            _counters._HAS_TIKTOKEN = False
+        except Exception:  # pragma: no cover
+            pass
+
+    if _LAYA_OK and _LCC_OK:
+        # lcc constructs a fresh LayaClient (full HF model load) per
+        # compact_context call. Cache one client so the arm measures scoring,
+        # not repeated model init. Scoring itself still runs live per call.
+        _laya_client: list = []
+
+        def _cached_laya_client(request: RelevanceCompactionRequest):
+            if not _laya_client:
+                from lcc.relevance.laya import LayaClient
+
+                _laya_client.append(
+                    LayaClient(
+                        model=request.laya_model,
+                        device=request.laya_device,
+                        context_limit=request.laya_context_limit,
+                        temperature=request.laya_temperature or None,
+                    )
+                )
+            return _laya_client[0]
+
+        import lcc.relevance.compactor as _compactor
+
+        _compactor._resolve_laya_client = _cached_laya_client
+
     # lcc requires a non-empty objective; JEV arm skips the 4k-block perf
-    # doc (API cost for zero information gain).
+    # doc (API cost for zero information gain) and so does Laya — thousands
+    # of per-block CPU inferences buys no information either.
     cases = [c for c in CASES if c["q"].strip()]
     jev_skip = {"large_doc_perf"}
+    laya_skip = {"large_doc_perf"}
 
-    arms = ["tameru", "lcc-mech"] + (["lcc-jev"] if have_jev else [])
-    if not have_jev:
+    arms = ["tameru", "lcc-mech", "tfidf"]
+    if _HEADROOM_OK:
+        arms.append("headroom")
+    if _LAYA_OK:
+        arms.append("lcc-laya")
+    if have_jev:
+        arms.append("lcc-jev")
+    else:
         print("NOTE: no TYPESAFE_API_KEY — JEV arm skipped\n")
+    if not _HEADROOM_OK:
+        print("NOTE: headroom-ai not installed — headroom arm skipped\n")
+    if not _LAYA_OK:
+        print("NOTE: laya not installed — lcc-laya arm skipped\n")
 
     results: dict[str, dict[str, dict]] = {}
     for case in cases:
         name = case["name"]
-        results[name] = {"tameru": run_tameru(case), "lcc-mech": run_lcc(case, "mechanical")}
+        rows = {"tameru": run_tameru(case), "lcc-mech": run_lcc(case, "mechanical")}
+        rows["tfidf"] = run_tfidf(case)
+        if _HEADROOM_OK:
+            rows["headroom"] = run_headroom(case)
+        if _LAYA_OK and name not in laya_skip:
+            rows["lcc-laya"] = run_lcc(case, "laya")
         if have_jev and name not in jev_skip:
-            results[name]["lcc-jev"] = run_lcc(case, "jev")
+            rows["lcc-jev"] = run_lcc(case, "jev")
+        results[name] = rows
         print(f"  {name} done", flush=True)
 
     out_path = Path(__file__).with_name("jev-comparison-results.json")

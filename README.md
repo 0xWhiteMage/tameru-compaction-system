@@ -277,27 +277,33 @@ Tested across 17 standardized production-QA fixtures containing multi-hop reason
 | **Abstractive LLM Summarizer** | 7 / 17 (41.2%) | ~2,500 ms | $1.50–$3.00 | No (Stochastic) | Auxiliary LLM API |
 | **Uncompressed Baseline** | 17 / 17 (100%) | 0 ms | Full Tokens | Yes | None |
 
-### ⚔️ Live comparison vs TypeSafe JEV (`jev-1.13.0`, Sep 2026)
+### ⚔️ Live comparison — six arms, one corpus (`jev-1.13.0`, Sep 2026)
 
-Same corpus, measured via [`benchmarks/jev_comparison.py`](benchmarks/jev_comparison.py)
-with [LCC](https://github.com/lucasmartins-ai/lcc) as the JEV client
-(typed `noul` keep-probability questions — the real System One protocol):
+Same 12-case QA corpus, measured via
+[`benchmarks/jev_comparison.py`](benchmarks/jev_comparison.py). Arms: real
+TypeSafe JEV via [LCC](https://github.com/lucasmartins-ai/lcc) (typed
+`noul` keep-probability questions — the real System One protocol), its
+local Laya decision model (`laya-multilingual`, CPU) and mechanical
+fallback, [headroom-ai](https://github.com/headroomlabs-ai/headroom)'s Rust
+TextCrusher, and a stdlib TF-IDF retrieval baseline:
 
-| Metric | **Tameru (v1.2.1)** | lcc → JEV | lcc mechanical |
-|---|---|---|---|
-| Gold retention | **12/12** | 11/11 | 12/12 |
-| Forbidden distractors kept | **0** | **5** | 5 |
-| Deterministic | ✅ byte-identical | ❌ | ✅ |
-| Median latency | **10 ms** | 568 ms | 8 ms |
-| Mean savings | **81.0%** | 63.8% | 48.4% |
-| Cost / runs local | **$0 / ✅** | API-priced / ❌ | $0 / ✅ |
+| Metric | **Tameru (v1.2.1)** | lcc → JEV | lcc → Laya | lcc mechanical | headroom | TF-IDF |
+|---|---|---|---|---|---|---|
+| Gold retention | **12/12** | 11/11 | 11/11 | 12/12 | 10/12 | 11/12 |
+| Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
+| Deterministic | ✅ byte-identical | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Median latency | **18 ms** | 767 ms | 15,943 ms | 7 ms | 1 ms | <1 ms |
+| Mean savings | **81.0%** | 63.4% | 11.7% | 48.4% | 49.6% | 55.2% |
+| Cost / runs local | **$0 / ✅** | API-priced / ❌ | $0 / ✅ | $0 / ✅ | $0 / ✅ | $0 / ✅ |
 
-The decisive gap isn't relevance — both judges kept the gold. It's
-**admissibility**: JEV kept every planted distractor, including a stale
-superseded config and `EXCLUDED-HOST` inside a block labeled "UNTRUSTED
-SAMPLE", plus ~0% savings on structured logs. A keep-probability judge
-has no trust, supersession, or line-record model; Tameru encodes all
-three. Full table and methodology: **[benchmarks/COMPARISON.md](benchmarks/COMPARISON.md)**.
+The decisive gap isn't relevance — most judges kept the gold. It's
+**admissibility**: every non-Tameru arm kept planted distractors,
+including a stale superseded config and `EXCLUDED-HOST` inside a block
+labeled "UNTRUSTED SAMPLE". A keep-score — JEV probability, Laya decision,
+BM25, or TF-IDF — has no trust, supersession, or exclusion model; Tameru
+encodes all three. Full table, per-case detail, and methodology:
+**[benchmarks/COMPARISON.md](benchmarks/COMPARISON.md)**. Ecosystem +
+paper digest: **[docs/RESEARCH.md](docs/RESEARCH.md)**.
 
 ---
 

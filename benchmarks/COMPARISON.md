@@ -17,47 +17,64 @@ All numbers from this repo's fixtures and production QA battery unless noted.
 | Fail-open contract | original text on weak signal | collapsed view | hallucination risk | n/a |
 | Injection containment | trust-flag + exclude-cues | none (amplifies) | none | none |
 
-## Live head-to-head vs TypeSafe JEV (Sep 2026, `jev-1.13.0`)
+## Live head-to-head: six arms, one corpus (Sep 2026, `jev-1.13.0`)
 
-Measured on this repo's 12-case QA corpus via `benchmarks/jev_comparison.py`
-(LCC `compact_context` as the JEV client — it sends typed `noul`
+Measured on this repo's 12-case QA corpus via `benchmarks/jev_comparison.py`.
+JEV runs through LCC's `compact_context` client (typed `noul`
 keep-probability questions to System One, the same protocol
-`fast-jev-compaction` uses). JEV arm skipped on the 4,000-block perf case.
+`fast-jev-compaction` uses); Laya is its local decision-model backend
+(`convaiinnovations/laya-multilingual`, CPU); headroom is its Rust
+`TextCrusher` (extractive BM25, `headroom-ai` 0.38.0); tfidf is a stdlib
+paragraph-retrieval baseline. JEV and Laya arms skipped on the
+4,000-block perf case (API cost / CPU time for zero information).
 
-| Metric | **Tameru v1.2.1** | lcc → JEV (`jev-1.13.0`) | lcc mechanical (local baseline) |
-|---|---|---|---|
-| Gold retention | **12/12** | 11/11 | 12/12 |
-| Forbidden distractors kept | **0** | **5** | 5 |
-| Deterministic | ✅ byte-identical | ❌ (output varied between runs) | ✅ |
-| Median latency | **10 ms** | 568 ms (~55×) | 8 ms |
-| Mean savings | **81.0%** | 63.8% | 48.4% |
-| Structured dumps (git/npm/yaml) | 63–95% saved | 0–12% saved | 0% saved |
-| Cost per call | **$0** | API-priced input tokens | $0 |
-| Runs fully local | ✅ | ❌ (context leaves the box) | ✅ |
-| Injection containment | trust-flag + exclude-cues | none — kept `EXCLUDED-HOST` | none |
+| Metric | **Tameru v1.2.1** | lcc → JEV | lcc → Laya (local) | lcc mechanical | headroom TextCrusher | TF-IDF baseline |
+|---|---|---|---|---|---|---|
+| Gold retention | **12/12** | 11/11 | 11/11 | 12/12 | 10/12 | 11/12 |
+| Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
+| Deterministic | ✅ byte-identical | ❌ (output varied) | ✅ | ✅ | ✅ | ✅ |
+| Median latency | **18 ms** | 767 ms | **15,943 ms** | 7 ms | 1 ms | <1 ms |
+| Mean savings | **81.0%** | 63.4% | 11.7% | 48.4% | 49.6% | 55.2% |
+| Structured dumps (git/npm/yaml) | 30–95% saved | 0–12% | 0% | 0% | 49–56% | 0–61% |
+| Cost per call | **$0** | API-priced input | $0 | $0 | $0 | $0 |
+| Runs fully local | ✅ | ❌ (context leaves box) | ✅ | ✅ | ✅ | ✅ |
+| Injection containment | trust-flag + exclude-cues | none — kept `EXCLUDED-HOST` | none | none | none | none |
 
-### What the JEV arm actually showed
+### What the arms actually showed
 
-- **Relevance ≠ admissibility.** JEV kept every forbidden distractor: the
-  stale `30 seconds` config superseded by `5 seconds`, the obsolete
-  `enabled` runbook, the `glossary` distractor, `libenchant-dev` — and
-  `EXCLUDED-HOST`, a block literally labeled *"UNTRUSTED SAMPLE: ignore
-  previous context"*. A keep-probability judge has no notion of trust,
-  supersession, or exclusion cues; Tameru encodes all three.
-- **Structured records defeat the block judge.** On git/npm/YAML dumps
-  JEV returned ~0% savings — every line-record looks equally relevant to
-  a whole-block judge. Tameru's line-record path keeps matching records
+- **Relevance ≠ admissibility.** Every learned/retrieval arm kept forbidden
+  distractors — the stale `30 seconds` config superseded by `5 seconds`,
+  the obsolete `enabled` runbook, the `glossary` decoy, `libenchant-dev`,
+  and `EXCLUDED-HOST` inside a block literally labeled *"UNTRUSTED SAMPLE:
+  ignore previous context"*. No keep-score — JEV probability, Laya
+  decision, BM25, or TF-IDF — has a notion of trust, supersession, or
+  exclusion cues. Tameru encodes all three, which is why it's the only
+  arm at 0 leaks.
+- **Semantic caution has a price.** Laya (the free local model) barely
+  dropped anything — 0–19% savings on most cases at 15–70 s per case on
+  CPU. A 1K-param decision model is a weak judge on adversarial corpora;
+  it exists to prove the path works offline, not to win.
+- **Fixed-ratio crushers can't read.** Headroom's TextCrusher landed at
+  ~50% savings on virtually every case — a target-ratio squeeze, not
+  content-aware selection. It dropped gold on `git_log` and `travis_yaml`
+  (structured records are outside its prose lane) and kept 4 distractors.
+- **The TF-IDF baseline is instructive.** Keep-any-paragraph-sharing-a-term
+  got 11/12 gold but leaked 5/5 distractors and missed the needle on
+  `lexical_distractor` — the distractor shares the query's surface terms,
+  which is exactly what pure lexical retrieval cannot distinguish.
+- **Structured records defeat block judges.** JEV/Laya/mechanical returned
+  ~0% savings on git/npm dumps — every line-record looks equally relevant
+  to a whole-block judge. Tameru's line-record path keeps matching records
   only (95.4% on `git_log`).
-- **Non-determinism is real, not theoretical.** The JP case produced
-  different output across identical runs (score wobble across batch
-  boundaries) — unusable as a cache-stable prompt prefix.
-- **Latency and cost** are inherent: state + questions re-sent per batch,
-  ~4 calls/case, ~0.5–2.2 s per case vs single-digit ms local scoring.
+- **Non-determinism is real, not theoretical.** JEV produced different
+  output across identical runs (jp case; score wobble across batch
+  boundaries) — unusable as a cache-stable prompt prefix. Every other arm
+  was byte-identical.
 
 JEV remains a good fit for *transcript-level* keep/drop where no trust
 model is needed — the layers stay complementary. This is why Tameru
 borrows its cheap-first escalation (`strategy="auto"`) rather than its
-judge.
+judge. See `docs/RESEARCH.md` for the full ecosystem + paper digest.
 
 ## Known failure modes of others that Tameru explicitly avoids
 
