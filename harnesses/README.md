@@ -57,6 +57,12 @@ typically shell out to exactly this.
 
 ## 3. Vendored plugin dir (Hermes-style)
 
+A ready-made standalone plugin repo exists at
+[`0xWhiteMage/hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin) —
+install into `~/.hermes/plugins/tameru/` or `pip install` (registers via the
+`hermes_agent.plugins` entry point). Use it directly, or as the reference for
+other harnesses.
+
 When the host requires self-contained plugins with no external deps,
 vendor `src/tameru/*.py` into the plugin dir and let the sync script keep
 it current:
