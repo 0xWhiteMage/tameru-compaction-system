@@ -65,6 +65,14 @@ it current:
 python scripts/sync_to_harness.py <plugin_dir> --manifest plugin.yaml
 ```
 
+Sibling alias dirs that vendor no modules of their own (e.g. Hermes'
+`extractive` compat alias, which just re-exports the `tameru` engine)
+should be stamped, not synced:
+
+```bash
+python scripts/sync_to_harness.py <alias_dir> --manifest plugin.yaml --stamp-only
+```
+
 ### Ownership contract
 
 | File | Owner | Updated by sync? |

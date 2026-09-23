@@ -62,6 +62,11 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
     )
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--stamp-only",
+        action="store_true",
+        help="glue-only target: stamp the manifest version, copy no modules",
+    )
     args = p.parse_args(argv)
 
     target = Path(args.target)
@@ -71,8 +76,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     version = _upstream_version()
-    sources = sorted(
-        f for f in SRC.glob("*.py") if f.name not in _SKIP and not f.name.startswith(".")
+    sources = (
+        []
+        if args.stamp_only
+        else sorted(
+            f
+            for f in SRC.glob("*.py")
+            if f.name not in _SKIP and not f.name.startswith(".")
+        )
     )
     changed = []
     for src in sources:
@@ -87,11 +98,15 @@ def main(argv: list[str] | None = None) -> int:
             dst.write_bytes(payload)
 
     # Remove stale vendored modules that no longer exist upstream.
-    stale = [
-        f.name
-        for f in target.glob("*.py")
-        if f.name not in _SKIP and not (SRC / f.name).exists()
-    ]
+    stale = (
+        []
+        if args.stamp_only
+        else [
+            f.name
+            for f in target.glob("*.py")
+            if f.name not in _SKIP and not (SRC / f.name).exists()
+        ]
+    )
     for name in stale:
         if not args.dry_run:
             (target / name).unlink()
