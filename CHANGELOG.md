@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.4.0] - 2026-10-06
+
+Agent tool-output quality (Phase 1a/1b) and a plugin-facing API for
+`hermes-tameru-plugin`. With default arguments, output for inputs that are not
+affected by the fixes below is unchanged.
+
+### Added
+- `compress_context` kwargs: `gap_marker(omitted_chars, total_chars) -> str` (marks every cut, including adapter and CSV cuts), `recursion_markers` (caller-declared markers; input carrying one returns unchanged), and `content_hint` (skip detection: log/json/test/diff/grep/numbered_code/...).
+- Public helpers: `error_fingerprints`, `brief_context`, `extract_evidence_lines`, `contains_secret`, `unwrap_tool_payload` / `rewrap_tool_payload` / `ToolPayload` (Hermes wrapper fields such as exit code survive a round trip), and `ENGINE_VERSION`. Exported from `tameru` (engine helpers lazily, so `python -m tameru.compress_context` still runs cleanly) together with `fold_lossless`.
+- `tameru.agent_formats`: numbered-gutter detection (`cat -n`, Hermes `read_file` `N|`, `N: `), code detection, unified-diff adapter (whole hunks, per-file `+A -D in H hunks` stats, all hunk headers), grep/rg adapter (grouped by file), and pytest/jest/go test/cargo test reduction to failure blocks and summaries.
+- `tameru.folding`: `fold_lossless` (terminal redraws, ANSI, trailing blanks, identical-line runs, pretty-printed JSON; idempotent), `mask_template` (one masking function shared by log templates and error fingerprints) and `json_brief` (valid-JSON brief of large arrays of objects with `_count`/`_omitted`).
+- Log collapse keeps the last instance of each collapsed template as `[last] ...`; templates mask UUIDs, IPs, timestamps and durations.
+- `tameru.transcript`: `text_of`, `task_query`; `scripts/sync_to_harness.py --check` verifies a vendored copy.
+- Tests for all of the above, including `@pytest.mark.perf` linear-scaling tests.
+
+### Changed
+- Numbered reads and source code are no longer routed to CSV/TSV/YAML; `_looks_like_csv` and `detect_format` reject code (stable column counts, code keywords and line endings) and run diff/grep/gutter/code detectors before the table detectors. Python is no longer classified as YAML.
+- Logs: one exemplar per ERROR/FAIL/FATAL/CRITICAL/PANIC fingerprint is exempt from the stale-error cap and the important-block exclusion, and survives floor-saturated reduction. Python traceback dumps with no query hit are still purged. Error lines restored by preprocessing return at their original relative positions, and already-collapsed `[xN]` duplicates are not re-added.
+- A reduced pytest/jest/go/cargo run of at most 16 KB is final: block scoring no longer drops the failing test's file/name lines (receipt `adapter.name == "test_output"`).
+- Filler queries ("continue", "thanks") no longer cause high-risk cuts.
+- `trajectory_gate`: orphan tool calls no longer block compaction.
+- Verifier: a bare line-leading timestamp no longer makes a line "critical".
+
+### Fixed
+- `_CRIT_LINE_RE` was compiled per call and invoked as `.search(line, re.IGNORECASE)`, passing the flag as `pos`; now module-level with `re.IGNORECASE`.
+- Quadratic hot spots in critical-line recall, summary fact checks and backtracking path/token regexes (bounded): a generated 650 KB INFO/ERROR log through `compress_context(log, "why are requests failing?", ccr=False, citations=False)` went from 22.5 s to under 1 s; every error fingerprint is retained.
+- Misdetection of code as CSV and numbered reads as two-column TSV.
+
+### Removed
+- `integration/hermes` bundle (`context_engine/extractive`, `context_engine/tameru`) and the nine Hermes-gated tests; the integration now lives in [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin).
+
+### Benchmarks
+- Re-run 2026-10-06 on 1.4.0: `benchmarks/run_battery.py` 15/15 pass with savings identical to the checked-in 1.3.0 JSON; only per-case `ms` timings differ (machine noise, e.g. `large_doc_perf` 656 -> 819 ms), and `benchmarks/production-qa-v3-results.json` was updated accordingly. `benchmarks/threshold_sweep.py` (prints only): 15/15 clean at every `budget_ratio`, mean saved 77.3% / 68.4% / 61.2% / 41.5% / 24.9% at 0.1 / 0.2 / 0.3 / 0.5 / 0.7, 0 restorations, 0 leaks.
+- Not re-run (need network or local models): the 17-case holdout and the jev_comparison arms (JEV, Laya, headroom, TF-IDF); their tables in `benchmarks/COMPARISON.md` and the README remain the 1.2.0/1.3.0 measurements and are labelled as such.
+- Full suite: 1105 passed, 3 skipped.
+
+---
+
 ## [1.3.0] - 2026-09-23
 
 ### Added
@@ -203,7 +241,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Fast, local-only, zero-LLM context compaction.
 - Fail-open safety contract.
 
-[Unreleased]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v0.10.0...v1.1.0

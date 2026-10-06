@@ -50,6 +50,40 @@ class ReleaseArtifactTests(unittest.TestCase):
         self.assertRegex(_project_version(), r"^\d+\.\d+\.\d+")
         self.assertEqual(_init_version(), _project_version())
 
+    def test_engine_version_and_changelog_match_project_version(self):
+        """ENGINE_VERSION (stamped into plugin receipts) and the newest
+        CHANGELOG entry must track the release version."""
+        from tameru.compress_context import ENGINE_VERSION
+
+        self.assertEqual(ENGINE_VERSION, _project_version())
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        newest = re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog, re.M)
+        self.assertIsNotNone(newest)
+        self.assertEqual(newest.group(1), _project_version())
+
+    def test_package_import_does_not_preload_the_engine_module(self):
+        """`python -m tameru.compress_context` must not run a second copy of an
+        already-imported module (runpy RuntimeWarning); the engine exports are
+        lazy."""
+        import os
+        import subprocess
+        import sys
+
+        env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
+        probe = (
+            "import sys, tameru; "
+            "assert 'tameru.compress_context' not in sys.modules; "
+            "from tameru import ENGINE_VERSION, brief_context; "
+            "assert ENGINE_VERSION == tameru.__version__"
+        )
+        done = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        done = subprocess.run(
+            [sys.executable, "-W", "error", "-m", "tameru.compress_context", "--help"],
+            env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+
     def test_installed_command_is_declared(self):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         self.assertEqual(

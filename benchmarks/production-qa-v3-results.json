@@ -9,7 +9,7 @@
       "failed_gates": [],
       "saved": 96.7,
       "fail_open": false,
-      "ms": 15.6,
+      "ms": 14.8,
       "chars": 175,
       "missing_gold": [],
       "leaked_forbid": []
@@ -20,7 +20,7 @@
       "failed_gates": [],
       "saved": 95.0,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 11.8,
       "chars": 266,
       "missing_gold": [],
       "leaked_forbid": []
@@ -31,7 +31,7 @@
       "failed_gates": [],
       "saved": 90.1,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 5.3,
       "chars": 166,
       "missing_gold": [],
       "leaked_forbid": []
@@ -42,7 +42,7 @@
       "failed_gates": [],
       "saved": 92.5,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 5.4,
       "chars": 138,
       "missing_gold": [],
       "leaked_forbid": []
@@ -53,7 +53,7 @@
       "failed_gates": [],
       "saved": 88.4,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 4.9,
       "chars": 195,
       "missing_gold": [],
       "leaked_forbid": []
@@ -64,7 +64,7 @@
       "failed_gates": [],
       "saved": 95.6,
       "fail_open": false,
-      "ms": 15.6,
+      "ms": 13.7,
       "chars": 295,
       "missing_gold": [],
       "leaked_forbid": []
@@ -75,7 +75,7 @@
       "failed_gates": [],
       "saved": 94.0,
       "fail_open": false,
-      "ms": 62.5,
+      "ms": 48.8,
       "chars": 487,
       "missing_gold": [],
       "leaked_forbid": []
@@ -86,7 +86,7 @@
       "failed_gates": [],
       "saved": 31.0,
       "fail_open": false,
-      "ms": 15.6,
+      "ms": 20.2,
       "chars": 3192,
       "missing_gold": [],
       "leaked_forbid": []
@@ -97,7 +97,7 @@
       "failed_gates": [],
       "saved": 57.5,
       "fail_open": false,
-      "ms": 140.6,
+      "ms": 217.2,
       "chars": 5193,
       "missing_gold": [],
       "leaked_forbid": []
@@ -108,7 +108,7 @@
       "failed_gates": [],
       "saved": 90.9,
       "fail_open": false,
-      "ms": 15.6,
+      "ms": 13.9,
       "chars": 60,
       "missing_gold": [],
       "leaked_forbid": []
@@ -119,7 +119,7 @@
       "failed_gates": [],
       "saved": 88.6,
       "fail_open": false,
-      "ms": 31.2,
+      "ms": 20.7,
       "chars": 125,
       "missing_gold": [],
       "leaked_forbid": []
@@ -130,7 +130,7 @@
       "failed_gates": [],
       "saved": 64.7,
       "fail_open": false,
-      "ms": 0.0,
+      "ms": 10.5,
       "chars": 966,
       "missing_gold": [],
       "leaked_forbid": []
@@ -141,7 +141,7 @@
       "failed_gates": [],
       "saved": 99.5,
       "fail_open": false,
-      "ms": 656.2,
+      "ms": 818.7,
       "chars": 2467,
       "missing_gold": [],
       "leaked_forbid": []
@@ -152,7 +152,7 @@
       "failed_gates": [],
       "saved": 0.0,
       "fail_open": true,
-      "ms": 93.8,
+      "ms": 75.7,
       "chars": 61832,
       "missing_gold": [],
       "leaked_forbid": []
@@ -163,7 +163,7 @@
       "failed_gates": [],
       "saved": 87.3,
       "fail_open": false,
-      "ms": 15.6,
+      "ms": 7.1,
       "chars": 232,
       "missing_gold": [],
       "leaked_forbid": []

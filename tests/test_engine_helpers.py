@@ -140,7 +140,7 @@ def test_fingerprint_masks_digits_hex_and_uuids():
     assert list(error_fingerprints(a)) == list(error_fingerprints(b))
     assert list(error_fingerprints(u1)) == list(error_fingerprints(u2))
     (fp,) = error_fingerprints(a)
-    assert "<hex>" in fp and "worker-#" in fp and "#ms" in fp
+    assert "<hex>" in fp and "worker-#" in fp and "<dur>" in fp and "<ts>" in fp
     (fp,) = error_fingerprints(u1)
     assert "<uuid>" in fp
     assert error_fingerprints("ERROR disk full on sda")  # different text: different key
@@ -478,12 +478,14 @@ def test_code_hints_keep_function_bodies_and_the_gutter(fmt, hint):
 
 
 @pytest.mark.parametrize("fmt", ["pipe", "tab"])
-def test_without_the_hint_numbered_code_is_shredded(fmt):
-    """The 1.3.0 failure the hint exists for: code read through a gutter is
-    detected as a table and the function body is lost."""
+def test_without_the_hint_numbered_code_is_detected_not_shredded(fmt):
+    """The 1.3.0 failure: code read through a gutter was detected as a table and
+    the function body was lost. Since 1.4.0 (E4) the gutter itself is detected."""
     text = _numbered_code(fmt)
     result = compress_context(text, "what does func_26 do?", ccr=False, citations=False)
-    assert "total = a + b * 26, c" not in result.compressed_text
+    assert "total = a + b * 26, c" in result.compressed_text
+    assert result.content_type not in {"csv", "tsv", "yaml"}
+    assert result.receipt["content_hint"] is None
 
 
 def _code_with_a_later_override_comment() -> str:

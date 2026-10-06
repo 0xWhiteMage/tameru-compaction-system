@@ -61,7 +61,8 @@ class ProgressRegexRegressionTests(unittest.TestCase):
             for i in range(4000)
         ]
         processed = cc.preprocess_logs(lines, "which region completed stage 17?")
-        self.assertLessEqual(len(processed), cc.MAX_QUERY_TEMPLATE_MATCHES + 1)
+        # +2: the collapsed template's [×N] exemplar and its [last] instance
+        self.assertLessEqual(len(processed), cc.MAX_QUERY_TEMPLATE_MATCHES + 2)
         self.assertTrue(any("stage 17" in line for line in processed))
 
 

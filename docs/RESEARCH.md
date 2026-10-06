@@ -58,3 +58,37 @@ design. For measured head-to-head numbers see `benchmarks/COMPARISON.md`.
 - **Deterministic beats clever at the boundary cases** that matter to agents:
   byte-identical output keeps prompt caches stable and makes every decision
   replayable after the fact.
+
+## 2026-10 survey takeaways
+
+A survey of agent-harness compaction and compression libraries (driving the
+v1.4.0 work). Full write-up:
+[docs/compaction-research.md](https://github.com/0xWhiteMage/hermes-tameru-plugin/blob/main/docs/compaction-research.md)
+in the hermes-tameru-plugin repo.
+
+- **Agent tool output is not generic text.** Numbered file reads, unified
+  diffs, grep output and test-runner output dominate real tool results, and
+  generic CSV/TSV/YAML detectors misread them; recognising them before the
+  table detectors is the largest correctness win (shipped as `agent_formats`).
+- **Errors are the last thing a log compactor may lose.** Recency and
+  staleness penalties silently dropped every ERROR line in long logs; one
+  exemplar per error fingerprint must be exempt from them.
+- **Keep gaps visible.** Hosts that mark where text was cut (a caller-supplied
+  gap marker) let the model ask for the rest; silent cuts look like complete
+  evidence (`gap_marker`).
+- **Collapse repeats losslessly first.** Terminal redraws, ANSI colour and
+  identical-line runs cost tokens and carry no information; folding them
+  before any scoring is free (`fold_lossless`).
+- **Template masking beats exact-line dedupe for logs.** Masking UUIDs, IPs,
+  timestamps and durations collapses near-duplicates; keeping the last
+  instance (`[last]`) preserves the final state.
+- **Big JSON arrays want a structural brief, not truncation.** A valid-JSON
+  summary with counts, omitted counts and notable items beats a cut-off dump.
+- **Compaction must not re-compact itself.** Recursion markers let a plugin
+  declare its own output so it is never wrapped twice.
+- **Host envelopes must round-trip.** Tool results arrive wrapped (exit code,
+  metadata); compress the inner text and put the wrapper back.
+- **Timing gates matter as much as content.** Orphan tool calls must not
+  block compaction forever; stuck loops should suppress it.
+- **Deterministic stays the floor.** Learned compressors are still scored
+  against a byte-identical, replayable extractive baseline.

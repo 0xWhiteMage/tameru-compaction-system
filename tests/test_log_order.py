@@ -20,6 +20,8 @@ def _original_positions(original: list[str], processed: list[str]) -> list[int]:
     """Index in `original` of each non-synthetic processed line, in output order."""
     positions = []
     for line in processed:
+        if line.startswith("[last] "):  # v1.4.0: the repeated template's last instance
+            continue
         bare = COUNT_PREFIX.sub("", line)
         if bare.lstrip().startswith("... ") and "frames omitted" in bare:
             continue
@@ -33,10 +35,10 @@ def test_collapsed_duplicates_are_not_re_added():
         lines.append(f"2026-03-14 12:00:{i % 60:02d} ERROR [worker-{i}] upstream timeout after {i}ms")
         lines.append(f"2026-03-14 12:00:{i % 60:02d} INFO  heartbeat ok node={i}")
     out = preprocess_logs(lines)
-    errors = [ln for ln in out if "ERROR" in ln]
+    errors = [ln for ln in out if "ERROR" in ln and not ln.startswith("[last] ")]
     assert len(errors) == 1
     assert errors[0].startswith("[×500] ")
-    assert len(out) == 2  # one error exemplar, one info exemplar
+    assert len(out) == 4  # per template: one [×N] exemplar + its [last] instance
 
 
 def test_progress_looking_error_lines_return_in_place():

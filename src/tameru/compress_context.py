@@ -21,11 +21,20 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
+from .agent_formats import (
+    GUTTER_RE as _AGENT_GUTTER_RE,
+    apply_agent_adapters,
+    detect_test_runner,
+    is_numbered_code,
+    preprocess_test_output,
+    rejects_table,
+)
 from .contract_gates import (
     GENERIC_WORDS,
     distinctive_query_terms,
     query_has_distinctive_selectors,
 )
+from .folding import fold_lossless, json_brief, mask_template  # noqa: F401 (fold_lossless re-exported)
 from .format_adapters import FILLER_WORDS
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
 from .supersession import apply_supersession
@@ -330,14 +339,25 @@ def _log_fingerprint(line: str) -> str | None:
     Returns None for marker lines ([\u00d7N] ...) so re-running preprocessing
     never re-collapses its own output markers (NTK idempotency invariant).
     """
-    if line.lstrip().startswith("[\u00d7"):
+    if line.lstrip().startswith(("[\u00d7", "[last] ")):
         return None
     stripped = _PROGRESS_RE.match(line.strip())
     if stripped:
         return None
-    s = re.sub(r"\d+", "#", line.lower())
-    s = re.sub(r"\s+", " ", s).strip()
+    # v1.4.0 (E10): volatile fields (ids, ips, timestamps, durations, quoted
+    # strings, paths) are masked before the digits, by the same function the
+    # error fingerprint uses.
+    s = mask_template(line[:_RX_LINE_CAP].lower())
     return s[:240] or None
+
+
+def _template_long_enough(line: str) -> bool:
+    """A line is worth collapsing only if its digit-masked form is >12 chars.
+
+    Measured on the digit mask, not on the E10 template (``<ts> info ok`` is
+    short only because its timestamp became one token).
+    """
+    return len(_DIGITS_RE.sub("#", " ".join(line[:_RX_LINE_CAP].lower().split()))) > 12
 
 
 def _is_progress_bar(line: str) -> bool:
@@ -432,7 +452,7 @@ _ERR_NEGATED_RE = re.compile(
     r"|\b(?:errors?|failures?|failed|fatals?|critical)\s*[=:]\s*0(?!\w|\.\d)",
     re.IGNORECASE,
 )
-_COUNT_PREFIX_RE = re.compile(r"^\s*\[\u00d7\d+\]\s*")
+_COUNT_PREFIX_RE = re.compile(r"^\s*\[(?:\u00d7\d+|last)\]\s*")
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 )
@@ -476,10 +496,7 @@ def _error_fp(line: str) -> str:
     whitespace collapsed, capped at 160 chars.
     """
     s = _COUNT_PREFIX_RE.sub("", line[:_RX_LINE_CAP], count=1).lower()
-    s = _UUID_RE.sub("<uuid>", s)
-    s = _HEXRUN_RE.sub("<hex>", s)
-    s = _DIGITS_RE.sub("#", s)
-    return " ".join(s.split())[:_FINGERPRINT_CAP]
+    return mask_template(s)[:_FINGERPRINT_CAP]
 
 
 def error_fingerprints(text: str) -> dict[str, str]:
@@ -575,6 +592,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
 
     seen: dict[str, int] = {}
     exemplar_idx: dict[str, int] = {}
+    last_seen: dict[str, str] = {}  # v1.4.0 (E10): last instance of each template
 
     i = 0
     n = len(kept_lines)
@@ -599,9 +617,10 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
             i += 1
             continue
         fp = _log_fingerprint(line)
-        if fp and len(fp) > 12:
+        if fp and _template_long_enough(line):
             if fp in exemplar_idx:
                 seen[fp] += 1
+                last_seen[fp] = line
                 i += 1
                 continue
             exemplar_idx[fp] = len(out)
@@ -612,18 +631,30 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     flush_trace()
 
     # Attach counts: replace exemplar line with counted variant.
+    # v1.4.0 (E10): a template seen >=3 times keeps its LAST instance verbatim
+    # on the next line ("[last] ..."), so the end state of a repeating failure
+    # survives next to the first one.
     counted_out: list[str] = []
+    counted_src: list[int] = []
     for idx, ln in enumerate(out):
         if idx in query_match_indices:
             counted_out.append(ln)
+            counted_src.append(out_src[idx])
             continue
         fp = _log_fingerprint(ln)
         cnt = seen.get(fp, 1) if fp else 1
         if fp and cnt > 1 and not ln.lstrip().startswith("[\u00d7"):
             counted_out.append(f"[\u00d7{cnt}] {ln}")
+            counted_src.append(out_src[idx])
+            last = last_seen.get(fp)
+            if cnt >= 3 and last is not None and last != ln:
+                counted_out.append(f"[last] {last}")
+                counted_src.append(out_src[idx])
         else:
             counted_out.append(ln)
+            counted_src.append(out_src[idx])
     result = counted_out
+    out_src = counted_src
 
     # N6 error-signal invariant: original error lines that are missing from
     # the output must be restored. v1.4.0: a line counts as present when an
@@ -795,7 +826,12 @@ def _looks_like_csv(text: str) -> bool:
     if len(lines) < 6 or lines[0].count(",") < 2:
         return False
     similar = sum(1 for ln in lines[1:40] if ln.count(",") >= 2)
-    return similar >= 4
+    if similar < 4:
+        return False
+    # v1.4.0 (E4): code is not CSV. A numbered read, code lines, or an unstable
+    # column count (a JS file whose first line happens to hold commas) is not a
+    # table, however many commas it has.
+    return not rejects_table(lines)
 
 
 def _selector_patterns(terms: Iterable[str]) -> list[re.Pattern[str]]:
@@ -805,8 +841,15 @@ def _selector_patterns(terms: Iterable[str]) -> list[re.Pattern[str]]:
     ]
 
 
-def preprocess_csv(text: str, query: str) -> str:
-    """Keep header + distinctive-matching rows. No first-N cliff."""
+def preprocess_csv(
+    text: str,
+    query: str,
+    gap_marker: Callable[[int, int], str] | None = None,
+) -> str:
+    """Keep header + distinctive-matching rows. No first-N cliff.
+
+    ``gap_marker(omitted_chars, total_chars)`` marks each run of dropped rows
+    (v1.4.0); ``None`` keeps the output byte-identical to earlier releases."""
     if not query_has_distinctive_selectors(query) or not _looks_like_csv(text):
         return text
     terms = [t for t in distinctive_query_terms(query) if not t.startswith("script:")]
@@ -815,12 +858,33 @@ def preprocess_csv(text: str, query: str) -> str:
     selectors = _selector_patterns(terms)
     lines = text.split("\n")
     kept = [lines[0]]
-    for line in lines[1:]:
+    flags = [False] * len(lines)
+    flags[0] = True
+    for idx, line in enumerate(lines[1:], 1):
         if any(selector.search(line) for selector in selectors):
             kept.append(line)
+            flags[idx] = True
     if len(kept) == 1 or len(kept) == len(lines):
         return text
-    return "\n".join(kept)
+    if gap_marker is None:
+        return "\n".join(kept)
+    out: list[str] = []
+    run: list[str] = []
+    for line, keep in zip(lines, flags):
+        if keep:
+            if run:
+                dropped = "\n".join(run)
+                if dropped.strip():
+                    out.append(str(gap_marker(len(dropped), len(text))))
+                run = []
+            out.append(line)
+        else:
+            run.append(line)
+    if run:
+        dropped = "\n".join(run)
+        if dropped.strip():
+            out.append(str(gap_marker(len(dropped), len(text))))
+    return "\n".join(out)
 
 
 _FLAT_RECORD_RE = re.compile(r"^[^\s:#][^:\n]{0,200}:\s+\S.*$")
@@ -858,11 +922,27 @@ def strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
-def preprocess_test_runner(text: str, query: str) -> str:
+def preprocess_test_runner(
+    text: str,
+    query: str,
+    content_hint: str | None = None,
+    gap_marker: Callable[[int, int], str] | None = None,
+) -> str:
     """Keep suite summary; drop per-file ticks and node warnings.
 
     Super does this on vitest dumps. Skip if the query names a test file.
+
+    v1.4.0 (E5): pytest, jest, go test and cargo test output is reduced to its
+    failure blocks and summary lines (``agent_formats.preprocess_test_output``);
+    passing per-test lines become a count marker (or ``gap_marker``). Applied
+    when the runner is recognised, or when ``content_hint == "test"``.
     """
+    if content_hint in (None, "test"):
+        reduced = preprocess_test_output(
+            text, query, gap_marker=gap_marker, force=content_hint == "test"
+        )
+        if reduced is not None:
+            return reduced
     plain = strip_ansi(text)
     if not _TEST_SUMMARY_RE.search(plain):
         return text
@@ -880,6 +960,8 @@ def preprocess_test_runner(text: str, query: str) -> str:
     return "\n".join(kept)
 
 
+# A reduced test run at most this long is final (never re-scored).
+_TEST_REDUCTION_FINAL_CHARS = 16000
 _FILLER_COMMENT_RE = re.compile(r"^(--|#)\s*filler\b", re.I)
 _TRUST_RISK_RE = re.compile(
     r"\b(?:untrusted|not\s+operational)\b"
@@ -1040,7 +1122,7 @@ _HINT_ROUTES = {
     "text": "text",
 }
 # Line-number gutter of numbered code: `cat -n` ("   12\t...") or `N|`.
-_GUTTER_RE = re.compile(r"^\s*\d+(?:\t|\|)")
+_GUTTER_RE = _AGENT_GUTTER_RE  # `N\t` (cat -n), `N|` (Hermes read_file), `N: `
 
 
 def _marker_tuple(markers: Iterable[str] | str | None) -> tuple[str, ...]:
@@ -3847,6 +3929,12 @@ def brief_context(
     budget = max(1, int(budget_chars))
     if len(text) <= budget:
         return text
+    # v1.4.0 (E11): JSON arrays of objects get a valid-JSON brief, not a
+    # line-cut that would leave unparseable fragments.
+    if text.lstrip()[:1] in ("[", "{"):
+        briefed = json_brief(text, budget_chars=budget, query=query)
+        if briefed is not None:
+            return briefed
     total = len(text)
     lines = text.split("\n")
     n = len(lines)
@@ -4265,7 +4353,16 @@ def compress_context(
     industrial_query = query or ""
     if no_table and len(industrial_query) <= (limits or IndustrialLimits()).max_query_chars:
         industrial_query = ""
-    industrial = industrial_preprocess(caller_text, industrial_query, limits)
+    # v1.4.0 (E8 completion): adapter cuts carry the caller's marker; the
+    # total they report is always the caller's original length.
+    adapter_gap = (
+        None
+        if gap_marker is None
+        else (lambda omitted, _total: gap_marker(omitted, len(caller_text)))
+    )
+    industrial = industrial_preprocess(
+        caller_text, industrial_query, limits, gap_marker=adapter_gap
+    )
     if (
         industrial.hard_fail_open
         and degraded_view
@@ -4349,7 +4446,51 @@ def compress_context(
     tool_meta_line = ""
     if tool_payload.wrapped and tool_payload.meta:
         tool_meta_line = _compact_json(tool_payload.meta) + "\n"
-    text = preprocess_test_runner(text, query or "")
+    # v1.4.0 (E4): an un-hinted numbered read (`cat -n`, Hermes `N|`) is code,
+    # judged on the unwrapped payload: no table detector, no supersession, the
+    # gutter kept in the output but out of the scorer's view. `route_hint` is
+    # what the engine routes by; the receipt still records the caller's hint.
+    route_hint = content_hint
+    if route_hint is None and is_numbered_code(text):
+        route_hint = "numbered_code"
+        code_hint = True
+        no_table = True
+    _pre_test_text = text
+    text = preprocess_test_runner(
+        text, query or "", content_hint=content_hint, gap_marker=adapter_gap
+    )
+    # v1.4.0 (E5): diff and grep/rg output get their own adapters (whole hunks,
+    # grouped matches) ahead of generic segmentation. The adapter's output is
+    # the selection: scoring below must not undo it (see `adapter_info`).
+    adapter_info: dict[str, Any] | None = None
+    if (
+        text is not _pre_test_text
+        and content_hint in (None, "test")
+        and len(text) <= _TEST_REDUCTION_FINAL_CHARS
+        and detect_test_runner(_pre_test_text) is not None
+    ):
+        # Same for a reduced test run (v1.4.0): block scoring must not drop
+        # the failing test's name/file line that the reduction kept (jest
+        # "FAIL f.test.js" / "● suite › case" vs "which tests failed?").
+        # Larger reductions still go through scoring and its budget.
+        adapter_info = {
+            "name": "test_output",
+            "total_records": None,
+            "kept_records": None,
+            "reason": "failure blocks and summaries kept",
+        }
+    if (
+        adapter_info is None
+        and route_hint not in _CODE_HINTS
+        and route_hint not in ("log", "json", "text")
+    ):
+        text, adapter_info = apply_agent_adapters(
+            text,
+            query or "",
+            hint=content_hint,
+            gap_marker=adapter_gap,
+            weak_query=not query_has_distinctive_selectors(query or ""),
+        )
     if not text.strip():
         return CompressResult(
             compressed_text="", policy_name="noop", mode=requested_mode
@@ -4359,13 +4500,13 @@ def compress_context(
     # Destructive preprocess (JSON crush / later log collapse) only when
     # the query names something specific. Generic/empty queries must not
     # delete array tails or fingerprint-collapse logs before scoring.
-    if query_has_distinctive_selectors(query or "") and not code_hint:
+    if query_has_distinctive_selectors(query or "") and not code_hint and not adapter_info:
         # (content_hint code/numbered_code: source code with commas or JSON
         # literals is not a table to crush; function bodies must survive.)
         if route_content_type(_norm_newlines(text).split("\n")) != "json":
             text = _preprocess_json(text, query or "")
         if not no_table:
-            text = preprocess_csv(text, query or "")
+            text = preprocess_csv(text, query or "", gap_marker=adapter_gap)
         text = preprocess_filler_comments(text, query or "")
 
     # Strategy ladder:
@@ -4521,8 +4662,8 @@ def compress_context(
         # LLM failed or returned a longer result — fall through to extract.
         strategy_norm = "extract"
 
-    if query_has_distinctive_selectors(query or ""):
-        lines, content_type = preprocess(text, query or "", content_hint=content_hint)
+    if query_has_distinctive_selectors(query or "") and not adapter_info:
+        lines, content_type = preprocess(text, query or "", content_hint=route_hint)
         if industrial.applied:
             content_type = industrial.profile.format
     else:
@@ -4531,11 +4672,11 @@ def compress_context(
         # on this path — ~0.4 s of log collapsing per 650 KB — so it is not
         # run at all; the result is identical.)
         lines = text.split("\n")
-        content_type = _HINT_ROUTES.get(content_hint) or route_content_type(lines)
+        content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
     score_lines = lines
-    if content_hint == "numbered_code":
+    if route_hint == "numbered_code":
         score_lines = [_GUTTER_RE.sub("", ln, count=1) for ln in lines]
     blocks = segment_blocks(score_lines)
     if len(blocks) > industrial.limits.max_blocks:
@@ -4684,6 +4825,13 @@ def compress_context(
             # kept when a selector path ignores raw scores (needle-only),
             # and neither freeze nor supersession may evict a pin.
             kept |= pin_recent_ids
+    if adapter_info is not None and scored and not ambiguity_fail_open:
+        # v1.4.0 (E5): the format adapter already chose what to keep (every
+        # header, whole hunks, grouped matches); block scoring must not drop a
+        # file header or half a hunk. Risk reflects how the adapter chose.
+        kept = {b["id"] for b in scored}
+        fail_open = False
+        risk = "low" if query_has_distinctive_selectors(query or "") else "medium"
     if ambiguity_fail_open:
         fail_open = True
         risk = "high"
@@ -4883,6 +5031,8 @@ def compress_context(
     reasons = sorted({scored[i]["reason"] for i in kept if i < len(scored)})
     if industrial.applied:
         reasons.append(f"industrial adapter: {industrial.profile.format}")
+    if adapter_info is not None and not fail_open:
+        reasons.append(f"format adapter: {adapter_info['name']}")
     if freeze_cache_saturated:
         reasons.append("freeze cache capacity reached")
     if savings_gate:
@@ -4955,7 +5105,15 @@ def compress_context(
     # a different strategy or expand dropped blocks.
     verifier = None
     if not fail_open and compressed and original_tokens > 50:
-        verifier = verify_compression(text, compressed, query or "")
+        if route_hint == "numbered_code":
+            # the gutter ("12: ") is not content: it must not read as key: value
+            verifier = verify_compression(
+                "\n".join(_GUTTER_RE.sub("", ln, count=1) for ln in text.split("\n")),
+                "\n".join(_GUTTER_RE.sub("", ln, count=1) for ln in compressed.split("\n")),
+                query or "",
+            )
+        else:
+            verifier = verify_compression(text, compressed, query or "")
         risk_order = {"low": 0, "medium": 1, "high": 2}
         verifier_risk = str(verifier.get("risk", "high"))
         if risk_order.get(verifier_risk, 2) > risk_order.get(risk, 2):
@@ -5019,6 +5177,8 @@ def compress_context(
         "structural_collapse_only": bool(structural_collapse_only and not fail_open),
         # v1.4.0: E8 — the caller's routing hint, always recorded.
         "content_hint": content_hint,
+        # v1.4.0: E5 — which diff/grep adapter shaped the text (None: none did).
+        "adapter": adapter_info,
         # v1.4.0: E3 — level-tagged error fingerprints kept/total (logs only).
         "log_error_fingerprints": log_error_retention,
         "industrial": industrial.to_dict(),

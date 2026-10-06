@@ -1,5 +1,11 @@
 # Benchmark Comparison — Tameru v1.3.0 vs the field
 
+> v1.4.0 note (2026-10-06): only the offline `run_battery.py` (15/15) and
+> `threshold_sweep.py` (15/15 clean at every ratio) were re-run on v1.4.0. The
+> head-to-head and six-arm tables below were measured on v1.2.0/v1.3.0 and are
+> unchanged: the 17-case holdout, JEV, Laya and headroom arms need network or
+> local models and were not re-run.
+
 All numbers from this repo's fixtures and production QA battery unless noted.
 "Gold retention" = required gold strings present in compressed output.
 
@@ -117,7 +123,7 @@ Design choices track published results:
 ## Reproduce
 
 ```bash
-PYTHONPATH=src python -m pytest -q  # 326 passed, 14 skipped standalone
+PYTHONPATH=src python -m pytest -q  # 1105 passed, 3 skipped
 python benchmarks/run_battery.py    # adversarial battery + timing table (15/15)
 python benchmarks/jev_comparison.py # Tameru vs JEV-provider arms
                                     # (needs lcc + TYPESAFE_API_KEY for the JEV arm)

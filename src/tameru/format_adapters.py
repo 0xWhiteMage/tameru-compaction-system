@@ -9,6 +9,15 @@ import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from typing import Callable
 
+from .agent_formats import (
+    code_vetoes_yaml,
+    detect_grep_lines,
+    detect_test_runner,
+    detect_unified_diff,
+    is_numbered_code,
+    looks_like_code,
+    rejects_table,
+)
 from .contract_gates import GENERIC_WORDS, distinctive_query_terms
 from .unicode_profile import graphemes, matching_shadow, search_units
 
@@ -124,6 +133,35 @@ def _json_loads(value: str):
         return None
 
 
+def _with_gaps(
+    units: list[str],
+    keep: list[bool],
+    sep: str,
+    gap_marker: Callable[[int, int], str] | None,
+    total_chars: int,
+) -> list[str]:
+    """``units`` that are kept, with ONE marker per contiguous omitted run
+    (leading and trailing runs included). All-blank runs carry nothing and get
+    no marker. ``gap_marker(omitted_chars, total_chars)``."""
+    out: list[str] = []
+    run: list[str] = []
+    for unit, kept in zip(units, keep):
+        if kept:
+            if run:
+                dropped = sep.join(run)
+                if dropped.strip():
+                    out.append(str(gap_marker(len(dropped), total_chars)))
+                run = []
+            out.append(unit)
+        else:
+            run.append(unit)
+    if run:
+        dropped = sep.join(run)
+        if dropped.strip():
+            out.append(str(gap_marker(len(dropped), total_chars)))
+    return out
+
+
 def _looks_ndjson(text: str) -> bool:
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 2:
@@ -222,7 +260,24 @@ def detect_format(text: str) -> str:
             return "xml"
     if _looks_ndjson(value):
         return "ndjson"
+    if stripped[:1] in {"{", "["} and _json_loads(stripped) is not None:
+        return "json"
+    # v1.4.0 (E4): agent outputs that are NOT tables run before the table
+    # detectors — a numbered read is a two-column TSV, Python is "YAML".
+    if detect_unified_diff(value):
+        return "diff"
+    if detect_grep_lines(value):
+        return "grep"
+    if is_numbered_code(value):
+        return "numbered_code"
+    if detect_test_runner(value):
+        return "test_output"  # pytest/jest/go/cargo: not YAML ("failures:")
+    is_code = looks_like_code(value)
+    if is_code:
+        return "code"
     delimiter = _detect_delimiter(value)
+    if delimiter and rejects_table(value, stable_columns=False):
+        delimiter = None  # code with commas/tabs, not a table
     if delimiter == "\t":
         return "tsv"
     if delimiter == ",":
@@ -244,10 +299,8 @@ def detect_format(text: str) -> str:
         r"(?m)^[ \t]+(?:[-?][ \t]+)?[^\s:#][^:\n]{0,120}:\s*(?:\S.*)?$",
         value,
     )
-    if yaml_parent and yaml_child:
+    if yaml_parent and yaml_child and not code_vetoes_yaml(value):
         return "yaml"
-    if stripped[:1] in {"{", "["} and _json_loads(stripped) is not None:
-        return "json"
     if _looks_vertical(value):
         return "vertical"
     return "text"
@@ -256,11 +309,14 @@ def detect_format(text: str) -> str:
 _VERTICAL_MARKUP_RE = re.compile(r"writing-mode\s*:", re.IGNORECASE)
 
 
-def _adapt_ndjson(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_ndjson(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) > limits.max_records:
         return _decline(text, "ndjson", "record limit exceeded", total_records=len(lines))
     kept: list[str] = []
+    flags: list[bool] = []
     for line in lines:
         if len(line) > limits.max_record_chars or _json_loads(line) is None:
             return _decline(
@@ -270,14 +326,17 @@ def _adapt_ndjson(text: str, selectors: tuple[str, ...], limits: FormatLimits) -
                 total_records=len(lines),
                 structurally_valid=False,
             )
-        if _contains_selector(line, selectors):
+        hit = _contains_selector(line, selectors)
+        flags.append(hit)
+        if hit:
             kept.append(line)
     if not kept or len(kept) == len(lines):
         return _decline(text, "ndjson", "no selective record match", total_records=len(lines))
+    out_lines = kept if gap_marker is None else _with_gaps(lines, flags, "\n", gap_marker, len(text))
     return FormatResult(
         format="ndjson",
         applied=True,
-        text=_line_separator(text).join(kept),
+        text=_line_separator(text).join(out_lines),
         total_records=len(lines),
         kept_records=len(kept),
         reason="exact matching NDJSON records",
@@ -290,6 +349,7 @@ def _adapt_delimited(
     limits: FormatLimits,
     delimiter: str,
     format_name: str,
+    gap_marker: Callable[[int, int], str] | None = None,
 ) -> FormatResult:
     records = _split_delimited_records(text)
     if records is None:
@@ -302,11 +362,20 @@ def _adapt_delimited(
     width = len(parsed[0] or [])
     if width < 2 or any(len(row or []) != width for row in parsed[1:]):
         return _decline(text, format_name, "inconsistent field count", structurally_valid=False)
-    kept = [record for record, row in zip(records[1:], parsed[1:]) if _contains_selector("\t".join(row or []), selectors)]
+    flags = [
+        _contains_selector("\t".join(row or []), selectors) for row in parsed[1:]
+    ]
+    kept = [record for record, hit in zip(records[1:], flags) if hit]
     total = max(0, len(records) - 1)
     if not kept or len(kept) == total:
         return _decline(text, format_name, "no selective record match", total_records=total)
-    result_records = [records[0], *kept]
+    if gap_marker is None:
+        result_records = [records[0], *kept]
+    else:
+        result_records = [
+            records[0],
+            *_with_gaps(records[1:], flags, "\n", gap_marker, len(text)),
+        ]
     return FormatResult(
         format=format_name,
         applied=True,
@@ -317,7 +386,9 @@ def _adapt_delimited(
     )
 
 
-def _adapt_markdown(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_markdown(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     del limits
     lines = text.splitlines()
     sections: list[tuple[list[str], list[str]]] = []
@@ -355,12 +426,20 @@ def _adapt_markdown(text: str, selectors: tuple[str, ...], limits: FormatLimits)
         else:
             current.append(line)
     flush()
-    selected = [(parents, body) for parents, body in sections if _contains_selector("\n".join(body), selectors)]
+    flags = [_contains_selector("\n".join(body), selectors) for _, body in sections]
+    selected = [section for section, hit in zip(sections, flags) if hit]
     if not selected or len(selected) == len(sections):
         return _decline(text, "markdown", "no selective section match", total_records=len(sections))
     output: list[str] = []
     seen_headings: set[str] = set()
-    for parents, body in selected:
+    run_start = 0  # first section not yet emitted or accounted for as omitted
+    selected_ids = [i for i, hit in enumerate(flags) if hit]
+    for position, (parents, body) in zip(selected_ids, selected):
+        if gap_marker is not None and position > run_start:
+            dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, position))
+            if dropped.strip():
+                output.append(str(gap_marker(len(dropped), len(text))))
+        run_start = position + 1
         for heading in parents:
             if heading not in seen_headings:
                 output.append(heading)
@@ -370,6 +449,10 @@ def _adapt_markdown(text: str, selectors: tuple[str, ...], limits: FormatLimits)
         output.extend(body)
         if body and body[0].startswith("#"):
             seen_headings.add(body[0])
+    if gap_marker is not None and run_start < len(sections):
+        dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, len(sections)))
+        if dropped.strip():
+            output.append(str(gap_marker(len(dropped), len(text))))
     return FormatResult(
         format="markdown",
         applied=True,
@@ -384,7 +467,9 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
 
-def _adapt_yaml(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_yaml(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     del limits
     lines = text.splitlines()
     selected: set[int] = set()
@@ -425,7 +510,11 @@ def _adapt_yaml(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> 
             selected.add(index)
     if not selected or len(selected) >= len(lines):
         return _decline(text, "yaml", "no selective subtree match", total_records=len(nonblank))
-    output = "\n".join(lines[index] for index in sorted(selected)).strip("\n")
+    if gap_marker is None:
+        output = "\n".join(lines[index] for index in sorted(selected)).strip("\n")
+    else:
+        flags = [index in selected for index in range(len(lines))]
+        output = "\n".join(_with_gaps(lines, flags, "\n", gap_marker, len(text))).strip("\n")
     return FormatResult(
         format="yaml",
         applied=True,
@@ -436,7 +525,9 @@ def _adapt_yaml(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> 
     )
 
 
-def _adapt_xml(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_xml(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     del limits
     upper = text.upper()
     if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
@@ -453,13 +544,15 @@ def _adapt_xml(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> F
             ET.fromstring(child)
         except (ET.ParseError, RecursionError):
             return _decline(text, "xml", "child spans multiple lines", structurally_valid=True)
-    kept = [child for child in children if _contains_selector(child, selectors)]
+    flags = [_contains_selector(child, selectors) for child in children]
+    kept = [child for child, hit in zip(children, flags) if hit]
     if not kept or len(kept) == len(children):
         return _decline(text, "xml", "no selective child match", total_records=len(children))
+    body = kept if gap_marker is None else _with_gaps(children, flags, "\n", gap_marker, len(text))
     return FormatResult(
         format="xml",
         applied=True,
-        text="\n".join([lines[0], *kept, lines[-1]]),
+        text="\n".join([lines[0], *body, lines[-1]]),
         total_records=len(children),
         kept_records=len(kept),
         reason="balanced root plus exact child elements",
@@ -539,7 +632,9 @@ def _split_sql_statements(text: str) -> list[str] | None:
     return statements
 
 
-def _adapt_sql(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_sql(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     statements = _split_sql_statements(text)
     if statements is None:
         return _decline(text, "sql", "unterminated SQL quote or comment", structurally_valid=False)
@@ -547,20 +642,24 @@ def _adapt_sql(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> F
         return _decline(text, "sql", "record limit exceeded", total_records=len(statements))
     if any(len(statement) > limits.max_record_chars for statement in statements):
         return _decline(text, "sql", "statement size limit exceeded")
-    kept = [statement for statement in statements if _contains_selector(statement, selectors)]
+    flags = [_contains_selector(statement, selectors) for statement in statements]
+    kept = [statement for statement, hit in zip(statements, flags) if hit]
     if not kept or len(kept) == len(statements):
         return _decline(text, "sql", "no selective statement match", total_records=len(statements))
+    body = kept if gap_marker is None else _with_gaps(statements, flags, "\n", gap_marker, len(text))
     return FormatResult(
         format="sql",
         applied=True,
-        text="\n".join(kept),
+        text="\n".join(body),
         total_records=len(statements),
         kept_records=len(kept),
         reason="exact matching SQL statements",
     )
 
 
-def _adapt_ini(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_ini(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     del limits
     lines = text.splitlines()
     starts = [index for index, line in enumerate(lines) if re.match(r"^\s*\[[^\]]+\]\s*$", line)]
@@ -570,13 +669,15 @@ def _adapt_ini(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> F
     for position, start in enumerate(starts):
         end = starts[position + 1] if position + 1 < len(starts) else len(lines)
         sections.append("\n".join(lines[start:end]).strip("\n"))
-    kept = [section for section in sections if _contains_selector(section, selectors)]
+    flags = [_contains_selector(section, selectors) for section in sections]
+    kept = [section for section, hit in zip(sections, flags) if hit]
     if not kept or len(kept) == len(sections):
         return _decline(text, "ini", "no selective section match", total_records=len(sections))
+    body = kept if gap_marker is None else _with_gaps(sections, flags, "\n\n", gap_marker, len(text))
     return FormatResult(
         format="ini",
         applied=True,
-        text="\n\n".join(kept),
+        text="\n\n".join(body),
         total_records=len(sections),
         kept_records=len(kept),
         reason="exact matching INI/TOML sections",
@@ -588,7 +689,9 @@ _HTML_CLOSE_WRAPPER_RE = re.compile(r"^\s*</(?:body|html)>\s*$", re.IGNORECASE)
 _HTML_CHILD_RE = re.compile(r"^\s*<([A-Za-z][\w:-]*)(?:\s[^>]*)?>.*</\1>\s*$", re.IGNORECASE)
 
 
-def _adapt_html(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_html(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     del limits
     lines = [line for line in text.splitlines() if line.strip()]
     opening: list[str] = []
@@ -605,39 +708,51 @@ def _adapt_html(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> 
             return _decline(text, "html", "child spans multiple lines")
     if not opening or not closing or not children:
         return _decline(text, "html", "missing line-oriented wrappers or children")
-    kept = [child for child in children if _contains_selector(child, selectors)]
+    flags = [_contains_selector(child, selectors) for child in children]
+    kept = [child for child, hit in zip(children, flags) if hit]
     if not kept or len(kept) == len(children):
         return _decline(text, "html", "no selective child match", total_records=len(children))
+    body = kept if gap_marker is None else _with_gaps(children, flags, "\n", gap_marker, len(text))
     return FormatResult(
         format="html",
         applied=True,
-        text="\n".join([*opening, *kept, *closing]),
+        text="\n".join([*opening, *body, *closing]),
         total_records=len(children),
         kept_records=len(kept),
         reason="HTML wrappers plus exact child elements",
     )
 
 
-def _adapt_vertical(text: str, selectors: tuple[str, ...], limits: FormatLimits) -> FormatResult:
+def _adapt_vertical(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
+) -> FormatResult:
     del limits
     blocks = [block for block in re.split(r"(?:\r?\n){2,}", text) if block.strip()]
-    kept = [block for block in blocks if _contains_selector("".join(block.splitlines()), selectors)]
+    flags = [_contains_selector("".join(block.splitlines()), selectors) for block in blocks]
+    kept = [block for block, hit in zip(blocks, flags) if hit]
     if not kept or len(kept) == len(blocks):
         return _decline(text, "vertical", "no selective vertical column match", total_records=len(blocks))
+    body = kept if gap_marker is None else _with_gaps(blocks, flags, "\n\n", gap_marker, len(text))
     return FormatResult(
         format="vertical",
         applied=True,
-        text="\n\n".join(kept),
+        text="\n\n".join(body),
         total_records=len(blocks),
         kept_records=len(kept),
         reason="matching logical-order OCR columns",
     )
 
 
-_ADAPTERS: dict[str, Callable[[str, tuple[str, ...], FormatLimits], FormatResult]] = {
+_GapMarker = Callable[[int, int], str] | None
+
+_ADAPTERS: dict[str, Callable[..., FormatResult]] = {
     "ndjson": _adapt_ndjson,
-    "csv": lambda text, selectors, limits: _adapt_delimited(text, selectors, limits, ",", "csv"),
-    "tsv": lambda text, selectors, limits: _adapt_delimited(text, selectors, limits, "\t", "tsv"),
+    "csv": lambda text, selectors, limits, gap_marker=None: _adapt_delimited(
+        text, selectors, limits, ",", "csv", gap_marker
+    ),
+    "tsv": lambda text, selectors, limits, gap_marker=None: _adapt_delimited(
+        text, selectors, limits, "\t", "tsv", gap_marker
+    ),
     "markdown": _adapt_markdown,
     "yaml": _adapt_yaml,
     "xml": _adapt_xml,
@@ -654,7 +769,14 @@ def adapt_format(
     limits: FormatLimits | None = None,
     *,
     format_name: str | None = None,
+    gap_marker: _GapMarker = None,
 ) -> FormatResult:
+    """Run the extractive adapter for ``format_name`` (detected when omitted).
+
+    ``gap_marker(omitted_chars, total_chars)``: when given, every contiguous
+    run of dropped records/sections/lines is replaced by one marker line. With
+    ``None`` the output is byte-identical to earlier releases.
+    """
     value = str(text or "")
     resolved_format = format_name or detect_format(value)
     selectors = _query_selectors(query)
@@ -663,4 +785,4 @@ def adapt_format(
     adapter = _ADAPTERS.get(resolved_format)
     if adapter is None:
         return _decline(value, resolved_format, "no safe extractive adapter")
-    return adapter(value, selectors, limits or FormatLimits())
+    return adapter(value, selectors, limits or FormatLimits(), gap_marker)
