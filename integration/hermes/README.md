@@ -1,32 +1,35 @@
-# Hermes rollout bundle — Tameru 1.3.0
+# Hermes integration
 
-This directory is the reviewed deployment input for a Hermes repository. It does not modify a live checkout by itself.
+The canonical Hermes integration lives in its own repository:
 
-## Required sequence
+**https://github.com/0xWhiteMage/hermes-tameru-plugin**
 
-1. Build and install the `tameru-compaction-system==1.3.0` wheel in the Hermes runtime environment.
-2. Copy `integration/hermes/plugins/context_engine/tameru/` to `plugins/context_engine/tameru/` in the target Hermes branch.
-3. For a staged migration, also copy `integration/hermes/plugins/context_engine/extractive/`. It is a deprecated compatibility alias for one release only.
-4. Change every selected `context.engine: extractive` profile to `context.engine: tameru`.
-5. Run the package suite and the Hermes integration command documented below before activation.
-6. Restart only after review and preserve the prior plugin directory and wheel for rollback.
-7. Remove the `extractive` alias after the fleet has no remaining legacy selectors.
+Install it from there (directory copy into `~/.hermes/plugins/tameru/`, or
+`pip install` plus `plugins.enabled: [tameru]`). This repository no longer ships a
+Hermes plugin bundle (`integration/hermes/plugins/...`) or the Hermes-gated tests
+that exercised it.
 
-## Required verification
+## Why the bundle was removed
 
-```bash
-python -m pytest -q
-HERMES_REPO_ROOT=/absolute/path/to/hermes \
-AGENT_REPO_ROOT=/absolute/path/to/hermes \
-python -m pytest \
-  tests/test_compress_keeps_gold.py \
-  tests/test_compress_slash_agent.py \
-  tests/test_init_agent_selects_extractive.py \
-  tests/test_new_agent_engine_load.py \
-  tests/test_prune_below_48k.py \
-  tests/test_compress_preflight.py \
-  tests/test_live_engine_prune_holdout.py \
-  tests/test_extractive_engine_e2e.py -q
-```
+- **One maintained copy.** The bundle and the plugin repo were two copies of the same
+  glue code, and they drifted. The plugin repo is the only one with CI against a real
+  Hermes checkout (pinned SHA plus a nightly run against Hermes `main`).
+- **Different integration point.** The plugin no longer wraps `compress()` or runs ahead
+  of Hermes' own gates. It hooks Hermes' per-result demotion seam
+  (`ContextCompressor._demote_tool_result_at`), so Hermes' dedupe, protected tail,
+  pending-round spare, thresholds and pairing sanitizer all still apply, and Tameru
+  becomes the better per-result step. That design needs Hermes-specific tests, which
+  belong next to the plugin and not in the engine repo.
+- **The engine stays harness-agnostic.** `src/tameru/` has no host imports. The plugin
+  vendors those modules with `scripts/sync_to_harness.py`; use
+  `python scripts/sync_to_harness.py <plugin_tameru_dir> --manifest ../plugin.yaml --check`
+  to detect drift (see `harnesses/README.md`).
 
-The rollout is blocked if a profile still selects `extractive` without the compatibility alias installed, if the plugin metadata is not `1.3.0`, or if any required Hermes-facing test is skipped or fails.
+The Hermes-facing tests that used to live here (`test_compress_keeps_gold`,
+`test_compress_slash_agent`, `test_init_agent_selects_extractive`,
+`test_new_agent_engine_load`, `test_prune_below_48k`, `test_compress_preflight`,
+`test_live_engine_prune_holdout`, `test_extractive_engine_e2e`,
+`test_install_extractive_engine`) were retired here; their intent is covered by the
+plugin repo's real-Hermes tests.
+
+For other harnesses, see [`harnesses/README.md`](../../harnesses/README.md).

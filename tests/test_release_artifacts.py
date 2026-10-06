@@ -1,13 +1,25 @@
-"""Release-artifact consistency checks for Tameru 1.2.0."""
+"""Release-artifact consistency checks (version-agnostic)."""
 from __future__ import annotations
 
+import re
 import tomllib
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUNDLE = ROOT / "integration" / "hermes" / "plugins" / "context_engine"
+
+
+def _project_version() -> str:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return project["project"]["version"]
+
+
+def _init_version() -> str:
+    text = (ROOT / "src" / "tameru" / "__init__.py").read_text(encoding="utf-8")
+    match = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.M)
+    assert match, "src/tameru/__init__.py defines no __version__"
+    return match.group(1)
 
 
 class ReleaseArtifactTests(unittest.TestCase):
@@ -31,30 +43,12 @@ class ReleaseArtifactTests(unittest.TestCase):
     def test_public_version_matches_project_metadata(self):
         from tameru import __version__
 
-        project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(__version__, project["project"]["version"])
+        self.assertEqual(__version__, _project_version())
 
-    def test_package_and_plugin_versions_match(self):
-        project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        version = project["project"]["version"]
-        self.assertEqual(version, "1.3.0")
-        for name in ("tameru", "extractive"):
-            metadata = (BUNDLE / name / "plugin.yaml").read_text(encoding="utf-8")
-            self.assertIn(f"version: {version}", metadata)
-
-    def test_bundle_python_files_compile(self):
-        for name in ("tameru", "extractive"):
-            source = (BUNDLE / name / "__init__.py").read_text(encoding="utf-8")
-            compile(
-                source,
-                str(BUNDLE / name / "__init__.py"),
-                "exec",
-            )
-
-    def test_compatibility_alias_delegates_to_canonical_plugin(self):
-        alias = (BUNDLE / "extractive" / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn("plugins.context_engine.tameru", alias)
-        self.assertIn("ExtractiveContextEngine", alias)
+    def test_init_and_pyproject_versions_are_equal(self):
+        """Source-file check, independent of which tameru is importable."""
+        self.assertRegex(_project_version(), r"^\d+\.\d+\.\d+")
+        self.assertEqual(_init_version(), _project_version())
 
     def test_installed_command_is_declared(self):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))

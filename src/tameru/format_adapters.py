@@ -52,6 +52,21 @@ def _decline(
     )
 
 
+# v1.4.0 (E6): conversational filler. A reply made only of these words names
+# nothing in the document, so it must behave like an empty query everywhere —
+# including here, where the plain-word fallback below would otherwise turn
+# "continue" into a row selector ("98% saved, 1 CSV row kept").
+# compress_context.py extends its next-chat stoplist from this set.
+FILLER_WORDS = frozenset(
+    {
+        "continue", "thanks", "thank", "ahead", "proceed", "okay", "ok",
+        "sure", "lgtm", "sounds", "good", "great", "yes", "yeah", "yep",
+        "cool", "done", "again", "retry", "going", "carry", "nice",
+        "perfect", "please", "alright", "fine", "thx", "yup", "go", "fix",
+    }
+)
+
+
 def _query_selectors(query: str) -> tuple[str, ...]:
     candidates = list(distinctive_query_terms(query or ""))
     candidates.extend(search_units(query or ""))
@@ -72,6 +87,10 @@ def _query_selectors(query: str) -> tuple[str, ...]:
         selectors.append(value)
         if len(selectors) >= 128:
             break
+    if selectors and all(value in FILLER_WORDS for value in selectors):
+        # Filler-only query: no plain-word fallback (E6). Mixed queries keep
+        # their filler words ("which tasks are done" still selects "done").
+        return ()
     strong = [
         value
         for value in selectors
@@ -98,7 +117,10 @@ def _contains_selector(text: str, selectors: tuple[str, ...]) -> bool:
 def _json_loads(value: str):
     try:
         return json.loads(value)
-    except (json.JSONDecodeError, RecursionError):
+    except (ValueError, RecursionError):
+        # ValueError covers JSONDecodeError AND CPython's 4300-digit int limit:
+        # a line that is a 20k-digit number (`python -c "print(2**100000)"`)
+        # is not JSON for our purposes, and must not crash detection.
         return None
 
 

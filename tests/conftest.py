@@ -8,3 +8,11 @@ SRC = str(Path(__file__).resolve().parents[1] / "src")
 if SRC in sys.path:
     sys.path.remove(SRC)
 sys.path.insert(0, SRC)
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "perf: timing-sensitive scaling checks (assert ratios between input sizes, "
+        "never absolute milliseconds); deselect with -m 'not perf'",
+    )
