@@ -96,3 +96,19 @@ def test_query_term_present_in_every_row_does_not_crowd_out_anomalies():
     rows = [{"id": i, "status": "ok" if i != 777 else "error"} for i in range(1000)]
     out = json.loads(json_brief(json.dumps(rows), budget_chars=1200, query="status"))
     assert any(r["id"] == 777 for r in out["_notable"])
+
+
+def test_brief_never_materialises_surrogates_or_bidi_controls():
+    """Escaped ``\\ud800`` / ``\\u202e`` in the input stay escaped in the brief:
+    a raw lone surrogate cannot be encoded, a raw override is a live control."""
+    rows = [{"id": i, "s": "\\ud800\\u202e".encode().decode("unicode_escape", "surrogatepass")} for i in range(30)]
+    text = json.dumps(rows)  # ensure_ascii=True: escapes in the source text
+    out = json_brief(text, budget_chars=600)
+    assert out is not None
+    out.encode("utf-8")
+    assert out.isascii()
+    assert json.loads(out)["_head"][0]["s"] == rows[0]["s"]
+    astral = json.dumps([{"i": i, "s": "\U000e0001"} for i in range(30)], ensure_ascii=False)
+    out = json_brief(astral, budget_chars=600)
+    assert out is not None and out.isascii()
+    assert json.loads(out)["_head"][0]["s"] == "\U000e0001"

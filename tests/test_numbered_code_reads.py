@@ -100,3 +100,24 @@ def test_prose_with_numbered_lines_minority_is_not_numbered_code():
         + [f"{i}: item" for i in range(1, 3)]
     )
     assert detect_format(text) != "numbered_code"
+
+
+@pytest.mark.parametrize("fmt", ["tab", "pipe"])
+def test_code_hint_on_a_numbered_read_keeps_the_function_whole(fmt):
+    """``content_hint="code"`` on a read that carries a line-number gutter used to
+    score the gutter as code: blank source lines read as non-blank and the
+    function asked about was cut in the middle of its body."""
+    text = _render(fmt)
+    results = [
+        compress_context(
+            text, "what does handler_240 do?", ccr=False, citations=False,
+            content_hint=hint,
+        )
+        for hint in (None, "code", "numbered_code")
+    ]
+    assert not results[1].fail_open
+    assert results[1].compressed_text == results[0].compressed_text
+    assert results[1].compressed_text == results[2].compressed_text
+    for fragment in BODY:
+        assert fragment in results[1].compressed_text
+    assert results[1].receipt["content_hint"] == "code"  # the caller's word is recorded

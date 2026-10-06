@@ -14,8 +14,12 @@ def test_masking_placeholders():
     assert m("at 2026-03-14t12:00:01.123z") == "at <ts>"
     assert m("12:00:01.5 took 12ms, 3.5s") == "<ts> took <dur>, <dur>"
     assert m("sha deadbeef01 end") == "sha <hex> end"
-    assert m("open 'a b' and \"c d\"") == 'open "<str>" and "<str>"'
-    assert m("read /var/log/app/x.log now") == "read <path> now"
+    assert m("open 'a-1 b' and \"c 2\"") == 'open "<str>" and "<str>"'
+    assert m("read /var/log/app-7/x.log now") == "read <path> now"
+    # Without a digit a quoted value or path names a thing, not an instance: different messages stay apart.
+    assert m('table "orders" locked') != m('table "payments" locked')
+    assert m("open 'alice'") != m("open 'bob'")
+    assert m("read /srv/data/a.db") != m("read /srv/data/b.db")
     assert m("worker-12") == "worker-#"
     assert m("don't stop, it's fine") == "don't stop, it's fine"
 
@@ -77,3 +81,30 @@ def test_masking_is_linear_on_pathological_lines():
     for _ in range(50):
         mask_template(line[:2000])
     assert time.perf_counter() - t0 < 2.0
+
+
+def test_errors_naming_different_things_are_not_one_template():
+    """1.4.0 masked every quoted value and path, so these four distinct errors collapsed into one."""
+    lines = []
+    for i in range(12):
+        lines.append(f"2026-03-14 12:00:{i:02d} INFO heartbeat ok seq={i}")
+    errs = [
+        'ERROR db: deadlock on table "orders"',
+        'ERROR db: deadlock on table "payments"',
+        "ERROR store: cannot open /srv/data/a.db",
+        "ERROR store: cannot open /srv/data/b.db",
+    ]
+    text = "\n".join(lines[:6] + errs + lines[6:])
+    fps = error_fingerprints(text)
+    assert len(fps) == 4
+    kept = "\n".join(preprocess_logs(text.split("\n")))
+    for e in errs:
+        assert e in kept
+
+
+def test_messages_that_differ_by_a_quoted_word_keep_their_own_templates():
+    msgs = [f'msg="{w} completed"' for w in ("sync", "backup", "rotate", "index", "vacuum", "upload", "prune", "warmup")]
+    lines = [f"2026-03-14T12:{i // 60:02d}:{i % 60:02d}Z INFO {msgs[i % 8]} svc=api" for i in range(240)]
+    out = preprocess_logs(lines)
+    for m in msgs:
+        assert any(m in line for line in out), m

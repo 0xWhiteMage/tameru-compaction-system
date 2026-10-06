@@ -102,3 +102,38 @@ def test_json_minify_refuses_to_turn_an_overflowing_number_into_infinity():
     folded, stats = fold_lossless(raw)
     assert "Infinity" not in folded
     assert not stats["json_minified"]
+
+
+# --- QA pass (1.4.0): CR line endings, literal markers, exact JSON minify ---
+
+
+def test_trailing_cr_run_does_not_erase_the_line():
+    """``abc\\r\\r\\n`` shows ``abc``: the CRs belong to the line ending."""
+    assert fold_lossless("abc\r\r\nnext")[0] == "abc\nnext"
+    assert fold_lossless("a\rb\r\r\n")[0] == "b\n"
+
+
+def test_literal_run_marker_lines_keep_fold_idempotent():
+    marker = "[×3 identical lines]"
+    text = "\n".join(["aaaaaaaa"] * 4 + [marker, marker])
+    once, _ = fold_lossless(text)
+    assert fold_lossless(once)[0] == once
+    assert len(once) <= len(text)
+    # marker-looking lines themselves are never run-collapsed
+    assert fold_lossless("\n".join([marker] * 5))[0] == "\n".join([marker] * 5)
+
+
+def test_json_minify_keeps_number_and_escape_literals_exactly():
+    raw = '[\n  1.10,\n  -0,\n  1E2,\n  "\\ud800",\n  "\\u202e",\n  0.1000000000000000055511151231257827\n]'
+    out, stats = fold_lossless(raw)
+    assert stats["json_minified"]
+    assert out == '[1.10,-0,1E2,"\\ud800","\\u202e",0.1000000000000000055511151231257827]'
+    assert json.loads(out) == json.loads(raw)
+    out.encode("utf-8")  # no lone surrogate was materialised
+
+
+def test_json_minify_keeps_duplicate_keys_and_whitespace_inside_strings():
+    raw = '{\n  "a": 1,\n  "a": " x  y ",\n  "b": "line\\n  two"\n}'
+    out, stats = fold_lossless(raw)
+    assert stats["json_minified"]
+    assert out == '{"a":1,"a":" x  y ","b":"line\\n  two"}'

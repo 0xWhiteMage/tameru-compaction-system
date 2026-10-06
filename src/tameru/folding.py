@@ -33,6 +33,10 @@ _ANSI_RE = re.compile(
 )
 _RUN_MIN = 3
 _ANSI_PASSES = 4
+# The marker this module writes. A literal marker-looking line is never run-
+# collapsed: otherwise ``a a a a`` (-> ``a`` + marker) followed by two literal
+# marker lines would fold again on the next pass (not idempotent).
+_RUN_MARKER_RE = re.compile(r"\[×\d+ identical lines\]")
 
 
 def _strip_ansi_line(ln: str) -> tuple[str, int]:
@@ -61,7 +65,10 @@ def _fold_text_steps(text: str, stats: dict) -> list[str]:
     cr = 0
     for i, ln in enumerate(lines):
         if "\r" in ln:
-            body = ln[:-1] if ln.endswith("\r") else ln  # the \r of a \r\n
+            # Trailing \r's belong to the line ending (\r\n, or a bare \r
+            # that redraws nothing): they must not erase the line's text
+            # ("abc\r\r\n" shows "abc").
+            body = ln.rstrip("\r")
             if "\r" in body:
                 body = body.rsplit("\r", 1)[1]
                 cr += 1
@@ -95,7 +102,7 @@ def _fold_runs(lines: list[str], stats: dict) -> list[str]:
         while j < n and lines[j] == lines[i]:
             j += 1
         run = j - i
-        if run >= _RUN_MIN:
+        if run >= _RUN_MIN and not _RUN_MARKER_RE.fullmatch(lines[i]):
             marker = f"[×{run - 1} identical lines]"
             if len(lines[i]) + 1 + len(marker) < run * len(lines[i]) + run - 1:
                 out.append(lines[i])
@@ -109,28 +116,35 @@ def _fold_runs(lines: list[str], stats: dict) -> list[str]:
     return out
 
 
+_JSON_STRING_OR_WS_RE = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*")|[ \t\r\n]+')
+
+
 def _json_minified(text: str) -> str | None:
-    """Minified form of ``text`` when it is JSON and that is strictly shorter."""
+    """``text`` with the insignificant whitespace removed, when it is JSON and
+    that is strictly shorter.
+
+    Only whitespace outside string literals is removed, so every number
+    literal, string escape, key order and duplicate key stays byte for byte
+    (re-serialising would turn ``"\\ud800"`` into a lone surrogate, ``"\\u202e"``
+    into a raw bidi override, ``1.10`` into ``1.1`` and ``-0`` into ``0``).
+    """
     head = text.lstrip()[:1]
     if head not in ("{", "["):
         return None
     try:
-        obj = json.loads(text)
-        mini = json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+        # a number that overflows to inf (1e400) is not minified, as before
+        json.loads(text, parse_float=_finite_float)
     except (ValueError, RecursionError):
         return None
-    if len(mini) >= len(text):
-        return None
-    if "Infinity" in mini and "Infinity" not in text:  # 1e400 parses to inf
-        return None
-    try:
-        # Pair-list hook: also catches duplicate keys and reordered keys.
-        same = json.loads(mini, object_pairs_hook=list) == json.loads(
-            text, object_pairs_hook=list
-        )
-    except (ValueError, RecursionError):
-        return None
-    return mini if same else None
+    mini = _JSON_STRING_OR_WS_RE.sub(lambda m: m.group(1) or "", text)
+    return mini if len(mini) < len(text) else None
+
+
+def _finite_float(literal: str) -> float:
+    value = float(literal)
+    if value in (float("inf"), float("-inf")):
+        raise ValueError("non-finite number")
+    return value
 
 
 def fold_lossless(text: str) -> tuple[str, dict]:
@@ -193,22 +207,31 @@ _M_HEX = re.compile(r"[0-9a-f]{6,}")
 _M_DIGITS = re.compile(r"\d+")
 
 
+def _volatile(placeholder: str):
+    """A substitution that masks a quoted value or path only when it holds a digit (an id, a temp dir,
+    a port): ``table "orders"`` and ``table "payments"``, or ``/srv/data/a.db`` and ``/srv/data/b.db``,
+    are different messages, not one template."""
+    def sub(m: re.Match) -> str:
+        return placeholder if any(ch.isdigit() for ch in m.group(0)) else m.group(0)
+    return sub
+
+
 def mask_template(s: str) -> str:
     """Mask the volatile fields of one (already lowercased) log line.
 
-    Quoted strings -> ``"<str>"``, ISO-8601 timestamps and ``HH:MM:SS(.fff)``
+    Quoted strings holding a digit -> ``"<str>"``, ISO-8601 timestamps and ``HH:MM:SS(.fff)``
     -> ``<ts>``, UUIDs -> ``<uuid>``, IPv4/IPv6 -> ``<ip>``, paths of three or
-    more segments -> ``<path>``, durations -> ``<dur>``, hex runs of 6+ ->
+    more segments holding a digit -> ``<path>``, durations -> ``<dur>``, hex runs of 6+ ->
     ``<hex>``, then digits -> ``#`` and whitespace collapsed. Callers apply
     their own length cap.
     """
-    s = _M_DQ.sub('"<str>"', s)
-    s = _M_SQ.sub('"<str>"', s)
+    s = _M_DQ.sub(_volatile('"<str>"'), s)
+    s = _M_SQ.sub(_volatile('"<str>"'), s)
     s = _M_TS.sub("<ts>", s)
     s = _M_UUID.sub("<uuid>", s)
     s = _M_IP4.sub("<ip>", s)
     s = _M_IP6.sub("<ip>", s)
-    s = _M_PATH.sub("<path>", s)
+    s = _M_PATH.sub(_volatile("<path>"), s)
     s = _M_DUR.sub("<dur>", s)
     s = _M_HEX.sub("<hex>", s)
     s = _M_DIGITS.sub("#", s)
@@ -224,9 +247,30 @@ _MAX_NOTABLE = 5
 _LOWCARD_MAX = 10
 
 
+# ensure_ascii=False writes these raw: lone surrogates (a str that cannot be
+# encoded as UTF-8), bidi/format controls (a brief must not turn the escaped
+# "\\u202e" of its input into a live override) and line separators. They are
+# escaped back, which is always valid inside a JSON string.
+_UNSAFE_RAW_RE = re.compile(
+    "[\x7f-\x9f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f"
+    "\ufeff\ufff9-\ufffb\ud800-\udfff\U000e0000-\U000e007f]"
+)
+
+
 def _dumps(obj: Any) -> str:
     # allow_nan=False: NaN/Infinity are not valid JSON, and the brief must be.
-    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    out = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    if out.isascii():
+        return out
+    return _UNSAFE_RAW_RE.sub(_escape_char, out)
+
+
+def _escape_char(match: "re.Match[str]") -> str:
+    code = ord(match.group())
+    if code > 0xFFFF:  # JSON escapes astral characters as a surrogate pair
+        code -= 0x10000
+        return "\\u%04x\\u%04x" % (0xD800 + (code >> 10), 0xDC00 + (code & 0x3FF))
+    return "\\u%04x" % code
 
 
 def _find_rows(obj: Any) -> tuple[list[dict], str | None, dict] | None:

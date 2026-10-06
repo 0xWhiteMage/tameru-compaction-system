@@ -168,3 +168,30 @@ def test_a_non_matching_generator_is_read_once_and_the_auto_ladder_still_runs():
     )
     assert result.policy_name != "local-noop-recursion"
     assert not result.fail_open
+
+
+@pytest.mark.parametrize("field", ["output", "content"])
+@pytest.mark.parametrize("ensure_ascii", [True, False])
+def test_marker_opening_a_tool_payload_line_counts_inside_the_json_wrapper(field, ensure_ascii):
+    """A Hermes tool result is a JSON object around one payload string: the
+    marker that opens the payload is escaped there and never opens a line of the
+    wrapper text, so a re-wrapped compacted result used to be compressed again."""
+    import json
+
+    payload = _marked()
+    text = json.dumps({field: payload, "exit_code": 0}, ensure_ascii=ensure_ascii)
+    result = compress_context(
+        text, QUERY, ccr=False, citations=False, recursion_markers=[HERMES]
+    )
+    _assert_guard_noop(text, result)
+
+
+def test_marker_mentioned_mid_line_of_a_wrapped_payload_is_still_not_a_match():
+    import json
+
+    payload = _doc("the host once wrote " + HERMES + " in a sentence")
+    text = json.dumps({"output": payload, "exit_code": 0})
+    result = compress_context(
+        text, QUERY, ccr=False, citations=False, recursion_markers=[HERMES]
+    )
+    assert result.policy_name != "local-noop-recursion"

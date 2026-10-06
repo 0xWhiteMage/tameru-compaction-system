@@ -85,3 +85,20 @@ class ExtractiveToolPruneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BigIntegerJsonTests(unittest.TestCase):
+    def test_answer_scan_survives_a_4300_digit_integer_in_tool_json(self):
+        """CPython refuses to parse an integer of more than 4300 digits with a
+        ValueError (not a JSONDecodeError): the answer-requirement scan must treat
+        that payload as "not JSON" like every other JSON site, not crash."""
+        from tameru.transcript import _json_query_answers, query_facts_lost
+
+        payload = '{"a": %s, "name": "widget-12"}' % ("9" * 5000)
+        query = "what is the name of widget-12?"
+        self.assertEqual(_json_query_answers(payload, query), set())
+        before = [
+            {"role": "user", "content": query},
+            {"role": "tool", "tool_call_id": "1", "content": payload},
+        ]
+        self.assertIn(query_facts_lost(before, before, query), (True, False))

@@ -461,30 +461,35 @@ _DIGITS_RE = re.compile(r"\d+")
 _FINGERPRINT_CAP = 160
 
 
+def _without_zero_counts(s: str) -> str:
+    """``s`` with its literal-zero count phrases ("0 errors", "errors: 0",
+    "failed=0") removed. A line is negated only when nothing else in it signals
+    a failure: Maven's ``[ERROR] Tests run: 5, Failures: 2, Errors: 0`` reports
+    a failure *and* a zero count, and must stay an error line."""
+    return _ERR_NEGATED_RE.sub(" ", s)
+
+
 def _is_level_error_line(line: str) -> bool:
     """A level-tagged ERROR/FATAL/CRITICAL/PANIC/FAIL* log line."""
-    s = line[:_RX_LINE_CAP]
-    return _ERR_LEVEL_RE.search(s) is not None and _ERR_NEGATED_RE.search(s) is None
+    return _ERR_LEVEL_RE.search(_without_zero_counts(line[:_RX_LINE_CAP])) is not None
 
 
 def _is_error_line(line: str) -> bool:
     """Level-tagged error, ``XxxError:``/``Exception:`` head, traceback head or
     Go panic — the lines :func:`error_fingerprints` keys on."""
-    s = line[:_RX_LINE_CAP]
+    s = _without_zero_counts(line[:_RX_LINE_CAP])
     # The exception head is anchored at the line start: look past a "[×N] "
     # collapse prefix so the same failure keeps its key after a fold.
     head = s
     prefix = _COUNT_PREFIX_RE.match(s)
     if prefix:
         head = s[prefix.end():]
-    if not (
+    return bool(
         _ERR_LEVEL_RE.search(s)
         or _ERR_EXC_RE.match(head)
         or _ERR_TRACEBACK in s
         or _ERR_PANIC_RE.search(s)
-    ):
-        return False
-    return _ERR_NEGATED_RE.search(s) is None
+    )
 
 
 def _error_fp(line: str) -> str:
@@ -1142,9 +1147,28 @@ def _has_anchored_marker(text: str, markers: tuple[str, ...]) -> bool:
     or text that resembles a marker without being one, does not count."""
     if not markers:
         return False
-    if not any(m in text for m in markers):  # cheap reject before the line scan
+    if any(m in text for m in markers) and any(
+        line.lstrip().startswith(markers) for line in text.splitlines()
+    ):  # (the substring test is a cheap reject before the line scan)
+        return True
+    return _marker_in_tool_payload(text, markers)
+
+
+def _marker_in_tool_payload(text: str, markers: tuple[str, ...]) -> bool:
+    """A Hermes tool result is a JSON object around ONE payload string, so a
+    marker that opens a line of the payload is escaped inside the JSON text and
+    never opens a line of it. Judge the unwrapped payload as well, otherwise a
+    host that re-wraps its compacted output (``rewrap_tool_payload``) would see
+    that output compressed a second time."""
+    if text.lstrip()[:1] != "{":
         return False
-    return any(line.lstrip().startswith(markers) for line in text.splitlines())
+    escaped = [json.dumps(m, ensure_ascii=a)[1:-1] for m in markers for a in (False, True)]
+    if not any(e in text for e in escaped):
+        return False
+    inner = unwrap_tool_payload(text).inner
+    if inner is text:
+        return False
+    return any(line.lstrip().startswith(markers) for line in inner.splitlines())
 
 
 def preprocess(
@@ -4450,8 +4474,11 @@ def compress_context(
     # judged on the unwrapped payload: no table detector, no supersession, the
     # gutter kept in the output but out of the scorer's view. `route_hint` is
     # what the engine routes by; the receipt still records the caller's hint.
+    # A "code" hint on a numbered read means the same thing: the gutter must
+    # not count as code (it made blank source lines non-blank and split
+    # function bodies at the cut).
     route_hint = content_hint
-    if route_hint is None and is_numbered_code(text):
+    if route_hint in (None, "code") and is_numbered_code(text):
         route_hint = "numbered_code"
         code_hint = True
         no_table = True

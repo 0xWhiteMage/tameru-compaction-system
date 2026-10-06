@@ -361,7 +361,7 @@ def _json_query_answer_requirements(
         normalised = preprocess_json(payload, query)
         try:
             parsed_values.append(json.loads(normalised))
-        except (json.JSONDecodeError, RecursionError):
+        except (ValueError, RecursionError):  # JSONDecodeError + the 4300-digit int limit
             return
 
     parse_payload(content)

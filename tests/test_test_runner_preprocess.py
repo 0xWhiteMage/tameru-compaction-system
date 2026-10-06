@@ -270,3 +270,87 @@ def test_reduced_jest_run_keeps_failing_test_names_through_scoring():
         assert len(out) < len(text)
         for i in range(12):
             assert f"does thing {i}" in out and f"f{i}.test.js" in out
+
+
+# --- QA pass (1.4.0): errors around / inside a run are never reduced away ---
+
+
+def test_pytest_equals_rule_in_captured_output_does_not_end_the_failure_section():
+    text = "\n".join(
+        [
+            "=" * 25 + " test session starts " + "=" * 25,
+            "collected 30 items",
+            "",
+            "tests/test_a.py " + "." * 28 + "FF [100%]",
+            "",
+            "=" * 33 + " FAILURES " + "=" * 33,
+            "_" * 20 + " test_one " + "_" * 20,
+            "E   AssertionError: first failure",
+            "------------------------------ Captured stdout call ------------------------------",
+            "===== Report =====",
+            "_" * 20 + " test_two " + "_" * 20,
+            "E   ValueError: second failure body",
+            "tests/test_a.py:30: ValueError",
+            "=" * 20 + " short test summary info " + "=" * 20,
+            "FAILED tests/test_a.py::test_one - AssertionError",
+            "FAILED tests/test_a.py::test_two - ValueError",
+            "=" * 20 + " 2 failed, 28 passed in 1.23s " + "=" * 20,
+        ]
+    )
+    out = preprocess_test_output(text, "")
+    assert out is not None
+    assert "===== Report =====" in out
+    assert "E   ValueError: second failure body" in out
+    assert "tests/test_a.py:30: ValueError" in out
+
+
+def test_errors_printed_around_a_run_survive():
+    """``make test`` / ``tox`` / a compiler wrap the runner and say why it failed."""
+    pytest_run = [
+        "=" * 25 + " test session starts " + "=" * 25,
+        "collected 12 items",
+        "",
+        "tests/test_a.py " + "." * 12 + " [100%]",
+        "",
+        "=" * 25 + " 12 passed in 0.80s " + "=" * 25,
+    ]
+    text = "\n".join(
+        ["$ make test", "foo.c:3: error: expected ';' before '}' token"]
+        + pytest_run
+        + ["make: *** [Makefile:12: test] Error 1", "ERROR: py311: commands failed"]
+    )
+    out = preprocess_test_output(text, "")
+    assert out is not None
+    for line in (
+        "foo.c:3: error: expected ';' before '}' token",
+        "make: *** [Makefile:12: test] Error 1",
+        "ERROR: py311: commands failed",
+    ):
+        assert line in out
+    assert "collected 12 items" not in out
+
+    cargo = "\n".join(
+        [
+            "   Compiling a v0.1.0",
+            "error[E0432]: unresolved import `x`",
+            " --> src/main.rs:1:5",
+            "",
+            "error: could not compile `a` (bin \"a\") due to 1 previous error",
+            "     Running unittests src/lib.rs",
+            "running 2 tests",
+            "test a ... ok",
+            "test b ... ok",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; finished in 0.00s",
+            "error: test failed, to rerun pass `--lib`",
+        ]
+    )
+    out = preprocess_test_output(cargo, "")
+    assert out is not None
+    assert "error[E0432]: unresolved import `x`" in out and " --> src/main.rs:1:5" in out
+    assert "could not compile `a`" in out and "error: test failed, to rerun" in out
+    assert "Compiling a" not in out
+
+    jest = JEST + "\nnpm ERR! Test failed.  See above for more details.\n"
+    out = preprocess_test_output(jest, "")
+    assert out is not None and "npm ERR! Test failed." in out
+    assert "noisy debug output" not in out and "PASS src/suite_3.test.js" not in out

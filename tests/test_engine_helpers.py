@@ -616,3 +616,17 @@ def test_estimate_tokens_fast_path_matches_the_definition():
             else len(cc.token_units(text))
         )
         assert estimate_tokens(text) == max(1, expected)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[ERROR] Tests run: 5, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE!",
+        "FAILED (failures=2, errors=0)",
+        "ERROR: build broke (errors: 0 in lint)",
+    ],
+)
+def test_a_failure_line_that_also_reports_a_zero_count_is_still_an_error(line):
+    """The zero-count phrase negates a line only when nothing else in it signals a
+    failure (Maven prints ``Failures: 2, Errors: 0`` on the failing line)."""
+    assert error_fingerprints(line)

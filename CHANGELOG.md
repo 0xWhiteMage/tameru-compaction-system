@@ -34,13 +34,22 @@ affected by the fixes below is unchanged.
 - Quadratic hot spots in critical-line recall, summary fact checks and backtracking path/token regexes (bounded): a generated 650 KB INFO/ERROR log through `compress_context(log, "why are requests failing?", ccr=False, citations=False)` went from 22.5 s to under 1 s; every error fingerprint is retained.
 - Misdetection of code as CSV and numbered reads as two-column TSV.
 
+### Fixed (QA round 2, same release)
+- Test-runner reduction dropped errors printed around or inside a run: a `=====` rule in captured stdout ended the pytest FAILURES section (later failure bodies lost); compiler/`make`/tox `ERROR:` lines around a pytest run, cargo `error[E…]` / `could not compile`, and `npm ERR!` around jest were dropped. Unknown lines outside the recognised noise are now kept.
+- Log templates masked every quoted value and path, merging distinct messages (`table "orders"` / `"payments"`, `a.db` / `b.db`) into one template and one error fingerprint; quoted values and paths are masked only when they hold a digit.
+- Error lines that also report a zero count (`Failures: 2, Errors: 0 ... FAILURE!`, `FAILED (failures=2, errors=0)`) were treated as negated and lost exemplar protection.
+- `recursion_markers` missed a marker opening a line inside a JSON tool payload (`rewrap_tool_payload` output was compressed twice).
+- `fold_lossless` JSON minify re-serialised values (`1.10` → `1.1`, `-0` → `0`, lone surrogates, raw bidi overrides); it now removes only whitespace outside strings. `json_brief`/`brief_context` escape surrogates and bidi controls. Fold is idempotent on literal `[×N identical lines]` lines; a trailing CR run no longer erases a line.
+- `content_hint="code"` on a numbered read split function bodies (now routed as numbered code).
+- A 4300+ digit integer in tool JSON crashed the answer scan in `transcript`.
+
 ### Removed
 - `integration/hermes` bundle (`context_engine/extractive`, `context_engine/tameru`) and the nine Hermes-gated tests; the integration now lives in [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin).
 
 ### Benchmarks
 - Re-run 2026-10-06 on 1.4.0: `benchmarks/run_battery.py` 15/15 pass with savings identical to the checked-in 1.3.0 JSON; only per-case `ms` timings differ (machine noise, e.g. `large_doc_perf` 656 -> 819 ms), and `benchmarks/production-qa-v3-results.json` was updated accordingly. `benchmarks/threshold_sweep.py` (prints only): 15/15 clean at every `budget_ratio`, mean saved 77.3% / 68.4% / 61.2% / 41.5% / 24.9% at 0.1 / 0.2 / 0.3 / 0.5 / 0.7, 0 restorations, 0 leaks.
 - Not re-run (need network or local models): the 17-case holdout and the jev_comparison arms (JEV, Laya, headroom, TF-IDF); their tables in `benchmarks/COMPARISON.md` and the README remain the 1.2.0/1.3.0 measurements and are labelled as such.
-- Full suite: 1105 passed, 3 skipped.
+- Full suite: 1105 passed, 3 skipped (1125 passed, 3 skipped after QA round 2; battery and sweep unchanged).
 
 ---
 

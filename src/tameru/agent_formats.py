@@ -741,11 +741,31 @@ def _render_kept(
     return "\n".join(out)
 
 
+# Section headers pytest itself prints between "=" rules. A "=== x ===" line
+# inside a failure block that is NOT one of these is the test's own captured
+# output ("===== Report ====="), not a section boundary.
+_PYTEST_KNOWN_HDR_RE = re.compile(
+    r"test session starts|warnings? summary|passes|xfailures|xpasses"
+    r"|slowest(?: \d+)? durations|rerun test summary info|short test summary info"
+    r"|failures|errors|.*\bin [\d.]+s\b.*|no tests ran.*|.*\bwarnings?\b.*",
+    re.IGNORECASE,
+)
+# Lines of a dropped pytest section that still name a failure ("collected 3
+# items / 1 error", "ERROR: ...", an exception from a ``-s`` run).
+_PYTEST_FAILURE_WORD_RE = re.compile(
+    r"\b(?:errors?|failed|failures?|traceback|exceptions?|fatal|panic)\b|Error\b",
+    re.IGNORECASE,
+)
+
+
 def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     n = len(lines)
     keep = [False] * n
     tests = [0] * n
     suites = [0] * n
+    # "" (before the first header, and after the final summary) keeps what it
+    # does not recognise: `make`/`tox`/compiler output around a pytest run
+    # carries the errors that explain the run ("make: *** [test] Error 1").
     section = ""
     for i, ln in enumerate(lines):
         m = _PYTEST_HDR_RE.match(ln)
@@ -753,10 +773,12 @@ def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]
             name = m.group(1).lower()
             if _PYTEST_SUMMARY_RE.search(name):
                 keep[i] = True
-                section = "final"
+                section = ""
             elif name in {"failures", "errors"} or name.startswith("short test summary"):
                 keep[i] = True
                 section = "keep"
+            elif section == "keep" and not _PYTEST_KNOWN_HDR_RE.fullmatch(name):
+                keep[i] = True  # captured output inside a failure block
             else:
                 section = "drop"
             continue
@@ -779,6 +801,11 @@ def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]
                 keep[i] = True  # names the file a failure is in (--tb=no has no block)
             else:
                 tests[i] = p.group(1).count(".")
+            continue
+        if section == "" and ln.strip():
+            keep[i] = True
+        elif section == "drop" and _PYTEST_FAILURE_WORD_RE.search(ln):
+            keep[i] = True
     return keep, tests, suites
 
 
@@ -807,6 +834,10 @@ def _classify_jest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
             keep[i] = True
         elif _JEST_TICK_RE.match(ln):
             tests[i] = 1
+        elif ln.strip() and ln[:1] not in (" ", "\t"):
+            # An unindented line outside every block ("npm ERR! Test failed",
+            # a build error printed around the run) is not jest's own report.
+            keep[i] = True
     return keep, tests, suites
 
 
@@ -854,12 +885,18 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
     tests = [0] * n
     suites = [0] * n
     in_failures = False
+    in_error = False  # a compiler/cargo `error...` diagnostic, up to its blank line
     for i, ln in enumerate(lines):
         if in_failures:
             keep[i] = True
             if ln.startswith("test result:"):
                 in_failures = False
             continue
+        if in_error:
+            if ln.strip():
+                keep[i] = True
+                continue
+            in_error = False
         if ln == "failures:":
             in_failures = True
             keep[i] = True
@@ -871,6 +908,11 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
             tests[i] = 1
         elif ln.startswith("test ") and ln.endswith("FAILED"):
             keep[i] = True
+        elif ln.startswith(("error:", "error[")):
+            # `error[E0432]: unresolved import`, `error: could not compile`,
+            # `error: test failed, to rerun pass ...`: never reduced away.
+            keep[i] = True
+            in_error = True
     return keep, tests, suites
 
 
