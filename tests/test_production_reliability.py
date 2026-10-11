@@ -200,7 +200,10 @@ class LocalCacheFileTests(unittest.TestCase):
             digest = "f" * 24
             record = Path(td) / f"{digest}.json"
             record.write_text(("[" * 1_000) + "0" + ("]" * 1_000), encoding="utf-8")
-            self.assertEqual(sweep_ccr_cache(td), 0)
+            # Python <= 3.11 raises RecursionError parsing this (file kept, 0);
+            # 3.12+ parses it as a non-record and removes it (1). Either way the
+            # sweep must not raise and the record must never be served.
+            self.assertIn(sweep_ccr_cache(td), (0, 1))
             self.assertIsNone(retrieve(digest, td))
             stored = _ccr_store("fresh payload", td)
             self.assertEqual(retrieve(stored["hash"], td), "fresh payload")

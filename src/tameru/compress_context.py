@@ -95,6 +95,11 @@ _SECRETS_RE = re.compile(
     r"|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
     r"|(?i:\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\b"
     r"\s*[:=]\s*[\"'][^\"'\s]{16,}[\"'])"
+    r"|\bAIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"
+    r"|\b(?:sk|rk)_live_[A-Za-z0-9]{16,}"
+    r"|(?i:\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+/=-]{20,})"
+    r"|(?i:\b(?:[A-Za-z0-9_]+_)?(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\b"
+    r"\s*[:=]\s*[^\s\"']{16,})"
 )
 
 # Recursion guard markers: output Tameru itself produced.
@@ -2788,6 +2793,27 @@ def _span_chars(lines: list[str], lo: int, hi: int) -> int:
     return sum(len(ln) for ln in lines[lo:hi]) + (hi - lo - 1)
 
 
+class InliningGapMarker:
+    """Wrap a gap marker so renderers may inline short dropped spans.
+
+    Renderers which see it emit a dropped span verbatim when the rendered
+    marker is not shorter than the span.
+    """
+
+    __slots__ = ("fn",)
+    inline_short = True
+
+    def __init__(self, fn: Callable[[int, int], str]) -> None:
+        self.fn = fn
+
+    def __call__(self, omitted: int, total: int) -> str:
+        return self.fn(omitted, total)
+
+
+def _inlines_short(marker) -> bool:
+    return bool(getattr(marker, "inline_short", False))
+
+
 def _render(
     lines: list[str],
     blocks: list[dict[str, Any]],
@@ -2825,14 +2851,23 @@ def _render(
     # non-empty in `lines`, and would earn a bogus marker between two
     # adjacent kept blocks.
     probe_lines = content_lines if content_lines is not None else lines
+    inline_short = _inlines_short(marker_fn) if marker_fn is not None else False
 
-    def _gap(lo: int, hi: int) -> str | None:
+    def _gap(lo: int, hi: int) -> list[str] | None:
         if marker_fn is None:
             return None
         if not any(ln.strip() for ln in probe_lines[lo:hi]):
             return None
+        span_text = "\n".join(lines[lo:hi]) if inline_short else None
         text = marker_fn(_span_chars(lines, lo, hi), total)
-        return str(text) if text else None
+        marker = str(text) if text is not None else ""
+        if not marker:
+            return None
+        # 1.4.1 opt-in: only InliningGapMarker emits the dropped lines
+        # verbatim when the rendered marker is not shorter than the span.
+        if inline_short and span_text is not None and len(marker) >= len(span_text):
+            return lines[lo:hi]
+        return [marker]
 
     parts: list[str] = []
     prev_end = -1
@@ -2841,11 +2876,11 @@ def _render(
             if prev_end < 0 and chronological and b["start"] > 0:
                 lead = _gap(0, b["start"])
                 if lead is not None:
-                    parts.append(lead)
+                    parts.extend(lead)
             elif prev_end >= 0 and b["start"] > prev_end + 1:
                 between = _gap(prev_end + 1, b["start"])
                 if between is not None:
-                    parts.append(between)
+                    parts.extend(between)
         elif prev_end >= 0 and b["start"] > prev_end + 1:
             if citations:
                 # ARC-style citation: name every dropped block so the model
@@ -2909,7 +2944,7 @@ def _render(
     if marker_fn is not None and chronological and parts and prev_end < len(lines) - 1:
         trail = _gap(prev_end + 1, len(lines))
         if trail is not None:
-            parts.append(trail)
+            parts.extend(trail)
     return "\n".join(parts)
 
 
@@ -3118,8 +3153,9 @@ def sweep_ccr_cache(
 ) -> int:
     """Delete expired valid CCR records and return the removal count.
 
-    Malformed or unreadable files are left untouched: retention maintenance is
-    best-effort and must not destroy data it cannot validate.
+    Files that cannot be read or parsed are left untouched: retention
+    maintenance is best-effort. A file that parses but is not a valid record
+    (bad metadata, a non-object payload) is removed like an expired one.
     """
     global _CCR_SWEEP_CURSOR
     root = Path(ccr_dir)
@@ -4257,6 +4293,7 @@ def compress_context(
     gap_marker: Callable[[int, int], str] | None = None,
     recursion_markers: Iterable[str] = (),
     content_hint: str | None = None,
+    inline_short_gaps: bool = False,
 ) -> CompressResult:
     """Query-aware extractive compression of ``context``.
 
@@ -4286,6 +4323,11 @@ def compress_context(
         force that routing. ``"diff"``/``"grep"``/``"test"`` are recorded in
         the receipt and otherwise behave like ``None``. The hint is always
         recorded in ``receipt["content_hint"]``.
+
+    ``inline_short_gaps`` (1.4.1)
+        With ``gap_marker`` set, a dropped span whose marker would not be
+        shorter than the span itself is kept verbatim instead. Off by
+        default: 1.4.0 output is unchanged byte for byte.
     """
     caller_text = str(context or "")
     if not isinstance(query, str):
@@ -4301,6 +4343,8 @@ def compress_context(
         )
     if gap_marker is not None and not callable(gap_marker):
         raise TypeError("gap_marker must be callable as gap_marker(omitted_chars, total_chars)")
+    if inline_short_gaps and gap_marker is not None and not _inlines_short(gap_marker):
+        gap_marker = InliningGapMarker(gap_marker)
     code_hint = content_hint in _CODE_HINTS
     no_table = content_hint in _NO_TABLE_HINTS
     recursion_markers = _marker_tuple(recursion_markers)  # a generator is read once
@@ -4382,7 +4426,11 @@ def compress_context(
     adapter_gap = (
         None
         if gap_marker is None
-        else (lambda omitted, _total: gap_marker(omitted, len(caller_text)))
+        else (
+            InliningGapMarker(lambda omitted, _total: gap_marker(omitted, len(caller_text)))
+            if _inlines_short(gap_marker)
+            else (lambda omitted, _total: gap_marker(omitted, len(caller_text)))
+        )
     )
     industrial = industrial_preprocess(
         caller_text, industrial_query, limits, gap_marker=adapter_gap

@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [Unreleased] (1.4.1 candidate, local branch `locally/1.4.0-patches`)
+
+Fixes for the two answers the 1.4.0 plugin report listed as lost, an opt-in
+gap-marker change for hosts with long markers, and two small correctness items.
+With default arguments (`gap_marker=None`, `inline_short_gaps=False`) output is
+byte-identical to 1.4.0: `run_battery` 15/15 and `threshold_sweep`
+77.3 / 68.4 / 61.2 / 41.5 / 24.9 % are unchanged.
+
+### Added
+- `compress_context(..., inline_short_gaps=False)` and `InliningGapMarker`: with a caller `gap_marker`, a dropped span whose marker would not be shorter than the span is kept verbatim (renderer and adapter cuts). Off by default.
+
+### Changed
+- pytest reduction: a `Captured log/stdout/stderr` section of more than 6 lines inside a failure block is collapsed to its first 2 and last 2 lines plus every error-fingerprint line and every WARNING/ERROR/CRITICAL/FATAL line (`[… N captured lines omitted …]` without a caller marker). Before, the whole section was kept and a long captured log made the run fail open.
+- grep/rg adapter: when the query hits at least 80% of all matches (and there are more than `2 * per_file_cap`), it keeps per file the definition/assignment lines that hit, lines hitting the other query words, and distinct match texts (deduplicated across files, capped per file). Before, an all-matching `rg -n Name` kept everything and the definition line was lost in the plugin's brief.
+- Secrets screen also matches Google API keys (`AIza...`), Stripe live keys (`sk_live_`/`rk_live_`), bearer tokens and unquoted `KEY=value` assignments of 16+ chars.
+
+### Fixed
+- `test_deep_malformed_cache_record_does_not_raise` failed on Python 3.12+ (a 1000-deep list now parses and is removed as a non-record; older versions raised RecursionError and kept it). The test now accepts either outcome and still requires no exception and no retrieval; `sweep_ccr_cache`'s docstring now says that parseable non-records are removed (that was already the behaviour other tests pin).
+
 ## [1.4.0] - 2026-10-06
 
 Agent tool-output quality (Phase 1a/1b) and a plugin-facing API for

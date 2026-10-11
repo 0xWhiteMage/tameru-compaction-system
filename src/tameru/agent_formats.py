@@ -519,6 +519,14 @@ class _GrepRec:
     group: int  # `--` separator group
 
 
+# v1.4.1: a saturated grep query (it hits nearly every match) keeps the lines
+# that define or assign the searched name.
+_GREP_DEFINITION_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:class|def|function|func|fn|interface|struct|enum|trait|type|impl|module|const|let|var)\b"
+)
+_GREP_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][\w.]*\s*(?::[^=]+)?=\s*")
+
+
 def adapt_grep_lines(
     text: str,
     query: str,
@@ -530,7 +538,13 @@ def adapt_grep_lines(
     ``  L<line>: <text>`` for the kept matches. Matches that mention the query
     are kept; a file with none keeps its first ``per_file_cap``. One marker per
     run of omitted matches. With no query the regroup is lossless whenever it
-    is shorter than the input (otherwise the per-file cap applies)."""
+    is shorter than the input (otherwise the per-file cap applies).
+
+    When the query is saturated (it hits >=80% of all matches and there are
+    more than ``2 * per_file_cap`` matches), keep per file definition lines,
+    lines hitting the remaining query words, and the first occurrence of each
+    distinct match text (capped at ``per_file_cap`` new distinct lines).
+    """
     if not detect_grep_lines(text):
         return None
     per_file: dict[str, list[_GrepRec]] = {}
@@ -553,6 +567,55 @@ def adapt_grep_lines(
     matcher = _matcher_for(query)
     total_matches = sum(1 for recs in per_file.values() for r in recs if r.kind == "m")
 
+    saturated = False
+    saturated_keep: dict[str, set[int]] = {}
+    if not matcher.empty and total_matches > 2 * per_file_cap:
+        match_texts = [r.text for recs in per_file.values() for r in recs if r.kind == "m"]
+        hits_count = sum(1 for t in match_texts if matcher.hit(t))
+        if hits_count > 0 and hits_count * 5 >= total_matches * 4:
+            saturated = True
+            from .format_adapters import _query_selectors
+
+            selectors = tuple(_query_selectors(query or ""))
+            remaining: list[str] = []
+            for selector in selectors:
+                selector_matcher = _Matcher((selector,))
+                selector_hits = sum(1 for t in match_texts if selector_matcher.hit(t))
+                if selector_hits * 5 < total_matches * 4:
+                    remaining.append(selector)
+            other_matcher = _Matcher(tuple(remaining)) if remaining else _Matcher(())
+            seen_texts: set[str] = set()
+            for path, recs in per_file.items():
+                selected: set[int] = set()
+                for i, r in enumerate(recs):
+                    if (
+                        r.kind == "m"
+                        and matcher.hit(r.text)
+                        and (_GREP_DEFINITION_RE.match(r.text) or _GREP_ASSIGNMENT_RE.match(r.text))
+                    ):
+                        selected.add(i)
+                if not other_matcher.empty:
+                    for i, r in enumerate(recs):
+                        if r.kind == "m" and other_matcher.hit(r.text):
+                            selected.add(i)
+                distinct_kept = 0
+                for i, r in enumerate(recs):
+                    if r.kind != "m":
+                        continue
+                    key = r.text.strip()
+                    if not key or key in seen_texts:
+                        continue
+                    if i in selected:
+                        seen_texts.add(key)
+                        distinct_kept += 1
+                    elif distinct_kept < per_file_cap:
+                        selected.add(i)
+                        seen_texts.add(key)
+                        distinct_kept += 1
+                    else:
+                        seen_texts.add(key)
+                saturated_keep[path] = selected
+
     any_hit = [False]
 
     def render(keep_all: bool) -> tuple[str, int]:
@@ -563,10 +626,15 @@ def adapt_grep_lines(
             keep = [True] * len(recs)
             if not keep_all:
                 keep = [False] * len(recs)
-                hits = [i for i in matches if matcher.hit(recs[i].text)] if not matcher.empty else []
-                any_hit[0] = any_hit[0] or bool(hits)
-                for i in hits or matches[:per_file_cap]:
-                    keep[i] = True
+                if saturated:
+                    any_hit[0] = True
+                    for i in saturated_keep.get(path, ()):
+                        keep[i] = True
+                else:
+                    hits = [i for i in matches if matcher.hit(recs[i].text)] if not matcher.empty else []
+                    any_hit[0] = any_hit[0] or bool(hits)
+                    for i in hits or matches[:per_file_cap]:
+                        keep[i] = True
                 # Context lines survive next to a kept match (same `--` group).
                 near = False
                 last_group = -1
@@ -626,6 +694,16 @@ def adapt_grep_lines(
             return AdapterResult(
                 "grep", lossless, total_matches, kept, "lossless regroup by file"
             )
+    if saturated:
+        body, kept = render(False)
+        return AdapterResult(
+            "grep",
+            body,
+            total_matches,
+            kept,
+            "matches grouped by file; saturated query: definitions, other query words, distinct lines",
+            hit=True,
+        )
     body, kept = render(False)
     return AdapterResult(
         "grep",
@@ -712,6 +790,7 @@ def _render_kept(
     suites: list[int],
     gap_marker: GapMarker | None,
     total: int,
+    captured: list[int] | None = None,
 ) -> str:
     out: list[str] = []
     run: list[int] = []
@@ -729,6 +808,10 @@ def _render_kept(
             out.append(f"[… {n_tests} passing {'test' if n_tests == 1 else 'tests'} omitted …]")
         elif n_suites:
             out.append(f"[… {n_suites} passing {'suite' if n_suites == 1 else 'suites'} omitted …]")
+        elif captured is not None and any(captured[i] for i in run):
+            n_captured = sum(1 for i in run if lines[i].strip())
+            if n_captured:
+                out.append(f"[… {n_captured} captured lines omitted …]")
         run.clear()
 
     for i, ln in enumerate(lines):
@@ -757,17 +840,28 @@ _PYTEST_FAILURE_WORD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# v1.4.1: captured-output sub-sections inside a pytest failure block.
+_PYTEST_CAPTURED_HDR_RE = re.compile(
+    r"^-{3,} Captured (?:log|stdout|stderr) (?:setup|call|teardown) -{3,}$"
+)
+_PYTEST_RULE_HDR_RE = re.compile(r"^[=-]{3,}\s.*\s[=-]{3,}$|^[=-]{3,}$")
+_PYTEST_TEST_BLOCK_HDR_RE = re.compile(r"^_{3,} .+ _{3,}$")
+_PYTEST_LOG_LEVEL_RE = re.compile(r"^(WARNING|ERROR|CRITICAL|FATAL)\b")
 
-def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+
+def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int], list[int]]:
     n = len(lines)
     keep = [False] * n
     tests = [0] * n
     suites = [0] * n
+    captured = [0] * n
     # "" (before the first header, and after the final summary) keeps what it
     # does not recognise: `make`/`tox`/compiler output around a pytest run
     # carries the errors that explain the run ("make: *** [test] Error 1").
     section = ""
-    for i, ln in enumerate(lines):
+    i = 0
+    while i < n:
+        ln = lines[i]
         m = _PYTEST_HDR_RE.match(ln)
         if m:
             name = m.group(1).lower()
@@ -781,12 +875,51 @@ def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]
                 keep[i] = True  # captured output inside a failure block
             else:
                 section = "drop"
+            i += 1
             continue
         if section == "keep":
+            if _PYTEST_CAPTURED_HDR_RE.match(ln):
+                keep[i] = True
+                j = i + 1
+                while j < n:
+                    nxt = lines[j]
+                    if (
+                        not nxt.strip()
+                        or _PYTEST_RULE_HDR_RE.match(nxt)
+                        or _PYTEST_TEST_BLOCK_HDR_RE.match(nxt)
+                    ):
+                        break
+                    j += 1
+                body_start = i + 1
+                body_end = j
+                if body_end - body_start > 6:
+                    from .compress_context import error_fingerprints
+
+                    keep_idx = set()
+                    for k in (body_start, body_start + 1, body_end - 2, body_end - 1):
+                        if body_start <= k < body_end:
+                            keep_idx.add(k)
+                    for k in range(body_start, body_end):
+                        if k in keep_idx:
+                            keep[k] = True
+                        else:
+                            line = lines[k]
+                            if error_fingerprints(line) or _PYTEST_LOG_LEVEL_RE.match(line):
+                                keep[k] = True
+                            else:
+                                keep[k] = False
+                                captured[k] = 1
+                else:
+                    for k in range(body_start, body_end):
+                        keep[k] = True
+                i = j
+                continue
             keep[i] = True
+            i += 1
             continue
         if _PYTEST_Q_SUMMARY_RE.match(ln.strip()):
             keep[i] = True
+            i += 1
             continue
         v = _PYTEST_VERBOSE_RE.match(ln)
         if v:
@@ -794,6 +927,7 @@ def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]
                 keep[i] = True
             else:
                 tests[i] = 1
+            i += 1
             continue
         p = _PYTEST_PROGRESS_RE.match(ln)
         if p:
@@ -801,12 +935,14 @@ def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]
                 keep[i] = True  # names the file a failure is in (--tb=no has no block)
             else:
                 tests[i] = p.group(1).count(".")
+            i += 1
             continue
         if section == "" and ln.strip():
             keep[i] = True
         elif section == "drop" and _PYTEST_FAILURE_WORD_RE.search(ln):
             keep[i] = True
-    return keep, tests, suites
+        i += 1
+    return keep, tests, suites, captured
 
 
 def _classify_jest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
@@ -945,7 +1081,12 @@ def preprocess_test_output(
     if runner is None:
         return None
     lines = text.split("\n")
-    keep, tests, suites = _RUNNERS[runner](lines)
+    result = _RUNNERS[runner](lines)
+    captured = None
+    if len(result) == 4:
+        keep, tests, suites, captured = result
+    else:
+        keep, tests, suites = result
     matcher = _matcher_for(query)
     if not matcher.empty:
         dropped = [i for i, ln in enumerate(lines) if not keep[i] and ln.strip()]
@@ -958,7 +1099,13 @@ def preprocess_test_output(
     if all(keep):
         return None
     out = _render_kept(
-        lines, keep, tests, suites, gap_marker, total_chars if total_chars else len(text)
+        lines,
+        keep,
+        tests,
+        suites,
+        gap_marker,
+        total_chars if total_chars else len(text),
+        captured=captured,
     )
     return out if len(out) < len(text) else None
 

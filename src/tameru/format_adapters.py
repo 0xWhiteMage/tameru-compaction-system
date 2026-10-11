@@ -142,23 +142,37 @@ def _with_gaps(
 ) -> list[str]:
     """``units`` that are kept, with ONE marker per contiguous omitted run
     (leading and trailing runs included). All-blank runs carry nothing and get
-    no marker. ``gap_marker(omitted_chars, total_chars)``."""
+    no marker. ``gap_marker(omitted_chars, total_chars)``. A caller marker that
+    is not shorter than the omitted run is replaced by the run verbatim only
+    when the marker opts in via ``inline_short``; otherwise the marker is
+    always used."""
     out: list[str] = []
     run: list[str] = []
+
+    def flush() -> None:
+        nonlocal run
+        if not run:
+            return
+        dropped = sep.join(run)
+        if dropped.strip():
+            if gap_marker is not None:
+                marker = str(gap_marker(len(dropped), total_chars))
+                if (
+                    getattr(gap_marker, "inline_short", False)
+                    and len(marker) >= len(dropped)
+                ):
+                    out.extend(run)
+                else:
+                    out.append(marker)
+        run = []
+
     for unit, kept in zip(units, keep):
         if kept:
-            if run:
-                dropped = sep.join(run)
-                if dropped.strip():
-                    out.append(str(gap_marker(len(dropped), total_chars)))
-                run = []
+            flush()
             out.append(unit)
         else:
             run.append(unit)
-    if run:
-        dropped = sep.join(run)
-        if dropped.strip():
-            out.append(str(gap_marker(len(dropped), total_chars)))
+    flush()
     return out
 
 
