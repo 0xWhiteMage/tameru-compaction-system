@@ -36,3 +36,38 @@ def test_negative_prose_does_not_match():
         "token=abc",
     ):
         assert not contains_secret(text)
+
+
+def test_code_expressions_are_not_unquoted_secrets():
+    """Red-team (1.4.1): the unquoted-assignment pattern flagged ordinary code, so ``contains_secret`` was true for
+    141 of 2,372 non-test Python files of a Hermes checkout (9 before 1.4.1), and the plugin's recovery store
+    refused to keep those originals. A value that is a call, an index, an attribute chain or an interpolation
+    names no credential."""
+    for text in (
+        "password = get_password_from_vault()",
+        "api_key = os.getenv(self.config.api_key_env)",
+        "api_key = agent._anthropic_api_key",
+        "explicit_api_key=binding.explicit_api_key,",
+        "otp_secret = normalize_otp_secret(str(secret.get('x')))",
+        "db_password: ${DB_PASSWORD_FROM_ENV}",
+        "auth_token=<redacted-by-server>",
+        "access_token = token_response['access_token']",
+        "explicit_api_key=_fb_explicit_key,",
+        "stale_access_token=stale_access_token)",
+    ):
+        assert not contains_secret(text), text
+
+
+def test_unquoted_credentials_with_punctuation_still_match():
+    assert contains_secret("password=p@ss!word#2024xyz")
+    assert contains_secret("DB_PASSWORD=Xk9-2mQ_vL8+pR4/zT6=")
+    assert contains_secret("api_key: abcdef0123456789abcdef")
+
+
+def test_the_code_exclusions_stay_linear():
+    import time
+
+    for text in ("api_key=a" + "_a" * 200_000 + "!", "api_key=" + "ab." * 200_000 + "a!", "api_key=x_y " * 50_000):
+        started = time.perf_counter()
+        contains_secret(text)
+        assert time.perf_counter() - started < 2.0

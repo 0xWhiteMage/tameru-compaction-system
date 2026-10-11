@@ -99,7 +99,13 @@ _SECRETS_RE = re.compile(
     r"|\b(?:sk|rk)_live_[A-Za-z0-9]{16,}"
     r"|(?i:\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+/=-]{20,})"
     r"|(?i:\b(?:[A-Za-z0-9_]+_)?(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\b"
-    r"\s*[:=]\s*[^\s\"']{16,})"
+    r"\s*[:=]\s*"
+    # 1.4.1 red-team: an unquoted value that is code (a call, an index, a
+    # ``${...}`` / ``<...>`` placeholder, an attribute chain, a snake_case
+    # variable such as ``api_key=fallback_api_key,``) names no credential.
+    r"(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*(?![^\s,;)\]}]))"
+    r"(?![a-z_](?=[a-z0-9_]*_)[a-z0-9_]*(?![^\s,;)\]}]))"
+    r"[^\s\"']{16,})"
 )
 
 # Recursion guard markers: output Tameru itself produced.
