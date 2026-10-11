@@ -106,6 +106,20 @@ _SECRETS_RE = re.compile(
     r"(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*(?![^\s,;)\]}]))"
     r"(?![a-z_](?=[a-z0-9_]*_)[a-z0-9_]*(?![^\s,;)\]}]))"
     r"[^\s\"']{16,})"
+    # 1.4.1 fix-all: the code exclusions above also let through unquoted
+    # snake_case passphrases and dotted passwords. A whole-line ``.env`` /
+    # shell assignment (``DB_PASSWORD=correct_horse_battery_staple``, no
+    # spaces around ``=``) or a YAML ``key: value`` line still names one: the
+    # value runs to the end of the line and does not end in ``,`` ``;`` ``)``
+    # (a keyword argument on its own line). YAML keeps the attribute-chain
+    # exclusion (``api_key: pydantic.types.SecretStr`` is an annotation).
+    r"|(?im:^[ \t]*(?:export[ \t]+)?(?:[A-Za-z0-9_]+_)?"
+    r"(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)"
+    r"=(?![^\s\"']*[(\[{<$])[^\s\"']{15,}[^\s\"',;)][ \t]*$)"
+    r"|(?im:^[ \t]*(?:[A-Za-z0-9_]+_)?"
+    r"(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)"
+    r":[ \t]+(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*[ \t]*$)"
+    r"[^\s\"']{15,}[^\s\"',;)][ \t]*$)"
 )
 
 # Recursion guard markers: output Tameru itself produced.

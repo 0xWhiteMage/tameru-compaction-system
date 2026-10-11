@@ -71,3 +71,36 @@ def test_the_code_exclusions_stay_linear():
         started = time.perf_counter()
         contains_secret(text)
         assert time.perf_counter() - started < 2.0
+
+
+# ---- 1.4.1 fix-all (R3): whole-line env / YAML assignments -------------------------------------------------
+def test_env_and_yaml_lines_with_identifier_like_values_match():
+    assert contains_secret("DB_PASSWORD=correct_horse_battery_staple")
+    assert contains_secret("export API_KEY=prod_key_for_billing_v2\n")
+    assert contains_secret("HOST=db\npassword=hunter2.example.org.pass\nPORT=5432")
+    assert contains_secret("AUTH_TOKEN=team.alpha.deploy.token.x")
+    assert contains_secret("db:\n  secret: correct_horse_battery_staple\n")
+
+
+def test_code_lines_with_identifier_values_still_do_not_match():
+    for text in (
+        "password = settings_default_password",
+        "conn = connect(password=db_password_setting)",
+        "    user_password=args.user_password,",
+        "            app_secret=self._app_secret,",
+        "api_key: pydantic.types.SecretStr",
+        "PASSWORD=${DB_PASSWORD_FROM_VAULT}",
+        "secret = self.config.secret_value_x",
+        "  access_token: Optional[str] = None",
+        "x = 1; password=fallback_password_value",   # not a whole line
+    ):
+        assert not contains_secret(text), text
+
+
+def test_the_line_anchored_assignments_stay_linear():
+    import time
+
+    for text in ("db_" * 200_000 + "password=" + "a_" * 1000 + ",", ("secret_" * 2000 + "x\n") * 50, "API_KEY=" + "a_" * 300_000 + ")"):
+        started = time.perf_counter()
+        contains_secret(text)
+        assert time.perf_counter() - started < 2.0
