@@ -76,6 +76,13 @@ FILLER_WORDS = frozenset(
 )
 
 
+# v1.4.1: a command-line option copied into the query with the command
+# (``rg -n NAME src``, ``git log --stat``) names no content. As a "strong"
+# selector it used to crowd out the searched name itself, so a grep result
+# whose every line matched NAME was matched by ``-n`` alone: no hit, no cut.
+_CLI_FLAG_RE = re.compile(r"^-{1,2}[A-Za-z][A-Za-z0-9-]*$")
+
+
 def _query_selectors(query: str) -> tuple[str, ...]:
     candidates = list(distinctive_query_terms(query or ""))
     candidates.extend(search_units(query or ""))
@@ -86,6 +93,7 @@ def _query_selectors(query: str) -> tuple[str, ...]:
         if (
             not value
             or value.startswith("script:")
+            or _CLI_FLAG_RE.match(value)
             or value in GENERIC_WORDS
             or value in seen
         ):

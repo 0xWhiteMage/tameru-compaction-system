@@ -58,6 +58,12 @@ def _marker(gap_marker: GapMarker | None, omitted_chars: int, total: int, defaul
     return str(gap_marker(omitted_chars, total))
 
 
+def _inlines(gap_marker: GapMarker | None, marker: str, dropped: str) -> bool:
+    """v1.4.1: an opt-in caller marker (``InliningGapMarker``) that is not shorter
+    than the text it would replace keeps that text instead."""
+    return bool(getattr(gap_marker, "inline_short", False)) and len(marker) >= len(dropped)
+
+
 # ---------------------------------------------------------------------------
 # Query selectors (lazy import: format_adapters imports this module).
 # ---------------------------------------------------------------------------
@@ -621,6 +627,23 @@ def adapt_grep_lines(
     def render(keep_all: bool) -> tuple[str, int]:
         out: list[str] = []
         kept_total = 0
+        # v1.4.1: with a caller marker (a host's long elision marker, ~100
+        # chars), files whose matches are all omitted keep their header line
+        # but share ONE marker per consecutive run of such files, instead of
+        # one marker each. The default ``[… N matches omitted …]`` is unchanged.
+        cross: list[_GrepRec] = []
+
+        def line_of(r: _GrepRec) -> str:
+            return f"  L{r.lineno}{':' if r.kind == 'm' else '-'} {r.text}"
+
+        def flush_cross() -> None:
+            nonlocal cross
+            n_match = sum(1 for r in cross if r.kind == "m")
+            if n_match:
+                omitted = len("\n".join(r.raw for r in cross))
+                out.append("  " + _marker(gap_marker, omitted, len(text), ""))
+            cross = []
+
         for path, recs in per_file.items():
             matches = [i for i, r in enumerate(recs) if r.kind == "m"]
             keep = [True] * len(recs)
@@ -657,34 +680,42 @@ def adapt_grep_lines(
                         near = keep[i]
                     elif near:
                         keep[i] = True
+            if gap_marker is not None and not any(keep):
+                out.append(f"{path}  ({_plural(len(matches), 'match')})")
+                cross.extend(recs)
+                continue
+            flush_cross()
             out.append(f"{path}  ({_plural(len(matches), 'match')})")
             run: list[_GrepRec] = []
 
             def flush() -> None:
-                nonlocal run
+                nonlocal run, kept_total
                 n_match = sum(1 for r in run if r.kind == "m")
                 if n_match:
                     omitted = len("\n".join(r.raw for r in run))
-                    out.append(
-                        "  "
-                        + _marker(
-                            gap_marker,
-                            omitted,
-                            len(text),
-                            f"[… {_plural(n_match, 'match')} omitted …]",
-                        )
+                    marker = "  " + _marker(
+                        gap_marker,
+                        omitted,
+                        len(text),
+                        f"[… {_plural(n_match, 'match')} omitted …]",
                     )
+                    lines_ = [line_of(r) for r in run]
+                    if _inlines(gap_marker, marker, "\n".join(lines_)):
+                        out.extend(lines_)
+                        kept_total += n_match
+                    else:
+                        out.append(marker)
                 run = []
 
             for i, r in enumerate(recs):
                 if keep[i]:
                     flush()
-                    sep = ":" if r.kind == "m" else "-"
-                    out.append(f"  L{r.lineno}{sep} {r.text}")
+                    out.append(line_of(r))
                     kept_total += r.kind == "m"
                 else:
                     run.append(r)
             flush()
+        flush_cross()
         out.extend(other)
         return "\n".join(out), kept_total
 
@@ -802,8 +833,13 @@ def _render_kept(
         n_suites = sum(suites[i] for i in run)
         omitted = len("\n".join(lines[i] for i in run))
         if gap_marker is not None:
-            if omitted and "\n".join(lines[i] for i in run).strip():
-                out.append(str(gap_marker(omitted, total)))
+            dropped = "\n".join(lines[i] for i in run)
+            if omitted and dropped.strip():
+                marker = str(gap_marker(omitted, total))
+                if _inlines(gap_marker, marker, dropped):
+                    out.extend(lines[i] for i in run)
+                else:
+                    out.append(marker)
         elif n_tests:
             out.append(f"[… {n_tests} passing {'test' if n_tests == 1 else 'tests'} omitted …]")
         elif n_suites:
@@ -881,22 +917,27 @@ def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]
             if _PYTEST_CAPTURED_HDR_RE.match(ln):
                 keep[i] = True
                 j = i + 1
+                # A captured section runs to the next rule, test-block header
+                # or pytest section header; captured stdout may hold blank
+                # lines, so a blank line does not end it.
                 while j < n:
                     nxt = lines[j]
                     if (
-                        not nxt.strip()
-                        or _PYTEST_RULE_HDR_RE.match(nxt)
+                        _PYTEST_RULE_HDR_RE.match(nxt)
                         or _PYTEST_TEST_BLOCK_HDR_RE.match(nxt)
+                        or _PYTEST_HDR_RE.match(nxt)
                     ):
                         break
                     j += 1
                 body_start = i + 1
                 body_end = j
+                while body_end > body_start and not lines[body_end - 1].strip():
+                    body_end -= 1  # trailing blank lines separate the next block
                 if body_end - body_start > 6:
                     from .compress_context import error_fingerprints
 
                     keep_idx = set()
-                    for k in (body_start, body_start + 1, body_end - 2, body_end - 1):
+                    for k in (body_start, body_end - 1):  # first and last line
                         if body_start <= k < body_end:
                             keep_idx.add(k)
                     for k in range(body_start, body_end):
@@ -912,6 +953,8 @@ def _classify_pytest(lines: list[str]) -> tuple[list[bool], list[int], list[int]
                 else:
                     for k in range(body_start, body_end):
                         keep[k] = True
+                for k in range(body_end, j):
+                    keep[k] = True  # the blank separator lines, as before
                 i = j
                 continue
             keep[i] = True

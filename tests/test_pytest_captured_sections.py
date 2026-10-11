@@ -52,14 +52,16 @@ def test_pytest_captured_log_call_collapses():
     assert len(out) < 0.5 * len(text)
 
     assert "------------------------------ Captured log call -------------------------------" in out
+    # 1.4.1: the first and last line of a long section are kept (the shape of
+    # the log), the rest only when WARNING+ or an error fingerprint.
     assert _long_info(1) in out
-    assert _long_info(2) in out
-    assert _long_info(59) in out
+    assert _long_info(2) not in out
+    assert _long_info(59) not in out
     assert _long_info(60) in out
     assert "ERROR app.order boom" in out
     assert "E       AssertionError" in out
     assert "tests/test_orders.py:41: AssertionError" in out
-    # the ERROR line splits the dropped lines into two runs (27 + 28)
+    # the ERROR line splits the dropped lines into two runs (28 + 29)
     assert out.count("captured lines omitted …]") == 2
 
 
@@ -131,3 +133,41 @@ def test_render_kept_default_marker_only_for_captured_runs():
 def test_fix1_imports_are_callable():
     assert callable(compress_context)
     assert callable(error_fingerprints)
+
+
+def test_captured_stdout_with_blank_lines_is_one_section():
+    """A blank line inside captured stdout does not end the section: before 1.4.1 only the
+    first paragraph collapsed and everything after the first blank line was kept whole."""
+    body = []
+    for i in range(1, 41):
+        body.append(_long_info(i))
+        if i % 10 == 0:
+            body.append("")
+    text = _pytest_output(body).replace("Captured log call", "Captured stdout call")
+    out = preprocess_test_output(text, query="", gap_marker=None)
+    assert out is not None
+    assert _long_info(1) in out and _long_info(40) in out
+    assert not any(_long_info(i) in out for i in (11, 15, 25, 35))
+    assert "FAILED tests/test_orders.py::test_order" in out
+
+
+def test_captured_line_naming_the_query_is_restored():
+    body = [_long_info(i) for i in range(1, 41)]
+    body[19] = "INFO app.order reservation hold=h-7be559 released late"
+    text = _pytest_output(body)
+    out = preprocess_test_output(text, query="h-7be559", gap_marker=None)
+    assert out is not None
+    assert "hold=h-7be559" in out
+
+
+def test_inlining_marker_keeps_a_short_captured_run():
+    from tameru.compress_context import InliningGapMarker
+
+    lines = ["keep a", "x", "keep b"]
+    keep = [True, False, True]
+    zeros = [0, 0, 0]
+    marker = InliningGapMarker(lambda omitted, total: "<" + "m" * 40 + ">")
+    out = _render_kept(lines, keep, zeros, zeros, marker, 20, captured=[0, 1, 0])
+    assert out == "keep a\nx\nkeep b"
+    plain = _render_kept(lines, keep, zeros, zeros, marker.fn, 20, captured=[0, 1, 0])
+    assert "<mmmm" in plain and "\nx\n" not in plain

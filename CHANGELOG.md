@@ -18,11 +18,15 @@ byte-identical to 1.4.0: `run_battery` 15/15 and `threshold_sweep`
 - `compress_context(..., inline_short_gaps=False)` and `InliningGapMarker`: with a caller `gap_marker`, a dropped span whose marker would not be shorter than the span is kept verbatim (renderer and adapter cuts). Off by default.
 
 ### Changed
-- pytest reduction: a `Captured log/stdout/stderr` section of more than 6 lines inside a failure block is collapsed to its first 2 and last 2 lines plus every error-fingerprint line and every WARNING/ERROR/CRITICAL/FATAL line (`[… N captured lines omitted …]` without a caller marker). Before, the whole section was kept and a long captured log made the run fail open.
+- pytest reduction: a `Captured log/stdout/stderr` section of more than 6 lines inside a failure block is collapsed to its first and last line (first 2 / last 2 in the first 1.4.1 cut) plus every error-fingerprint line and every WARNING/ERROR/CRITICAL/FATAL line (`[… N captured lines omitted …]` without a caller marker). Before, the whole section was kept and a long captured log made the run fail open.
 - grep/rg adapter: when the query hits at least 80% of all matches (and there are more than `2 * per_file_cap`), it keeps per file the definition/assignment lines that hit, lines hitting the other query words, and distinct match texts (deduplicated across files, capped per file). Before, an all-matching `rg -n Name` kept everything and the definition line was lost in the plugin's brief.
+- grep/rg adapter with a caller `gap_marker`: files whose matches are all omitted keep their `path  (N matches)` header but share one marker per consecutive run of such files, instead of one marker each. A host marker is ~100 chars, so a 25-file `rg` result spent ~2.5 KB on markers. Without a caller marker the per-file `[… N matches omitted …]` is unchanged.
+- grep/rg adapter and pytest reduction honour `InliningGapMarker` (`inline_short_gaps=True`) like the renderer: an omitted run shorter than its marker is kept verbatim.
 - Secrets screen also matches Google API keys (`AIza...`), Stripe live keys (`sk_live_`/`rk_live_`), bearer tokens and unquoted `KEY=value` assignments of 16+ chars.
 
 ### Fixed
+- Command-line options in the query (`-n`, `--stat`, copied with the command, as the Hermes plugin does) are no longer adapter selectors. As "strong" selectors they crowded out the searched name: `rg -n Name` matched by `-n` alone selected nothing, so the saturated-query mode never ran and the plugin still fell to its brief and lost the definition line.
+- A captured section ends at the next rule, test-block header or pytest section header, not at the first blank line: captured stdout with blank lines collapsed only up to its first blank line.
 - `test_deep_malformed_cache_record_does_not_raise` failed on Python 3.12+ (a 1000-deep list now parses and is removed as a non-record; older versions raised RecursionError and kept it). The test now accepts either outcome and still requires no exception and no retrieval; `sweep_ccr_cache`'s docstring now says that parseable non-records are removed (that was already the behaviour other tests pin).
 
 ## [1.4.0] - 2026-10-06
