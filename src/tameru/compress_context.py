@@ -3989,7 +3989,9 @@ def brief_context(
     emitted, plus one probe with ``(total_chars, total_chars)`` that sizes the
     widest marker for the budget. A line is never cut, except one that is
     itself as long as the budget: it is truncated, with a marker. ``text`` is
-    returned unchanged when it already fits.
+    returned unchanged when it already fits. A ``gap_marker`` wrapped in
+    :class:`InliningGapMarker` keeps a dropped span verbatim instead when its
+    marker would not be shorter than the span (1.4.1).
     """
     text = text if isinstance(text, str) else str(text or "")
     budget = max(1, int(budget_chars))
@@ -4172,26 +4174,33 @@ def brief_context(
         if all_errors:
             break
 
+    # 1.4.1 (fix-all): an InliningGapMarker gets the dropped lines verbatim
+    # when its marker would not be shorter than them, as in compress_context.
+    inline_short = _inlines_short(gap_marker)
+
+    def gap_parts(lo: int, hi: int) -> list[str]:
+        if not has_content(lo, hi):
+            return []
+        span_chars = _span_chars(lines, lo, hi)
+        made = mark(span_chars)
+        if not made:
+            return []
+        if inline_short and len(made) >= span_chars:
+            return lines[lo:hi]
+        return [made]
+
     parts: list[str] = []
     prev = -1
     for i in chosen:
         lo = prev + 1
         if prev < 0 and i > 0:
-            span = (0, i)
+            parts.extend(gap_parts(0, i))
         elif prev >= 0 and i > prev + 1:
-            span = (lo, i)
-        else:
-            span = None
-        if span is not None and has_content(*span):
-            made = mark(_span_chars(lines, *span))
-            if made:
-                parts.append(made)
+            parts.extend(gap_parts(lo, i))
         parts.append(eff(i))
         prev = i
-    if chosen and prev < n - 1 and has_content(prev + 1, n):
-        made = mark(_span_chars(lines, prev + 1, n))
-        if made:
-            parts.append(made)
+    if chosen and prev < n - 1:
+        parts.extend(gap_parts(prev + 1, n))
     out = "\n".join(parts)
     if not out:
         # Not even one line (with its marker) fits a budget this small: the
