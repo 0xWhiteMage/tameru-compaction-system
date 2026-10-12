@@ -21,6 +21,8 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from datetime import datetime, timezone
+from html import escape
+from math import ceil, floor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -234,25 +236,109 @@ def aggregate(rows: list[dict]) -> dict:
     }
 
 
-def comparison_table(report: dict) -> str:
+def comparison_table(report: dict, *, include_repeats: bool = True) -> str:
     lines = [
-        "| Tested method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean character savings | Median wall time | Repeat output identical |",
-        "|---|---:|---:|---:|---:|---:|---|",
+        "| Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ |"
+        + (" Repeat output identical |" if include_repeats else ""),
+        "|---|---:|---:|---:|---:|---:|" + ("---|" if include_repeats else ""),
     ]
     for arm in ARMS:
         item = report["arms"].get(arm, {})
         summary = item.get("common_summary") if item.get("status") == "complete" else None
         if summary is None:
-            lines.append(f"| {LABELS[arm]} — unmeasured | — | — | — | — | — | — |")
+            lines.append(f"| {LABELS[arm]} — unmeasured | — | — | — | — | — |"
+                         + (" — |" if include_repeats else ""))
             continue
         repeat = "Yes" if summary["deterministic"] else "No"
         lines.append(
             f"| {LABELS[arm]} | {summary['gold_kept']}/{summary['gold_total']} | "
             f"{summary['forbid_leaks']} | {summary['clean_cases']}/{summary['cases']} | "
             f"{summary['mean_character_savings_pct']:.1f}% | "
-            f"{summary['median_wall_ms']:.2f} ms | {repeat} |"
+            f"{summary['median_wall_ms']:,.2f} ms |"
+            + (f" {repeat} |" if include_repeats else "")
         )
     return "\n".join(lines)
+
+
+def comparison_svg(report: dict) -> str:
+    """Render an accessible, theme-aware chart directly from measured summaries."""
+    measured = [a for a in ARMS if report["arms"].get(a, {}).get("status") == "complete"]
+    summaries = [report["arms"][a]["common_summary"] for a in measured]
+    count = len(report["protocol"]["common_cases"])
+    height = 220 + 46 * len(measured)
+    low = min(0, floor(min(s["mean_character_savings_pct"] for s in summaries) / 25) * 25)
+    high = max(100, ceil(max(s["mean_character_savings_pct"] for s in summaries) / 25) * 25)
+
+    def x(value: float) -> float:
+        return 330 + (value - low) / (high - low) * 280
+
+    def text(px: float, py: float, value: str, cls: str = "label", anchor: str = "start") -> str:
+        return (f'<text x="{px:.2f}" y="{py:.2f}" class="{cls}" '
+                f'text-anchor="{anchor}">{escape(value)}</text>')
+
+    svg = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 {height}" '
+        f'width="1120" height="{height}" role="img" aria-labelledby="title description">',
+        '<title id="title">Tameru v' + escape(report["tameru_version"]) + ' comparison: savings and evidence retention</title>',
+        f'<desc id="description">{count} common tasks, identical inputs and queries. '
+        + escape("; ".join(
+            f"{LABELS[a].strip('*')}: {s['mean_character_savings_pct']:.1f}% mean character savings, "
+            f"{s['clean_cases']}/{s['cases']} clean cases" for a, s in zip(measured, summaries, strict=True)
+        )) + '.</desc>',
+        '<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#24292f}'
+        '.title{font-size:26px;font-weight:700}.subtitle{font-size:15px;fill:#57606a}'
+        '.heading{font-size:13px;font-weight:700;letter-spacing:1px}.label{font-size:16px}'
+        '.value{font-size:17px;font-weight:600}.tick,.note{font-size:13px;fill:#57606a}'
+        '.background{fill:#f6f8fa}.track{fill:#e5e9ef}.bar{fill:#8294ad}'
+        '.tameru{fill:#7355cc}.clean{fill:#25806c}.rule{stroke:#d0d7de}'
+        '@media(prefers-color-scheme:dark){text{fill:#e6edf3}.subtitle,.tick,.note{fill:#a5b3c4}'
+        '.background{fill:#111827}.track{fill:#253145}.bar{fill:#8497b2}.tameru{fill:#b29aff}'
+        '.clean{fill:#67cdb6}.rule{stroke:#39465a}}</style>',
+        f'<rect class="background" width="1120" height="{height}" rx="16"/>',
+        text(30, 42, "Same tasks. Less context.", "title"),
+        text(30, 70, f"Tameru v{report['tameru_version']} · {count} matched tasks · "
+             f"{len(measured)} measured methods · {report['run_at_utc'].split('T')[0]}", "subtitle"),
+        text(330, 112, "MEAN CHARACTER SAVINGS", "heading"),
+        text(790, 112, "CLEAN CASES", "heading"),
+    ]
+    for tick in range(low, high + 1, 25):
+        svg.append(text(x(tick), 136, f"{tick}%", "tick", "middle"))
+    for tick in (0, count // 2, count):
+        svg.append(text(790 + tick / max(1, count) * 190, 136, str(tick), "tick", "middle"))
+    for i, (arm, summary) in enumerate(zip(measured, summaries, strict=True)):
+        y = 160 + i * 46
+        savings = summary["mean_character_savings_pct"]
+        clean = summary["clean_cases"]
+        svg.extend([
+            text(30, y + 19, LABELS[arm].strip("*")),
+            f'<rect x="330" y="{y}" width="280" height="26" rx="5" class="track"/>',
+            f'<rect x="{min(x(0), x(savings)):.2f}" y="{y}" '
+            f'width="{abs(x(savings) - x(0)):.2f}" height="26" rx="5" '
+            f'class="{"tameru" if arm == "tameru" else "bar"}"/>',
+            text(685, y + 19, f"{savings:.1f}%", "value", "end"),
+            f'<rect x="790" y="{y}" width="190" height="26" rx="5" class="track"/>',
+            f'<rect x="790" y="{y}" width="{clean / max(1, count) * 190:.2f}" '
+            f'height="26" rx="5" class="{"clean" if arm == "tameru" else "bar"}"/>',
+            text(1075, y + 19, f"{clean}/{count}", "value", "end"),
+        ])
+    svg.extend([
+        f'<path d="M30 {height - 65}H1090" class="rule"/>',
+        text(30, height - 41, "Savings are averaged per task. Clean = every required string kept, no planted forbidden strings retained.", "note"),
+        text(30, height - 20, "Source: benchmarks/comparison-v" + report["tameru_version"]
+             + ".json · Tameru regression corpus; downstream agent accuracy is not measured.", "note"),
+        '</svg>\n',
+    ])
+    return "\n".join(svg)
+
+
+def replace_readme_block(readme: str, name: str, content: str) -> str:
+    start_marker = f"<!-- tameru:{name}:start -->"
+    end_marker = f"<!-- tameru:{name}:end -->"
+    if readme.count(start_marker) != 1 or readme.count(end_marker) != 1:
+        raise ValueError(f"README requires one complete {name} marker pair")
+    start = readme.index(start_marker) + len(start_marker)
+    end = readme.index(end_marker, start)
+    return readme[:start] + "\n\n" + content.rstrip() + "\n\n" + readme[end:]
 
 
 def render_report(report: dict) -> None:
@@ -278,38 +364,84 @@ def render_report(report: dict) -> None:
             unavailable.append(f"- **{LABELS[arm]}:** {reason}")
     unavailable_text = "\n".join(unavailable)
     tameru = report["arms"]["tameru"]["common_summary"]
+    measured = [arm for arm in ARMS if report["arms"].get(arm, {}).get("status") == "complete"]
+    env = report["environment"]
+    packages = env["packages"]
+    jev = report["arms"].get("lcc-jev", {})
+    availability_note = ""
+    if jev.get("status") != "complete":
+        availability_note = (
+            "JEV was unmeasured because its API credential was unavailable. "
+            if "TYPESAFE_API_KEY" in jev.get("reason", "") else
+            "JEV has no score because this provider did not complete the corpus. "
+        )
+    headline = (
+        "| Mean characters saved | Required strings retained | Forbidden strings retained | Median wall time |\n"
+        "|:---:|:---:|:---:|:---:|\n"
+        f"| **{tameru['mean_character_savings_pct']:.1f}%** | "
+        f"**{tameru['gold_kept']}/{tameru['gold_total']}** | **{tameru['forbid_leaks']}** | "
+        f"**{tameru['median_wall_ms']:,.2f} ms** |\n\n"
+        f"Measured on **{count} shared task cases**, with {len(measured)} runnable methods on CPU, "
+        f"**{date}**. These are source-evidence checks on Tameru's regression corpus; "
+        "agent answer accuracy and model-token costs are outside this evaluation.\n"
+    )
+    repeat_text = (
+        f"All {len(measured)} scored methods produced identical output across the warmup "
+        "and timed repeats. " if all(report["arms"][a]["common_summary"]["deterministic"]
+                                    for a in measured) else
+        "Repeat-output checks for each method are in the detailed report. "
+    )
     short = (
-        "## Comparison with other approaches\n\n" + intro + table + "\n\n"
-        f"Tameru retained **{tameru['gold_kept']}/{tameru['gold_total']} required strings**, "
-        f"with **{tameru['forbid_leaks']} forbidden leaks** and "
-        f"**{tameru['mean_character_savings_pct']:.1f}% mean character savings**. "
-        "A clean case keeps every required string and excludes every planted forbidden string. "
-        "Faster methods and different savings are shown alongside these retention checks.\n\n"
-        f"Each case gets one untimed warmup and {repeats} timed complete calls. Retention is checked "
-        f"across all {repeats + 1} outputs; the timing column is the median of per-case wall-time medians. "
-        "Imports and model loading are outside the timer. Character savings are separate from "
-        "the estimated token savings in the release battery.\n\n"
-        "This is Tameru's regression corpus, not an independent downstream-agent evaluation. "
-        "Headroom's row tests its Rust TextCrusher, not its full content router; "
-        "LCC rows use the recorded provider and one scoring worker.\n\n"
-    )
-    short += (
-        "LCC's Laya path includes protected no-ops: inputs that need no model scoring "
-        "are kept by its deterministic policy. These are recorded separately from "
-        "failed or degraded model calls.\n\n"
-    )
-    if unavailable:
-        short += "Unmeasured providers have no scores carried forward from earlier releases:\n\n" + unavailable_text + "\n\n"
-    short += (
-        "See [the complete v1.4.1 comparison](benchmarks/COMPARISON.md) and "
-        "[raw results, pins and timing samples](benchmarks/comparison-v1.4.1.json).\n\n"
+        f"**Same input. Same query. Same {count} tasks.** The current comparison covers "
+        "documents, configuration, Git/npm/YAML output, multilingual text and v1.4.1's "
+        "grep, pytest and numbered-source cases.\n\n"
+        f"![v{__version__} comparison of mean character savings and clean cases across measured methods]"
+        f"(assets/comparison-v{__version__}.svg)\n\n"
+        + comparison_table(report, include_repeats=False) + "\n\n"
+        "**A clean case keeps every required string and excludes every planted forbidden string.** "
+        "Savings are the arithmetic mean per case; wall time is the median of per-case medians. "
+        "Headroom's row measures the **TextCrusher component**. "
+        + availability_note.rstrip() + "\n\n"
+        "[Complete comparison and per-task results →](benchmarks/COMPARISON.md) · "
+        f"[Raw measurements →](benchmarks/comparison-v{__version__}.json)\n\n"
+        "<details>\n<summary><strong>Evaluation details: corpus, methods, timing and limits</strong></summary>\n\n"
+        "**Corpus.** All scored methods see identical text and task queries. "
+        f"The {count} cases include {tameru['gold_total']} required source strings plus "
+        "planted stale, excluded or distracting strings. The large synthetic performance case "
+        "and empty-query case belong to the separate release QA battery.\n\n"
+        "**Metrics.** Required strings must survive every output; a forbidden string in any "
+        "output counts as a leak. Character savings measure text length, rather than model "
+        "tokens or monetary cost. These checks cover specified fixture evidence and do not "
+        "measure downstream agent answers or every possible semantic loss.\n\n"
+        "**Methods.** Tameru uses default extraction with `ccr=False`, `citations=True`. "
+        f"LCC {packages.get('local-context-compiler', 'not installed')} uses one scoring worker "
+        f"and no marker; Headroom {packages.get('headroom-ai', 'not installed')} uses Rust TextCrusher "
+        "at defaults, without the full router or recovery store. TF-IDF is a simple "
+        f"paragraph-retrieval baseline. Laya {packages.get('laya', 'not installed')} runs "
+        "its pinned multilingual model on CPU. "
+        "LCC's protected no-ops are valid policy outcomes; model fallbacks receive no score.\n\n"
+        f"**Timing.** One untimed warmup and {repeats} timed complete calls per case. "
+        "Parsing, scoring and rendering are inside the timer; imports and model loading are "
+        "outside it. " + repeat_text + "Hardware and scheduling affect latency.\n\n"
+        f"**Runtime and provenance.** Python {env['python']} on "
+        f"{env.get('cpu_model', 'the recorded CPU')}, with CPU-quota and thread settings "
+        "in the JSON. Source/model pins, input/output "
+        "hashes, package versions and individual timing samples are recorded in the raw JSON. "
+        "The resumed Laya measurements retain the same corpus and settings; execution segments "
+        "record the protected-no-op classification correction.\n\n"
+        "**Interpretation.** This is Tameru's own regression corpus, including adversarial "
+        "fixtures. Broader independent and live-agent evaluations are still needed to establish "
+        "generality. An unmeasured provider has no score carried forward from an earlier release.\n\n"
+        "</details>\n"
     )
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    start = readme.index("## Comparison with other approaches\n")
-    end = readme.index("## v1.4.1 measured results\n", start)
-    (ROOT / "README.md").write_text(readme[:start] + short + readme[end:], encoding="utf-8")
+    readme = replace_readme_block(readme, "headline", headline)
+    readme = replace_readme_block(readme, "comparison", short)
+    (ROOT / "README.md").write_text(readme, encoding="utf-8")
+    assets = ROOT / "assets"
+    assets.mkdir(exist_ok=True)
+    (assets / f"comparison-v{__version__}.svg").write_text(comparison_svg(report), encoding="utf-8")
 
-    measured = [arm for arm in ARMS if report["arms"].get(arm, {}).get("status") == "complete"]
     per_case = ["| Case | " + " | ".join(LABELS[a] for a in measured) + " |",
                 "|---|" + "---:|" * len(measured)]
     for name in report["protocol"]["common_cases"]:
@@ -368,6 +500,9 @@ def render_report(report: dict) -> None:
         "The [raw JSON](comparison-v1.4.1.json) records the corpus and input hashes, "
         "runner hash, source pins, package versions, output hashes, missing/leaked "
         "strings and individual timing samples.\n\n"
+        "Documentation and chart rendering can change after a measurement run. "
+        "Recorded runner hashes identify the code used for those measurements, "
+        "rather than necessarily matching the current documentation renderer.\n\n"
         "Protected no-ops with zero scored blocks and zero calls are valid LCC policy "
         "results. They are flagged as `protected_noop`; they do not represent model inference. "
         "The run resumed after correcting this classification, with unchanged corpus, "
@@ -394,7 +529,8 @@ def render_report(report: dict) -> None:
         "python benchmarks/compare.py --render-from benchmarks/comparison-v1.4.1.json\n```\n\n"
         "The default command excludes paid JEV calls. Add `--include-jev` only when "
         "you have configured `TYPESAFE_API_KEY` and intend to run that provider. "
-        "`--render-from` regenerates this page and the README comparison from the JSON.\n\n"
+        "`--render-from` regenerates this page, the README headline/comparison blocks "
+        "and the theme-aware SVG chart from the JSON. It preserves the rest of the README.\n\n"
         "## Limits and interpretation\n\n"
         "This corpus belongs to Tameru's regression suite and includes deliberately "
         "adversarial examples. It is not an independent broad evaluation or a live-model "

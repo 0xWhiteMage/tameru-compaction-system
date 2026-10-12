@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 450" width="1120" height="450" role="img" aria-labelledby="title description">
+<title id="title">Tameru v1.4.1 comparison: savings and evidence retention</title>
+<desc id="description">16 common tasks, identical inputs and queries. Tameru v1.4.1: 81.9% mean character savings, 16/16 clean cases; LCC mechanical: 36.3% mean character savings, 11/16 clean cases; Headroom TextCrusher: 50.5% mean character savings, 9/16 clean cases; TF-IDF paragraph baseline: 53.4% mean character savings, 9/16 clean cases; LCC → Laya (CPU): 8.0% mean character savings, 11/16 clean cases.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#24292f}.title{font-size:26px;font-weight:700}.subtitle{font-size:15px;fill:#57606a}.heading{font-size:13px;font-weight:700;letter-spacing:1px}.label{font-size:16px}.value{font-size:17px;font-weight:600}.tick,.note{font-size:13px;fill:#57606a}.background{fill:#f6f8fa}.track{fill:#e5e9ef}.bar{fill:#8294ad}.tameru{fill:#7355cc}.clean{fill:#25806c}.rule{stroke:#d0d7de}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.subtitle,.tick,.note{fill:#a5b3c4}.background{fill:#111827}.track{fill:#253145}.bar{fill:#8497b2}.tameru{fill:#b29aff}.clean{fill:#67cdb6}.rule{stroke:#39465a}}</style>
+<rect class="background" width="1120" height="450" rx="16"/>
+<text x="30.00" y="42.00" class="title" text-anchor="start">Same tasks. Less context.</text>
+<text x="30.00" y="70.00" class="subtitle" text-anchor="start">Tameru v1.4.1 · 16 matched tasks · 5 measured methods · 2026-10-12</text>
+<text x="330.00" y="112.00" class="heading" text-anchor="start">MEAN CHARACTER SAVINGS</text>
+<text x="790.00" y="112.00" class="heading" text-anchor="start">CLEAN CASES</text>
+<text x="330.00" y="136.00" class="tick" text-anchor="middle">0%</text>
+<text x="400.00" y="136.00" class="tick" text-anchor="middle">25%</text>
+<text x="470.00" y="136.00" class="tick" text-anchor="middle">50%</text>
+<text x="540.00" y="136.00" class="tick" text-anchor="middle">75%</text>
+<text x="610.00" y="136.00" class="tick" text-anchor="middle">100%</text>
+<text x="790.00" y="136.00" class="tick" text-anchor="middle">0</text>
+<text x="885.00" y="136.00" class="tick" text-anchor="middle">8</text>
+<text x="980.00" y="136.00" class="tick" text-anchor="middle">16</text>
+<text x="30.00" y="179.00" class="label" text-anchor="start">Tameru v1.4.1</text>
+<rect x="330" y="160" width="280" height="26" rx="5" class="track"/>
+<rect x="330.00" y="160" width="229.23" height="26" rx="5" class="tameru"/>
+<text x="685.00" y="179.00" class="value" text-anchor="end">81.9%</text>
+<rect x="790" y="160" width="190" height="26" rx="5" class="track"/>
+<rect x="790" y="160" width="190.00" height="26" rx="5" class="clean"/>
+<text x="1075.00" y="179.00" class="value" text-anchor="end">16/16</text>
+<text x="30.00" y="225.00" class="label" text-anchor="start">LCC mechanical</text>
+<rect x="330" y="206" width="280" height="26" rx="5" class="track"/>
+<rect x="330.00" y="206" width="101.73" height="26" rx="5" class="bar"/>
+<text x="685.00" y="225.00" class="value" text-anchor="end">36.3%</text>
+<rect x="790" y="206" width="190" height="26" rx="5" class="track"/>
+<rect x="790" y="206" width="130.62" height="26" rx="5" class="bar"/>
+<text x="1075.00" y="225.00" class="value" text-anchor="end">11/16</text>
+<text x="30.00" y="271.00" class="label" text-anchor="start">Headroom TextCrusher</text>
+<rect x="330" y="252" width="280" height="26" rx="5" class="track"/>
+<rect x="330.00" y="252" width="141.37" height="26" rx="5" class="bar"/>
+<text x="685.00" y="271.00" class="value" text-anchor="end">50.5%</text>
+<rect x="790" y="252" width="190" height="26" rx="5" class="track"/>
+<rect x="790" y="252" width="106.88" height="26" rx="5" class="bar"/>
+<text x="1075.00" y="271.00" class="value" text-anchor="end">9/16</text>
+<text x="30.00" y="317.00" class="label" text-anchor="start">TF-IDF paragraph baseline</text>
+<rect x="330" y="298" width="280" height="26" rx="5" class="track"/>
+<rect x="330.00" y="298" width="149.40" height="26" rx="5" class="bar"/>
+<text x="685.00" y="317.00" class="value" text-anchor="end">53.4%</text>
+<rect x="790" y="298" width="190" height="26" rx="5" class="track"/>
+<rect x="790" y="298" width="106.88" height="26" rx="5" class="bar"/>
+<text x="1075.00" y="317.00" class="value" text-anchor="end">9/16</text>
+<text x="30.00" y="363.00" class="label" text-anchor="start">LCC → Laya (CPU)</text>
+<rect x="330" y="344" width="280" height="26" rx="5" class="track"/>
+<rect x="330.00" y="344" width="22.52" height="26" rx="5" class="bar"/>
+<text x="685.00" y="363.00" class="value" text-anchor="end">8.0%</text>
+<rect x="790" y="344" width="190" height="26" rx="5" class="track"/>
+<rect x="790" y="344" width="130.62" height="26" rx="5" class="bar"/>
+<text x="1075.00" y="363.00" class="value" text-anchor="end">11/16</text>
+<path d="M30 385H1090" class="rule"/>
+<text x="30.00" y="409.00" class="note" text-anchor="start">Savings are averaged per task. Clean = every required string kept, no planted forbidden strings retained.</text>
+<text x="30.00" y="430.00" class="note" text-anchor="start">Source: benchmarks/comparison-v1.4.1.json · Tameru regression corpus; downstream agent accuracy is not measured.</text>
+</svg>

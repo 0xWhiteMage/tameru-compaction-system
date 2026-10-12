@@ -2,13 +2,13 @@
 
 Freshly measured on **2026-10-12**, using **Tameru v1.4.1** and the same **16 task cases** for every scored method. The corpus includes evidence chains, stale configuration, Git/YAML/npm output, Japanese/Chinese/Arabic text, saturated grep, captured pytest logs with blank lines and numbered source reads.
 
-| Tested method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean character savings | Median wall time | Repeat output identical |
+| Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ | Repeat output identical |
 |---|---:|---:|---:|---:|---:|---|
 | **Tameru v1.4.1** | 25/25 | 0 | 16/16 | 81.9% | 12.83 ms | Yes |
 | LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.97 ms | Yes |
 | Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.51 ms | Yes |
 | TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.12 ms | Yes |
-| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8091.08 ms | Yes |
+| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8,091.08 ms | Yes |
 | LCC → JEV — unmeasured | — | — | — | — | — | — |
 
 All numeric cells are new measurements from this run. The earlier v1.2.0 holdout and v1.3.0 comparison have been retired from active documentation; their original records remain in Git history. No older score is relabelled as v1.4.1.
@@ -58,6 +58,8 @@ The 4,000-record synthetic performance case and empty-query fail-open case are o
 
 The [raw JSON](comparison-v1.4.1.json) records the corpus and input hashes, runner hash, source pins, package versions, output hashes, missing/leaked strings and individual timing samples.
 
+Documentation and chart rendering can change after a measurement run. Recorded runner hashes identify the code used for those measurements, rather than necessarily matching the current documentation renderer.
+
 Protected no-ops with zero scored blocks and zero calls are valid LCC policy results. They are flagged as `protected_noop`; they do not represent model inference. The run resumed after correcting this classification, with unchanged corpus, versions, settings and timing boundaries. Both runner hashes and the measured case lists are recorded in `execution_segments`.
 
 ## Provider availability
@@ -82,7 +84,7 @@ OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 RAYON_NUM_THREADS=8 USE_TF=0 \
 python benchmarks/compare.py --render-from benchmarks/comparison-v1.4.1.json
 ```
 
-The default command excludes paid JEV calls. Add `--include-jev` only when you have configured `TYPESAFE_API_KEY` and intend to run that provider. `--render-from` regenerates this page and the README comparison from the JSON.
+The default command excludes paid JEV calls. Add `--include-jev` only when you have configured `TYPESAFE_API_KEY` and intend to run that provider. `--render-from` regenerates this page, the README headline/comparison blocks and the theme-aware SVG chart from the JSON. It preserves the rest of the README.
 
 ## Limits and interpretation
 

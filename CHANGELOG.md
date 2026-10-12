@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### README presentation
+- Rebuild the v1.4.1 README around measured savings and retained evidence, with headline figures, a comparison chart, a runnable before/after example and clear Python, CLI and Hermes setup.
+- Keep all current comparison methods visible and expand the release QA table to all 15 workloads, grouped by documents/configuration, tool outputs, multilingual text and robustness.
+- Generate the headline, comparison table and accessible light/dark SVG from the existing results JSON. Marker-delimited updates preserve the README layout; measurement hashes and raw scores stay unchanged.
+- Move evaluation settings into expandable details and add a documentation index, while retaining budget controls, language/format coverage and recovery limits.
+
 ### Current-version comparisons
 - Pin quickstart and integration installation to the published comparison source commit, which includes the current README and results.
 - Replace the active v1.2.0/v1.3.0 tables with a fresh v1.4.1 comparison on one common corpus: 16 task cases and 25 required answer strings, including saturated grep, captured pytest output with blank lines and numbered source reads.

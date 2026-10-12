@@ -1,47 +1,99 @@
-# Tameru (貯める) — Context compaction for LLM agents
+# Tameru (貯める)
 
 <p align="center">
-  <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
+  <img src="assets/header.png" alt="The White Mage — Tameru Compaction System" width="100%"><br><br>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.4.1-blue.svg" alt="Version 1.4.1"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
   <a href="tests/"><img src="https://img.shields.io/badge/tests-1179%20passed-success.svg" alt="1179 tests passed"></a>
-  <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/QA-15%2F15-brightgreen.svg" alt="15 of 15 QA cases passed"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-Python%20stdlib-orange.svg" alt="Python standard library core"></a>
+  <a href="benchmarks/production-qa-v3-results.json"><img src="https://img.shields.io/badge/release_QA-15%2F15-brightgreen.svg" alt="15 of 15 release QA cases passed"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
 </p>
 
-**Give your agent more room to work. Keep the evidence that matters.**
+**Less context. More room for your agent to work.**
 
-Tameru (貯める, Japanese for “to store up”) reduces bulky logs, search results, documents and tool outputs before they fill an agent's context window. It selects task-relevant source text, collapses repetition and restores related evidence such as definitions, identifiers and qualifiers.
+Tameru is **query-aware context compaction for LLM agents**. It turns bulky tool outputs, logs and documents into smaller extracts while keeping the source evidence relevant to the task: the error, the definition, the current configuration, or the relationship connecting a question to its answer.
 
-- **Less context to send:** successful cases in the v1.4.1 QA battery save **31–99.5% estimated tokens**, depending on the input.
-- **No extra model call:** default extraction runs locally, uses no LLM or GPU and adds **$0 in LLM inference charges**.
-- **Repeatable decisions:** identical input and configuration produce deterministic extraction; weak signal can return the original input.
-- **Retrieve more when needed:** optional recovery storage lets a host retrieve omitted context after a successful store write.
+The default engine runs locally with **no LLM call, no GPU and no runtime dependencies beyond Python's standard library**. It preserves selected source text, collapses repetition and can return the original input when the query gives too little signal. Optional recovery lets an integrated host retrieve omitted context later.
 
-Python **3.10+** · Standard-library core · MIT licence · **v1.4.1 source**
+<!-- tameru:headline:start -->
 
-[See it work](#see-it-work) · [Compare approaches](#comparison-with-other-approaches) · [Install](#quickstart) · [Hermes](#hermes) · [What's new](#whats-new-in-v141)
+| Mean characters saved | Required strings retained | Forbidden strings retained | Median wall time |
+|:---:|:---:|:---:|:---:|
+| **81.9%** | **25/25** | **0** | **12.83 ms** |
 
-## Where Tameru helps
+Measured on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-12**. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
 
-| What your agent is reading | What is useful to keep |
-|---|---|
-| Hundreds of routine log lines around a failure | Error fingerprints, relevant messages and source details such as hosts and ports |
-| A search result that repeats the same name everywhere | Matching definitions and assignments, distinct matches and file context |
-| A failed test with pages of captured output | The failure, recognised errors, warning-or-higher lines and section boundaries |
-| Configuration with an old value and a later override | The current value and its qualifier when the supersession is explicit |
-| A document where the answer spans several sections | Related entities and the links connecting the question to its answer |
-| Git history, JSON, CSV or YAML dumps | Relevant records with the structure needed to interpret them |
+<!-- tameru:headline:end -->
 
-These mechanisms target real sources of context waste. They preserve selected source evidence; they do not guarantee a model's final answer.
+[Performance](#comparison-with-other-approaches) · [See it work](#see-it-work) · [Quickstart](#quickstart) · [Hermes](#hermes) · [What's new](#whats-new-in-v141) · [Documentation](#documentation)
+
+## Comparison with other approaches
+
+<!-- tameru:comparison:start -->
+
+**Same input. Same query. Same 16 tasks.** The current comparison covers documents, configuration, Git/npm/YAML output, multilingual text and v1.4.1's grep, pytest and numbered-source cases.
+
+![v1.4.1 comparison of mean character savings and clean cases across measured methods](assets/comparison-v1.4.1.svg)
+
+| Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ |
+|---|---:|---:|---:|---:|---:|
+| **Tameru v1.4.1** | 25/25 | 0 | 16/16 | 81.9% | 12.83 ms |
+| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.97 ms |
+| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.51 ms |
+| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.12 ms |
+| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8,091.08 ms |
+| LCC → JEV — unmeasured | — | — | — | — | — |
+
+**A clean case keeps every required string and excludes every planted forbidden string.** Savings are the arithmetic mean per case; wall time is the median of per-case medians. Headroom's row measures the **TextCrusher component**. JEV was unmeasured because its API credential was unavailable.
+
+[Complete comparison and per-task results →](benchmarks/COMPARISON.md) · [Raw measurements →](benchmarks/comparison-v1.4.1.json)
+
+<details>
+<summary><strong>Evaluation details: corpus, methods, timing and limits</strong></summary>
+
+**Corpus.** All scored methods see identical text and task queries. The 16 cases include 25 required source strings plus planted stale, excluded or distracting strings. The large synthetic performance case and empty-query case belong to the separate release QA battery.
+
+**Metrics.** Required strings must survive every output; a forbidden string in any output counts as a leak. Character savings measure text length, rather than model tokens or monetary cost. These checks cover specified fixture evidence and do not measure downstream agent answers or every possible semantic loss.
+
+**Methods.** Tameru uses default extraction with `ccr=False`, `citations=True`. LCC 1.0.0 uses one scoring worker and no marker; Headroom 0.40.0 uses Rust TextCrusher at defaults, without the full router or recovery store. TF-IDF is a simple paragraph-retrieval baseline. Laya 0.4.4 runs its pinned multilingual model on CPU. LCC's protected no-ops are valid policy outcomes; model fallbacks receive no score.
+
+**Timing.** One untimed warmup and 3 timed complete calls per case. Parsing, scoring and rendering are inside the timer; imports and model loading are outside it. All 5 scored methods produced identical output across the warmup and timed repeats. Hardware and scheduling affect latency.
+
+**Runtime and provenance.** Python 3.12.14 on INTEL(R) XEON(R) PLATINUM 8573C, with CPU-quota and thread settings in the JSON. Source/model pins, input/output hashes, package versions and individual timing samples are recorded in the raw JSON. The resumed Laya measurements retain the same corpus and settings; execution segments record the protected-no-op classification correction.
+
+**Interpretation.** This is Tameru's own regression corpus, including adversarial fixtures. Broader independent and live-agent evaluations are still needed to establish generality. An unmeasured provider has no score carried forward from an earlier release.
+
+</details>
+
+<!-- tameru:comparison:end -->
 
 ## See it work
 
-**Question:** “Which database endpoint does Project Orion use?”
+**Task:** “Which database endpoint does Project Orion use?”
 
-In the [multi-hop fixture](benchmarks/run_battery.py), 60 routine archive paragraphs surround two facts. The endpoint line does not name Project Orion, so retaining the connecting fact matters.
+The answer sits behind a relationship: **Project Orion → warehouse Cedar → endpoint DB-EU-7**. Sixty routine archive paragraphs surround the two useful facts. The endpoint line never names Project Orion.
 
-Input excerpt:
+| Original context | Tameru extract | Estimated token savings |
+|---:|---:|---:|
+| 5,342 characters | **266 characters** | **95.0%** |
+
+Actual v1.4.1 output, with recovery storage and citations disabled:
+
+```text
+Routine archive section 0: ordinary status record with no relevant operational facts.
+[…]
+Project Orion uses warehouse Cedar.
+[…]
+Cedar routes writes through endpoint DB-EU-7.
+[…]
+Routine archive section 29: ordinary status record with no relevant operational facts.
+```
+
+Both connecting facts survive. The retained boundary paragraphs and omission markers make the extract readable. [Run the complete example](#python), or inspect the [fixture](benchmarks/run_battery.py).
+
+<details>
+<summary><strong>Show the original input structure</strong></summary>
 
 ```text
 Routine archive section 0: ordinary status record with no relevant operational facts.
@@ -54,72 +106,69 @@ Cedar routes writes through endpoint DB-EU-7.
 ... 30 more routine archive paragraphs ...
 ```
 
-Actual v1.4.1 output with recovery storage and citations disabled:
+This is an excerpt of the input structure; the Python example below constructs all 60 archive paragraphs.
 
-```text
-Routine archive section 0: ordinary status record with no relevant operational facts.
-[…]
-Project Orion uses warehouse Cedar.
-[…]
-Cedar routes writes through endpoint DB-EU-7.
-[…]
-Routine archive section 29: ordinary status record with no relevant operational facts.
-```
+</details>
 
-**5,342 → 266 characters; 95.0% estimated token savings.** Both the endpoint and the Project Orion → Cedar relationship survive. Run this example in the [quickstart](#quickstart).
+## Where Tameru helps
 
-## Comparison with other approaches
+| Your agent is reading… | Tameru focuses on… |
+|---|---|
+| Pages of logs around a failure | Error fingerprints, relevant messages, hosts and ports |
+| Search results repeating the same name | Matching definitions and assignments, distinct matches and file context |
+| A failed test with long captured output | The failure, recognised errors, warning-or-higher lines and section boundaries |
+| Configuration containing an old value and a later override | The current value and its qualifier when supersession is explicit |
+| A document with an answer spread across sections | Related entities and the source facts linking them |
+| Git history, JSON, CSV or YAML dumps | Relevant records with enough structure to interpret them |
 
-Freshly measured on **2026-10-12**, using **Tameru v1.4.1** and the same **16 task cases** for every scored method. The corpus includes evidence chains, stale configuration, Git/YAML/npm output, Japanese/Chinese/Arabic text, saturated grep, captured pytest logs with blank lines and numbered source reads.
+### Formats and languages
 
-| Tested method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean character savings | Median wall time | Repeat output identical |
-|---|---:|---:|---:|---:|---:|---|
-| **Tameru v1.4.1** | 25/25 | 0 | 16/16 | 81.9% | 12.83 ms | Yes |
-| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.97 ms | Yes |
-| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.51 ms | Yes |
-| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.12 ms | Yes |
-| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8091.08 ms | Yes |
-| LCC → JEV — unmeasured | — | — | — | — | — | — |
+| Input | Handling |
+|---|---|
+| Terminal and build logs | ANSI handling, repeated-template reduction, error exemplars and last-occurrence retention |
+| Numbered source reads | `cat -n` and common `read_file` gutters; code stays recognisable |
+| Unified diffs and grep/rg | Hunk or file grouping, query matches, headers and saturated-query selection |
+| Pytest, Jest, Go and Cargo output | Failure evidence and summaries, with conservative handling of unknown surrounding lines |
+| JSON/NDJSON and CSV/TSV | Query-aware records, quote-aware framing, headers and JSON briefs for large object arrays |
+| Markdown | Heading ancestry and fenced-code protection |
+| YAML, XML/HTML, SQL, INI/TOML-style sections | Conservative format-specific selection; ambiguous shapes can decline specialised reduction |
+| Text extracted from OCR or vertical layouts | Matching in logical source order; text extraction happens upstream |
 
-Tameru retained **25/25 required strings**, with **0 forbidden leaks** and **81.9% mean character savings**. A clean case keeps every required string and excludes every planted forbidden string. Faster methods and different savings are shown alongside these retention checks.
-
-Each case gets one untimed warmup and 3 timed complete calls. Retention is checked across all 4 outputs; the timing column is the median of per-case wall-time medians. Imports and model loading are outside the timer. Character savings are separate from the estimated token savings in the release battery.
-
-This is Tameru's regression corpus, not an independent downstream-agent evaluation. Headroom's row tests its Rust TextCrusher, not its full content router; LCC rows use the recorded provider and one scoring worker.
-
-LCC's Laya path includes protected no-ops: inputs that need no model scoring are kept by its deterministic policy. These are recorded separately from failed or degraded model calls.
-
-Unmeasured providers have no scores carried forward from earlier releases:
-
-- **LCC → JEV:** RuntimeError: JEV requires --include-jev and an existing TYPESAFE_API_KEY
-
-See [the complete v1.4.1 comparison](benchmarks/COMPARISON.md) and [raw results, pins and timing samples](benchmarks/comparison-v1.4.1.json).
+Script-aware matching has regression coverage across **20 script/language families**, including Japanese, Chinese and Arabic release cases. Matching uses a normalised shadow while extracts retain the source text. Coverage varies by language and task; Tameru accepts text and relies on upstream tools for OCR.
 
 ## v1.4.1 measured results
 
-The current release passes **15/15 production-QA cases**, keeping all required answer strings with zero forbidden-distractor leaks. Selected results from the [v1.4.1 battery](benchmarks/production-qa-v3-results.json):
+The separate **15-case release QA battery passes every case**. All required answer strings survive, and no planted forbidden strings leak. These figures use **estimated tokens**, whereas the comparison above measures **characters**.
 
 | Workload | Evidence checked | Estimated token savings |
 |---|---|---:|
+| **Documents and configuration** | | |
+| Lexical distractor | Required backup host; distracting glossary excluded | **96.7%** |
+| Multi-hop document | Endpoint linked through its warehouse | **95.0%** |
+| Release evidence chain | Release alias, deployment identifier and checksum | **95.6%** |
+| Current configuration | New timeout; explicitly superseded value excluded | **90.1%** |
+| Negation and override | “Not enabled”; obsolete enabled state excluded | **92.5%** |
+| Ambiguous configuration | Required value retained without an explicit supersession marker | **88.4%** |
+| Excluded sample | Operational host; excluded example absent | **87.3%** |
+| YAML configuration | Distro and language; excluded dependency absent | **64.7%** |
+| **Agent tool outputs** | | |
 | Git history | Required commit hash | **94.0%** |
-| Multi-hop document | Database endpoint reached through a related entity | **95.0%** |
-| Release evidence chain | Alias, deployment identifier and checksum | **95.6%** |
-| Current configuration | New timeout retained; superseded config excluded | **90.1%** |
-| YAML configuration | Distro and language retained; excluded dependency absent | **64.7%** |
 | npm log | Requested Playwright version | **31.0%** |
+| **Multilingual text** | | |
 | Japanese document | Required layer count | **57.5%** |
 | Chinese needle case | Required backup host | **90.9%** |
 | Arabic needle case | Required backup host | **88.6%** |
-| Large synthetic document | Savings, determinism and timing; no answer-string check | **99.5%** |
+| **Robustness** | | |
+| Large synthetic document | Savings, repeatability and timing; no answer-string check | **99.5%** |
 | Empty query | Original input returned | **0.0%** |
 
-The large synthetic case contains 4,000 records and completed in **822.9 ms CPU time** on the recorded runner, within its **1,200 ms** gate. Per-case timings are in the JSON and vary with hardware. Savings use Tameru's token estimator, so actual model-token savings vary. The synthetic maximum is a workload result, not an expected saving for every input.
+The 4,000-record synthetic document completed in **822.9 ms CPU time**, within its 1,200 ms gate on the recorded runner. Its maximum saving is specific to that input. Token counts use Tameru's estimator; savings with a model's own tokenizer will vary. [Full release results →](benchmarks/production-qa-v3-results.json)
 
 ### Choose a context budget
 
-The [budget sweep](benchmarks/threshold_sweep.py) shows how the savings change in `mode="fixed"`. Lower ratios request a smaller budget for compressible content; pinned evidence can exceed that budget.
+Use `mode="fixed"` and `budget_ratio` to request a smaller extract. Lower ratios request a smaller budget for compressible content; pinned evidence can exceed that budget.
 
-| `budget_ratio` | Mean character savings | Cases with required strings retained and no forbidden leaks |
+| `budget_ratio` | Mean character savings | Clean release cases |
 |---:|---:|---:|
 | 0.1 | **77.3%** | 15/15 |
 | 0.2 | **68.4%** | 15/15 |
@@ -127,19 +176,21 @@ The [budget sweep](benchmarks/threshold_sweep.py) shows how the savings change i
 | 0.5 | **41.5%** | 15/15 |
 | 0.7 | **24.9%** | 15/15 |
 
-These are fixture-level operating points. Character savings and estimated token savings are separate measurements; validate the retained evidence for your own tasks.
+Every operating point retained all required strings with no forbidden leaks in this corpus. Validate the evidence your own tasks need before choosing a ratio. [Replay the sweep →](benchmarks/threshold_sweep.py)
 
 ## Quickstart
 
-The source and metadata identify **v1.4.1**. The GitHub tag and Release are pending publication; this command pins the verified engine source:
+Requires **Python 3.10+**. Install the verified **v1.4.1 source**:
 
 ```bash
 python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@976f7a5049c2a32410a112a8748dd245cf7c464c"
 ```
 
+The command pins an immutable source commit. Package metadata is v1.4.1; the GitHub tag and Release are still pending publication.
+
 ### Python
 
-Reproduce the example above without disk writes or model calls:
+Reproduce the complete example above:
 
 ```python
 from tameru.compress_context import compress_context
@@ -162,8 +213,9 @@ result = compress_context(
 )
 print(result.compressed_text)
 print(f"Estimated token savings: {result.tokens_saved_pct:.1f}%")
-print(f"Returned original input: {result.fail_open}")
 ```
+
+Supply the task's question alongside the source text. This example uses the default extractive strategy and disables recovery persistence. [API options and receipts →](docs/USAGE.md)
 
 ### CLI
 
@@ -172,62 +224,52 @@ tameru-compress context.txt "Why did the database connection fail?" --no-ccr --s
 cat context.txt | tameru-compress - "Find the active error" --no-ccr
 ```
 
-The CLI accepts a file or stdin and writes compacted text to stdout. `--stats` adds JSON diagnostics first, followed by `---` and the text. Use a task-specific query: “continue” often provides too little signal.
+Read from a file or stdin; compacted text goes to stdout. `--stats` prints JSON diagnostics, then `---`, then the extract. A specific query such as “find the active error” gives selection more signal than “continue”.
 
 ### Hermes
 
-Use the maintained [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin), follow its installation instructions and select:
+Install the maintained [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) using its instructions, then select the engine:
 
 ```yaml
 context:
   engine: tameru
 ```
 
-The plugin supplies the Hermes integration and recovery path. Engine and plugin releases are separate; update the plugin to receive its vendored engine changes. The plugin's catalogue submission is [Hermes PR #94102](https://github.com/NousResearch/hermes-agent/pull/94102).
+The plugin provides the Hermes integration and retrieval path. It vendors the engine, so update the plugin to receive its engine changes. Its catalogue submission is [Hermes PR #94102](https://github.com/NousResearch/hermes-agent/pull/94102).
 
-For another agent framework, use the Python API, CLI or generic transcript adapter. See the [agent integration guide](docs/INTEGRATION.md) for message-list pruning, task-derived queries and vendored-copy synchronisation.
+For another agent framework, start with the Python API, CLI or generic transcript adapter. The [integration guide](docs/INTEGRATION.md) covers message lists, task-derived queries and keeping vendored copies current.
 
 ## What's new in v1.4.1
 
-| Improvement | Why it matters |
+| Change | What users gain |
 |---|---|
-| **Better saturated grep/rg selection** | A search matching nearly every line can still retain the definition or assignment your agent needs. Command flags such as `-n` no longer crowd out the searched name. |
-| **Shorter noisy pytest failures** | Long captured sections keep boundary lines, recognised error fingerprints and warning-or-higher evidence. Blank lines no longer end a section early. |
-| **Less omission-marker overhead** | Consecutive fully omitted grep files share a caller-supplied marker while retaining file headers. |
-| **Opt-in short-gap inlining** | `inline_short_gaps=True` keeps a span verbatim when its marker would be at least as long. Off by default. |
-| **Broader credential screening** | Recovery persistence recognises additional API keys, bearer tokens and env/YAML assignments while avoiding common code-expression false positives. This does not redact returned output. |
+| **Better saturated grep/rg selection** | Definitions and assignments remain selectable when a name matches nearly every line; copied flags such as `-n` no longer crowd out the searched name. |
+| **Shorter noisy pytest failures** | Long captured sections keep recognised errors, warning-or-higher evidence and boundaries; blank lines no longer end a captured section early. |
+| **Less omission-marker overhead** | Consecutive omitted grep files share a caller-supplied marker while keeping their file headers. |
+| **Optional short-gap inlining** | `inline_short_gaps=True` keeps a span verbatim when its omission marker would be at least as long. Off by default. |
+| **Broader recovery credential screening** | Additional API keys, bearer tokens and env/YAML assignments can block persistence, with fewer code-expression false positives. |
 | **Windows-friendly file inputs** | CLI, decision-cache and recovery-cache reads accept BOM-prefixed UTF-8. |
 
-The full [changelog](CHANGELOG.md) and [v1.4.1 notes](docs/releases/v1.4.1.md) cover conditions and maintenance changes. Affected grep and pytest inputs intentionally change; unchanged battery savings are not a blanket promise of identical output to v1.4.0.
-
-## Formats and languages
-
-| Input | Handling |
-|---|---|
-| Terminal/build logs | ANSI handling, template deduplication, error exemplars and last-occurrence retention |
-| Numbered source reads | Recognises `cat -n` and common `read_file` gutters; avoids treating code as a table |
-| Unified diffs and grep/rg | Hunk or file grouping, query matches, headers and saturated-query selection |
-| Pytest, Jest, Go and Cargo output | Failure evidence and summaries, with conservative retention of unknown surrounding lines |
-| JSON/NDJSON and CSV/TSV | Query-aware records; quote-aware framing and headers; JSON briefs for large object arrays |
-| Markdown | Heading ancestry and fenced-code protection |
-| YAML, XML/HTML, SQL, INI/TOML-style sections | Conservative format-specific selection; ambiguous shapes decline specialised reduction |
-| Extracted vertical/OCR text | Logical-source-order matching on text already extracted upstream |
-
-Script-aware matching has regression coverage across **20 script/language families**, including Japanese, Chinese and Arabic release cases. Matching uses a normalised shadow while extracts retain source text and logical order. This is tested coverage, not complete semantic support for every language. Tameru operates on text; it does not perform OCR or image recognition.
+See the [full changelog](CHANGELOG.md) and [v1.4.1 release notes](docs/releases/v1.4.1.md). Grep and pytest outputs affected by these fixes intentionally change from v1.4.0.
 
 ## Recovery and limits
 
-The standalone API defaults to `ccr=True`. When storage succeeds, a recovery pointer can retrieve the original context. Recovery depends on a successful write, valid unexpired records and a host retrieval path. Use `ccr=False` when persistence is unwanted or the host cannot retrieve omitted content.
+**Recovery is optional.** The standalone API defaults to `ccr=True`; a successful store write can attach a pointer to the original context. Retrieval needs valid, unexpired records and a host that can follow that pointer. Set `ccr=False` when you do not want persistence or your host has no retrieval path.
 
-Credential screening is heuristic: it gates cache writes, does not encrypt the cache and does not redact returned text. A citation by itself is not proof that recoverable content was stored.
+**Evidence retention is task-dependent.** Extraction can miss relationships with no shared terms, and source lines impose a minimum output size. Weak queries, malformed input or insufficient savings can return the original text. Required-string checks measure fixture evidence, rather than an agent's final-answer accuracy.
 
-Extraction can miss relationships with no shared terms, and retained source lines impose a minimum output size. Weak queries, malformed inputs or insufficient savings can return the original. The default `strategy="extract"` uses no LLM; optional `summarise`/`auto` and semantic-model paths have their own dependencies and inference behaviour.
+<details>
+<summary><strong>Storage, credentials and optional model paths</strong></summary>
 
-See [usage, recovery and advanced controls](docs/USAGE.md) for budgets, receipts, host markers, optional models and known limits, or the [industrial architecture](docs/industrial-compaction-v1.2.md) for format and Unicode design.
+Credential screening is heuristic. It gates recovery-cache writes; it does not redact returned text or encrypt the cache. A citation alone does not establish that an original was successfully stored.
+
+The default `strategy="extract"` makes no LLM call. Optional `summarise`/`auto` strategies and semantic-model paths have separate dependencies and inference behaviour. Default extraction adds no LLM inference charge; local CPU work still consumes resources.
+
+The [usage guide](docs/USAGE.md) explains budgets, recovery, receipts, host markers, optional models and known limits.
+
+</details>
 
 ## Reproduce the checks
-
-From a checkout of this repository:
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -236,14 +278,38 @@ python benchmarks/run_battery.py
 python benchmarks/threshold_sweep.py
 ```
 
-Release verification: **1,179 tests passed / 3 skipped**, wheel/source builds and installed-wheel Python/CLI smoke checks. Timing tests depend on hardware and runtime conditions; `python -m pytest -q -m 'not perf'` omits the marked scaling tests. The battery rewrites its results JSON with local timings. Historical external comparison setup is documented in [COMPARISON.md](benchmarks/COMPARISON.md).
+v1.4.1 verification: **1,179 tests passed / 3 skipped**, **15/15 release QA cases**, wheel/source builds and installed-wheel Python/CLI smoke checks. Timing tests depend on hardware; `python -m pytest -q -m 'not perf'` omits the marked scaling tests. The battery rewrites its JSON with your local timings.
+
+<details>
+<summary><strong>Replay the external comparisons or regenerate this README's figures</strong></summary>
+
+The [comparison report](benchmarks/COMPARISON.md#reproduce) contains the exact source pins, model revision, environment and commands for all five measured methods. JEV requires an existing API credential and explicit opt-in.
+
+To regenerate the headline figures, comparison table and SVG chart from the committed results, without rerunning models:
+
+```bash
+python benchmarks/compare.py --render-from benchmarks/comparison-v1.4.1.json
+```
+
+The renderer also updates the detailed comparison. Recorded measurement hashes remain in the JSON even when documentation rendering changes later.
+
+</details>
+
+## Documentation
+
+| Start here | Find out how to… |
+|---|---|
+| [Usage and API](docs/USAGE.md) | Set budgets, inspect receipts, configure recovery and use advanced controls |
+| [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework and keep vendored copies current |
+| [Current comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
+| [v1.4.1 notes](docs/releases/v1.4.1.md) | Review the current release's changes and verification |
+| [Architecture](docs/industrial-compaction-v1.2.md) | Understand the format adapters and Unicode design; the document's filename reflects its original design version |
+| [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |
 
 ## Credits and support
 
-Built by **The White Mage**. Research and ecosystem acknowledgements, including LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery, are recorded in the [research digest](docs/RESEARCH.md) and [changelog](CHANGELOG.md).
+Built by **The White Mage**. Tameru (貯める) means “to store up”. Research and ecosystem acknowledgements, including LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery, are recorded in the [research digest](docs/RESEARCH.md) and [changelog](CHANGELOG.md).
 
-- [Follow @0xWhiteMage on X](https://x.com/0xWhiteMage)
-- [Support on Ko-fi](https://ko-fi.com/0xwhitemage)
-- [Report an issue or contribute](https://github.com/0xWhiteMage/tameru-compaction-system/issues)
+[Follow on X](https://x.com/0xWhiteMage) · [Support on Ko-fi](https://ko-fi.com/0xwhitemage) · [Report an issue](https://github.com/0xWhiteMage/tameru-compaction-system/issues) · [Contribute](https://github.com/0xWhiteMage/tameru-compaction-system/pulls)
 
 Released under the [MIT licence](LICENSE).
