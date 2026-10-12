@@ -8,7 +8,7 @@ Python API, a CLI subprocess or a self-contained vendored copy.
 Install the reviewed v1.4.1 engine source directly. The GitHub tag and Release are pending publication; see the [quickstart](../README.md#quickstart) for the current source pin:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@dbe40619b9ebcb1595269809dd9f963b1c246015"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@976f7a5049c2a32410a112a8748dd245cf7c464c"
 ```
 
 ```python
@@ -88,7 +88,7 @@ The engine repository retired its duplicate Hermes bundle in v1.4.0. The plugin 
 text on stdout, JSON diagnostics followed by `---` and compacted text with `--stats`:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@dbe40619b9ebcb1595269809dd9f963b1c246015"   # provides tameru-compress on PATH
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@976f7a5049c2a32410a112a8748dd245cf7c464c"   # provides tameru-compress on PATH
 tameru-compress context.txt "Find the deployment failure" --no-ccr --stats
 cat context.txt | tameru-compress - "Find the deployment failure" --no-ccr --pin-recent 4
 ```

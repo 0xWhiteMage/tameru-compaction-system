@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Current-version comparisons
+- Pin quickstart and integration installation to the published comparison source commit, which includes the current README and results.
 - Replace the active v1.2.0/v1.3.0 tables with a fresh v1.4.1 comparison on one common corpus: 16 task cases and 25 required answer strings, including saturated grep, captured pytest output with blank lines and numbered source reads.
 - Add `benchmarks/compare.py` and a versioned results JSON with source/model pins, input/output hashes, package/runtime versions and individual timing samples. Generate the README and detailed comparison from that single results file.
 - Measure the complete call for every method, including TF-IDF parsing and scoring; use one warmup and three timed calls per case. Retention and forbidden-string checks cover all four outputs.

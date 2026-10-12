@@ -134,7 +134,7 @@ These are fixture-level operating points. Character savings and estimated token 
 The source and metadata identify **v1.4.1**. The GitHub tag and Release are pending publication; this command pins the verified engine source:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@dbe40619b9ebcb1595269809dd9f963b1c246015"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@976f7a5049c2a32410a112a8748dd245cf7c464c"
 ```
 
 ### Python
