@@ -11,6 +11,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Documentation audit
 - Make the pending GitHub tag/Release explicit and pin installation to the reviewed 1.4.1 source commit, so quickstart works before publication.
 - Use repository URLs in release notes so links also work when copied to the GitHub release page.
+- Restore the visible six-method comparison, practical use cases and a reproducible multi-hop before/after example in the README. Retain historical version labels and show answer-string retention alongside savings, distractors and speed.
+- Explain what each v1.4.1 benchmark retains, distinguish character savings from estimated tokens and clarify that the large synthetic case has no answer-string check.
+- Consolidate harness and Hermes migration instructions into `docs/INTEGRATION.md`; preserve advanced controls, recovery and optional-model instructions in `docs/USAGE.md`. Correct integration installation commands to use the verified source pin.
+
+### Repository cleanup
+- Remove the redundant `harnesses/` and retired `integration/hermes/` documentation folders after consolidating their useful content and updating active links.
+- Remove two unused scraped fixtures, `shape-ar-readme.txt` and `shape-csv-crawl.txt`, after checking direct and dynamic references. Keep all test-used fixtures, regression tests, benchmark results and backwards-compatible import aliases.
+- Verify the cleaned tree: 1,172 tests passed / 3 skipped, production QA 15/15, all five budget ratios clean, and the README example matches its displayed output. Refresh battery timings; large synthetic case 569.3 ms CPU time on this runner.
 
 ## [1.4.1] - 2026-10-12
 
@@ -46,8 +54,8 @@ intentionally change; this is not a byte-identical guarantee for every input.
 ### Maintenance and release verification
 - Ruff-compatible style changes for Hermes vendoring; differential checks of extraction, JSON briefs and folding were reported in commit `b2b1b19` before the release version bump.
 - Package metadata, public `__version__` and receipt `ENGINE_VERSION` now identify 1.4.1. The helper version test compares public versions rather than pinning an old release.
-- Re-ran on 2026-10-12: 1,168 pytest tests passed, 3 skipped; production QA 15/15; all five budget ratios retain gold with zero forbidden leaks. Mean character savings remain 77.3% / 68.4% / 61.2% / 41.5% / 24.9%.
-- Updated `production-qa-v3-results.json` with release-run timings: large synthetic document 99.5% estimated token savings in 618.6 ms CPU time on this runner. Timings vary by machine.
+- Re-ran on 2026-10-12 after file-input hardening: 1,172 pytest tests passed, 3 skipped; production QA 15/15; all five budget ratios retain gold with zero forbidden leaks. Mean character savings remain 77.3% / 68.4% / 61.2% / 41.5% / 24.9%.
+- Updated `production-qa-v3-results.json` with release-run timings: large synthetic document 99.5% estimated token savings within its 1,200 ms CPU-time gate. Timings vary by machine; the latest run is recorded above.
 - Built the 1.4.1 wheel and source distribution. Historical v1.2.0/v1.3.0 external comparisons were not re-run.
 
 

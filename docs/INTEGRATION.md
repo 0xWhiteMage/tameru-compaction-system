@@ -1,22 +1,20 @@
-# Harness Integrations
+# Agent integration guide
 
-Tameru is harness-agnostic by construction: `src/tameru/` contains **zero**
-imports of any agent framework. There are three ways to wire it into a
-harness, cheapest first.
+Tameru's core has no imports of an agent framework. Integrate it through the
+Python API, a CLI subprocess or a self-contained vendored copy.
 
 ## 1. Python API (pip)
 
-Any harness that can run Python installs the package directly — no
-vendoring, updates are `pip install -U`:
+Install the reviewed v1.4.1 engine source directly. The GitHub tag and Release are pending publication; see the [quickstart](../README.md#quickstart) for the current source pin:
 
 ```bash
-pip install tameru-compaction-system
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@dbe40619b9ebcb1595269809dd9f963b1c246015"
 ```
 
 ```python
 from tameru.compress_context import compress_context
 
-result = compress_context(payload_text, query)
+result = compress_context(payload_text, query, ccr=False)
 # result.compressed_text — exact spans; result.fail_open — original returned
 ```
 
@@ -80,22 +78,22 @@ retention checks).
 
 **Hermes Agent users:** use the plugin instead of wiring this yourself —
 [`0xWhiteMage/hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin).
-It hooks Hermes' per-result demotion seam and has real-Hermes CI. This repo no
-longer ships a Hermes bundle; installation lives in the plugin repository.
+The plugin has CI against a pinned real Hermes checkout and tracks its private compaction interfaces. Installation and compatibility details live in that repository.
+
+The engine repository retired its duplicate Hermes bundle in v1.4.0. The plugin is the maintained copy of the Hermes glue and its host-specific tests. Existing `tameru.agent_extractive_engine` and `tameru.hermes_extractive_engine` import paths remain compatibility aliases; new integrations should use `tameru.transcript`.
 
 ## 2. CLI shell-out (any language)
 
 `tameru-compress` is the universal contract — stdin or file in, compacted
-text on stdout, JSON stats with `--stats`:
+text on stdout, JSON diagnostics followed by `---` and compacted text with `--stats`:
 
 ```bash
-pip install tameru-compaction-system   # provides tameru-compress on PATH
-tameru-compress context.txt "query" --stats
-cat context.txt | tameru-compress - "query" --pin-recent 4 --strategy auto
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@dbe40619b9ebcb1595269809dd9f963b1c246015"   # provides tameru-compress on PATH
+tameru-compress context.txt "Find the deployment failure" --no-ccr --stats
+cat context.txt | tameru-compress - "Find the deployment failure" --no-ccr --pin-recent 4
 ```
 
-Hooks in TypeScript/shell harnesses (Claude Code, OpenCode, Cursor)
-typically shell out to exactly this.
+Hosts written in TypeScript, shell or another language can use this interface without importing Python modules.
 
 ## 3. Vendored plugin dir (Hermes-style)
 
@@ -156,7 +154,6 @@ catch a vendored copy that has drifted from upstream.
 - Adapters take **generic shapes**: raw text for `compress_context`, a
   `role`/`content` dict list for `tameru.transcript`. Never import the
   host framework.
-- Keep CCR off in adapters with no retrieval path (live tool payloads may
-  carry secrets; the built-in secrets screen is a second line of defense).
+- Keep CCR off in adapters with no retrieval path. The built-in secrets screen gates persistence but does not redact returned text; see [recovery and limitations](USAGE.md#recovery-storage-ccr).
 - Respect `fail_open`: when a result fails open the adapter must leave the
   payload untouched, not substitute a degraded rewrite.
