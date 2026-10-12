@@ -56,7 +56,7 @@ def __getattr__(name: str):
 def __dir__() -> list[str]:
     return sorted(set(globals()) | _ENGINE_EXPORTS)
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 __all__ = [
     "ENGINE_VERSION",

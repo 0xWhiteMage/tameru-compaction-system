@@ -6,13 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased] (1.4.1 candidate)
+## [Unreleased]
+
+## [1.4.1] - 2026-10-12
 
 Fixes for the two answers the 1.4.0 plugin report listed as lost, an opt-in
 gap-marker change for hosts with long markers, and two small correctness items.
-With default arguments (`gap_marker=None`, `inline_short_gaps=False`) output is
-byte-identical to 1.4.0: `run_battery` 15/15 and `threshold_sweep`
-77.3 / 68.4 / 61.2 / 41.5 / 24.9 % are unchanged.
+The default-path QA battery and threshold sweep retain the same savings as
+v1.4.0: `run_battery` 15/15 and `threshold_sweep`
+77.3 / 68.4 / 61.2 / 41.5 / 24.9 %. The affected grep and pytest cases
+intentionally change; this is not a byte-identical guarantee for every input.
 
 ### Added
 - `compress_context(..., inline_short_gaps=False)` and `InliningGapMarker`: with a caller `gap_marker`, a dropped span whose marker would not be shorter than the span is kept verbatim (renderer and adapter cuts). Off by default.
@@ -31,6 +34,14 @@ byte-identical to 1.4.0: `run_battery` 15/15 and `threshold_sweep`
 - Fix-all round: whole-line env/shell (`KEY=value`, no spaces around `=`) and YAML (`key: value`) credential assignments are secrets again whatever the value looks like (`DB_PASSWORD=correct_horse_battery_staple`), unless the value is an expression or placeholder, ends in `,` `;` `)` (a keyword argument on its own line) or, in YAML, is an attribute chain. Hermes probe: still 15 of 2,372 files; linear. Not caught: the same values inside code-shaped lines (`password = settings_default_password`).
 - Fix-all round: `brief_context` honours `InliningGapMarker` like `compress_context`, so a dropped span shorter than the caller's marker stays verbatim instead of becoming a ~100-char marker. Plain markers are unchanged.
 - `test_deep_malformed_cache_record_does_not_raise` failed on Python 3.12+ (a 1000-deep list now parses and is removed as a non-record; older versions raised RecursionError and kept it). The test now accepts either outcome and still requires no exception and no retrieval; `sweep_ccr_cache`'s docstring now says that parseable non-records are removed (that was already the behaviour other tests pin).
+
+### Maintenance and release verification
+- Ruff-compatible style changes for Hermes vendoring; differential checks of extraction, JSON briefs and folding were reported in commit `b2b1b19` before the release version bump.
+- Package metadata, public `__version__` and receipt `ENGINE_VERSION` now identify 1.4.1. The helper version test compares public versions rather than pinning an old release.
+- Re-ran on 2026-10-12: 1,168 pytest tests passed, 3 skipped; production QA 15/15; all five budget ratios retain gold with zero forbidden leaks. Mean character savings remain 77.3% / 68.4% / 61.2% / 41.5% / 24.9%.
+- Updated `production-qa-v3-results.json` with release-run timings: large synthetic document 99.5% estimated token savings in 618.6 ms CPU time on this runner. Timings vary by machine.
+- Built the 1.4.1 wheel and source distribution. Historical v1.2.0/v1.3.0 external comparisons were not re-run.
+
 
 ## [1.4.0] - 2026-10-06
 
@@ -276,7 +287,8 @@ affected by the fixes below is unchanged.
 - Fast, local-only, zero-LLM context compaction.
 - Fail-open safety contract.
 
-[Unreleased]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.1...v1.2.0

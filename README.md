@@ -1,608 +1,268 @@
-# ⚡ Tameru (貯める) — Industrial Extractive Context Compaction for LLM Agents
+# Tameru (貯める) — Context compaction for LLM agents
 
 <p align="center">
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.4.0-blue.svg?style=for-the-badge" alt="Version 1.4.0"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-1168%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
-  <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/production_QA-15%2F15_green-brightgreen.svg?style=for-the-badge" alt="Production QA"></a>
-  <a href="#-head-to-head-competitive-benchmark"><img src="https://img.shields.io/badge/large_case-%3C1.2s-purple.svg?style=for-the-badge" alt="Large-case latency"></a>
-  <a href="#-core-design-tenets"><img src="https://img.shields.io/badge/determinism-100%25_reproducible-blueviolet.svg?style=for-the-badge" alt="Determinism"></a>
-  <a href="#-why-tameru-the-problem-with-abstractive-summarization"><img src="https://img.shields.io/badge/dependencies-stdlib_only-orange.svg?style=for-the-badge" alt="Zero Dependencies"></a><br><br>
-  <a href="https://x.com/0xWhiteMage" target="_blank"><img src="https://img.shields.io/badge/Follow_on_X-@0xWhiteMage-000000?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X"></a>&nbsp;&nbsp;•&nbsp;&nbsp;
-  <a href="https://ko-fi.com/0xwhitemage" target="_blank"><img src="https://img.shields.io/badge/Kofi-Buy_me_a_coffee-1A9642?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Ko-fi"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.4.1-blue.svg" alt="Version 1.4.1"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-1168%20passed-success.svg" alt="1168 tests passed"></a>
+  <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/QA-15%2F15-brightgreen.svg" alt="15 of 15 QA cases passed"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-Python%20stdlib-orange.svg" alt="Python standard library core"></a>
 </p>
 
-> **Named from 貯める (*tameru*) — Japanese for *"to save, store up, or accumulate."***  
-> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. The 1.4.1 candidate (on `main`, not yet released) keeps the answer in saturated `rg -n` output and in pytest failures with long captured logs, can inline gaps shorter than a host's own elision marker, and tightens the secrets screen. v1.4 hardens it for agent tool output (log errors survive, numbered reads and diffs are recognised, a 650 KB log takes under a second) and adds a plugin-facing API (`gap_marker`, `recursion_markers`, `content_hint`, `error_fingerprints`, `brief_context`, tool-payload envelope helpers). v1.3 added typed-edge dependency restoration, a SelfCompact-style timing gate, plan-aware multi-query, qualifier-aware structured trimming, a derived-objective mode for empty queries, and a context-calibrated compression ceiling — all without external LLM calls, GPU dependencies, or runtime dependencies in the deterministic extract path (the opt-in `summarise` tier is the only exception, and it falls back to `extract` on any LLM failure).
+**Tameru (貯める) — Japanese for “to store up”.** Reduce bulky agent context while keeping the evidence needed for the current task.
 
----
+The default extraction path runs locally, uses no LLM and adds **$0 in LLM inference charges**. It retains task-relevant source text, collapses repetitive noise and returns the original input when its safety gates decline compaction. Optional recovery storage lets an integration retrieve omitted content later.
 
-## 📑 Table of Contents
+- **Keep useful evidence:** query-aware selection, error retention and restoration of related definitions and qualifiers.
+- **Spend less context:** successful cases in the release QA battery save **31–99.5% estimated tokens**, depending on workload.
+- **Stay reproducible:** extraction is deterministic for identical inputs and configuration; stored recovery metadata may include timestamps.
+- **Run without a GPU or runtime dependencies:** Python **3.10+**, standard library only for the default path.
 
-- [💡 Why Tameru? (The Problem with Abstractive Summarization)](#-why-tameru-the-problem-with-abstractive-summarization)
-- [🎯 Core Design Tenets](#-core-design-tenets)
-- [🏗️ Architectural Blueprint & Data Flow](#️-architectural-blueprint--data-flow)
-- [📐 Mathematical Formulation & Scoring Engine](#-mathematical-formulation--scoring-engine)
-- [🛡️ 6-Stage Defensive Pipeline](#️-6-stage-defensive-pipeline)
-- [🧩 Supported Modalities & Preprocessing Engine](#-supported-modalities--preprocessing-engine)
-- [🌍 Unicode, Direction & Vertical Text](#-unicode-direction--vertical-text)
-- [🏭 Industrial Limits & Format Contracts](#-industrial-limits--format-contracts)
-- [📊 Head-to-Head Competitive Benchmark](#-head-to-head-competitive-benchmark)
-- [🧪 The Production QA Battery (v3)](#-the-production-qa-battery-v3)
-- [🔄 Reversible Compaction & ARC Citations (CCR Store)](#-reversible-compaction--arc-citations-ccr-store)
-- [🔌 Hermes Context-Engine Plugin Integration](#-hermes-context-engine-plugin-integration)
-- [🚀 Quickstart & Installation](#-quickstart--installation)
-- [💻 Python API & Agent Integration](#-python-api--agent-integration)
-- [📜 Changelog](#-changelog)
-- [🙏 Credits & Research Lineage](#-credits--research-lineage)
-- [🤝 Community & Support](#-community--support)
-- [📄 License](#-license)
+**v1.4.1** improves saturated grep results, long pytest captured logs, host omission-marker overhead and credential screening. See [what changed](#whats-new-in-v141) and the [full changelog](CHANGELOG.md).
 
----
+## Quickstart
 
-## 💡 Why Tameru? (The Problem with Abstractive Summarization)
-
-Modern autonomous coding and research agents rapidly saturate their context windows (32k–128k+) with bulky tool outputs: `git log`, `npm test` traces, JSON API responses, database schemas, and multi-file diffs.
-
-Traditional context reduction approaches fail in mission-critical agent workflows:
-
-1. **Abstractive LLM Summarizers (e.g., secondary LLM calls)**:
-   - **Slow & Expensive**: Adds 2–5 seconds of latency and doubles API costs per turn.
-   - **Hallucinatory & Lossy**: Paraphrases lose critical hex hashes, line numbers, variable names, and exact error traces.
-   - **Context Window Pressure**: Compressing a 100k context requires an auxiliary model with at least a 100k window.
-
-2. **Naive Sliding Windows / Head-Tail Truncation**:
-   - **Lost in the Middle**: Drops critical intermediate facts, configurations, and multi-hop clues located in the middle turns.
-
-### The Extractive Alternative
-
-**Tameru operates purely extractively.** Instead of generating new summary prose, it scores, filters, and retains original, verbatim text blocks while eliminating noise, repetition, and dead weight.
-
-| | Raw context (500 KB) | ⚡ Tameru | Compacted extractive view (12 KB) |
-|---|---|---|---|
-| **Contents** | Build logs (80k) · git history (40k) · JSON APIs (120k) · diffs (60k) · … | Query-aware keep/drop scoring — **no generated text** | Exact error trace (lines 42–45, verbatim) · query entity references · JSON/YAML skeleton |
-| **Cost** | full tokens | <1.2 s at 500 KB, $0 | 97.6% token reduction |
-| **Guarantees** | — | deterministic, fail-open, reversible | 0 hallucinations · 100% byte-identical output |
-
----
-
-## 🎯 Core Design Tenets
-
-Tameru adheres to a strict engineering contract:
-
-- **Query-Aware Precision**: Scored against the user's active intent using sublinear BM25-IDF weighting, alphanumeric identifier extraction, and non-Latin script tokenization.
-- **Strictly Deterministic**: Given the exact same context string and query, Tameru produces **byte-identical output** every single time, verified across arbitrary `PYTHONHASHSEED` values.
-- **Fail-Open Contract**: If query signal is ambiguous, low-confidence, or zero-overlap, Tameru safely returns the original context rather than risking data corruption.
-- **Reversible by Design**: Omitted sections are replaced with content-addressed ARC citation anchors (`[A hash] "head"..."tail"`), backed by a local Content-Centric Retrieval (CCR) store.
-- **Zero External Dependencies**: Pure Python standard library (`re`, `json`, `difflib`, `math`, `typing`). No PyTorch, no HuggingFace, no network required for core operations.
-- **Multi-Hop & Temporal Integrity**: Solves graph closure ($A \to B \to C$) across isolated tool outputs and prunes superseded obsolete statements.
-- **Logical-Order Unicode Safety**: Profiles LTR, RTL, mixed and vertical-source text without visually reordering or rewriting caller bytes.
-- **Bounded Industrial Work**: Enforces input, line, record, field, profile and bidi-control limits before expensive transforms.
-
----
-
-## 🏗️ Architectural Blueprint & Data Flow
-
-One pass, six stages. Every stage is deterministic; every unsafe condition
-exits through the same fail-open door — the caller's exact bytes come back.
-
-| # | Stage | Input → output | Key work | On failure |
-|---|---|---|---|---|
-| 1 | **Industrial preflight** | raw text + query → profile | size/line/record/bidi limits; script, direction & format detection | hard limits → return original |
-| 2 | **Exact format adapters** | profiled text → framed blocks | JSON/NDJSON, CSV/TSV, Markdown, YAML, XML/HTML, SQL, INI, OCR — line-record and subtree framing | malformed structure → generic scorer fallback |
-| 3 | **Multi-signal scoring** | blocks → scored blocks | sublinear BM25-IDF, entity-density anchoring, trust & injection flags, temporal supersession | ambiguous/low-signal → fail-open later |
-| 4 | **Graph closure & rescue** | scored blocks → keep-set | multi-hop BFS on rare shared terms; dependency closure restores qualifier/definition blocks a kept block needs | counterfactual overlap → `ambiguous-failopen` |
-| 5 | **Reversible emission** | keep-set → compacted text | ARC citations `[A hash] "head"…"tail"`, lost-in-middle reorder, CCR write (skipped on secrets) | CCR write fails → pointer removed, text still valid |
-| 6 | **Self-check verifier** | output → receipt | entity/keyword/critical-line recall; risk floor; `selection` path + `sufficiency_restored` reporting | low recall → risk raised, never silently |
-
-Cross-cutting gates sit beside the pipeline rather than inside it: the
-**timing gate** (transcript adapter) suppresses the *Tameru prune pass* on
-pending tool calls and stuck loops — in Hermes it gates
-`apply_extractive_tool_prune` only, not any other compaction the host may
-run; the **secrets screen** can veto CCR persistence; the **recursion
-guard** refuses to compact Tameru's own output.
-
----
-
-## 📐 Mathematical Formulation & Scoring Engine
-
-Each discrete text block $b_i \in B$ is evaluated through a composite scoring function balancing lexical overlap, entity density, structural importance, and recency:
-
-$$\mathcal{S}(b_i \mid q) = \mathcal{S}_{\text{lex}}(b_i, q) + \mathcal{S}_{\text{ent}}(b_i, q) + \mathcal{S}_{\text{struct}}(b_i) + \mathcal{S}_{\text{recency}}(b_i) - \mathcal{P}_{\text{trust}}(b_i) - \mathcal{P}_{\text{stale}}(b_i)$$
-
-### 1. Sublinear Lexical BM25-IDF Overlap
-To prevent repetitive term spamming from dominating relevance:
-
-$$\mathcal{S}_{\text{lex}}(b_i, q) = \sum_{t \in b_i \cap q} \text{IDF}(t) \cdot \left(1 + \ln(1 + \text{tf}(t, b_i))\right)$$
-
-Where $\text{IDF}(t) = \ln\left(1 + \frac{|B| - n(t) + 0.5}{n(t) + 0.5}\right)$.
-
-### 2. Multi-Hop Graph Closure (BFS Bridge Expansion)
-For multi-hop reasoning chains ($A \to B \to C$), if an evidence block $b_j$ shares a bridge entity $e$ with a high-scoring block $b_k$, its score is boosted proportional to graph distance:
-
-$$\mathcal{S}_{\text{graph}}(b_j) = \max_{b_k \in B_{\text{kept}}} \left( \mathcal{S}(b_k \mid q) \cdot \gamma^{\text{hop-distance}(b_j, b_k)} \right), \quad \gamma = 0.65$$
-
-### 3. Adaptive Selection Threshold
-The selection floor $\theta_{\text{adaptive}}$ dynamically scales based on candidate distribution:
-
-$$\theta_{\text{adaptive}} = \max\left(2.2, \min\left(11.5, 0.38 \cdot \max_{b \in B} \mathcal{S}(b \mid q)\right)\right)$$
-
----
-
-## 🛡️ 6-Stage Defensive Pipeline
-
-1. **Pre-Flight Gate**: Evaluates `inspect_compressibility()`. If repetition ratio is low or input is already compact, passes through unchanged.
-2. **Log & Structural Preprocessing**: Performs count-preserving template deduplication (`[A-N] exemplar`), ANSI stripping, and JSON array flattening.
-3. **Multi-Signal Scoring & Graph Closure**: Computes lexical, entity, structural, and graph-expansion scores.
-4. **Defensive Invariant Checks**: Verifies that active errors, stack traces, and code fences are preserved intact (`error-signal invariant`).
-5. **Lost-in-the-Middle Reordering (`reorder_best`)**: Places top-ranked evidence at the front and second-best at the tail to optimize LLM decoder attention.
-6. **Self-Check Diagnostic Verifier**: Performs post-compaction validation:
-
-$$\text{Confidence Score} = 0.50 \cdot \text{Recall(ent)} + 0.30 \cdot \text{Recall(kw)} + 0.20 \cdot \text{CriticalLineRatio}$$
-
----
-
-## 🧩 Supported Modalities & Preprocessing Engine
-
-| Modality | Specialized Processing | Typical Reduction |
-|---|---|---|
-| **Terminal & Build Logs** | Count-preserving deduplication, ANSI stripping, stack frame collapse | **90–96%** |
-| **JSON Schemas & APIs** | Key-preserving array crushing, bounded nesting, exact selector matching | **75–88%** |
-| **NDJSON / JSONL** | Per-record validation and exact raw-line selection | **80–99%** |
-| **CSV / TSV** | Quote-aware record framing, header retention, embedded-newline safety | **70–95%** |
-| **Markdown** | Heading ancestry and atomic fenced-code sections | **60–90%** |
-| **YAML** | Parent-key plus matching-subtree retention; conservative decline on ambiguous prose | **60–90%** |
-| **XML / HTML** | Exact line-oriented child selection with preserved wrappers; unsafe multiline shapes decline | **50–90%** |
-| **SQL** | Quote/comment/dollar-string-aware statement selection | **60–95%** |
-| **INI / TOML-style sections** | Complete matching-section retention | **60–95%** |
-| **Git Dumps & Commit Logs** | Commit hash retention, author/subject line-record filtering | **80–92%** |
-| **Code Diffs & Patches** | Structural fence invariant, changed-line hunk isolation | **65–80%** |
-| **Multilingual / Mixed Direction** | Grapheme-safe logical-order matching across 20 script/language families | **60–95%** |
-| **Vertical OCR Columns** | Blank-column framing with logical-source-order matching | **50–90%** |
-
----
-
-## 🌍 Unicode, Direction & Vertical Text
-
-Tameru never applies visual bidi reordering and never rewrites output into a
-different normalisation form. Original substrings remain the source of truth.
-A separate NFKC/case-folded matching shadow is used only for search.
-
-- Extended grapheme tailoring keeps combining marks, variation selectors,
-  emoji modifiers, flags, Indic virama sequences and ZWJ/ZWNJ sequences atomic.
-- Direction profiles report `ltr`, `rtl`, `mixed`, or `neutral` using Unicode
-  bidi classes. Explicit controls and overrides are counted separately.
-- Script-aware query units cover Arabic, Hebrew, Persian/Urdu, Devanagari,
-  Bengali, Tamil, Telugu, Thai, Lao, Khmer, Myanmar, Han, Kana, Hangul,
-  Greek, Cyrillic, Armenian, Georgian, Ethiopic and Mongolian families.
-- Space-free scripts use bounded grapheme n-grams; spaced scripts use logical
-  word runs. ASCII keeps the original compiled-regex fast path.
-- CSS `writing-mode` and one/two-grapheme OCR columns are metadata hints only;
-  they never reverse or rotate source text.
-
-See [`docs/industrial-compaction-v1.2.md`](docs/industrial-compaction-v1.2.md)
-for the standards, tailoring decisions and invariants.
-
----
-
-## 🏭 Industrial Limits & Format Contracts
-
-Default limits are deliberately conservative and configurable per call:
-
-| Limit | Default |
-|---|---:|
-| Input characters | 8,000,000 |
-| Logical lines | 250,000 |
-| Structured records | 100,000 |
-| Characters per record | 1,000,000 |
-| Fields per structured record | 4,096 |
-| Unicode profile sample | 16,384 chars at each edge |
-| Bidi controls | 10,000 |
-| Bidi overrides | 128 |
-
-If a hard limit, malformed surrogate, parser invariant, or structure check
-fails, Tameru returns the caller's exact text before CCR writes or lossy work.
-Adapters only activate when they produce a shorter structurally valid exact
-subset; otherwise the v1.1 scorer remains the fallback.
-
-```python
-from tameru import IndustrialLimits
-from tameru.compress_context import compress_context
-
-limits = IndustrialLimits(
-    max_input_chars=4_000_000,
-    max_records=50_000,
-    max_bidi_overrides=16,
-)
-result = compress_context(context_data, query, limits=limits)
-profile = result.receipt["industrial"]["profile"]
-```
-
-Equivalent CLI controls are available as `--max-input-chars`, `--max-lines`,
-`--max-records`, `--max-record-chars`, `--max-fields`,
-`--max-profile-chars`, `--max-bidi-controls`, and `--max-bidi-overrides`.
-
----
-
-## 📊 Head-to-Head Competitive Benchmark
-
-Tested across 17 standardized production-QA fixtures containing multi-hop reasoning, temporal overrides, noisy logs, and structured sample text:
-
-| Compaction System | Gold Fact Recall | Latency (avg) | Cost / 1k Ops | Deterministic | Dependencies |
-|---|---|---|---|---|---|
-| **⚡ Tameru (v1.3.0)** | **17 / 17 (100%)** | **4–956 ms observed; <1.2 s at 500 KB** | **$0.00** | **100% Yes** | **Python stdlib** |
-| **BM25 / Vector RAG Baseline** | 12 / 17 (70.6%) | ~400 ms | $0.02–$0.05 | No | Vector DB + Embeddings |
-| **Abstractive LLM Summarizer** | 7 / 17 (41.2%) | ~2,500 ms | $1.50–$3.00 | No (Stochastic) | Auxiliary LLM API |
-| **Uncompressed Baseline** | 17 / 17 (100%) | 0 ms | Full Tokens | Yes | None |
-
-### ⚔️ Live comparison — six arms, one corpus (`jev-1.13.0`, Sep 2026)
-
-Same 12-case QA corpus, measured via
-[`benchmarks/jev_comparison.py`](benchmarks/jev_comparison.py). Arms: real
-TypeSafe JEV via [LCC](https://github.com/lucasmartins-ai/lcc) (typed
-`noul` keep-probability questions — the real System One protocol), its
-local Laya decision model (`laya-multilingual`, CPU) and mechanical
-fallback, [headroom-ai](https://github.com/headroomlabs-ai/headroom)'s Rust
-TextCrusher, and a stdlib TF-IDF retrieval baseline:
-
-| Metric | **Tameru (v1.3.0)** | lcc → JEV | lcc → Laya | lcc mechanical | headroom | TF-IDF |
-|---|---|---|---|---|---|---|
-| Gold retention | **12/12** | 11/11 † | 12/12 | 12/12 | 10/12 | 11/12 |
-| Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
-| Deterministic | ✅ byte-identical | ❌ | ✅ | ✅ | ✅ | ✅ |
-| Median latency | **10.75 ms** | 591 ms † | 8,675 ms | 4.5 ms | 0.5 ms | <1 ms |
-| Mean savings | **81.0%** | 63.6% | 10.7% | 48.4% | 49.6% | 55.2% |
-| Cost / runs local | **$0 / ✅** | API-priced / ❌ | $0 / ✅ | $0 / ✅ | $0 / ✅ | $0 / ✅ |
-
-† JEV skipped the 4,000-block perf case (API cost); Laya ran it — ~56 min on CPU.
-
-The decisive gap isn't relevance — most judges kept the gold. It's
-**admissibility**: every non-Tameru arm kept planted distractors,
-including a stale superseded config and `EXCLUDED-HOST` inside a block
-labeled "UNTRUSTED SAMPLE". A keep-score — JEV probability, Laya decision,
-BM25, or TF-IDF — has no trust, supersession, or exclusion model; Tameru
-encodes all three. Full table, per-case detail, and methodology:
-**[benchmarks/COMPARISON.md](benchmarks/COMPARISON.md)**. Ecosystem +
-paper digest: **[docs/RESEARCH.md](docs/RESEARCH.md)**.
-
----
-
-## 🧪 The Production QA Battery (v3)
-
-The `tests/` directory contains an exhaustive production-QA suite:
-
-- `test_arabic_and_sql_sink.py`: Non-Latin script preservation and SQL tabular sink compaction.
-- `test_adjacent_v010.py`: Compaction audit logging, pinned sink regions, and versioned context receipts.
-- `test_hardening_pass_v09.py`: NTK template deduplication, progress-bar stripping, and stack frame collapse.
-- `test_semantic_gates.py`: Counterfactual distractor masking and graph closure validation.
-- `test_production_qa_v3.py`: Cross-seed determinism validation (`PYTHONHASHSEED=0` vs `PYTHONHASHSEED=1`).
-
-### Running the tests
+Install the exact release from GitHub:
 
 ```bash
-pip install -e '.[dev]'                 # pytest; the engine itself has no runtime dependencies
-python -m pytest -q                     # full suite
-python -m pytest -q -m 'not perf'       # skip the timing-ratio scaling tests
-python benchmarks/run_battery.py        # production-QA battery (15 cases)
-python benchmarks/threshold_sweep.py    # savings / gold / leak frontier over budget_ratio
-python scripts/sync_to_harness.py <plugin>/tameru --manifest ../plugin.yaml --check   # vendored-copy drift check
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.4.1"
 ```
 
-Verification of the 1.4.1 candidate (`91f00e0`, Oct 2026; the comparison tables further up were measured on v1.3.0 and have not been re-run):
+Or install from a checkout:
 
-- **1168 passed, 3 skipped** with pytest (v1.4.0: 1105 passed, 3 skipped).
-- `run_battery.py` 15/15 and `threshold_sweep.py` 77.3 / 68.4 / 61.2 / 41.5 / 24.9 % savings: identical to v1.4.0 (with default arguments the 1.4.1 changes do not alter battery output).
-
-v1.4.0 release verification:
-
-- **1105 passed, 3 skipped** with pytest.
-- **15/15** production-QA battery cases passed (`benchmarks/run_battery.py`), including Japanese, Chinese and Arabic needle cases with zero forbidden-distractor leaks.
-- `benchmarks/threshold_sweep.py`: every `budget_ratio` operating point from 0.1–0.7 keeps all gold with **0 leaks** — a clean 77%→25% savings frontier.
-- Six-arm live comparison (Tameru / JEV / Laya / mechanical / headroom / TF-IDF): only arm with **12/12 gold + 0 leaks + deterministic output** — table below.
-
----
-
-## 🔄 Reversible Compaction & ARC Citations (CCR Store)
-
-When Tameru drops content blocks, it emits content-addressed **ARC Citations**:
-
-```
-[A 7f8a9b] "2026-08-25 02:00:00 [INFO] Worker started"...[48 lines omitted]..."2026-08-25 02:05:00 [INFO] Complete"
+```bash
+git clone https://github.com/0xWhiteMage/tameru-compaction-system.git
+cd tameru-compaction-system
+git checkout v1.4.1
+python -m pip install -e .
 ```
 
-If an agent subsequently determines that it needs the omitted content, it can query the local Content-Centric Retrieval (CCR) store:
+### Python
+
+```python
+from tameru.compress_context import compress_context
+
+context = (
+    "[INFO] Routine worker heartbeat.\n" * 500
+    + "[ERROR] DB connection failed on db-prod-01: port 5432 unreachable.\n"
+)
+result = compress_context(
+    context,
+    "Why did the database connection fail?",
+    ccr=False,  # no recovery-store writes for this example
+)
+print(result.compressed_text)
+print(f"Estimated token savings: {result.tokens_saved_pct:.1f}%")
+print(f"Returned original input: {result.fail_open}")
+```
+
+### CLI
+
+```bash
+tameru-compress context.txt "Why did the database connection fail?" --no-ccr --stats
+cat context.txt | tameru-compress - "Find the active error" --no-ccr --stats
+```
+
+The CLI writes compacted text to stdout. With `--stats`, it prints JSON diagnostics first, followed by `---` and the compacted text. Use a task-specific query: “continue” often provides too little signal.
+
+## What's new in v1.4.1
+
+| Improvement | What it changes |
+|---|---|
+| **Saturated grep/rg results** | When the query hits at least 80% of matches and the result is large enough, selection prioritises matching definitions and assignments, other query words and distinct match text. This addresses definition loss in a host's shortened view. |
+| **Command-aware selectors** | Flags such as `-n` and `--stat` no longer crowd out the searched name when a host includes the command in its query. |
+| **Pytest captured output** | Long captured log/stdout/stderr sections retain their first and last lines, recognised error fingerprints and WARNING/ERROR/CRITICAL/FATAL lines. Blank lines no longer terminate sections prematurely. |
+| **Smaller host-marker overhead** | Consecutive fully omitted grep files share one caller-supplied omission marker while retaining their file headers. |
+| **Opt-in short-gap inlining** | `inline_short_gaps=True` keeps a dropped span verbatim when its marker would be at least as long. Applies to extraction and grep/pytest cuts; `brief_context` accepts an `InliningGapMarker` wrapper. Off by default. |
+| **Credential-screen hardening** | Adds Google API keys, Stripe live keys, bearer tokens and whole-line env/YAML credential assignments; avoids common code-expression false positives. Screens recovery persistence, not output redaction. |
+| **Integration maintenance** | Behaviour-neutral Ruff changes for Hermes vendoring and a portable deep-malformed-cache regression test. |
+
+The release battery and budget sweep retain the previous savings. Affected grep and pytest cases intentionally change; unchanged benchmark output is not a guarantee that every v1.4.0 input produces identical output in v1.4.1.
+
+## Release verification and measured results
+
+The v1.4.1 release checks cover **1,168 passed / 3 skipped** pytest tests and **15/15** production-QA cases. The battery checks required answer strings, forbidden distractors, repeat-output determinism, savings, fail-open behaviour and a large-input timing gate. These are fixture-level checks, not a guarantee of downstream model accuracy.
+
+Selected measurements from the [release battery](benchmarks/production-qa-v3-results.json):
+
+| Workload | Estimated token savings |
+|---|---:|
+| Large synthetic document | 99.5% |
+| Multi-hop evidence chain | 95.0% |
+| Git history | 94.0% |
+| Chinese needle case | 90.9% |
+| Arabic needle case | 88.6% |
+| YAML configuration | 64.7% |
+| Japanese document | 57.5% |
+| npm log | 31.0% |
+| Empty query, fail-open | 0.0% |
+
+Latency depends on workload and hardware. The battery enforces a **1,200 ms CPU-time** budget for its 4,000-record synthetic document; per-case timings are in the JSON. Savings use Tameru's token estimator, not a model-specific tokenizer.
+
+The [budget sweep](benchmarks/threshold_sweep.py) retains all required gold strings with zero forbidden-distractor leaks at every tested operating point:
+
+| `budget_ratio` | Mean character savings | Clean cases |
+|---:|---:|---:|
+| 0.1 | 77.3% | 15/15 |
+| 0.2 | 68.4% | 15/15 |
+| 0.3 | 61.2% | 15/15 |
+| 0.5 | 41.5% | 15/15 |
+| 0.7 | 24.9% | 15/15 |
+
+The sweep measures **characters**, whereas the battery reports **estimated tokens**. Neither is a universal compression ratio.
+
+### Historical comparisons
+
+The six-arm comparison was measured on **Tameru v1.3.0**, not v1.4.1. On that 12-case corpus, Tameru retained 12/12 gold cases, kept zero forbidden distractors, averaged 81.0% savings and had a 10.75 ms median latency. JEV ran 11 cases because the large case was skipped for API cost.
+
+The older 17-case holdout was measured on **v1.2.0**. External comparison arms have **not** been rerun for this release. See [COMPARISON.md](benchmarks/COMPARISON.md) for original tables, versions, methodology and limitations.
+
+## Formats and language coverage
+
+Tameru operates on **text**, including text extracted upstream from other media. It does not perform image recognition or OCR itself.
+
+| Input | Handling |
+|---|---|
+| Terminal/build logs | ANSI handling, template deduplication, error exemplars and last-occurrence retention |
+| Numbered source reads | Recognises `cat -n` and common `read_file` gutters; avoids treating code as tabular data |
+| Unified diffs | Whole-hunk selection, hunk headers and per-file change summaries |
+| Grep/rg output | File grouping, query matches and saturated-query handling |
+| Pytest, Jest, Go and Cargo output | Failure evidence and summaries, with conservative retention of unknown surrounding lines |
+| JSON and NDJSON | Query-aware structured processing; exact raw-record selection where applicable; JSON briefs for large object arrays |
+| CSV/TSV | Quote-aware records, header retention and embedded-newline handling |
+| Markdown | Heading ancestry and fenced-code protection |
+| YAML, XML/HTML, SQL, INI/TOML-style sections | Conservative format-specific selection; ambiguous or unsafe shapes decline specialised reduction |
+| Vertical-source OCR text | Logical-source-order matching and column framing on already extracted text |
+
+Script-aware matching and profiling cover 20 script/language families, with multilingual regression fixtures and Japanese, Chinese and Arabic release-battery cases. This is **tested coverage**, not complete semantic support for every language or writing system.
+
+Matching uses a separate normalised shadow. Unicode handling preserves logical source order rather than applying visual bidi reordering. Direction profiles, grapheme handling and configurable bidi limits are described in the [industrial specification](docs/industrial-compaction-v1.2.md).
+
+## Safety, recovery and limitations
+
+### Fail-open and evidence checks
+
+Weak query signal, ambiguity and insufficient savings can cause extraction to return the original input. Industrial preflight bounds input size, lines, records, fields, query size and bidi controls. Malformed or unsafe inputs can also fail open. Receipts expose selection paths, diagnostic risk, evidence checks and dependency restorations.
+
+These checks address known failure modes; they do not prove that every fact needed for a future task survives. Extraction can miss semantic connections without shared terms. Query changes, unusual formats and aggressive budgets can reduce usefulness. Inspect receipts and validate the evidence your integration requires.
+
+### Recovery storage (CCR)
+
+The standalone API defaults to `ccr=True`. When storage succeeds, a recovery pointer allows retrieval of the original context. Omission citations and retrieval markers are distinct: a citation alone is not proof that recoverable content was stored.
 
 ```python
 from tameru.compress_context import retrieve
 
-full_context = retrieve("7f8a9b2c4d6e8f0011223344")
+# Use a real hash returned by your recovery store:
+# original = retrieve(record_hash)
+# page = retrieve(record_hash, offset=0, limit=2000)
 ```
 
-CCR is opt-in per integration path. The standalone API keeps its reversible
-default, while the Hermes live tool-pruning adapter disables CCR because it has
-no retrieval path and tool payloads may contain secrets. Expired valid records
-are swept whenever a new CCR record is written; operators can also call
-`sweep_ccr_cache()` directly. CCR directories and records are created with
-owner-only permissions where the platform supports POSIX modes.
+`list_ccr(ccr_dir, offset=..., limit=...)` lists live records; `sweep_ccr_cache()` performs bounded cleanup. Recovery requires enabled storage, a successful write, unexpired valid records and a usable retrieval path. The secrets screen skips CCR writes for probable credentials. Files use owner-only permissions where POSIX modes are supported and writes are atomic. Use `ccr=False` when the host has no recovery path or persistence is unwanted.
 
----
+**Credential screening is heuristic.** It does not redact returned text, guarantee detection of every secret or encrypt the cache. Code-shaped values such as `password = settings_default_password` are a documented detection gap.
 
-## 🔌 Hermes Context-Engine Plugin Integration
+### Optional model-backed paths
 
-Tameru integrates into **Hermes Agent** as a pluggable context engine —
-no Hermes source changes:
+`strategy="extract"` is the default and uses no LLM. `strategy="summarise"` can invoke a configured model; `strategy="auto"` tries extraction first and may escalate when extraction fails open. LLM failure falls back to extraction.
 
-- **Standalone plugin** —
-  [`0xWhiteMage/hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin):
-  copy into `~/.hermes/plugins/tameru/` or `pip install` it (auto-discovered
-  via the `hermes_agent.plugins` entry point).
-- Activate in `config.yaml`:
-  ```yaml
-  context:
-    engine: tameru
-  ```
+Configure `summary_endpoint`, `summary_models` and `summary_timeout` per call, or `TAMERU_SUMMARY_ENDPOINT`, `TAMERU_SUMMARY_MODELS` and `TAMERU_SUMMARY_TIMEOUT`. The timeout is one total retry budget across models. Endpoints are loopback-only by default; remote endpoints require `summary_allow_remote=True` or `TAMERU_SUMMARY_ALLOW_REMOTE=1` and may incur inference charges and transmit context.
 
----
+An optional semantic extra installs `sentence-transformers`; it is outside the standard-library dependency claim:
 
-## 🚀 Quickstart & Installation
-
-### Option 1: Standard Installation (Zero Dependencies)
 ```bash
-pip install -e .
+python -m pip install -e '.[semantic]'
 ```
 
-### Option 2: With Opt-in Semantic Embeddings
-```bash
-pip install -e '.[semantic]'
-```
+## Agent integration
 
-### Option 3: LLM / Agent Prompt Setup
-To equip an autonomous agent with Tameru, paste this prompt into your agent's system prompt or session:
-
-```text
-Please install and enable the Tameru compaction system for high-performance context management:
-1. Clone or vendor tameru into your environment.
-2. In your context configuration, select 'tameru' as the active context engine.
-3. Use tameru.compress_context(context, query) before passing large tool outputs to your context window.
-```
-
----
-
-## 💻 Python API & Agent Integration
+Use the Python API for individual tool results, the CLI for non-Python hosts, or the generic transcript adapter for OpenAI-style message lists:
 
 ```python
-from tameru.compress_context import compress_context
+from tameru.transcript import apply_extractive_tool_prune
 
-context_data = (
-    "2026-08-25 02:00:00 [INFO] System boot sequence started.\n"
-    + ("2026-08-25 02:01:00 [INFO] Routine worker heartbeat.\n" * 500)
-    + "2026-08-25 02:14:00 [ERROR] DB connection failed on host db-prod-01: Port 5432 unreachable.\n"
+messages, n_changed = apply_extractive_tool_prune(
+    messages,
+    query="Diagnose the deployment failure",
+    min_chars=800,
+    protect_last_tool=2,
 )
-
-query = "Why did the database connection fail?"
-
-result = compress_context(context_data, query)
-
-print(f"Compressed Output:\n{result.compressed_text}\n")
-print(f"Token Reduction: {result.tokens_saved_pct:.1f}%")
-print(f"Fail-Open Triggered: {result.fail_open}")
-print(f"Confidence Diagnostic: {result.verifier}")
 ```
 
-`strategy="summarise"` remains fail-open and can be configured per call with
-`summary_endpoint`, `summary_models`, and `summary_timeout`. Equivalent
-environment variables are `TAMERU_SUMMARY_ENDPOINT`,
-`TAMERU_SUMMARY_MODELS` (comma-separated), and `TAMERU_SUMMARY_TIMEOUT`
-(seconds). The timeout is one total retry budget across all candidate models,
-not a fresh timeout per model.
+The transcript adapter disables CCR and citations, skips failed/non-shrinking results and protects recent tools. Its timing gate suppresses this prune step during pending tool calls or repeated-call loops; it does not control other compaction performed by the host.
 
-Summary endpoints are restricted to loopback by default. Set
-`TAMERU_SUMMARY_ALLOW_REMOTE=1` or pass `summary_allow_remote=True` only when
-the integration has explicitly approved sending context to that endpoint.
+### Hermes
 
-When using `decision_cache`, first-sight keep/drop outcomes are replayed on
-later turns. The cache preserves the oldest prefix and is bounded to 4,096
-block decisions. Prefix stability intentionally outranks a later fixed-mode
-`budget_ratio`; if frozen keeps exceed that ratio, the engine preserves the
-frozen prefix and reports `freeze cache capacity reached` once the cache can no
-longer learn new blocks.
+Use the maintained [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin). Follow its installation and recovery-store instructions, then select:
 
-Additional caller controls, inspired by transcript-level pruners:
+```yaml
+context:
+  engine: tameru
+```
 
-- `pin_recent=N` unconditionally keeps the opening block and the newest N
-  blocks — a working-context floor that no selector, freeze, supersession, or
-  trust path may evict.
-- `min_savings_ratio=R` (default `0.10`) fails open when achieved savings fall
-  below `R`, so callers can decline a compaction that did not shrink enough;
-  `0` disables the floor.
-- `degraded_view=True` rescues input size-limit breaches (`max_input_chars`,
-  `max_lines`): instead of failing open, each oversized block is scored on a
-  bounded head+tail view while emitted output stays byte-exact. Safety limits
-  (bidi controls, malformed surrogates, oversize query) remain hard failures,
-  and work stays bounded by a 4× grace factor over the configured limits. The
-  receipt reports `degraded_view: true` and the risk floor becomes `medium`.
-  CLI: `--degraded-view`.
+The engine and plugin are separate repositories. An engine release does not automatically update an installed or vendored plugin. See [harness integration](harnesses/README.md) for API/CLI contracts, task-derived queries and vendored-copy synchronisation.
 
-Further ecosystem-research hardening (deterministic, always-on unless noted):
-
-- **Secrets screen**: if the input contains probable credentials (private
-  key blocks, `AKIA…`, GitHub/Slack/`sk-` tokens, JWTs, long quoted
-  `password`/`api_key`-style assignments), the CCR store is skipped —
-  archival would persist secrets to disk at rest. The result reports
-  `ccr: None`, emits no `[CC-Retrieve:]` marker, and the reason list notes
-  `ccr skipped: secret material detected`.
-- **Recursion guard**: input already carrying Tameru output markers
-  (`<compressed_context`, `[CC-Retrieve:`) returns unchanged with
-  `policy_name="local-noop-recursion"` — compacting compacted output would
-  nest wrappers and could drop the pointer that makes earlier drops
-  recoverable.
-- **Compressible-subset budgeting**: in `mode="fixed"`, pinned blocks are
-  immovable and no longer consume the `budget_ratio` they outrank; the
-  ratio governs only compressible tokens. With no pins, budgeting is
-  unchanged.
-- **CCR recall tooling**: `list_ccr(ccr_dir, offset=, limit=)` lists live
-  records newest-first (hash, stored_at, ttl, chars, preview), and
-  `retrieve(hash, offset=, limit=)` paginates large originals.
-- **Selection transparency**: every receipt reports `selection` — which
-  selector path decided the keep-set (`needle`, `floor`,
-  `floor-saturated`, `line-records`, `fixed`, or a `*-failopen` variant),
-  so silent degradation is visible to callers.
-- `strategy="auto"` runs the progressive ladder: `extract` first, then
-  escalate to `summarise` only when extraction fails open (ambiguity,
-  saturated floors, `min_savings_ratio` undershoot). `summarise` still
-  falls back to `extract` on any LLM failure, so the worst case is one
-  extra deterministic pass. CLI: `--strategy auto`.
-
-Second research round (v1.3.0 — lcc internals, SelfCompact, PAACE, TPC, Compactor):
-
-- **Dependency closure (sufficiency restore)**: after selection, a dropped
-  block that shares a rare term with a kept block AND carries a qualifier
-  cue (`except`, `unless`, `only`, `however`, `until`, `if`, …) or a
-  definition cue (`is defined as`, `refers to`, `namely`, …) is restored —
-  cutting it would invert the meaning of what survives (e.g. a kept
-  "throughput is nominal" whose dropped sibling says "except during
-  maintenance"). Capped at 8 restorations, never resurrects trust-risk or
-  frozen-drop blocks, supersession can still evict stale restorations, and
-  `mode="fixed"` restores only within the caller's hard budget. Receipts
-  report `sufficiency_restored: [block ids]`.
-- **Qualifier-aware trim refusal**: `_crush_value` no longer truncates a
-  long JSON string whose cut tail carries a qualifier cue — a longer safe
-  value beats a shorter misleading one.
-- **Timing gate (transcript adapter)**: `tameru.transcript.trajectory_gate`
-  suppresses the Tameru prune pass mid-derivation (pending tool calls) and
-  on stuck loops (the last 3 assistant turns issued identical calls —
-  diagnose, don't erase evidence). On by default via
-  `apply_extractive_tool_prune(..., timing_gate=True)`; it only ever
-  suppresses that prune step — downstream host compaction is unaffected.
-- **Plan-aware multi-query**: `compress_context(ctx, [q1, q2, ...])` scores
-  blocks against the union of current + planned tasks.
-- **Derived objective** (`derive_query=True`, CLI `--derive-query`): an
-  empty/generic query normally fails open; with derivation the engine infers
-  a conservative task descriptor from the document's own recurring rare
-  terms (deterministic frequency statistics, bounded sampling). Receipts
-  mark `query_source: "derived"` + `derived_terms`, the risk floor becomes
-  `medium`, and documents with no stable term structure still fail open.
-- **Compression ceiling**: `inspect_compressibility()` now reports
-  `guaranteed_savings_pct` + `ceiling_class` (`dedupe-heavy` / `moderate` /
-  `sparse`) — the share removable by pure dedupe before any relevance
-  judgement, so callers can see how much headroom a given context actually
-  has.
-- **`benchmarks/threshold_sweep.py`**: replays the QA corpus across
-  `budget_ratio` values and reports the gold/leak/savings frontier —
-  operating points chosen on evidence, not inherited.
-- **Multilingual coverage**: `zh_needle` + `ar_needle` battery cases —
-  compression tuned on English silently fails other scripts.
-
-### Plugin-facing API (v1.4.x)
+### Host controls
 
 ```python
-from tameru import brief_context, error_fingerprints, unwrap_tool_payload, rewrap_tool_payload
+from tameru import unwrap_tool_payload, rewrap_tool_payload
 from tameru.compress_context import compress_context
 
-payload = unwrap_tool_payload(tool_result_text)       # JSON/Hermes wrapper -> inner text
-r = compress_context(
+payload = unwrap_tool_payload(tool_result_text)
+result = compress_context(
     payload.inner, query,
-    content_hint="log",                               # skip detection: log/json/test/diff/grep/numbered_code/...
+    ccr=False,
+    citations=False,
+    content_hint="grep",
     gap_marker=lambda omitted, total: f"[... {omitted} of {total} chars omitted ...]",
-    recursion_markers=("[my-plugin: compacted",),     # already-compacted input returns unchanged
-    citations=False,                                  # gap_marker replaces the renderer's cut markers only when citations are off
+    inline_short_gaps=True,
+    recursion_markers=("[my-plugin: compacted",),
 )
-out = rewrap_tool_payload(payload, r.compressed_text)  # wrapper fields (exit code, ...) survive
+out = rewrap_tool_payload(payload, result.compressed_text)
 ```
 
-- `gap_marker`, `recursion_markers`, `content_hint`: new `compress_context` kwargs; defaults keep earlier output byte-identical.
-- `error_fingerprints(text)`: one exemplar per level-tagged error template (the retention key for logs).
-- `brief_context(...)`, `extract_evidence_lines(text, query, limit)`: bounded briefs / verbatim evidence lines.
-- `unwrap_tool_payload` / `rewrap_tool_payload` / `ToolPayload`, `contains_secret`, `ENGINE_VERSION`: exported from `tameru`.
-- `inline_short_gaps=True` (1.4.1 candidate) wraps the caller's `gap_marker` in `InliningGapMarker`: a dropped span whose marker would not be shorter than the span is kept verbatim (renderer, grep/rg and pytest cuts, and `brief_context`). Off by default; output is byte-identical to 1.4.0 without it.
-- `contains_secret(text)` (1.4.1 candidate): also matches Google API keys, Stripe live keys, bearer tokens and whole-line env/YAML credential assignments, and no longer flags code expressions such as `password = get_password_from_vault()`. Lexically code-shaped secrets (`password = settings_default_password`) are not caught.
-- Agent formats are recognised automatically: numbered reads (`cat -n`, Hermes `read_file`), unified diffs, grep/rg output, pytest/jest/go/cargo test output. Hermes users: see [`hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin).
+Envelope fields such as exit codes survive rewrapping. `gap_marker` replaces cut markers when citations are disabled. `brief_context` accepts an `InliningGapMarker` wrapper directly; the Boolean convenience flag belongs to `compress_context`.
 
-### Harness integration
+## Advanced controls and architecture
 
-Tameru ships harness-agnostic. Three integration paths, cheapest first —
-see **[harnesses/README.md](harnesses/README.md)** for the full contract:
+| Control | Purpose |
+|---|---|
+| `mode="fixed"`, `budget_ratio` | Budget the compressible portion; pinned evidence remains protected |
+| `pin_recent=N` | Retain the opening block and newest N blocks |
+| `min_savings_ratio` | Decline reductions below the savings floor; default 0.10 |
+| Multiple query strings | Score against the union of current and planned tasks |
+| `derive_query=True` | Infer a bounded lexical objective for empty/generic queries; reports derived terms and raises the risk floor |
+| `decision_cache` | Freeze first-sight block decisions; bounded to 4,096 entries; frozen keeps may exceed a later requested ratio |
+| `degraded_view=True` | Opt-in bounded head/tail scoring for certain oversized inputs; preserves safety limits and raises the risk floor |
+| `IndustrialLimits` | Configure character, line, record, field, query and bidi limits |
 
-- **Python API** — `pip install tameru-compaction-system`, then call
-  `compress_context(text, query)` for raw payloads or
-  `tameru.transcript.apply_extractive_tool_prune(messages)` for
-  OpenAI-style `role`/`content` conversation lists (Hermes, OpenCode,
-  Codex, and most agent loops share that shape).
-- **CLI** — `tameru-compress` reads a file or stdin, writes compacted
-  text, and emits JSON stats with `--stats`; the universal shell-out for
-  non-Python harnesses.
-- **Vendored plugin** — copy `src/tameru/*.py` into the plugin dir and
-  keep it current with `python scripts/sync_to_harness.py <plugin_dir>
-  --manifest plugin.yaml`. Upstream owns every module except
-  `__init__.py`; the harness owns registration glue and the manifest.
+The default pipeline combines bounded preflight, format adapters, lexical/entity/structural scoring, graph and dependency rescue, emission and diagnostic verification. Dependency rescue can restore related definitions or qualifiers; trust and supersession rules address known distractor and stale-state patterns. These are deterministic heuristics, not a semantic judge or a general prompt-injection defence.
 
----
+The recursion guard avoids compacting recognised Tameru output again. `inspect_compressibility()` estimates duplicate-removal headroom. `fold_lossless`, `error_fingerprints`, `brief_context` and `extract_evidence_lines` are available for host-specific reduction.
 
-## 📜 Changelog
+For implementation details, see [the source](src/tameru/), [industrial architecture](docs/industrial-compaction-v1.2.md) and [research digest](docs/RESEARCH.md). Research inspiration is documented separately from implemented mechanisms.
 
-All notable changes, version milestones, and migration notes are tracked in **[CHANGELOG.md](CHANGELOG.md)**.
+## Reproduce the release checks
 
-Highlights:
-- **v1.4.1 candidate** (on `main`, unreleased): pytest captured-log sections collapsed around the failure, saturated `rg`/grep keeps definition lines, CLI flags are not query selectors, one host marker per run of omitted grep files, opt-in `inline_short_gaps` (also in `brief_context`), secrets screen widened then narrowed after a red-team pass (no more code false positives; env/YAML credential lines caught).
-- **v1.4.0**: Agent tool-output quality and plugin API — ERROR lines survive log compaction, 650 KB log 22.5 s → <1 s, numbered `cat -n`/`read_file` reads and Python no longer misread as CSV/TSV/YAML, diff/grep/test-runner adapters, lossless folding, log `[last]` exemplars, JSON array briefs, `gap_marker` / `recursion_markers` / `content_hint`, Hermes-wrapper-safe payload helpers. Hermes integration bundle moved to hermes-tameru-plugin.
-- **v1.3.0**: Typed-edge dependency restoration, transcript timing gate, plan-aware multi-query, qualifier-aware trim refusal, `derive_query`, compression-ceiling reporting, threshold-sweep tool, multilingual battery.
-- **v1.2.1**: JEV-inspired hardening — `pin_recent`, `min_savings_ratio`, `degraded_view`, secrets screen, recursion guard, compressible-subset budgeting, CCR recall tooling, selection receipts, `strategy="auto"`.
-- **v1.2.0**: Bounded industrial preflight, logical-order Unicode across 20 script/language families, ten exact format adapters, deterministic receipt hashes and large-input SLOs.
-- **v1.1.1**: Comprehensive factual-retention, fail-open, cache-progression, public-metrics, and current-Hermes integration hardening.
-- **v1.1.0**: Production QA hardening, Docker progress recognition, CCR security & expiry sweep, bounded decision caching, loopback summary boundary.
-- **v0.10.0**: Compaction audit logs, pinned sink regions, versioned context receipts.
-- **v0.9.0**: NTK layer-1 log dedup, error invariants, progress-bar stripping, lost-in-the-middle reordering.
-- **v0.8.0**: Opt-in semantic tier with bi-encoders and cross-encoders.
-- **v0.1.0 - v0.7.0**: Core extractive engine, graph closure, temporal supersession, and tabular crushers.
+From the v1.4.1 checkout:
 
----
+```bash
+python -m pip install -e '.[dev]'
+python -m pytest -q
+python -m pytest -q -m 'not perf'  # optional: omit timing-ratio scaling tests
+python benchmarks/run_battery.py
+python benchmarks/threshold_sweep.py
+python scripts/sync_to_harness.py <plugin>/tameru --manifest ../plugin.yaml --check
+```
 
-## 🙏 Credits & Research Lineage
+The battery rewrites its results JSON with local timings. Timing tests depend on hardware and runtime conditions. The external comparison requires additional dependencies/models and, for JEV, provider access; it is outside this release's offline verification.
 
-Tameru's design was inspired and sharpened by studying remarkable open-source projects, papers, and ideas:
+## Credits and support
 
-### Open-Source Projects
-- **[NTK / Neural Token Killer](https://github.com/luizinhoh2o1/ntk)** (Rust, MIT) — Template deduplication, error-signal invariant, progress-bar stripping, and stack frame collapse.
-- **[caveman-compression](https://github.com/wilpel/caveman-compression)** (MIT) — Executable test specification discipline and factual preservation validation.
-- **[leanctx](https://github.com/jia-gao/leanctx)** (MIT) — Loss-tolerance routing and structural verbatim code invariants.
-- **[TwoTrim](https://github.com/overseek944/twotrim)** (Apache-2.0) — Lost-in-the-middle mitigation and attention edge anchoring.
-- **[clipforge-PAKT](https://github.com/sriinnu/clipforge-PAKT)** (MIT) — Pre-flight compressibility inspection.
-- **[fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction)** (MIT) — Positional pinning of edge turns, caller-side savings-worthiness gates, and judging on a degraded state while emitting exact spans.
-- **[dsh-argp](https://github.com/yoza10635/dsh-argp)** — Compressible-subset retention budgeting: immovable atoms are excluded from the ratio's base.
-- **[dsh-jev-prune](https://github.com/yangyu666/dsh-jev-prune)** — Never degrade silently: report which selector path decided, and hard-exclude mutating actions by rule rather than by score.
-- **[dsh-jev-pre-compaction](https://github.com/wjw66/dsh-jev-pre-compaction)** — Scan for secrets before archiving originals; lookahead pressure bands.
-- **[pi-lcm](https://github.com/codexstar69/pi-lcm)** — Persistent append-only memory with self-serve grep/describe/expand recall tools.
-- **[lcc / Local Context Compiler](https://github.com/lucasmartins-ai/lcc)** (MIT) — Typed context-graph closure, post-drop sufficiency verification, qualifier-aware safe trimming, and a well-built JEV/local-model client used as our benchmark harness.
-- **[headroom](https://github.com/headroomlabs-ai/headroom)** — Closest production analog: extractive crushers + reversible CCR + cache alignment; its CJK token-pricing fix prompted our (passing) audit.
-- **[Waxmell114514/jev-compaction](https://github.com/Waxmell114514/jev-compaction)** — Score-only reversible compaction and the threshold-replay tuning methodology behind `benchmarks/threshold_sweep.py`.
-- **[SelfCompact](https://github.com/tianjianl/selfcompact)** — The closed-unit/progress/not-stuck compaction-timing rubric, ported as `tameru.transcript.trajectory_gate`.
-- **Claude Code compaction teardown** ([anneheartrecord/claude-code-docs](https://github.com/anneheartrecord/claude-code-docs)) — Progressive micro→session→full tiers, recursion guards on compaction agents, and circuit breakers after repeated failures.
+Built by **The White Mage**. Research and ecosystem acknowledgements, including LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery, are recorded in [RESEARCH.md](docs/RESEARCH.md) and [CHANGELOG.md](CHANGELOG.md).
 
-### Research Lineage
-- **LongLLMLingua / LLMLingua-2** (Microsoft, ACL 2024) — Question-aware compression and the preserve/discard token-classification formulation.
-- **Lost in the Middle** (Liu et al., 2023) — Positional attention decay in decoder transformers.
-- **NoLiMa** (2025) — Long-context lexical distractor blind spots.
-- **Context Rot** (Chroma, 2025) — The empirical case for deliberate compression: models degrade as input grows even on simple tasks.
-- **Provence** (2025) — "Zero sentences kept" as a legal answer; pruning and ranking as one operation.
-- **PAACE** (2025) — Plan-aware selection for next-k tasks, ported as multi-query union scoring.
-- **TPC** (2025) — Task-descriptor objectives for question-free compression, ported deterministically as `derive_query`.
-- **Compactor** (2025) — Context-calibrated compression ceilings, ported as `inspect_compressibility` guaranteed-savings reporting.
-- **Lost in Compression** (2026 audit) — Cross-lingual failure modes of English-tuned compressors; drove the multilingual battery.
-- **ARC Citations** — Reversible content-addressed reference anchors.
+- [Follow @0xWhiteMage on X](https://x.com/0xWhiteMage)
+- [Support on Ko-fi](https://ko-fi.com/0xwhitemage)
+- [Report an issue or contribute](https://github.com/0xWhiteMage/tameru-compaction-system/issues)
 
-Full source-by-source digest: **[docs/RESEARCH.md](docs/RESEARCH.md)**.
-
----
-
-## 🤝 Community & Support
-
-- **Author**: Benjamin Ang ([@0xWhiteMage](https://x.com/0xWhiteMage))
-- **Support**: [Buy me a coffee on Ko-fi](https://ko-fi.com/0xwhitemage)
-- **Issues & Contributions**: Pull requests and issue reports are welcome!
-
----
-
-## 📄 License
-
-Released under the **[MIT License](LICENSE)**.
+Released under the [MIT licence](LICENSE).

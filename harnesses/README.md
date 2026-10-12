@@ -81,7 +81,7 @@ retention checks).
 **Hermes Agent users:** use the plugin instead of wiring this yourself —
 [`0xWhiteMage/hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin).
 It hooks Hermes' per-result demotion seam and has real-Hermes CI. This repo no
-longer ships a Hermes bundle (see `integration/hermes/README.md`).
+longer ships a Hermes bundle; installation lives in the plugin repository.
 
 ## 2. CLI shell-out (any language)
 

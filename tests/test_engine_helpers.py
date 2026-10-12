@@ -46,7 +46,9 @@ def _log(n: int = 3000, seed: int = 5) -> str:
 
 
 def test_engine_version_is_a_semver_string():
-    assert ENGINE_VERSION == "1.4.0"
+    from tameru import __version__
+
+    assert ENGINE_VERSION == __version__
     assert re.fullmatch(r"\d+\.\d+\.\d+", ENGINE_VERSION)
 
 
