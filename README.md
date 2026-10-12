@@ -4,7 +4,7 @@
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
   <a href="LICENSE"><img src="https://img.shields.io/badge/release-v1.4.0-blue.svg?style=for-the-badge" alt="Version 1.4.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-1105%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-1168%20passed-success.svg?style=for-the-badge" alt="Test Suite"></a>
   <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/production_QA-15%2F15_green-brightgreen.svg?style=for-the-badge" alt="Production QA"></a>
   <a href="#-head-to-head-competitive-benchmark"><img src="https://img.shields.io/badge/large_case-%3C1.2s-purple.svg?style=for-the-badge" alt="Large-case latency"></a>
   <a href="#-core-design-tenets"><img src="https://img.shields.io/badge/determinism-100%25_reproducible-blueviolet.svg?style=for-the-badge" alt="Determinism"></a>
@@ -14,7 +14,7 @@
 </p>
 
 > **Named from 貯める (*tameru*) — Japanese for *"to save, store up, or accumulate."***  
-> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. v1.4 hardens it for agent tool output (log errors survive, numbered reads and diffs are recognised, a 650 KB log takes under a second) and adds a plugin-facing API (`gap_marker`, `recursion_markers`, `content_hint`, `error_fingerprints`, `brief_context`, tool-payload envelope helpers). v1.3 added typed-edge dependency restoration, a SelfCompact-style timing gate, plan-aware multi-query, qualifier-aware structured trimming, a derived-objective mode for empty queries, and a context-calibrated compression ceiling — all without external LLM calls, GPU dependencies, or runtime dependencies in the deterministic extract path (the opt-in `summarise` tier is the only exception, and it falls back to `extract` on any LLM failure).
+> Tameru is a query-aware, deterministic, purely extractive context compaction engine for autonomous LLM agents. The 1.4.1 candidate (branch `tameru-1.4.1`, not yet released) keeps the answer in saturated `rg -n` output and in pytest failures with long captured logs, can inline gaps shorter than a host's own elision marker, and tightens the secrets screen. v1.4 hardens it for agent tool output (log errors survive, numbered reads and diffs are recognised, a 650 KB log takes under a second) and adds a plugin-facing API (`gap_marker`, `recursion_markers`, `content_hint`, `error_fingerprints`, `brief_context`, tool-payload envelope helpers). v1.3 added typed-edge dependency restoration, a SelfCompact-style timing gate, plan-aware multi-query, qualifier-aware structured trimming, a derived-objective mode for empty queries, and a context-calibrated compression ceiling — all without external LLM calls, GPU dependencies, or runtime dependencies in the deterministic extract path (the opt-in `summarise` tier is the only exception, and it falls back to `extract` on any LLM failure).
 
 ---
 
@@ -278,12 +278,23 @@ The `tests/` directory contains an exhaustive production-QA suite:
 - `test_semantic_gates.py`: Counterfactual distractor masking and graph closure validation.
 - `test_production_qa_v3.py`: Cross-seed determinism validation (`PYTHONHASHSEED=0` vs `PYTHONHASHSEED=1`).
 
-Run the full battery:
+### Running the tests
+
 ```bash
-python -m unittest discover -s tests
+pip install -e '.[dev]'                 # pytest; the engine itself has no runtime dependencies
+python -m pytest -q                     # full suite
+python -m pytest -q -m 'not perf'       # skip the timing-ratio scaling tests
+python benchmarks/run_battery.py        # production-QA battery (15 cases)
+python benchmarks/threshold_sweep.py    # savings / gold / leak frontier over budget_ratio
+python scripts/sync_to_harness.py <plugin>/tameru --manifest ../plugin.yaml --check   # vendored-copy drift check
 ```
 
-Current v1.4.0 release verification (the comparison tables further down were measured on v1.3.0 and have not been re-run):
+Verification of the 1.4.1 candidate (`91f00e0`, Oct 2026; the comparison tables further up were measured on v1.3.0 and have not been re-run):
+
+- **1168 passed, 3 skipped** with pytest (v1.4.0: 1105 passed, 3 skipped).
+- `run_battery.py` 15/15 and `threshold_sweep.py` 77.3 / 68.4 / 61.2 / 41.5 / 24.9 % savings: identical to v1.4.0 (with default arguments the 1.4.1 changes do not alter battery output).
+
+v1.4.0 release verification:
 
 - **1105 passed, 3 skipped** with pytest.
 - **15/15** production-QA battery cases passed (`benchmarks/run_battery.py`), including Japanese, Chinese and Arabic needle cases with zero forbidden-distractor leaks.
@@ -483,7 +494,7 @@ Second research round (v1.3.0 — lcc internals, SelfCompact, PAACE, TPC, Compac
 - **Multilingual coverage**: `zh_needle` + `ar_needle` battery cases —
   compression tuned on English silently fails other scripts.
 
-### Plugin-facing API (v1.4.0)
+### Plugin-facing API (v1.4.x)
 
 ```python
 from tameru import brief_context, error_fingerprints, unwrap_tool_payload, rewrap_tool_payload
@@ -504,6 +515,8 @@ out = rewrap_tool_payload(payload, r.compressed_text)  # wrapper fields (exit co
 - `error_fingerprints(text)`: one exemplar per level-tagged error template (the retention key for logs).
 - `brief_context(...)`, `extract_evidence_lines(text, query, limit)`: bounded briefs / verbatim evidence lines.
 - `unwrap_tool_payload` / `rewrap_tool_payload` / `ToolPayload`, `contains_secret`, `ENGINE_VERSION`: exported from `tameru`.
+- `inline_short_gaps=True` (1.4.1 candidate) wraps the caller's `gap_marker` in `InliningGapMarker`: a dropped span whose marker would not be shorter than the span is kept verbatim (renderer, grep/rg and pytest cuts, and `brief_context`). Off by default; output is byte-identical to 1.4.0 without it.
+- `contains_secret(text)` (1.4.1 candidate): also matches Google API keys, Stripe live keys, bearer tokens and whole-line env/YAML credential assignments, and no longer flags code expressions such as `password = get_password_from_vault()`. Lexically code-shaped secrets (`password = settings_default_password`) are not caught.
 - Agent formats are recognised automatically: numbered reads (`cat -n`, Hermes `read_file`), unified diffs, grep/rg output, pytest/jest/go/cargo test output. Hermes users: see [`hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin).
 
 ### Harness integration
@@ -531,6 +544,7 @@ see **[harnesses/README.md](harnesses/README.md)** for the full contract:
 All notable changes, version milestones, and migration notes are tracked in **[CHANGELOG.md](CHANGELOG.md)**.
 
 Highlights:
+- **v1.4.1 candidate** (branch `tameru-1.4.1`, unreleased): pytest captured-log sections collapsed around the failure, saturated `rg`/grep keeps definition lines, CLI flags are not query selectors, one host marker per run of omitted grep files, opt-in `inline_short_gaps` (also in `brief_context`), secrets screen widened then narrowed after a red-team pass (no more code false positives; env/YAML credential lines caught).
 - **v1.4.0**: Agent tool-output quality and plugin API — ERROR lines survive log compaction, 650 KB log 22.5 s → <1 s, numbered `cat -n`/`read_file` reads and Python no longer misread as CSV/TSV/YAML, diff/grep/test-runner adapters, lossless folding, log `[last]` exemplars, JSON array briefs, `gap_marker` / `recursion_markers` / `content_hint`, Hermes-wrapper-safe payload helpers. Hermes integration bundle moved to hermes-tameru-plugin.
 - **v1.3.0**: Typed-edge dependency restoration, transcript timing gate, plan-aware multi-query, qualifier-aware trim refusal, `derive_query`, compression-ceiling reporting, threshold-sweep tool, multilingual battery.
 - **v1.2.1**: JEV-inspired hardening — `pin_recent`, `min_savings_ratio`, `degraded_view`, secrets screen, recursion guard, compressible-subset budgeting, CCR recall tooling, selection receipts, `strategy="auto"`.

@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased] (1.4.1 candidate, local branch `locally/1.4.0-patches`)
+## [Unreleased] (1.4.1 candidate, branch `tameru-1.4.1`)
 
 Fixes for the two answers the 1.4.0 plugin report listed as lost, an opt-in
 gap-marker change for hosts with long markers, and two small correctness items.
@@ -28,6 +28,8 @@ byte-identical to 1.4.0: `run_battery` 15/15 and `threshold_sweep`
 - Command-line options in the query (`-n`, `--stat`, copied with the command, as the Hermes plugin does) are no longer adapter selectors. As "strong" selectors they crowded out the searched name: `rg -n Name` matched by `-n` alone selected nothing, so the saturated-query mode never ran and the plugin still fell to its brief and lost the definition line.
 - A captured section ends at the next rule, test-block header or pytest section header, not at the first blank line: captured stdout with blank lines collapsed only up to its first blank line.
 - Red-team round: the unquoted `KEY=value` secrets pattern flagged ordinary code (`password = get_password_from_vault()`, `api_key = agent._anthropic_api_key`, `api_key=fallback_api_key,`). On a Hermes checkout `contains_secret` was true for 141 of 2,372 non-test Python files (9 before 1.4.1), so a host that refuses to keep secret-bearing originals (the Hermes plugin's recovery store) dropped them. A value that is a call, an index, a `${...}`/`<...>` placeholder, an attribute chain or a lower-case snake_case name is no longer a match: 15 of 2,372 files now, all literal fixture keys. The exclusions are linear (a test pins 200K-char inputs under 2 s).
+- Fix-all round: whole-line env/shell (`KEY=value`, no spaces around `=`) and YAML (`key: value`) credential assignments are secrets again whatever the value looks like (`DB_PASSWORD=correct_horse_battery_staple`), unless the value is an expression or placeholder, ends in `,` `;` `)` (a keyword argument on its own line) or, in YAML, is an attribute chain. Hermes probe: still 15 of 2,372 files; linear. Not caught: the same values inside code-shaped lines (`password = settings_default_password`).
+- Fix-all round: `brief_context` honours `InliningGapMarker` like `compress_context`, so a dropped span shorter than the caller's marker stays verbatim instead of becoming a ~100-char marker. Plain markers are unchanged.
 - `test_deep_malformed_cache_record_does_not_raise` failed on Python 3.12+ (a 1000-deep list now parses and is removed as a non-record; older versions raised RecursionError and kept it). The test now accepts either outcome and still requires no exception and no retrieval; `sweep_ccr_cache`'s docstring now says that parseable non-records are removed (that was already the behaviour other tests pin).
 
 ## [1.4.0] - 2026-10-06
