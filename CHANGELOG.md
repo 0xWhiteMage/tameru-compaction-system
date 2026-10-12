@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased] (1.4.1 candidate, branch `tameru-1.4.1`)
+## [Unreleased] (1.4.1 candidate)
 
 Fixes for the two answers the 1.4.0 plugin report listed as lost, an opt-in
 gap-marker change for hosts with long markers, and two small correctness items.
