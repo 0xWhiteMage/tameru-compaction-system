@@ -18,14 +18,16 @@ The default extraction path runs locally, uses no LLM and adds **$0 in LLM infer
 - **Stay reproducible:** extraction is deterministic for identical inputs and configuration; stored recovery metadata may include timestamps.
 - **Run without a GPU or runtime dependencies:** Python **3.10+**, standard library only for the default path.
 
+**Source version: v1.4.1. The GitHub tag and Release are pending publication.**
+
 **v1.4.1** improves saturated grep results, long pytest captured logs, host omission-marker overhead and credential screening. See [what changed](#whats-new-in-v141) and the [full changelog](CHANGELOG.md).
 
 ## Quickstart
 
-Install the exact release from GitHub:
+Install the reviewed v1.4.1 source commit from GitHub while the tag is pending:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.4.1"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@0cba524a245b0fb058080d70b1a8d7c28204b456"
 ```
 
 Or install from a checkout:
@@ -33,7 +35,7 @@ Or install from a checkout:
 ```bash
 git clone https://github.com/0xWhiteMage/tameru-compaction-system.git
 cd tameru-compaction-system
-git checkout v1.4.1
+git checkout 0cba524a245b0fb058080d70b1a8d7c28204b456
 python -m pip install -e .
 ```
 
@@ -244,7 +246,7 @@ For implementation details, see [the source](src/tameru/), [industrial architect
 
 ## Reproduce the release checks
 
-From the v1.4.1 checkout:
+From the reviewed v1.4.1 source checkout:
 
 ```bash
 python -m pip install -e '.[dev]'

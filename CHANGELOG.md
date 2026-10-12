@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Documentation audit
+- Make the pending GitHub tag/Release explicit and pin installation to the reviewed 1.4.1 source commit, so quickstart works before publication.
+- Use repository URLs in release notes so links also work when copied to the GitHub release page.
+
 ## [1.4.1] - 2026-10-12
 
 Fixes for the two answers the 1.4.0 plugin report listed as lost, an opt-in
