@@ -4,7 +4,7 @@
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.4.1-blue.svg" alt="Version 1.4.1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-1168%20passed-success.svg" alt="1168 tests passed"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-1172%20passed-success.svg" alt="1172 tests passed"></a>
   <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/QA-15%2F15-brightgreen.svg" alt="15 of 15 QA cases passed"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-Python%20stdlib-orange.svg" alt="Python standard library core"></a>
 </p>
@@ -27,7 +27,7 @@ The default extraction path runs locally, uses no LLM and adds **$0 in LLM infer
 Install the reviewed v1.4.1 source commit from GitHub while the tag is pending:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@0cba524a245b0fb058080d70b1a8d7c28204b456"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@dbe40619b9ebcb1595269809dd9f963b1c246015"
 ```
 
 Or install from a checkout:
@@ -35,7 +35,7 @@ Or install from a checkout:
 ```bash
 git clone https://github.com/0xWhiteMage/tameru-compaction-system.git
 cd tameru-compaction-system
-git checkout 0cba524a245b0fb058080d70b1a8d7c28204b456
+git checkout dbe40619b9ebcb1595269809dd9f963b1c246015
 python -m pip install -e .
 ```
 
@@ -77,13 +77,14 @@ The CLI writes compacted text to stdout. With `--stats`, it prints JSON diagnost
 | **Smaller host-marker overhead** | Consecutive fully omitted grep files share one caller-supplied omission marker while retaining their file headers. |
 | **Opt-in short-gap inlining** | `inline_short_gaps=True` keeps a dropped span verbatim when its marker would be at least as long. Applies to extraction and grep/pytest cuts; `brief_context` accepts an `InliningGapMarker` wrapper. Off by default. |
 | **Credential-screen hardening** | Adds Google API keys, Stripe live keys, bearer tokens and whole-line env/YAML credential assignments; avoids common code-expression false positives. Screens recovery persistence, not output redaction. |
+| **BOM-tolerant file reads** | CLI context, decision-cache and recovery-cache files accept BOM-prefixed UTF-8 from Windows tools. String API input and stored originals retain their text. |
 | **Integration maintenance** | Behaviour-neutral Ruff changes for Hermes vendoring and a portable deep-malformed-cache regression test. |
 
 The release battery and budget sweep retain the previous savings. Affected grep and pytest cases intentionally change; unchanged benchmark output is not a guarantee that every v1.4.0 input produces identical output in v1.4.1.
 
 ## Release verification and measured results
 
-The v1.4.1 release checks cover **1,168 passed / 3 skipped** pytest tests and **15/15** production-QA cases. The battery checks required answer strings, forbidden distractors, repeat-output determinism, savings, fail-open behaviour and a large-input timing gate. These are fixture-level checks, not a guarantee of downstream model accuracy.
+The v1.4.1 release checks cover **1,172 passed / 3 skipped** pytest tests and **15/15** production-QA cases. The battery checks required answer strings, forbidden distractors, repeat-output determinism, savings, fail-open behaviour and a large-input timing gate. These are fixture-level checks, not a guarantee of downstream model accuracy.
 
 Selected measurements from the [release battery](benchmarks/production-qa-v3-results.json):
 
