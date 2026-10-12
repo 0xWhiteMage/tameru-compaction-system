@@ -1,141 +1,89 @@
-# Benchmark comparisons — results, methods and trade-offs
+# Tameru v1.4.1 — current comparisons
 
-The offline [production battery](production-qa-v3-results.json) passes 15/15
-on **v1.4.1**. The budget sweep is clean at all five tested ratios.
-The comparison tables below retain their original **v1.2.0/v1.3.0** results;
-external arms were not rerun for v1.4.1.
+Freshly measured on **2026-10-12**, using **Tameru v1.4.1** and the same **16 task cases** for every scored method. The corpus includes evidence chains, stale configuration, Git/YAML/npm output, Japanese/Chinese/Arabic text, saturated grep, captured pytest logs with blank lines and numbered source reads.
 
-"Gold retention" means required answer strings present in compressed output.
-"Forbidden strings" are planted stale, excluded or distracting source strings.
-These checks measure evidence retention, not downstream agent accuracy or a
-general defence against prompt injection. Savings and timings use the methods
-specified for each run; the current battery reports estimated tokens and CPU
-time, while the six-arm comparison reports characters and wall time.
+| Tested method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean character savings | Median wall time | Repeat output identical |
+|---|---:|---:|---:|---:|---:|---|
+| **Tameru v1.4.1** | 25/25 | 0 | 16/16 | 81.9% | 12.83 ms | Yes |
+| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.97 ms | Yes |
+| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.51 ms | Yes |
+| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.12 ms | Yes |
+| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8091.08 ms | Yes |
+| LCC → JEV — unmeasured | — | — | — | — | — | — |
 
-## Head-to-head (same 17-case holdout, Aug 2026)
+All numeric cells are new measurements from this run. The earlier v1.2.0 holdout and v1.3.0 comparison have been retired from active documentation; their original records remain in Git history. No older score is relabelled as v1.4.1.
 
-This is the earlier reported v1.2.0 holdout. The baseline labels and approximate
-latency/cost figures describe that historical setup, not current product
-capabilities or pricing. A per-case raw result file for this table is not
-included here; the six-arm run below has inspectable raw results.
+## What the measurements mean
 
-| Metric | **Tameru v1.2.0** | BM25 / Vector RAG Baseline | LLM summarise | LCM |
-|---|---|---|---|---|
-| Gold retention | **17/17** | 12/17 | 7/17 | 3–7/17 |
-| Regression rate (right→wrong flips) | **0.0%** | ~8% | ~40% | n/a |
-| Observed latency | **4–956 ms by workload; <1.2 s at 500 KB** | ~400 ms | ~2,000 ms | ~0 ms |
-| Cost per call | **$0** | $0.02–0.05 | $$ | $0 |
-| Deterministic | ✅ byte-identical | ❌ | ❌ | partial |
-| Runs fully local | ✅ | ❌ (Vercel API; context leaves box) | varies | ✅ |
-| Reversibility | citations + CCR store | CCR markers (strip on store failure) | none | none |
-| Fail-open contract | original text on weak signal | collapsed view | hallucination risk | n/a |
+- **Required strings:** specified source evidence found in every warmup/timed output. A loss in any repeat counts as a loss.
+- **Forbidden strings:** planted stale, excluded or distracting strings seen in any repeat. This is a fixture check, not a general prompt-injection defence.
+- **Clean cases:** all required strings retained with no forbidden leaks.
+- **Savings:** arithmetic mean character savings per task case. Negative savings would indicate expansion. These are not model-token or monetary savings.
+- **Timing:** one warmup and 3 complete calls per case. The aggregate is the median of per-case wall-time medians, including parsing, scoring and rendering. Imports, model load and warmup are excluded. TF-IDF includes its full scoring work.
+- **Repeat output:** all four outputs are compared byte-for-byte after UTF-8 encoding. Repeated runs do not establish stability across every runtime or platform.
 
-## Six arms, one corpus (Sep 2026, `jev-1.13.0`)
+The 4,000-record synthetic performance case and empty-query fail-open case are outside the common answer corpus. They remain covered by the separate [15-case release battery](production-qa-v3-results.json), which uses CPU time and estimated token savings.
 
-Measured on the historical 12-case QA corpus via `benchmarks/jev_comparison.py`.
-The [raw results](jev-comparison-results.json) contain per-case retention,
-forbidden-string counts, character savings, wall time and repeat-output checks.
-JEV runs through LCC's `compact_context` client (typed `noul`
-keep-probability questions to System One, the same protocol
-`fast-jev-compaction` uses); Laya is its local decision-model backend
-(`convaiinnovations/laya-multilingual`, CPU); headroom is its Rust
-`TextCrusher` (extractive BM25, `headroom-ai` 0.38.0); tfidf is a stdlib
-paragraph-retrieval baseline. The JEV arm skipped the 4,000-block perf
-case (API cost); Laya ran it — 3,379 s (~56 min) on CPU.
+## Per-case character savings
 
-There are **14 required answer strings across 11 cases**. The large synthetic
-case contains no required strings, so its `0/0` answer check passes without
-testing answer retention. The case-pass row below includes that case for the
-five arms that ran it. JEV's 11 cases cover all 14 required strings.
+| Case | **Tameru v1.4.1** | LCC mechanical | Headroom TextCrusher | TF-IDF paragraph baseline | LCC → Laya (CPU) |
+|---|---:|---:|---:|---:|---:|
+| lexical_distractor | 96.8% ✓ | 96.6% ‡ | 50.5% ‡ | 95.7% †‡ | 0.0% ‡ |
+| multi_hop_chain | 95.0% ✓ | 98.4% ✓ | 49.8% ✓ | 96.8% ✓ | 6.5% ✓ |
+| current_value | 91.1% ✓ | 93.1% ‡ | 47.2% ‡ | 88.5% ‡ | 18.5% ‡ |
+| negation_override | 92.5% ✓ | 94.8% ‡ | 48.1% ‡ | 90.2% ‡ | 18.9% ‡ |
+| no_marker_keeps_both | 89.4% ✓ | 94.4% ✓ | 47.8% ✓ | 89.7% ✓ | 84.8% ✓ |
+| evidence_chain_holdout | 95.9% ✓ | 98.4% ✓ | 49.8% ✓ | 97.8% ✓ | 0.0% ✓ |
+| git_log | 93.9% ✓ | 0.0% ✓ | 49.9% † | 0.0% ✓ | 0.0% ✓ |
+| npm_log | 30.5% ✓ | 0.0% ✓ | 48.8% ✓ | 0.0% ✓ | 0.0% ✓ |
+| jp_musubi | 35.3% ✓ | 5.6% ✓ | 49.8% ✓ | 42.6% ✓ | 0.0% ✓ |
+| zh_needle | 89.3% ✓ | 0.0% ✓ | 48.1% ✓ | 95.7% † | 0.0% ✓ |
+| ar_needle | 89.0% ✓ | 0.0% ✓ | 47.4% ✓ | 95.5% † | 0.0% ✓ |
+| travis_yaml | 64.1% ✓ | 0.0% ‡ | 56.2% † | 61.1% ‡ | 0.0% ‡ |
+| excluded_sample | 87.6% ✓ | 0.0% ‡ | 47.1% ‡ | 0.0% ‡ | 0.0% ‡ |
+| grep_saturated_command | 79.8% ✓ | 0.0% ✓ | 68.0% ✓ | 0.0% ✓ | 0.0% ✓ |
+| pytest_captured_blank_lines | 81.1% ✓ | 0.0% ✓ | 49.0% † | 0.0% ✓ | 0.0% ✓ |
+| numbered_source | 98.5% ✓ | 0.0% ✓ | 50.2% ✓ | 0.0% ✓ | 0.0% ✓ |
 
-| Metric | **Tameru v1.3.0** | lcc → JEV | lcc → Laya (local) | lcc mechanical | headroom TextCrusher | TF-IDF baseline |
-|---|---|---|---|---|---|---|
-| Required answer strings kept | **14/14** | 14/14 † | 14/14 | 14/14 | 11/14 | 13/14 |
-| Cases passing answer-string check | **12/12** | 11/11 † | 12/12 | 12/12 | 10/12 | 11/12 |
-| Forbidden distractors kept | **0** | **5** | 5 | 5 | 4 | 5 |
-| Deterministic | ✅ byte-identical | ❌ (output varied) | ✅ | ✅ | ✅ | ✅ |
-| Median latency | **10.75 ms** | 591 ms † | 8,675 ms | 4.5 ms | 0.5 ms | <1 ms |
-| Mean character savings | **81.0%** | 63.6% | 10.7% | 48.4% | 49.6% | 55.2% |
-| Structured dumps (git/npm/yaml) | 30–95% saved | 0–12% | 0% | 0% | 49–56% | 0–61% |
-| Cost per call | **$0** | API-priced input | $0 | $0 | $0 | $0 |
-| Runs fully local | ✅ | ❌ (context leaves box) | ✅ | ✅ | ✅ | ✅ |
-| `EXCLUDED-HOST` kept in excluded-sample case | **No** | Yes | Yes | Yes | Yes | Yes |
+✓ all required strings retained, no forbidden leaks; † required evidence lost; ‡ forbidden evidence retained. Savings alone do not establish success.
 
-### What the arms actually showed
+## Versions and settings
 
-- **Keeping the answer is only one check.** JEV, Laya and mechanical also
-  kept all 14 required strings, but each kept five forbidden strings.
-  The planted cases include a superseded timeout, obsolete runbook,
-  glossary decoy, excluded dependency and explicitly untrusted host sample.
-  Tameru's trust, supersession and exclusion heuristics removed these in
-  this corpus. That result does not establish universal containment.
-- **Faster methods exist.** Mechanical, TextCrusher and TF-IDF had lower
-  median wall times. Tameru combined a 10.75 ms median with the highest
-  mean character savings and zero forbidden-string leaks in this run.
-- **The structured-output case is revealing.** On `git_log`, Tameru kept
-  the required commit hash with 95.38% character savings. JEV, Laya and
-  mechanical kept the hash with 0% savings; TextCrusher saved 49.89% but
-  dropped the hash. This tests TextCrusher directly, not Headroom's full
-  content router or its other compressors.
-- **The local model had a CPU trade-off.** Laya averaged 10.7% savings with
-  an 8,675 ms median and took approximately 56 minutes on the large case.
-  Hardware, model configuration and workload affect those timings.
-- **Repeatability varied.** JEV's Japanese case differed between identical
-  runs. The other five arms produced identical outputs in their repeat
-  checks. This matters when an integration expects stable retained text.
+- Tameru **1.4.1**, source commit `13f9b51053776fefcb08f53afac8a52eea56ec7d`; default extraction, `ccr=False`, `citations=True`.
+- LCC **1.0.0**, source `16f0ddf2b136154e5c80301237d3c860df42baac`; requested provider, `marker=False`, `max_workers=1`, remaining compaction options at defaults. A fallback is a failed provider measurement and receives no summary score.
+- Headroom **0.40.0**, Rust `TextCrusher` at defaults. The full router, other compressors and recovery store are not exercised.
+- TF-IDF: this runner's ASCII-term paragraph retrieval, original order and first paragraph retained. It is a deliberately simple baseline.
+- Laya **0.4.4**, source `682ac6719faa5b1c04b529501feb93e58ee91f3d`, model `convaiinnovations/laya-multilingual` at `1720e3e3357cfe1e281542e223f8273b0890ca34`, CPU. LCC's model settings remain at defaults.
+- Runtime: Python **3.12.14**, `x86_64`, INTEL(R) XEON(R) PLATINUM 8573C; CPU quota `800000 100000`, thread settings `{'OMP_NUM_THREADS': '8', 'MKL_NUM_THREADS': '8', 'RAYON_NUM_THREADS': '8'}`. Hardware and scheduling affect latency.
 
-† JEV ran 11 cases; `large_doc_perf` was skipped for API cost.
-The current comparison runner uses the expanded 15-case battery and skips
-the expensive large case for both JEV and Laya. Rerunning it therefore
-produces a new corpus/run, not an exact replay of the historical JSON.
-See the [research digest](../docs/RESEARCH.md) for ecosystem and paper links.
+The [raw JSON](comparison-v1.4.1.json) records the corpus and input hashes, runner hash, source pins, package versions, output hashes, missing/leaked strings and individual timing samples.
 
-## Earlier regression probes
+Protected no-ops with zero scored blocks and zero calls are valid LCC policy results. They are flagged as `protected_noop`; they do not represent model inference. The run resumed after correcting this classification, with unchanged corpus, versions, settings and timing boundaries. Both runner hashes and the measured case lists are recorded in `execution_segments`.
 
-These probes motivated specific guards; they are not claims about every
-current implementation of a retrieval or summarisation system.
+## Provider availability
 
-- **Baseline RAG JSON cliff**: arrays >12 items keep only first 3 → gold at
-  index 61 vanishes. Tameru crushes JSON with tail protection; battery case
-  `weather_query_does_not_delete_json_tail` locks this.
-- **Baseline RAG unrelated-query deletion**: generic queries deleted 99% of
-  context in one probe. Tameru's saturation guard falls back to ranked-top keep.
-- **CJK fail-open**: Baseline RAG refuses JP/KO without query overlap.
-  Tameru tokenises Kana/Hangul/CJK/Arabic/Thai; i18n battery cases green.
-- **Summariser fact loss**: LLM summaries drop config keys. The Hermes adapter
-  historically used a `query_facts_lost` guard. That helper remains a
-  deprecated transcript compatibility API; the maintained Hermes plugin
-  has its own host-specific checks.
+- **LCC → JEV:** RuntimeError: JEV requires --include-jev and an existing TYPESAFE_API_KEY
 
-## Where Tameru honestly loses
-
-- **Pure semantic paraphrase distractors** ("Operation Moonlight" ≡ "lunar
-  warehouse", no shared tokens): lexical scoring can miss these. Mitigation is
-  the bridge-entity graph closure + counterfactual guard; full fix needs an
-  embedding/perplexity cross-check (future opt-in tier).
-- **Abstractive compression**: extractive keeps verbatim lines, so minimum
-  size ≈ sum of kept lines. For aggressive 10:1 prose summarisation a model wins.
-- **Non-Latin savings %**: Tameru uses estimated token counts rather than a
-  model-specific tokenizer. Savings can differ by script and actual model.
-
-## Research grounding
-
-Design choices track published results:
-
-- **LongLLMLingua (ACL 2024)**: question-aware coarse-to-fine beats
-  question-blind pruning — Tameru's core selector.
-- **Lost in the Middle**: position bias — head/tail anchors + neighbour stitch.
-- **NoLiMa (2025)**: lexical-distractor stress case — P0 fixed via counterfactual
-  ambiguity guard (v0.5.18).
-- **ARC-style addressing**: reversible citations by content hash.
-- **Rate-distortion view**: recency ramp + novelty floor = H(Q)-aware floors.
+The old BM25/vector-RAG, LLM-summary and LCM table did not include sufficient implementation pins and replay inputs to reproduce those arms. It has no current scores. JEV needs an existing API credential and explicit opt-in; a local fallback is never shown as a JEV measurement.
 
 ## Reproduce
 
+Install the engine's dev extra, Headroom 0.40.0 and the recorded LCC/Laya source pins in an isolated environment. Laya additionally needs CPU PyTorch, its runtime dependencies and the pinned public checkpoint. Full installed package versions are in the JSON.
+
 ```bash
-PYTHONPATH=src python -m pytest -q  # v1.4.1: 1172 passed, 3 skipped
-python benchmarks/run_battery.py    # adversarial battery + timing table (15/15)
-python benchmarks/jev_comparison.py # Tameru vs JEV-provider arms
-                                    # (needs lcc + TYPESAFE_API_KEY for the JEV arm)
-python benchmarks/threshold_sweep.py # operating-point replay across ratios
+python -m pip install -e '.[dev]'
+python -m pip install headroom-ai==0.40.0
+python -m pip install "git+https://github.com/lucasmartins-ai/lcc.git@16f0ddf2b136154e5c80301237d3c860df42baac"
+python -m pip install "git+https://github.com/NandhaKishorM/laya.git@682ac6719faa5b1c04b529501feb93e58ee91f3d"
+OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 RAYON_NUM_THREADS=8 USE_TF=0 \
+  python benchmarks/compare.py --laya-revision 1720e3e3357cfe1e281542e223f8273b0890ca34 \
+  --lcc-source-sha 16f0ddf2b136154e5c80301237d3c860df42baac \
+  --laya-source-sha 682ac6719faa5b1c04b529501feb93e58ee91f3d
+python benchmarks/compare.py --render-from benchmarks/comparison-v1.4.1.json
 ```
+
+The default command excludes paid JEV calls. Add `--include-jev` only when you have configured `TYPESAFE_API_KEY` and intend to run that provider. `--render-from` regenerates this page and the README comparison from the JSON.
+
+## Limits and interpretation
+
+This corpus belongs to Tameru's regression suite and includes deliberately adversarial examples. It is not an independent broad evaluation or a live-model answer-quality test. String retention cannot detect every semantic loss, and extractive output has a source-line size floor. Evaluate your workload and required evidence before choosing a compression budget.

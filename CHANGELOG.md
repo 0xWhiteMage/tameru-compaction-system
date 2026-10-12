@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Current-version comparisons
+- Replace the active v1.2.0/v1.3.0 tables with a fresh v1.4.1 comparison on one common corpus: 16 task cases and 25 required answer strings, including saturated grep, captured pytest output with blank lines and numbered source reads.
+- Add `benchmarks/compare.py` and a versioned results JSON with source/model pins, input/output hashes, package/runtime versions and individual timing samples. Generate the README and detailed comparison from that single results file.
+- Measure the complete call for every method, including TF-IDF parsing and scoring; use one warmup and three timed calls per case. Retention and forbidden-string checks cover all four outputs.
+- Reject model fallbacks and incomplete provider runs as scored comparisons. Providers without working access are explicitly unmeasured; historical scores are not reused.
+- Retire the old runner and unversioned six-arm results from the active tree; previous records remain in Git history. Remove the unreproducible 17-case RAG/summary/LCM matrix from current documentation.
+- Add seven protocol regressions for full-call timing, worst-repeat retention, unavailable credentials, provider fallbacks, incomplete-report rendering, protected no-ops and incompatible resumed inputs.
+- Fresh common-corpus results: Tameru keeps 25/25 required strings, zero forbidden leaks, 16/16 clean cases, 81.9% mean character savings and 12.83 ms median wall time on this runner. LCC mechanical, Headroom TextCrusher 0.40.0, TF-IDF and pinned Laya 0.4.4 were also measured; JEV remains unmeasured without access.
+- Full verification after the protocol additions: 1,179 tests passed / 3 skipped and production QA 15/15. Execution segments disclose the protected-noop classification correction; scored corpus, versions, settings and timing boundaries were retained.
+
 ### Documentation audit
 - Make the pending GitHub tag/Release explicit and pin installation to the reviewed 1.4.1 source commit, so quickstart works before publication.
 - Use repository URLs in release notes so links also work when copied to the GitHub release page.
@@ -56,7 +66,7 @@ intentionally change; this is not a byte-identical guarantee for every input.
 - Package metadata, public `__version__` and receipt `ENGINE_VERSION` now identify 1.4.1. The helper version test compares public versions rather than pinning an old release.
 - Re-ran on 2026-10-12 after file-input hardening: 1,172 pytest tests passed, 3 skipped; production QA 15/15; all five budget ratios retain gold with zero forbidden leaks. Mean character savings remain 77.3% / 68.4% / 61.2% / 41.5% / 24.9%.
 - Updated `production-qa-v3-results.json` with release-run timings: large synthetic document 99.5% estimated token savings within its 1,200 ms CPU-time gate. Timings vary by machine; the latest run is recorded above.
-- Built the 1.4.1 wheel and source distribution. Historical v1.2.0/v1.3.0 external comparisons were not re-run.
+- Built the 1.4.1 wheel and source distribution. The initial packaging audit did not rerun external comparison arms; the later fresh v1.4.1 comparison is recorded above.
 
 
 ## [1.4.0] - 2026-10-06

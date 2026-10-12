@@ -1,0 +1,2830 @@
+{
+  "schema": "tameru-comparison/2",
+  "tameru_version": "1.4.1",
+  "run_at_utc": "2026-10-12T08:00:50.467228+00:00",
+  "source_commit": "13f9b51053776fefcb08f53afac8a52eea56ec7d",
+  "runner_sha256": "d8e433e48781f58a450f611c79a725bc32f651ed99fe844a0fae0b8ebc53d827",
+  "corpus_sha256": "46c2c8bc9fe5795e363af54e673fd93712cc959457fc871c870c39df4c2d09d4",
+  "protocol": {
+    "common_cases": [
+      "lexical_distractor",
+      "multi_hop_chain",
+      "current_value",
+      "negation_override",
+      "no_marker_keeps_both",
+      "evidence_chain_holdout",
+      "git_log",
+      "npm_log",
+      "jp_musubi",
+      "zh_needle",
+      "ar_needle",
+      "travis_yaml",
+      "excluded_sample",
+      "grep_saturated_command",
+      "pytest_captured_blank_lines",
+      "numbered_source"
+    ],
+    "warmups_per_case": 1,
+    "timed_runs_per_case": 3,
+    "timing": "median wall time of complete calls; imports/model load and warmup excluded",
+    "savings": "arithmetic mean character savings per common answer case",
+    "tameru": {
+      "ccr": false,
+      "citations": true,
+      "strategy": "extract"
+    },
+    "lcc": {
+      "marker": false,
+      "max_workers": 1,
+      "other_options": "defaults"
+    },
+    "headroom": "Rust TextCrusher defaults; full Headroom router not tested",
+    "tfidf": "ASCII paragraph retrieval, first paragraph retained; full scoring timed",
+    "laya": {
+      "model": "convaiinnovations/laya-multilingual",
+      "revision": "1720e3e3357cfe1e281542e223f8273b0890ca34",
+      "device": "cpu"
+    },
+    "retention": "worst required/forbidden string result across warmup and all timed outputs"
+  },
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "cpu_count": 9,
+    "packages": {
+      "Jinja2": "3.1.6",
+      "MarkupSafe": "3.0.4",
+      "PyYAML": "6.0.3",
+      "Pygments": "2.21.0",
+      "aiohappyeyeballs": "2.7.1",
+      "aiohttp": "3.14.5",
+      "aiosignal": "1.4.0",
+      "annotated-doc": "0.0.5",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "ast-grep-cli": "0.50.0",
+      "attrs": "26.1.0",
+      "boto3": "1.43.111",
+      "botocore": "1.43.111",
+      "build": "1.6.1",
+      "certifi": "2026.7.22",
+      "charset-normalizer": "3.5.2",
+      "click": "8.5.0",
+      "distro": "1.9.0",
+      "fastuuid": "0.14.0",
+      "filelock": "3.32.7",
+      "frozenlist": "1.8.0",
+      "fsspec": "2026.9.0",
+      "h11": "0.16.0",
+      "h2": "4.4.1",
+      "headroom-ai": "0.40.0",
+      "hf-xet": "1.7.0",
+      "hpack": "4.2.0",
+      "httpcore": "1.0.9",
+      "httpx": "0.28.1",
+      "huggingface_hub": "1.33.0",
+      "hyperframe": "6.1.0",
+      "hypothesis": "6.169.0",
+      "idna": "3.20",
+      "importlib_metadata": "8.9.0",
+      "iniconfig": "2.3.1",
+      "jiter": "0.17.0",
+      "jmespath": "1.1.0",
+      "jsonschema": "4.26.0",
+      "jsonschema-specifications": "2025.9.1",
+      "laya": "0.4.4",
+      "litellm": "1.105.0",
+      "local-context-compiler": "1.0.0",
+      "markdown-it-py": "4.2.0",
+      "mdurl": "0.1.2",
+      "mpmath": "1.3.0",
+      "multidict": "7.1.0",
+      "networkx": "3.6.1",
+      "numpy": "2.5.4",
+      "openai": "2.54.0",
+      "opentelemetry-api": "1.45.1",
+      "packaging": "26.3",
+      "pip": "25.0.1",
+      "pluggy": "1.6.0",
+      "propcache": "0.5.4",
+      "pydantic": "2.14.1",
+      "pydantic-settings": "2.15.0",
+      "pydantic_core": "2.50.1",
+      "pyproject_hooks": "1.3.3",
+      "pytest": "9.1.1",
+      "python-dateutil": "2.9.0.post0",
+      "python-dotenv": "1.2.4",
+      "referencing": "0.37.0",
+      "regex": "2026.9.29",
+      "requests": "2.34.2",
+      "rich": "15.0.0",
+      "rpds-py": "2026.9.1",
+      "ruff": "0.17.0",
+      "s3transfer": "0.19.2",
+      "safetensors": "0.8.0",
+      "setuptools": "78.1.0",
+      "shellingham": "1.5.4",
+      "six": "1.17.0",
+      "sniffio": "1.3.1",
+      "socksio": "1.0.0",
+      "sortedcontainers": "2.4.0",
+      "sympy": "1.14.0",
+      "tiktoken": "0.14.0",
+      "tokenizers": "0.23.3",
+      "tomlkit": "0.15.1",
+      "torch": "2.14.1+cpu",
+      "tqdm": "4.70.1",
+      "transformers": "5.19.0",
+      "truststore": "0.10.4",
+      "typer": "0.27.3",
+      "typing-inspection": "0.4.4",
+      "typing_extensions": "4.16.0",
+      "urllib3": "2.8.0",
+      "wheel": "0.48.0",
+      "yarl": "1.25.1",
+      "zipp": "4.1.1"
+    },
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "cpu_quota": "800000 100000",
+    "thread_settings": {
+      "OMP_NUM_THREADS": "8",
+      "MKL_NUM_THREADS": "8",
+      "RAYON_NUM_THREADS": "8"
+    }
+  },
+  "source_pins": {
+    "lcc": "16f0ddf2b136154e5c80301237d3c860df42baac",
+    "laya": "682ac6719faa5b1c04b529501feb93e58ee91f3d"
+  },
+  "cases": [
+    {
+      "name": "lexical_distractor",
+      "input_chars": 5443,
+      "input_sha256": "979be043d647c95e37f0e22f3f78f38b9a5d9457ac296cebebc153063dfbb33c",
+      "query": "What is the backup host for the lunar warehouse?",
+      "gold": [
+        "DB-77-Z"
+      ],
+      "forbid": [
+        "glossary"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "multi_hop_chain",
+      "input_chars": 5342,
+      "input_sha256": "0baa94e00523c72048ae1e6d27912f9179581b12c38752adea0da89c53114958",
+      "query": "Which database endpoint does Project Orion use?",
+      "gold": [
+        "DB-EU-7"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "current_value",
+      "input_chars": 1867,
+      "input_sha256": "5bd67f88499399a0a26cc10e0c5384c9a358604614846fd931117b0ddd68abeb",
+      "query": "What is the current payment timeout?",
+      "gold": [
+        "5 seconds"
+      ],
+      "forbid": [
+        "config: payment timeout is 30 seconds"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "negation_override",
+      "input_chars": 1833,
+      "input_sha256": "4b9b34dbdd72acca9a952e288bcb3e6305a2c3e26abecf2d94bfd8a6546dbf08",
+      "query": "Is feature Falcon enabled now?",
+      "gold": [
+        "not enabled"
+      ],
+      "forbid": [
+        "runbook: feature Falcon is enabled"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "no_marker_keeps_both",
+      "input_chars": 1842,
+      "input_sha256": "6aa273d37264a59670862a352edc643f4ec67540304b60e1dd5d7c4d5cbe2a9c",
+      "query": "What is the payment timeout?",
+      "gold": [
+        "30 seconds"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "evidence_chain_holdout",
+      "input_chars": 7128,
+      "input_sha256": "d44a10e2266d1ad6250a36356058d26dd5cd6114bb7b3aa08dae0d2d3f3fbb7b",
+      "query": "What checksum belongs to the current release alias?",
+      "gold": [
+        "SHA-ABC-991",
+        "RLS-884",
+        "Bluebird"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "git_log",
+      "input_chars": 8036,
+      "input_sha256": "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+      "query": "which commit stopped deleted profiles coming back?",
+      "gold": [
+        "2038d4034d"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "npm_log",
+      "input_chars": 4593,
+      "input_sha256": "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+      "query": "which playwright version did npm exec request?",
+      "gold": [
+        "playwright@1.55.0"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "jp_musubi",
+      "input_chars": 8023,
+      "input_sha256": "aba86061f3b7dcb0bc540014c2aad920612641ad204aa18b007c2d123324b817",
+      "query": "Ideogram 4のDiTは何層ですか？",
+      "gold": [
+        "34層"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "zh_needle",
+      "input_chars": 561,
+      "input_sha256": "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+      "query": "月面仓库的备份主机是哪一台？",
+      "gold": [
+        "DB-ZH-42"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "ar_needle",
+      "input_chars": 1139,
+      "input_sha256": "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+      "query": "ما هو مضيف النسخ الاحتياطي؟",
+      "gold": [
+        "DB-AR-77"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "travis_yaml",
+      "input_chars": 2691,
+      "input_sha256": "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+      "query": "what apt distro and compiler language is this travis job on?",
+      "gold": [
+        "dist: xenial",
+        "language: c"
+      ],
+      "forbid": [
+        "libenchant-dev"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "large_doc_perf",
+      "input_chars": 502279,
+      "input_sha256": "9982fa972f49650df24c287a87f5513610aeffc648f460c5f9cb69f2be2f45b6",
+      "query": "which region completed stage 3?",
+      "gold": [],
+      "forbid": [],
+      "scope": "robustness"
+    },
+    {
+      "name": "empty_query_failopen",
+      "input_chars": 61832,
+      "input_sha256": "296cf42815e68e100ead3e88fbe118fca504c62f5d38dceab2492d1cf5a3161a",
+      "query": "",
+      "gold": [],
+      "forbid": [],
+      "scope": "robustness"
+    },
+    {
+      "name": "excluded_sample",
+      "input_chars": 1872,
+      "input_sha256": "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+      "query": "what is the database host? use operational config only",
+      "gold": [
+        "DB-PROD-11"
+      ],
+      "forbid": [
+        "EXCLUDED-HOST"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "grep_saturated_command",
+      "input_chars": 8342,
+      "input_sha256": "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+      "query": "rg -n InsufficientStock; where is InsufficientStock defined?",
+      "gold": [
+        "class InsufficientStock(RuntimeError):"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "pytest_captured_blank_lines",
+      "input_chars": 5070,
+      "input_sha256": "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+      "query": "Why did test_order fail?",
+      "gold": [
+        "assert 'pending' == 'paid'",
+        "DB-PAY-17",
+        "WARNING app.order retry budget exhausted",
+        "FAILED tests/test_orders.py::test_order"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "numbered_source",
+      "input_chars": 16580,
+      "input_sha256": "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+      "query": "what does handler_60 do?",
+      "gold": [
+        "def handler_60(request, context=None):",
+        "value = request.get('key_60', 60), context",
+        "return value[0] + 60",
+        "handler_60-done"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    }
+  ],
+  "arms": {
+    "tameru": {
+      "status": "complete",
+      "results": {
+        "lexical_distractor": {
+          "status": "measured",
+          "output_chars": 175,
+          "output_sha256": "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+          "savings_pct": 96.7849,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 14.4594,
+          "latency_samples_ms": [
+            14.2173,
+            15.9763,
+            14.4594
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "multi_hop_chain": {
+          "status": "measured",
+          "output_chars": 266,
+          "output_sha256": "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+          "savings_pct": 95.0206,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 10.8416,
+          "latency_samples_ms": [
+            10.8416,
+            14.8335,
+            10.8226
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "current_value": {
+          "status": "measured",
+          "output_chars": 166,
+          "output_sha256": "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+          "savings_pct": 91.1087,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 5.5802,
+          "latency_samples_ms": [
+            5.5802,
+            6.3344,
+            4.8576
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "negation_override": {
+          "status": "measured",
+          "output_chars": 138,
+          "output_sha256": "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+          "savings_pct": 92.4714,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 4.9751,
+          "latency_samples_ms": [
+            4.9751,
+            4.8685,
+            5.9275
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "no_marker_keeps_both": {
+          "status": "measured",
+          "output_chars": 195,
+          "output_sha256": "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+          "savings_pct": 89.4137,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 5.255,
+          "latency_samples_ms": [
+            5.255,
+            5.4436,
+            4.6967
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "evidence_chain_holdout": {
+          "status": "measured",
+          "output_chars": 295,
+          "output_sha256": "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+          "savings_pct": 95.8614,
+          "gold_kept": 3,
+          "gold_total": 3,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 15.5624,
+          "latency_samples_ms": [
+            14.5096,
+            15.5624,
+            15.9249
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "git_log": {
+          "status": "measured",
+          "output_chars": 487,
+          "output_sha256": "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+          "savings_pct": 93.9398,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 56.1868,
+          "latency_samples_ms": [
+            73.8473,
+            56.1868,
+            50.0428
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "npm_log": {
+          "status": "measured",
+          "output_chars": 3192,
+          "output_sha256": "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+          "savings_pct": 30.5029,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 16.3667,
+          "latency_samples_ms": [
+            13.7937,
+            16.3667,
+            20.6326
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "jp_musubi": {
+          "status": "measured",
+          "output_chars": 5193,
+          "output_sha256": "b95a4caf6f3cac4c268b350cff104624f67878a7fae91513e8783b2ee4119179",
+          "savings_pct": 35.2736,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 154.1503,
+          "latency_samples_ms": [
+            154.8749,
+            146.3596,
+            154.1503
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b95a4caf6f3cac4c268b350cff104624f67878a7fae91513e8783b2ee4119179",
+            "b95a4caf6f3cac4c268b350cff104624f67878a7fae91513e8783b2ee4119179",
+            "b95a4caf6f3cac4c268b350cff104624f67878a7fae91513e8783b2ee4119179",
+            "b95a4caf6f3cac4c268b350cff104624f67878a7fae91513e8783b2ee4119179"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "zh_needle": {
+          "status": "measured",
+          "output_chars": 60,
+          "output_sha256": "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+          "savings_pct": 89.3048,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 13.9862,
+          "latency_samples_ms": [
+            16.7131,
+            13.3,
+            13.9862
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "ar_needle": {
+          "status": "measured",
+          "output_chars": 125,
+          "output_sha256": "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+          "savings_pct": 89.0255,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 24.1316,
+          "latency_samples_ms": [
+            24.1316,
+            31.7763,
+            21.8534
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "travis_yaml": {
+          "status": "measured",
+          "output_chars": 966,
+          "output_sha256": "396c4f41485a2165bdfaf4622fa5fa0a746fad033941bf9ff2023ab2ae3d2d01",
+          "savings_pct": 64.1026,
+          "gold_kept": 2,
+          "gold_total": 2,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 11.483,
+          "latency_samples_ms": [
+            9.9142,
+            11.483,
+            13.8801
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "396c4f41485a2165bdfaf4622fa5fa0a746fad033941bf9ff2023ab2ae3d2d01",
+            "396c4f41485a2165bdfaf4622fa5fa0a746fad033941bf9ff2023ab2ae3d2d01",
+            "396c4f41485a2165bdfaf4622fa5fa0a746fad033941bf9ff2023ab2ae3d2d01",
+            "396c4f41485a2165bdfaf4622fa5fa0a746fad033941bf9ff2023ab2ae3d2d01"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "large_doc_perf": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "empty_query_failopen": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "excluded_sample": {
+          "status": "measured",
+          "output_chars": 232,
+          "output_sha256": "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+          "savings_pct": 87.6068,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 9.5094,
+          "latency_samples_ms": [
+            7.8048,
+            10.8699,
+            9.5094
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "grep_saturated_command": {
+          "status": "measured",
+          "output_chars": 1682,
+          "output_sha256": "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+          "savings_pct": 79.837,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 11.6797,
+          "latency_samples_ms": [
+            16.1065,
+            11.6797,
+            11.0224
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "pytest_captured_blank_lines": {
+          "status": "measured",
+          "output_chars": 957,
+          "output_sha256": "414a179a2843a0d4b4ea4f8fe24e0fa0070544db37cc67a299d483af899922c9",
+          "savings_pct": 81.1243,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 6.4631,
+          "latency_samples_ms": [
+            6.4631,
+            5.7353,
+            6.9296
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "414a179a2843a0d4b4ea4f8fe24e0fa0070544db37cc67a299d483af899922c9",
+            "414a179a2843a0d4b4ea4f8fe24e0fa0070544db37cc67a299d483af899922c9",
+            "414a179a2843a0d4b4ea4f8fe24e0fa0070544db37cc67a299d483af899922c9",
+            "414a179a2843a0d4b4ea4f8fe24e0fa0070544db37cc67a299d483af899922c9"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "numbered_source": {
+          "status": "measured",
+          "output_chars": 246,
+          "output_sha256": "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+          "savings_pct": 98.5163,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 34.6259,
+          "latency_samples_ms": [
+            34.6259,
+            27.7492,
+            36.8972
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        }
+      },
+      "common_summary": {
+        "cases": 16,
+        "gold_kept": 25,
+        "gold_total": 25,
+        "clean_cases": 16,
+        "forbid_leaks": 0,
+        "mean_character_savings_pct": 81.8684,
+        "median_wall_ms": 12.833,
+        "deterministic": true
+      }
+    },
+    "lcc-mech": {
+      "status": "complete",
+      "results": {
+        "lexical_distractor": {
+          "status": "measured",
+          "output_chars": 185,
+          "output_sha256": "46ac27d3a1deafb575187be0db73444e831aae2ea288efe5dfe32749f521749a",
+          "savings_pct": 96.6011,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "glossary"
+          ],
+          "latency_ms": 9.9818,
+          "latency_samples_ms": [
+            11.2907,
+            9.9818,
+            9.3447
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "46ac27d3a1deafb575187be0db73444e831aae2ea288efe5dfe32749f521749a",
+            "46ac27d3a1deafb575187be0db73444e831aae2ea288efe5dfe32749f521749a",
+            "46ac27d3a1deafb575187be0db73444e831aae2ea288efe5dfe32749f521749a",
+            "46ac27d3a1deafb575187be0db73444e831aae2ea288efe5dfe32749f521749a"
+          ],
+          "returned_original": false,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "multi_hop_chain": {
+          "status": "measured",
+          "output_chars": 85,
+          "output_sha256": "e9c76d7c9aaa84c3d91e51d6baf535a744d6d8909153278071efb88dd3a1e22c",
+          "savings_pct": 98.4088,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 9.8533,
+          "latency_samples_ms": [
+            10.8544,
+            8.9821,
+            9.8533
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "e9c76d7c9aaa84c3d91e51d6baf535a744d6d8909153278071efb88dd3a1e22c",
+            "e9c76d7c9aaa84c3d91e51d6baf535a744d6d8909153278071efb88dd3a1e22c",
+            "e9c76d7c9aaa84c3d91e51d6baf535a744d6d8909153278071efb88dd3a1e22c",
+            "e9c76d7c9aaa84c3d91e51d6baf535a744d6d8909153278071efb88dd3a1e22c"
+          ],
+          "returned_original": false,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "current_value": {
+          "status": "measured",
+          "output_chars": 129,
+          "output_sha256": "a272cf1fb1b7abc8ea5e876ca53a3134e6b4da3b9f4b6e47f9a9a67fb790f67e",
+          "savings_pct": 93.0905,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "config: payment timeout is 30 seconds"
+          ],
+          "latency_ms": 5.2675,
+          "latency_samples_ms": [
+            6.3984,
+            4.7376,
+            5.2675
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "a272cf1fb1b7abc8ea5e876ca53a3134e6b4da3b9f4b6e47f9a9a67fb790f67e",
+            "a272cf1fb1b7abc8ea5e876ca53a3134e6b4da3b9f4b6e47f9a9a67fb790f67e",
+            "a272cf1fb1b7abc8ea5e876ca53a3134e6b4da3b9f4b6e47f9a9a67fb790f67e",
+            "a272cf1fb1b7abc8ea5e876ca53a3134e6b4da3b9f4b6e47f9a9a67fb790f67e"
+          ],
+          "returned_original": false,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "negation_override": {
+          "status": "measured",
+          "output_chars": 95,
+          "output_sha256": "a3875a002e72e12d2539d297adca0020e4090f75cc54435e46b2ac1b8abdf595",
+          "savings_pct": 94.8172,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "runbook: feature Falcon is enabled"
+          ],
+          "latency_ms": 4.1006,
+          "latency_samples_ms": [
+            4.1624,
+            4.1006,
+            3.993
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "a3875a002e72e12d2539d297adca0020e4090f75cc54435e46b2ac1b8abdf595",
+            "a3875a002e72e12d2539d297adca0020e4090f75cc54435e46b2ac1b8abdf595",
+            "a3875a002e72e12d2539d297adca0020e4090f75cc54435e46b2ac1b8abdf595",
+            "a3875a002e72e12d2539d297adca0020e4090f75cc54435e46b2ac1b8abdf595"
+          ],
+          "returned_original": false,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "no_marker_keeps_both": {
+          "status": "measured",
+          "output_chars": 104,
+          "output_sha256": "56f8be318756712f81e87490df735b0444f08a1376520cd63b4de358f5a5c553",
+          "savings_pct": 94.354,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 4.4987,
+          "latency_samples_ms": [
+            4.0257,
+            4.4987,
+            5.4367
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "56f8be318756712f81e87490df735b0444f08a1376520cd63b4de358f5a5c553",
+            "56f8be318756712f81e87490df735b0444f08a1376520cd63b4de358f5a5c553",
+            "56f8be318756712f81e87490df735b0444f08a1376520cd63b4de358f5a5c553",
+            "56f8be318756712f81e87490df735b0444f08a1376520cd63b4de358f5a5c553"
+          ],
+          "returned_original": false,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "evidence_chain_holdout": {
+          "status": "measured",
+          "output_chars": 111,
+          "output_sha256": "8e781fd3e387a8da2443f9f0a3b8dc80bb5243951d7c0ee6823680cdcbd5c75b",
+          "savings_pct": 98.4428,
+          "gold_kept": 3,
+          "gold_total": 3,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 14.3282,
+          "latency_samples_ms": [
+            12.372,
+            14.3282,
+            15.9867
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "8e781fd3e387a8da2443f9f0a3b8dc80bb5243951d7c0ee6823680cdcbd5c75b",
+            "8e781fd3e387a8da2443f9f0a3b8dc80bb5243951d7c0ee6823680cdcbd5c75b",
+            "8e781fd3e387a8da2443f9f0a3b8dc80bb5243951d7c0ee6823680cdcbd5c75b",
+            "8e781fd3e387a8da2443f9f0a3b8dc80bb5243951d7c0ee6823680cdcbd5c75b"
+          ],
+          "returned_original": false,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "git_log": {
+          "status": "measured",
+          "output_chars": 8036,
+          "output_sha256": "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 10.1259,
+          "latency_samples_ms": [
+            10.1259,
+            10.0788,
+            10.697
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "npm_log": {
+          "status": "measured",
+          "output_chars": 4593,
+          "output_sha256": "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 6.3082,
+          "latency_samples_ms": [
+            6.5236,
+            5.4169,
+            6.3082
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "jp_musubi": {
+          "status": "measured",
+          "output_chars": 7576,
+          "output_sha256": "a8136c9baa48d32f811a9c496eb77b3b55fe9bf32b085bde7380c6b57f98ba2f",
+          "savings_pct": 5.5715,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 12.9121,
+          "latency_samples_ms": [
+            12.3783,
+            14.3401,
+            12.9121
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "a8136c9baa48d32f811a9c496eb77b3b55fe9bf32b085bde7380c6b57f98ba2f",
+            "a8136c9baa48d32f811a9c496eb77b3b55fe9bf32b085bde7380c6b57f98ba2f",
+            "a8136c9baa48d32f811a9c496eb77b3b55fe9bf32b085bde7380c6b57f98ba2f",
+            "a8136c9baa48d32f811a9c496eb77b3b55fe9bf32b085bde7380c6b57f98ba2f"
+          ],
+          "returned_original": false,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "zh_needle": {
+          "status": "measured",
+          "output_chars": 561,
+          "output_sha256": "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 3.1667,
+          "latency_samples_ms": [
+            3.3555,
+            3.1667,
+            3.0775
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "ar_needle": {
+          "status": "measured",
+          "output_chars": 1139,
+          "output_sha256": "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 3.4222,
+          "latency_samples_ms": [
+            3.4222,
+            3.0744,
+            3.9536
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "travis_yaml": {
+          "status": "measured",
+          "output_chars": 2691,
+          "output_sha256": "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+          "savings_pct": 0.0,
+          "gold_kept": 2,
+          "gold_total": 2,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "libenchant-dev"
+          ],
+          "latency_ms": 5.8677,
+          "latency_samples_ms": [
+            4.6404,
+            5.9047,
+            5.8677
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "large_doc_perf": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "empty_query_failopen": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "excluded_sample": {
+          "status": "measured",
+          "output_chars": 1872,
+          "output_sha256": "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "EXCLUDED-HOST"
+          ],
+          "latency_ms": 4.6081,
+          "latency_samples_ms": [
+            5.7921,
+            4.382,
+            4.6081
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "grep_saturated_command": {
+          "status": "measured",
+          "output_chars": 8342,
+          "output_sha256": "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 7.8513,
+          "latency_samples_ms": [
+            9.6284,
+            7.8513,
+            7.5535
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "pytest_captured_blank_lines": {
+          "status": "measured",
+          "output_chars": 5070,
+          "output_sha256": "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 7.6239,
+          "latency_samples_ms": [
+            10.2123,
+            7.6239,
+            6.6722
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        },
+        "numbered_source": {
+          "status": "measured",
+          "output_chars": 16580,
+          "output_sha256": "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 14.6415,
+          "latency_samples_ms": [
+            16.6861,
+            13.1235,
+            14.6415
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "model": null
+        }
+      },
+      "common_summary": {
+        "cases": 16,
+        "gold_kept": 25,
+        "gold_total": 25,
+        "clean_cases": 11,
+        "forbid_leaks": 5,
+        "mean_character_savings_pct": 36.3304,
+        "median_wall_ms": 6.9661,
+        "deterministic": true
+      }
+    },
+    "headroom": {
+      "status": "complete",
+      "results": {
+        "lexical_distractor": {
+          "status": "measured",
+          "output_chars": 2695,
+          "output_sha256": "a4f3aa88ddc9ff419cc69040a1f86f755fd6f7d22bd87c0724ad074c79d3c6a9",
+          "savings_pct": 50.4869,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "glossary"
+          ],
+          "latency_ms": 0.553,
+          "latency_samples_ms": [
+            0.5518,
+            0.6417,
+            0.553
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "a4f3aa88ddc9ff419cc69040a1f86f755fd6f7d22bd87c0724ad074c79d3c6a9",
+            "a4f3aa88ddc9ff419cc69040a1f86f755fd6f7d22bd87c0724ad074c79d3c6a9",
+            "a4f3aa88ddc9ff419cc69040a1f86f755fd6f7d22bd87c0724ad074c79d3c6a9",
+            "a4f3aa88ddc9ff419cc69040a1f86f755fd6f7d22bd87c0724ad074c79d3c6a9"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "multi_hop_chain": {
+          "status": "measured",
+          "output_chars": 2681,
+          "output_sha256": "bc67c3c4fd7c5702b69e46427d8dda0b4cb80d07628250a2c2012f8e506f83e8",
+          "savings_pct": 49.8128,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.53,
+          "latency_samples_ms": [
+            0.4905,
+            0.53,
+            0.6257
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "bc67c3c4fd7c5702b69e46427d8dda0b4cb80d07628250a2c2012f8e506f83e8",
+            "bc67c3c4fd7c5702b69e46427d8dda0b4cb80d07628250a2c2012f8e506f83e8",
+            "bc67c3c4fd7c5702b69e46427d8dda0b4cb80d07628250a2c2012f8e506f83e8",
+            "bc67c3c4fd7c5702b69e46427d8dda0b4cb80d07628250a2c2012f8e506f83e8"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "current_value": {
+          "status": "measured",
+          "output_chars": 986,
+          "output_sha256": "d123413fd5e5204a5862931d6d3a860926006a46110f456f6b81e0287e9593d6",
+          "savings_pct": 47.188,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "config: payment timeout is 30 seconds"
+          ],
+          "latency_ms": 0.1785,
+          "latency_samples_ms": [
+            0.1785,
+            0.166,
+            0.245
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "d123413fd5e5204a5862931d6d3a860926006a46110f456f6b81e0287e9593d6",
+            "d123413fd5e5204a5862931d6d3a860926006a46110f456f6b81e0287e9593d6",
+            "d123413fd5e5204a5862931d6d3a860926006a46110f456f6b81e0287e9593d6",
+            "d123413fd5e5204a5862931d6d3a860926006a46110f456f6b81e0287e9593d6"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "negation_override": {
+          "status": "measured",
+          "output_chars": 952,
+          "output_sha256": "f59ba2658df68640c7319228e199071b4ce5d9f0b294b870d75da9e0d459f8f4",
+          "savings_pct": 48.0633,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "runbook: feature Falcon is enabled"
+          ],
+          "latency_ms": 0.1693,
+          "latency_samples_ms": [
+            0.4512,
+            0.1693,
+            0.1578
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "f59ba2658df68640c7319228e199071b4ce5d9f0b294b870d75da9e0d459f8f4",
+            "f59ba2658df68640c7319228e199071b4ce5d9f0b294b870d75da9e0d459f8f4",
+            "f59ba2658df68640c7319228e199071b4ce5d9f0b294b870d75da9e0d459f8f4",
+            "f59ba2658df68640c7319228e199071b4ce5d9f0b294b870d75da9e0d459f8f4"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "no_marker_keeps_both": {
+          "status": "measured",
+          "output_chars": 961,
+          "output_sha256": "f95f1e911737f49b68ddaecb00d4b025e38ffb43b4dfc825eb2546b80a4b099a",
+          "savings_pct": 47.8284,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.1956,
+          "latency_samples_ms": [
+            0.1956,
+            0.1853,
+            0.222
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "f95f1e911737f49b68ddaecb00d4b025e38ffb43b4dfc825eb2546b80a4b099a",
+            "f95f1e911737f49b68ddaecb00d4b025e38ffb43b4dfc825eb2546b80a4b099a",
+            "f95f1e911737f49b68ddaecb00d4b025e38ffb43b4dfc825eb2546b80a4b099a",
+            "f95f1e911737f49b68ddaecb00d4b025e38ffb43b4dfc825eb2546b80a4b099a"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "evidence_chain_holdout": {
+          "status": "measured",
+          "output_chars": 3576,
+          "output_sha256": "fb07626128d61227aea001fc947f3ef5cc98c9edcea243d7153697b90e94f223",
+          "savings_pct": 49.8316,
+          "gold_kept": 3,
+          "gold_total": 3,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.7049,
+          "latency_samples_ms": [
+            0.6674,
+            0.7049,
+            0.7347
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "fb07626128d61227aea001fc947f3ef5cc98c9edcea243d7153697b90e94f223",
+            "fb07626128d61227aea001fc947f3ef5cc98c9edcea243d7153697b90e94f223",
+            "fb07626128d61227aea001fc947f3ef5cc98c9edcea243d7153697b90e94f223",
+            "fb07626128d61227aea001fc947f3ef5cc98c9edcea243d7153697b90e94f223"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "git_log": {
+          "status": "measured",
+          "output_chars": 4027,
+          "output_sha256": "008edd7ccf460845afbb2e3b42a188271f22e0dbef8524e04d558f0df40c9e6c",
+          "savings_pct": 49.888,
+          "gold_kept": 0,
+          "gold_total": 1,
+          "missing_gold": [
+            "2038d4034d"
+          ],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 1.0808,
+          "latency_samples_ms": [
+            1.0049,
+            1.0808,
+            1.5581
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "008edd7ccf460845afbb2e3b42a188271f22e0dbef8524e04d558f0df40c9e6c",
+            "008edd7ccf460845afbb2e3b42a188271f22e0dbef8524e04d558f0df40c9e6c",
+            "008edd7ccf460845afbb2e3b42a188271f22e0dbef8524e04d558f0df40c9e6c",
+            "008edd7ccf460845afbb2e3b42a188271f22e0dbef8524e04d558f0df40c9e6c"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "npm_log": {
+          "status": "measured",
+          "output_chars": 2351,
+          "output_sha256": "66a81db7cf721741a17c90e1f129c8b6d2579976e852ecaded6eca46735b5764",
+          "savings_pct": 48.8134,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.579,
+          "latency_samples_ms": [
+            0.579,
+            0.7816,
+            0.5425
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "66a81db7cf721741a17c90e1f129c8b6d2579976e852ecaded6eca46735b5764",
+            "66a81db7cf721741a17c90e1f129c8b6d2579976e852ecaded6eca46735b5764",
+            "66a81db7cf721741a17c90e1f129c8b6d2579976e852ecaded6eca46735b5764",
+            "66a81db7cf721741a17c90e1f129c8b6d2579976e852ecaded6eca46735b5764"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "jp_musubi": {
+          "status": "measured",
+          "output_chars": 4026,
+          "output_sha256": "aeb5e74c7be9455dc07273cee82aea475fbf5e51070f7007d867e7bcea0f34c9",
+          "savings_pct": 49.8193,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 1.8752,
+          "latency_samples_ms": [
+            1.8649,
+            2.099,
+            1.8752
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "aeb5e74c7be9455dc07273cee82aea475fbf5e51070f7007d867e7bcea0f34c9",
+            "aeb5e74c7be9455dc07273cee82aea475fbf5e51070f7007d867e7bcea0f34c9",
+            "aeb5e74c7be9455dc07273cee82aea475fbf5e51070f7007d867e7bcea0f34c9",
+            "aeb5e74c7be9455dc07273cee82aea475fbf5e51070f7007d867e7bcea0f34c9"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "zh_needle": {
+          "status": "measured",
+          "output_chars": 291,
+          "output_sha256": "d619b4a852275cc504181d074487d39a3192f9bb315eb0aa9c59fe514698c7b7",
+          "savings_pct": 48.1283,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.2371,
+          "latency_samples_ms": [
+            0.278,
+            0.2371,
+            0.2317
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "d619b4a852275cc504181d074487d39a3192f9bb315eb0aa9c59fe514698c7b7",
+            "d619b4a852275cc504181d074487d39a3192f9bb315eb0aa9c59fe514698c7b7",
+            "d619b4a852275cc504181d074487d39a3192f9bb315eb0aa9c59fe514698c7b7",
+            "d619b4a852275cc504181d074487d39a3192f9bb315eb0aa9c59fe514698c7b7"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "ar_needle": {
+          "status": "measured",
+          "output_chars": 599,
+          "output_sha256": "d4a9eba34324037f0720761ff86f11c961c3b504a839e3a9d06adae205f47b4c",
+          "savings_pct": 47.41,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.1937,
+          "latency_samples_ms": [
+            0.229,
+            0.1937,
+            0.1903
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "d4a9eba34324037f0720761ff86f11c961c3b504a839e3a9d06adae205f47b4c",
+            "d4a9eba34324037f0720761ff86f11c961c3b504a839e3a9d06adae205f47b4c",
+            "d4a9eba34324037f0720761ff86f11c961c3b504a839e3a9d06adae205f47b4c",
+            "d4a9eba34324037f0720761ff86f11c961c3b504a839e3a9d06adae205f47b4c"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "travis_yaml": {
+          "status": "measured",
+          "output_chars": 1178,
+          "output_sha256": "b6a57c8f7a41b0ff1c37fc2af849852f287383ac894a2cf2b979d22611271eff",
+          "savings_pct": 56.2245,
+          "gold_kept": 0,
+          "gold_total": 2,
+          "missing_gold": [
+            "dist: xenial",
+            "language: c"
+          ],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.3269,
+          "latency_samples_ms": [
+            0.5278,
+            0.3269,
+            0.3035
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b6a57c8f7a41b0ff1c37fc2af849852f287383ac894a2cf2b979d22611271eff",
+            "b6a57c8f7a41b0ff1c37fc2af849852f287383ac894a2cf2b979d22611271eff",
+            "b6a57c8f7a41b0ff1c37fc2af849852f287383ac894a2cf2b979d22611271eff",
+            "b6a57c8f7a41b0ff1c37fc2af849852f287383ac894a2cf2b979d22611271eff"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "large_doc_perf": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "empty_query_failopen": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "excluded_sample": {
+          "status": "measured",
+          "output_chars": 991,
+          "output_sha256": "761b458bb9f16599155d717488128677b1d4eceef05945855df286c7c78c5435",
+          "savings_pct": 47.062,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "EXCLUDED-HOST"
+          ],
+          "latency_ms": 0.1754,
+          "latency_samples_ms": [
+            0.3219,
+            0.1754,
+            0.1726
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "761b458bb9f16599155d717488128677b1d4eceef05945855df286c7c78c5435",
+            "761b458bb9f16599155d717488128677b1d4eceef05945855df286c7c78c5435",
+            "761b458bb9f16599155d717488128677b1d4eceef05945855df286c7c78c5435",
+            "761b458bb9f16599155d717488128677b1d4eceef05945855df286c7c78c5435"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "grep_saturated_command": {
+          "status": "measured",
+          "output_chars": 2666,
+          "output_sha256": "fb7c7bbf7c42a3f18232d7a006acf63522bb929398459c3526ca4c78a2c67db4",
+          "savings_pct": 68.0412,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.8201,
+          "latency_samples_ms": [
+            0.8855,
+            0.8201,
+            0.8148
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "fb7c7bbf7c42a3f18232d7a006acf63522bb929398459c3526ca4c78a2c67db4",
+            "fb7c7bbf7c42a3f18232d7a006acf63522bb929398459c3526ca4c78a2c67db4",
+            "fb7c7bbf7c42a3f18232d7a006acf63522bb929398459c3526ca4c78a2c67db4",
+            "fb7c7bbf7c42a3f18232d7a006acf63522bb929398459c3526ca4c78a2c67db4"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "pytest_captured_blank_lines": {
+          "status": "measured",
+          "output_chars": 2585,
+          "output_sha256": "756e35d821208cbcd1de5df9c8ea81489bac94895ae1d57ad3abcab39ccf3547",
+          "savings_pct": 49.0138,
+          "gold_kept": 3,
+          "gold_total": 4,
+          "missing_gold": [
+            "assert 'pending' == 'paid'"
+          ],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.4809,
+          "latency_samples_ms": [
+            0.4809,
+            0.5045,
+            0.4705
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "756e35d821208cbcd1de5df9c8ea81489bac94895ae1d57ad3abcab39ccf3547",
+            "756e35d821208cbcd1de5df9c8ea81489bac94895ae1d57ad3abcab39ccf3547",
+            "756e35d821208cbcd1de5df9c8ea81489bac94895ae1d57ad3abcab39ccf3547",
+            "756e35d821208cbcd1de5df9c8ea81489bac94895ae1d57ad3abcab39ccf3547"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        },
+        "numbered_source": {
+          "status": "measured",
+          "output_chars": 8252,
+          "output_sha256": "68074201b8c23b1f251fa6f36b600f040e7904bbbf0d5bc5d7cca47751b8dcd6",
+          "savings_pct": 50.2292,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 1.3995,
+          "latency_samples_ms": [
+            1.4639,
+            1.3995,
+            1.3674
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "68074201b8c23b1f251fa6f36b600f040e7904bbbf0d5bc5d7cca47751b8dcd6",
+            "68074201b8c23b1f251fa6f36b600f040e7904bbbf0d5bc5d7cca47751b8dcd6",
+            "68074201b8c23b1f251fa6f36b600f040e7904bbbf0d5bc5d7cca47751b8dcd6",
+            "68074201b8c23b1f251fa6f36b600f040e7904bbbf0d5bc5d7cca47751b8dcd6"
+          ],
+          "returned_original": false,
+          "provider": "headroom-textcrusher"
+        }
+      },
+      "common_summary": {
+        "cases": 16,
+        "gold_kept": 21,
+        "gold_total": 25,
+        "clean_cases": 9,
+        "forbid_leaks": 4,
+        "mean_character_savings_pct": 50.49,
+        "median_wall_ms": 0.5054,
+        "deterministic": true
+      }
+    },
+    "tfidf": {
+      "status": "complete",
+      "results": {
+        "lexical_distractor": {
+          "status": "measured",
+          "output_chars": 232,
+          "output_sha256": "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+          "savings_pct": 95.7376,
+          "gold_kept": 0,
+          "gold_total": 1,
+          "missing_gold": [
+            "DB-77-Z"
+          ],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "glossary"
+          ],
+          "latency_ms": 0.3641,
+          "latency_samples_ms": [
+            0.3641,
+            0.3804,
+            0.3565
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "multi_hop_chain": {
+          "status": "measured",
+          "output_chars": 169,
+          "output_sha256": "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+          "savings_pct": 96.8364,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.3499,
+          "latency_samples_ms": [
+            0.3499,
+            0.4501,
+            0.3472
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "current_value": {
+          "status": "measured",
+          "output_chars": 214,
+          "output_sha256": "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+          "savings_pct": 88.5378,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "config: payment timeout is 30 seconds"
+          ],
+          "latency_ms": 0.1175,
+          "latency_samples_ms": [
+            0.1239,
+            0.1175,
+            0.1168
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "negation_override": {
+          "status": "measured",
+          "output_chars": 180,
+          "output_sha256": "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+          "savings_pct": 90.18,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "runbook: feature Falcon is enabled"
+          ],
+          "latency_ms": 0.1116,
+          "latency_samples_ms": [
+            0.1772,
+            0.1116,
+            0.1058
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "no_marker_keeps_both": {
+          "status": "measured",
+          "output_chars": 189,
+          "output_sha256": "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+          "savings_pct": 89.7394,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.1072,
+          "latency_samples_ms": [
+            0.1124,
+            0.1072,
+            0.1059
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "evidence_chain_holdout": {
+          "status": "measured",
+          "output_chars": 157,
+          "output_sha256": "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+          "savings_pct": 97.7974,
+          "gold_kept": 3,
+          "gold_total": 3,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.4866,
+          "latency_samples_ms": [
+            0.5849,
+            0.4519,
+            0.4866
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "git_log": {
+          "status": "measured",
+          "output_chars": 8036,
+          "output_sha256": "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.2854,
+          "latency_samples_ms": [
+            0.3975,
+            0.2854,
+            0.2359
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "npm_log": {
+          "status": "measured",
+          "output_chars": 4593,
+          "output_sha256": "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.1072,
+          "latency_samples_ms": [
+            0.1072,
+            0.2321,
+            0.097
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "jp_musubi": {
+          "status": "measured",
+          "output_chars": 4608,
+          "output_sha256": "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+          "savings_pct": 42.5651,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.3271,
+          "latency_samples_ms": [
+            0.3342,
+            0.3088,
+            0.3271
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "zh_needle": {
+          "status": "measured",
+          "output_chars": 24,
+          "output_sha256": "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+          "savings_pct": 95.7219,
+          "gold_kept": 0,
+          "gold_total": 1,
+          "missing_gold": [
+            "DB-ZH-42"
+          ],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.0452,
+          "latency_samples_ms": [
+            0.1426,
+            0.0452,
+            0.0407
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "ar_needle": {
+          "status": "measured",
+          "output_chars": 51,
+          "output_sha256": "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+          "savings_pct": 95.5224,
+          "gold_kept": 0,
+          "gold_total": 1,
+          "missing_gold": [
+            "DB-AR-77"
+          ],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.0457,
+          "latency_samples_ms": [
+            0.1244,
+            0.0457,
+            0.045
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "travis_yaml": {
+          "status": "measured",
+          "output_chars": 1048,
+          "output_sha256": "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+          "savings_pct": 61.0554,
+          "gold_kept": 2,
+          "gold_total": 2,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "libenchant-dev"
+          ],
+          "latency_ms": 0.1089,
+          "latency_samples_ms": [
+            0.1446,
+            0.1089,
+            0.104
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "large_doc_perf": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "empty_query_failopen": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "excluded_sample": {
+          "status": "measured",
+          "output_chars": 1872,
+          "output_sha256": "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "EXCLUDED-HOST"
+          ],
+          "latency_ms": 0.1358,
+          "latency_samples_ms": [
+            0.1358,
+            0.1315,
+            0.1678
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "grep_saturated_command": {
+          "status": "measured",
+          "output_chars": 8342,
+          "output_sha256": "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.1201,
+          "latency_samples_ms": [
+            0.1201,
+            0.1464,
+            0.1145
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "pytest_captured_blank_lines": {
+          "status": "measured",
+          "output_chars": 5070,
+          "output_sha256": "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.1134,
+          "latency_samples_ms": [
+            0.1214,
+            0.1134,
+            0.1113
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "numbered_source": {
+          "status": "measured",
+          "output_chars": 16580,
+          "output_sha256": "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.415,
+          "latency_samples_ms": [
+            0.4936,
+            0.334,
+            0.415
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        }
+      },
+      "common_summary": {
+        "cases": 16,
+        "gold_kept": 22,
+        "gold_total": 25,
+        "clean_cases": 9,
+        "forbid_leaks": 5,
+        "mean_character_savings_pct": 53.3558,
+        "median_wall_ms": 0.1188,
+        "deterministic": true
+      }
+    },
+    "lcc-laya": {
+      "status": "complete",
+      "results": {
+        "lexical_distractor": {
+          "status": "measured",
+          "output_chars": 5443,
+          "output_sha256": "979be043d647c95e37f0e22f3f78f38b9a5d9457ac296cebebc153063dfbb33c",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "glossary"
+          ],
+          "latency_ms": 32828.9649,
+          "latency_samples_ms": [
+            30668.0042,
+            40051.9763,
+            32828.9649
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "979be043d647c95e37f0e22f3f78f38b9a5d9457ac296cebebc153063dfbb33c",
+            "979be043d647c95e37f0e22f3f78f38b9a5d9457ac296cebebc153063dfbb33c",
+            "979be043d647c95e37f0e22f3f78f38b9a5d9457ac296cebebc153063dfbb33c",
+            "979be043d647c95e37f0e22f3f78f38b9a5d9457ac296cebebc153063dfbb33c"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "multi_hop_chain": {
+          "status": "measured",
+          "output_chars": 4996,
+          "output_sha256": "39e9c1ebe44bd6372d2bb13d6c6341b86157be61c8d2db00953aead5f8eb3fff",
+          "savings_pct": 6.477,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 31624.6247,
+          "latency_samples_ms": [
+            28778.3743,
+            31624.6247,
+            42138.5951
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "39e9c1ebe44bd6372d2bb13d6c6341b86157be61c8d2db00953aead5f8eb3fff",
+            "39e9c1ebe44bd6372d2bb13d6c6341b86157be61c8d2db00953aead5f8eb3fff",
+            "39e9c1ebe44bd6372d2bb13d6c6341b86157be61c8d2db00953aead5f8eb3fff",
+            "39e9c1ebe44bd6372d2bb13d6c6341b86157be61c8d2db00953aead5f8eb3fff"
+          ],
+          "returned_original": false,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "current_value": {
+          "status": "measured",
+          "output_chars": 1521,
+          "output_sha256": "7b6111e039430edb31c321fac344847ceeb09fddfa158927f295a783ab278e7a",
+          "savings_pct": 18.5324,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "config: payment timeout is 30 seconds"
+          ],
+          "latency_ms": 7987.6323,
+          "latency_samples_ms": [
+            7896.3169,
+            11554.1079,
+            7987.6323
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "7b6111e039430edb31c321fac344847ceeb09fddfa158927f295a783ab278e7a",
+            "7b6111e039430edb31c321fac344847ceeb09fddfa158927f295a783ab278e7a",
+            "7b6111e039430edb31c321fac344847ceeb09fddfa158927f295a783ab278e7a",
+            "7b6111e039430edb31c321fac344847ceeb09fddfa158927f295a783ab278e7a"
+          ],
+          "returned_original": false,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "negation_override": {
+          "status": "measured",
+          "output_chars": 1487,
+          "output_sha256": "56407915219d85dc2f5c77cbbcaa316fc7f9decebb0c0cdd1a5d59a453e20c96",
+          "savings_pct": 18.8762,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "runbook: feature Falcon is enabled"
+          ],
+          "latency_ms": 9922.8541,
+          "latency_samples_ms": [
+            11884.3736,
+            9922.8541,
+            8086.991
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "56407915219d85dc2f5c77cbbcaa316fc7f9decebb0c0cdd1a5d59a453e20c96",
+            "56407915219d85dc2f5c77cbbcaa316fc7f9decebb0c0cdd1a5d59a453e20c96",
+            "56407915219d85dc2f5c77cbbcaa316fc7f9decebb0c0cdd1a5d59a453e20c96",
+            "56407915219d85dc2f5c77cbbcaa316fc7f9decebb0c0cdd1a5d59a453e20c96"
+          ],
+          "returned_original": false,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "no_marker_keeps_both": {
+          "status": "measured",
+          "output_chars": 280,
+          "output_sha256": "0c9ceefeb635ca061149c0fa4b3603043029cc23892333e85c9f65799e935cc0",
+          "savings_pct": 84.7991,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 10050.6646,
+          "latency_samples_ms": [
+            10050.6646,
+            8962.8876,
+            12663.8093
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "0c9ceefeb635ca061149c0fa4b3603043029cc23892333e85c9f65799e935cc0",
+            "0c9ceefeb635ca061149c0fa4b3603043029cc23892333e85c9f65799e935cc0",
+            "0c9ceefeb635ca061149c0fa4b3603043029cc23892333e85c9f65799e935cc0",
+            "0c9ceefeb635ca061149c0fa4b3603043029cc23892333e85c9f65799e935cc0"
+          ],
+          "returned_original": false,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "evidence_chain_holdout": {
+          "status": "measured",
+          "output_chars": 7128,
+          "output_sha256": "d44a10e2266d1ad6250a36356058d26dd5cd6114bb7b3aa08dae0d2d3f3fbb7b",
+          "savings_pct": 0.0,
+          "gold_kept": 3,
+          "gold_total": 3,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 41318.3002,
+          "latency_samples_ms": [
+            42570.5547,
+            40180.7071,
+            41318.3002
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "d44a10e2266d1ad6250a36356058d26dd5cd6114bb7b3aa08dae0d2d3f3fbb7b",
+            "d44a10e2266d1ad6250a36356058d26dd5cd6114bb7b3aa08dae0d2d3f3fbb7b",
+            "d44a10e2266d1ad6250a36356058d26dd5cd6114bb7b3aa08dae0d2d3f3fbb7b",
+            "d44a10e2266d1ad6250a36356058d26dd5cd6114bb7b3aa08dae0d2d3f3fbb7b"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "git_log": {
+          "status": "measured",
+          "output_chars": 8036,
+          "output_sha256": "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 1396.1407,
+          "latency_samples_ms": [
+            1635.2769,
+            1396.1407,
+            1317.2838
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "npm_log": {
+          "status": "measured",
+          "output_chars": 4593,
+          "output_sha256": "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 9.7102,
+          "latency_samples_ms": [
+            12.8332,
+            9.7102,
+            7.712
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "jp_musubi": {
+          "status": "measured",
+          "output_chars": 8023,
+          "output_sha256": "aba86061f3b7dcb0bc540014c2aad920612641ad204aa18b007c2d123324b817",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 31548.5992,
+          "latency_samples_ms": [
+            29628.9421,
+            31548.5992,
+            37406.6113
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "aba86061f3b7dcb0bc540014c2aad920612641ad204aa18b007c2d123324b817",
+            "aba86061f3b7dcb0bc540014c2aad920612641ad204aa18b007c2d123324b817",
+            "aba86061f3b7dcb0bc540014c2aad920612641ad204aa18b007c2d123324b817",
+            "aba86061f3b7dcb0bc540014c2aad920612641ad204aa18b007c2d123324b817"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "model": null
+        },
+        "zh_needle": {
+          "status": "measured",
+          "output_chars": 561,
+          "output_sha256": "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 4.0034,
+          "latency_samples_ms": [
+            6.0195,
+            3.9074,
+            4.0034
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+            "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "protected_noop": true,
+          "scoring_calls": 0,
+          "model": null
+        },
+        "ar_needle": {
+          "status": "measured",
+          "output_chars": 1139,
+          "output_sha256": "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 3.6495,
+          "latency_samples_ms": [
+            3.6495,
+            3.9615,
+            3.4779
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+            "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6"
+          ],
+          "returned_original": true,
+          "provider": "mechanical",
+          "degraded": false,
+          "protected_noop": true,
+          "scoring_calls": 0,
+          "model": null
+        },
+        "travis_yaml": {
+          "status": "measured",
+          "output_chars": 2691,
+          "output_sha256": "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+          "savings_pct": 0.0,
+          "gold_kept": 2,
+          "gold_total": 2,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "libenchant-dev"
+          ],
+          "latency_ms": 8194.5354,
+          "latency_samples_ms": [
+            8194.5354,
+            7986.2027,
+            9039.2071
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+            "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "protected_noop": false,
+          "scoring_calls": 1,
+          "model": null
+        },
+        "large_doc_perf": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "empty_query_failopen": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "excluded_sample": {
+          "status": "measured",
+          "output_chars": 1872,
+          "output_sha256": "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "EXCLUDED-HOST"
+          ],
+          "latency_ms": 9746.2435,
+          "latency_samples_ms": [
+            9061.726,
+            10282.424,
+            9746.2435
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "protected_noop": false,
+          "scoring_calls": 3,
+          "model": null
+        },
+        "grep_saturated_command": {
+          "status": "measured",
+          "output_chars": 8342,
+          "output_sha256": "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 1528.7575,
+          "latency_samples_ms": [
+            1910.5917,
+            1454.0964,
+            1528.7575
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "protected_noop": false,
+          "scoring_calls": 1,
+          "model": null
+        },
+        "pytest_captured_blank_lines": {
+          "status": "measured",
+          "output_chars": 5070,
+          "output_sha256": "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 690.5984,
+          "latency_samples_ms": [
+            449.301,
+            732.6177,
+            690.5984
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "protected_noop": false,
+          "scoring_calls": 1,
+          "model": null
+        },
+        "numbered_source": {
+          "status": "measured",
+          "output_chars": 16580,
+          "output_sha256": "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 14.7992,
+          "latency_samples_ms": [
+            15.2216,
+            14.7992,
+            13.5571
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6"
+          ],
+          "returned_original": true,
+          "provider": "laya",
+          "degraded": false,
+          "protected_noop": false,
+          "scoring_calls": 0,
+          "model": null
+        }
+      },
+      "common_summary": {
+        "cases": 16,
+        "gold_kept": 25,
+        "gold_total": 25,
+        "clean_cases": 11,
+        "forbid_leaks": 5,
+        "mean_character_savings_pct": 8.0428,
+        "median_wall_ms": 8091.0839,
+        "deterministic": true
+      }
+    },
+    "lcc-jev": {
+      "status": "unavailable",
+      "results": {},
+      "reason": "RuntimeError: JEV requires --include-jev and an existing TYPESAFE_API_KEY"
+    }
+  },
+  "execution_segments": [
+    {
+      "runner_sha256": "609e70842963d77975b44dab653df12446764285d991b8cc4784c85b2793c472",
+      "started_at_utc": "2026-10-12T08:00:50.467228+00:00",
+      "measured_cases": {
+        "tameru": [
+          "lexical_distractor",
+          "multi_hop_chain",
+          "current_value",
+          "negation_override",
+          "no_marker_keeps_both",
+          "evidence_chain_holdout",
+          "git_log",
+          "npm_log",
+          "jp_musubi",
+          "zh_needle",
+          "ar_needle",
+          "travis_yaml",
+          "excluded_sample",
+          "grep_saturated_command",
+          "pytest_captured_blank_lines",
+          "numbered_source"
+        ],
+        "lcc-mech": [
+          "lexical_distractor",
+          "multi_hop_chain",
+          "current_value",
+          "negation_override",
+          "no_marker_keeps_both",
+          "evidence_chain_holdout",
+          "git_log",
+          "npm_log",
+          "jp_musubi",
+          "zh_needle",
+          "ar_needle",
+          "travis_yaml",
+          "excluded_sample",
+          "grep_saturated_command",
+          "pytest_captured_blank_lines",
+          "numbered_source"
+        ],
+        "headroom": [
+          "lexical_distractor",
+          "multi_hop_chain",
+          "current_value",
+          "negation_override",
+          "no_marker_keeps_both",
+          "evidence_chain_holdout",
+          "git_log",
+          "npm_log",
+          "jp_musubi",
+          "zh_needle",
+          "ar_needle",
+          "travis_yaml",
+          "excluded_sample",
+          "grep_saturated_command",
+          "pytest_captured_blank_lines",
+          "numbered_source"
+        ],
+        "tfidf": [
+          "lexical_distractor",
+          "multi_hop_chain",
+          "current_value",
+          "negation_override",
+          "no_marker_keeps_both",
+          "evidence_chain_holdout",
+          "git_log",
+          "npm_log",
+          "jp_musubi",
+          "zh_needle",
+          "ar_needle",
+          "travis_yaml",
+          "excluded_sample",
+          "grep_saturated_command",
+          "pytest_captured_blank_lines",
+          "numbered_source"
+        ],
+        "lcc-laya": [
+          "lexical_distractor",
+          "multi_hop_chain",
+          "current_value",
+          "negation_override",
+          "no_marker_keeps_both",
+          "evidence_chain_holdout",
+          "git_log",
+          "npm_log",
+          "jp_musubi"
+        ],
+        "lcc-jev": []
+      }
+    },
+    {
+      "runner_sha256": "d8e433e48781f58a450f611c79a725bc32f651ed99fe844a0fae0b8ebc53d827",
+      "started_at_utc": "2026-10-12T08:24:44.514569+00:00",
+      "note": "resume after protected-noop classification fix; timing/corpus/provider settings unchanged",
+      "measured_cases": {
+        "lcc-laya": [
+          "zh_needle",
+          "ar_needle",
+          "travis_yaml",
+          "excluded_sample",
+          "grep_saturated_command",
+          "pytest_captured_blank_lines",
+          "numbered_source"
+        ]
+      }
+    }
+  ]
+}

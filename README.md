@@ -4,7 +4,7 @@
   <img src="assets/header.png" alt="Tameru Compaction System (貯める)" width="100%"><br><br>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.4.1-blue.svg" alt="Version 1.4.1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-1172%20passed-success.svg" alt="1172 tests passed"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-1179%20passed-success.svg" alt="1179 tests passed"></a>
   <a href="benchmarks/run_battery.py"><img src="https://img.shields.io/badge/QA-15%2F15-brightgreen.svg" alt="15 of 15 QA cases passed"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-Python%20stdlib-orange.svg" alt="Python standard library core"></a>
 </p>
@@ -70,24 +70,30 @@ Routine archive section 29: ordinary status record with no relevant operational 
 
 ## Comparison with other approaches
 
-The six-arm run below uses the same 12-case corpus: evidence chains, stale configuration, excluded samples, structured dumps, Japanese text and a large synthetic document. **These are historical Tameru v1.3.0 measurements from September 2026.** External arms have not been rerun for v1.4.1; the [current release results](#v141-measured-results) follow below.
+Freshly measured on **2026-10-12**, using **Tameru v1.4.1** and the same **16 task cases** for every scored method. The corpus includes evidence chains, stale configuration, Git/YAML/npm output, Japanese/Chinese/Arabic text, saturated grep, captured pytest logs with blank lines and numbered source reads.
 
-| Tested method | Required answer strings kept | Forbidden strings kept ↓ | Mean character savings | Median wall time | Repeat output identical |
-|---|---:|---:|---:|---:|---|
-| **Tameru v1.3.0** | **14/14** | **0** | **81.0%** | **10.75 ms** | Yes |
-| LCC → JEV (`jev-1.13.0`) | 14/14 † | 5 | 63.6% | 591 ms † | No |
-| LCC → Laya (local CPU model) | 14/14 | 5 | 10.7% | 8,675 ms | Yes |
-| LCC mechanical | 14/14 | 5 | 48.4% | 4.5 ms | Yes |
-| Headroom TextCrusher (`headroom-ai` 0.38.0) | 11/14 | 4 | 49.6% | 0.5 ms | Yes |
-| TF-IDF paragraph baseline | 13/14 | 5 | 55.2% | <1 ms | Yes |
+| Tested method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean character savings | Median wall time | Repeat output identical |
+|---|---:|---:|---:|---:|---:|---|
+| **Tameru v1.4.1** | 25/25 | 0 | 16/16 | 81.9% | 12.83 ms | Yes |
+| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.97 ms | Yes |
+| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.51 ms | Yes |
+| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.12 ms | Yes |
+| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8091.08 ms | Yes |
+| LCC → JEV — unmeasured | — | — | — | — | — | — |
 
-† JEV ran 11 cases; the large synthetic case was skipped for API cost and contains no required answer strings. The other arms ran all 12. All arms except JEV ran locally; Laya used a model on CPU. Timings are specific to that runner. This compares the named components and configurations, not every capability of their parent products.
+Tameru retained **25/25 required strings**, with **0 forbidden leaks** and **81.9% mean character savings**. A clean case keeps every required string and excludes every planted forbidden string. Faster methods and different savings are shown alongside these retention checks.
 
-**What makes the result useful:** Tameru kept every required answer string while excluding all planted forbidden strings. Those include a superseded timeout, an obsolete runbook and an explicitly excluded host. Mechanical, TextCrusher and TF-IDF were faster on this corpus; the retention and distractor columns show the trade-off alongside speed.
+Each case gets one untimed warmup and 3 timed complete calls. Retention is checked across all 4 outputs; the timing column is the median of per-case wall-time medians. Imports and model loading are outside the timer. Character savings are separate from the estimated token savings in the release battery.
 
-Structured inputs also made a difference: Tameru saved **95.4% of characters in the Git-history case** while keeping the required commit hash. JEV, Laya and the mechanical arm retained that hash with **0% savings** in the same case; TextCrusher saved 49.9% but dropped it.
+This is Tameru's regression corpus, not an independent downstream-agent evaluation. Headroom's row tests its Rust TextCrusher, not its full content router; LCC rows use the recorded provider and one scoring worker.
 
-See [the raw six-arm results](benchmarks/jev-comparison-results.json) and [full comparison, earlier 17-case holdout and limitations](benchmarks/COMPARISON.md). Required-string checks measure evidence retention, not downstream agent accuracy or general prompt-injection resistance.
+LCC's Laya path includes protected no-ops: inputs that need no model scoring are kept by its deterministic policy. These are recorded separately from failed or degraded model calls.
+
+Unmeasured providers have no scores carried forward from earlier releases:
+
+- **LCC → JEV:** RuntimeError: JEV requires --include-jev and an existing TYPESAFE_API_KEY
+
+See [the complete v1.4.1 comparison](benchmarks/COMPARISON.md) and [raw results, pins and timing samples](benchmarks/comparison-v1.4.1.json).
 
 ## v1.4.1 measured results
 
@@ -107,7 +113,7 @@ The current release passes **15/15 production-QA cases**, keeping all required a
 | Large synthetic document | Savings, determinism and timing; no answer-string check | **99.5%** |
 | Empty query | Original input returned | **0.0%** |
 
-The large synthetic case contains 4,000 records and completed in **569.3 ms CPU time** on the recorded runner, within its **1,200 ms** gate. Per-case timings are in the JSON and vary with hardware. Savings use Tameru's token estimator, so actual model-token savings vary. The synthetic maximum is a workload result, not an expected saving for every input.
+The large synthetic case contains 4,000 records and completed in **822.9 ms CPU time** on the recorded runner, within its **1,200 ms** gate. Per-case timings are in the JSON and vary with hardware. Savings use Tameru's token estimator, so actual model-token savings vary. The synthetic maximum is a workload result, not an expected saving for every input.
 
 ### Choose a context budget
 
@@ -230,7 +236,7 @@ python benchmarks/run_battery.py
 python benchmarks/threshold_sweep.py
 ```
 
-Release verification: **1,172 tests passed / 3 skipped**, wheel/source builds and installed-wheel Python/CLI smoke checks. Timing tests depend on hardware and runtime conditions; `python -m pytest -q -m 'not perf'` omits the marked scaling tests. The battery rewrites its results JSON with local timings. Historical external comparison setup is documented in [COMPARISON.md](benchmarks/COMPARISON.md).
+Release verification: **1,179 tests passed / 3 skipped**, wheel/source builds and installed-wheel Python/CLI smoke checks. Timing tests depend on hardware and runtime conditions; `python -m pytest -q -m 'not perf'` omits the marked scaling tests. The battery rewrites its results JSON with local timings. Historical external comparison setup is documented in [COMPARISON.md](benchmarks/COMPARISON.md).
 
 ## Credits and support
 

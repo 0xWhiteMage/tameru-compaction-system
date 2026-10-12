@@ -2,7 +2,9 @@
 
 Continuously-updated study notes. Sources are grouped by kind; each entry lists
 what it does and what maps onto Tameru's deterministic, extractive, local-first
-design. For measured head-to-head numbers see `benchmarks/COMPARISON.md`.
+design. The current measured comparisons use Tameru **v1.4.1**; see
+[results and methodology](../benchmarks/COMPARISON.md). Research origins and
+historical implementation versions below are not additional benchmark scores.
 
 ## Ecosystem repos
 
@@ -10,7 +12,7 @@ design. For measured head-to-head numbers see `benchmarks/COMPARISON.md`.
 
 | Repo | What it does | Relationship to Tameru |
 |---|---|---|
-| `lucasmartins-ai/lcc` | Local Context Compiler. JEV `noul` keep-probability per block; `mechanical` lexical fallback; `laya` local decision model. Rich internals beyond its README: typed **context graph** (`SUPPORTS/QUALIFIES/CONTRADICTS/SUPERSEDES/DEPENDS_ON/DUPLICATES/DERIVED_FROM`) with `closure(kept)` pull-in; post-drop **sufficiency verification** ("was a dependency link severed?" → names missing evidence → restore); independent **tri-state semantic verifier** (PASS/REVIEW/FAIL, fail-closed→REVIEW); **four-axis block assessment** (relevance ≠ necessity ≠ dependency-risk ≠ semantic-risk); type-aware **safe trimming** (refuses to trim when the cut would straddle a qualifier/negation cue or break JSON/YAML/code structure); conservative boilerplate cleaner (whole-line matches only). | Benchmark arm (see COMPARISON.md). Typed-edge closure, sufficiency restore, and qualifier-aware trim refusal ported in v1.3.0. Two upstream issues filed: process-wide socket guard during token counting races concurrent JEV calls; `LayaClient` model reload per call. |
+| `lucasmartins-ai/lcc` | Local Context Compiler. JEV `noul` keep-probability per block; `mechanical` lexical fallback; `laya` local decision model. Rich internals beyond its README: typed **context graph** (`SUPPORTS/QUALIFIES/CONTRADICTS/SUPERSEDES/DEPENDS_ON/DUPLICATES/DERIVED_FROM`) with `closure(kept)` pull-in; post-drop **sufficiency verification** ("was a dependency link severed?" → names missing evidence → restore); independent **tri-state semantic verifier** (PASS/REVIEW/FAIL, fail-closed→REVIEW); **four-axis block assessment** (relevance ≠ necessity ≠ dependency-risk ≠ semantic-risk); type-aware **safe trimming** (refuses to trim when the cut would straddle a qualifier/negation cue or break JSON/YAML/code structure); conservative boilerplate cleaner (whole-line matches only). | Benchmark arm (see COMPARISON.md). Typed-edge closure, sufficiency restore, and qualifier-aware trim refusal ported in v1.3.0. Historical upstream reports covered tokenizer socket guards and model reloads. The current comparison uses the pinned LCC source with its built-in client cache and one scoring worker; no private provider functions are rebound. |
 | `tamaratran/fast-jev-compaction` + ~20 forks | The original JEV compaction hook (Claude Code): two-question protocol (keep-call / keep-result), preserve first + recent messages, `minReductionRatio`, degrade to local path on API failure. | Ported: `pin_recent`, `min_savings_ratio`, `degraded_view`, `strategy="auto"` (v1.2.1). |
 | `Waxmell114514/jev-compaction` | Score-only compactor, runs offline: frozen append-only prefix + work area; dropped segments move to a store with an `[[elided id=…]]` pointer; `expand()` returns original bytes. **Decision log + threshold replay**: replay the shadow log at different thresholds and count "still missed" = how often the agent had to call `expand()` — ground truth for tuning without re-running the agent. | Convergent with Tameru's CCR + `[CC-Retrieve:]`. Threshold-replay ported as `benchmarks/threshold_sweep.py` (v1.3.0). |
 | `kerpopule/hermes-jev-skills` (682★) | JEV routing, memory filtering, turn selection for Hermes agents. | Evidence JEV is used as a *router/judge* — supports keeping JEV optional, not default. |
@@ -23,7 +25,7 @@ design. For measured head-to-head numbers see `benchmarks/COMPARISON.md`.
 
 | Repo | What it does | Relationship to Tameru |
 |---|---|---|
-| `headroomlabs-ai/headroom` (`headroom-ai` on PyPI) | **Closest production analog.** Local extractive middleware: `CacheAligner → ContentRouter → {SmartCrusher (JSON), TextCrusher (BM25 extractive), CodeCompressor (AST), LogCompressor, SearchCompressor, DiffCompressor} → CCR` (reversible cache + retrieve). Rust core (`headroom._core`) + Python mirror with parity tests; MCP tools `headroom_compress/retrieve/stats`; cross-agent memory store; CJK-aware ICU segmentation + CJK-priced token estimation (~1.5 chars/token vs 4.0 Latin). | Benchmark arm (`headroom` in jev_comparison). Its CJK token-pricing fix (PR a35fe86) prompted an audit — Tameru's `token_units` already prices no-space scripts at ~1 tok/char, so the same bug does not apply. |
+| `headroomlabs-ai/headroom` (`headroom-ai` on PyPI) | **Closest production analog.** Local extractive middleware: `CacheAligner → ContentRouter → {SmartCrusher (JSON), TextCrusher (BM25 extractive), CodeCompressor (AST), LogCompressor, SearchCompressor, DiffCompressor} → CCR` (reversible cache + retrieve). Rust core (`headroom._core`) + Python mirror with parity tests; MCP tools `headroom_compress/retrieve/stats`; cross-agent memory store; CJK-aware ICU segmentation + CJK-priced token estimation (~1.5 chars/token vs 4.0 Latin). | The current benchmark tests Rust TextCrusher from `headroom-ai` 0.40.0 via `benchmarks/compare.py`; it does not test the full router. Its earlier CJK token-pricing work prompted an estimator audit. Tameru uses script-aware estimates; actual savings still depend on the target model tokenizer. |
 | `codexstar69/pi-lcm` | SQLite+FTS5 memory; hierarchical DAG summaries (logarithmic depth); agent self-serve tools `lcm_grep/describe/expand`; static-prefix cache discipline. | CCR recall tooling ported (v1.2.1). Its DAG-of-pointers hierarchy is a possible CCR evolution. |
 | `tianjianl/selfcompact` | Research scaffold: model invokes a compaction tool itself, gated by a four-question rubric — **C1 closed-unit** (not mid-derivation), **C2 summarizable**, **C3 progress since last compaction**, **N1 not-stuck** (stuck ⇒ diagnose, don't summarize). Probes reuse the KV prefix. +18.1pts math vs no-summarization at 30–70% lower cost. | Rubric ported deterministically as `tameru.transcript.trajectory_gate` (v1.3.0): suppress compaction on pending tool calls and stuck loops. |
 | `microsoft/LLMLingua` family | Token-level extractive compression via LM perplexity/entropy. | Academic baseline; see papers below. |
@@ -47,17 +49,19 @@ design. For measured head-to-head numbers see `benchmarks/COMPARISON.md`.
 
 ## Standing conclusions from the study
 
-- **Relevance ≠ admissibility.** Every keep-score arm tested (JEV probability,
-  Laya decision, BM25, TF-IDF) retained planted distractors; trust,
-  supersession, and exclusion semantics have to be modelled separately —
-  Tameru's core thesis, now measured.
-- **Local semantic judges are possible but weak.** A ~1K-param decision model
-  ran fully offline yet kept ~88% of everything at ~16 s/case on CPU.
-- **Whole-block judges can't do line-record granularity.** Structured logs
-  need record-level selection; per-block scoring gives ~0% savings there.
-- **Deterministic beats clever at the boundary cases** that matter to agents:
-  byte-identical output keeps prompt caches stable and makes every decision
-  replayable after the fact.
+- **Measure retention and distractors separately.** Keeping an answer string
+  does not establish that stale or excluded evidence was removed. The current
+  v1.4.1 report includes both checks on every repeated output.
+- **Model results need a model pin and a working provider.** Laya's multilingual
+  checkpoint is a 322M-parameter model, not a 1K-parameter model. Runtime,
+  context limits, calibration and hardware affect its results. Failed or
+  fallback provider calls receive no model benchmark scores.
+- **Structured outputs need their own cases.** Git records, YAML, numbered
+  source, saturated grep and captured test output exercise different
+  boundaries from prose paragraphs. Component-level results do not describe
+  every compressor in a parent product's router.
+- **Check repeatability rather than assume it.** The v1.4.1 comparison measures
+  a warmup and three timed outputs, then records whether their text is identical.
 
 ## 2026-10 survey takeaways
 
