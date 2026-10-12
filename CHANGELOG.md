@@ -39,6 +39,10 @@ intentionally change; this is not a byte-identical guarantee for every input.
 - Fix-all round: `brief_context` honours `InliningGapMarker` like `compress_context`, so a dropped span shorter than the caller's marker stays verbatim instead of becoming a ~100-char marker. Plain markers are unchanged.
 - `test_deep_malformed_cache_record_does_not_raise` failed on Python 3.12+ (a 1000-deep list now parses and is removed as a non-record; older versions raised RecursionError and kept it). The test now accepts either outcome and still requires no exception and no retrieval; `sweep_ccr_cache`'s docstring now says that parseable non-records are removed (that was already the behaviour other tests pin).
 
+### File-input hardening (audit)
+- Read CLI context, decision-cache and recovery-cache files as BOM-tolerant UTF-8. Windows tools can add a byte-order mark; previously it could prevent valid records from being recovered/listed/expired or appear in CLI output. Writes remain plain UTF-8, and the string API still preserves caller text.
+- Four new behaviour tests reproduce the recovery/list/expiry/CLI failures before the fix and pass after it. Full suite: 1,172 passed / 3 skipped; battery 15/15; all five budget ratios retain gold with zero forbidden leaks.
+
 ### Maintenance and release verification
 - Ruff-compatible style changes for Hermes vendoring; differential checks of extraction, JSON briefs and folding were reported in commit `b2b1b19` before the release version bump.
 - Package metadata, public `__version__` and receipt `ENGINE_VERSION` now identify 1.4.1. The helper version test compares public versions rather than pinning an old release.

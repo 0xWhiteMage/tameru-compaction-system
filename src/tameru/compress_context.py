@@ -3196,7 +3196,7 @@ def sweep_ccr_cache(
         _CCR_SWEEP_CURSOR += count
     for fp in records:
         try:
-            data = json.loads(fp.read_text(encoding="utf-8"))
+            data = json.loads(fp.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError, RecursionError):
             continue
         metadata = _ccr_metadata(data)
@@ -3636,7 +3636,7 @@ def retrieve(
     if not stat.S_ISREG(info.st_mode):
         return None
     try:
-        data = json.loads(fp.read_text(encoding="utf-8"))
+        data = json.loads(fp.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError, RecursionError):
         return None
     if not isinstance(data, dict) or data.get("hash") != ccr_hash:
@@ -3684,7 +3684,7 @@ def list_ccr(
     for fp in root.glob("*.json"):
         if not fp.name.startswith(".") and _CCR_HASH_RE.fullmatch(fp.stem):
             try:
-                data = json.loads(fp.read_text(encoding="utf-8"))
+                data = json.loads(fp.read_text(encoding="utf-8-sig"))
             except (OSError, json.JSONDecodeError, RecursionError):
                 continue
             if not isinstance(data, dict):
@@ -5397,7 +5397,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         import sys as _sys
         ctx = _sys.stdin.read()
     else:
-        ctx = Path(args.context_file).read_text(encoding="utf-8")
+        ctx = Path(args.context_file).read_text(encoding="utf-8-sig")
     # Resolve ccr/citations defaults (None = use library default True)
     ccr_val = True if args.ccr is None else args.ccr
     citations_val = True if args.citations is None else args.citations
@@ -5420,7 +5420,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         dc_path = Path(args.decision_cache)
         if dc_path.is_file():
             try:
-                decision_cache = json.loads(dc_path.read_text(encoding="utf-8"))
+                decision_cache = json.loads(dc_path.read_text(encoding="utf-8-sig"))
             except (OSError, json.JSONDecodeError, RecursionError):
                 decision_cache = {}
             if not isinstance(decision_cache, dict):
