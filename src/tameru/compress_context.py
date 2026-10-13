@@ -147,20 +147,95 @@ _MEMO_MAX_QUERY_CHARS = 32_768
 _MEMO_ENTRIES = 6
 
 
-# Every alternative of ``_SECRETS_RE`` contains one of these literals: the first
-# group exactly (case-sensitive), the second group case-insensitively (the
-# credential keywords and "bearer"). On ASCII text a plain substring test can
-# therefore rule a text out without running the regex, which has to try every
-# alternative at every position (~0.2 s on 650 KB of ordinary log). Non-ASCII
-# text keeps the regex alone: Unicode case folding (Kelvin sign, long s) makes
-# the case-insensitive groups match letters that ``lower()`` does not map.
+# v1.4.2 red-team: credential shapes ``_SECRETS_RE`` did not know. A false
+# negative here means a host's recovery store, ledger or CCR archive keeps a
+# live credential, so every addition is anchored on a literal prefix or a
+# credential keyword (and bounded, so it stays linear on hostile text):
+# AWS temporary keys, Google OAuth / refresh tokens, Slack app tokens and
+# webhooks, Stripe test / webhook secrets, Hugging Face, npm, PyPI, SendGrid,
+# GitLab, Docker, DigitalOcean, Shopify, Square and Twilio tokens, Telegram bot
+# tokens, Azure storage keys and SAS signatures, ``scheme://user:password@host``
+# connection strings, HTTP Basic credentials, ``sshpass -p`` / ``curl -u``, and
+# quoted-key JSON / YAML assignments (``"SecretAccessKey": "..."``) plus the
+# keywords ``secret_access_key``, ``secret_key``, ``client_secret``,
+# ``session_token``, ``refresh_token``, ``private_key``, ``signing_key``
+# and upper-case ``*_TOKEN=`` variables.
+_SECRET_KEYWORD = (
+    r"(?:[A-Za-z0-9_]{1,64}[_-])?(?:password|passwd|secret|api[_-]?key|access[_-]?token"
+    r"|auth[_-]?token|secret[_-]?(?:access[_-]?)?key|client[_-]?secret"
+    r"|(?:session|refresh|bearer|id|security)[_-]?token|private[_-]?key|signing[_-]?key)"
+)
+_SECRET_NEW_KEYWORD = (
+    r"(?:[A-Za-z0-9_]{1,64}[_-])?(?:secret[_-]?(?:access[_-]?)?key|client[_-]?secret"
+    r"|(?:session|refresh|bearer|id|security)[_-]?token|private[_-]?key|signing[_-]?key)"
+)
+_SECRET_NOT_CODE = (
+    r"(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*(?![^\s,;)\]}]))"
+    r"(?![a-z_](?=[a-z0-9_]*_)[a-z0-9_]*(?![^\s,;)\]}]))"
+)
+_SECRETS_EXTRA_RE = re.compile(
+    r"\bASIA[0-9A-Z]{16}\b"
+    r"|\bya29\.[A-Za-z0-9_-]{20,}"
+    r"|\b1//0[A-Za-z0-9_-]{40,}"
+    r"|\bhf_[A-Za-z0-9]{30,}"
+    r"|\bnpm_[A-Za-z0-9]{30,}"
+    r"|\bpypi-AgE[A-Za-z0-9_-]{40,}"
+    r"|\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"
+    r"|\bglpat-[A-Za-z0-9_-]{20,}"
+    r"|\bdckr_pat_[A-Za-z0-9_-]{20,}"
+    r"|\bxapp-\d-[A-Z0-9]{6,}-\d{6,}-[A-Za-z0-9]{16,}"
+    r"|hooks\.slack\.com/services/T[A-Z0-9]{6,}/B[A-Z0-9]{6,}/[A-Za-z0-9]{16,}"
+    r"|discord(?:app)?\.com/api/webhooks/\d{6,}/[A-Za-z0-9_-]{20,}"
+    r"|\b(?:sk|rk)_test_[A-Za-z0-9]{16,}"
+    r"|\bwhsec_[A-Za-z0-9]{24,}"
+    r"|\bdop_v1_[a-f0-9]{40,}"
+    r"|\bshp(?:at|ca|pa|ss)_[a-f0-9]{32}"
+    r"|\bsq0(?:atp|csp)-[A-Za-z0-9_-]{22,}"
+    r"|\bSK[0-9a-f]{32}\b"
+    r"|\bkey-[0-9a-f]{32}\b"
+    r"|(?i:(?<![A-Za-z0-9])_auth_?token\s*=\s*[^\s\"']{12,})"
+    r"|\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b"
+    r"|(?:AccountKey|SharedAccessKey)=[A-Za-z0-9+/]{30,}"
+    r"|[?&]sig=[A-Za-z0-9%+/]{30,}"
+    # scheme://[user]:password@host (the password holds no "/", "@" or space)
+    r"|\b[A-Za-z][A-Za-z0-9+.-]{1,20}://[^\s:/@]{0,64}:"
+    r"(?![<${%*{]|(?i:pass(?:word|wd)?|secret|token|xxx+|changeme|example|user(?:name)?)@)"
+    r"[^\s/@]{4,128}@[A-Za-z0-9._\[-]"
+    r"|(?i:\bauthorization\s*:\s*basic\s+[A-Za-z0-9+/]{12,})"
+    r"|\bsshpass\s+-p\s*\S{6,}"
+    r"|\bcurl\b[^\n]{0,200}?\s(?:-u|--user)[ =]\S{1,64}:\S{6,}"
+    # quoted key or value: ``"SecretAccessKey": "..."``, ``api_key = '...'``
+    r"|(?i:\b" + _SECRET_KEYWORD + r"[\"']?\s*[:=]\s*"
+    r"(?:\"(?=[^\"\s]*\d)[^\"\s]{16,}\"|'(?=[^'\s]*\d)[^'\s]{16,}'))"
+    # unquoted value of the keywords the original rule does not list
+    r"|(?i:\b" + _SECRET_NEW_KEYWORD + r"[\"']?\s*[:=]\s*" + _SECRET_NOT_CODE
+    + r"(?=[^\s\"']*\d)[^\s\"']{16,}(?<![,;)\]}])(?![^\s\"']))"
+    # ``GITHUB_TOKEN=ghx...``: upper-case variable names are environment
+    # variables, not code
+    r"|\b(?:[A-Z][A-Z0-9_]{0,60}_)?(?:TOKEN|ACCESS_KEY)\s*[:=]\s*[\"']?" + _SECRET_NOT_CODE
+    + r"(?=[A-Za-z0-9_./+=-]*\d)[A-Za-z0-9_./+=-]{19,}[A-Za-z0-9_/+=](?![^\s\"'])"
+)
+
+# Every alternative of ``_SECRETS_RE`` / ``_SECRETS_EXTRA_RE`` contains one of
+# these literals: the first group exactly (case-sensitive), the second group
+# case-insensitively (the credential keywords). On ASCII text a plain substring
+# test can therefore rule a text out without running the regexes, which have to
+# try every alternative at every position (~0.2 s on 650 KB of ordinary log).
+# Non-ASCII text keeps the regexes alone: Unicode case folding (Kelvin sign,
+# long s) makes the case-insensitive groups match letters that ``lower()`` does
+# not map. Keep the lists in step with the patterns: a test compares the
+# prefiltered scan with the bare regexes.
 _SECRET_LITERALS = (
     "-----BEGIN ", "AKIA", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_",
     "xox", "sk-", "eyJ", "AIza", "_live_",
+    "ASIA", "ya29.", "1//0", "hf_", "npm_", "pypi-AgE", "SG.", "glpat-", "dckr_pat_",
+    "xapp-", "hooks.slack.com", "/api/webhooks/", "_test_", "whsec_", "dop_v1_", "shp",
+    "sq0", "SK", ":AA", "Key=", "sig=", "://", "sshpass", "curl", "TOKEN", "ACCESS_KEY", "key-",
 )
 _SECRET_FOLDED_LITERALS = (
     "password", "passwd", "secret", "api_key", "api-key", "apikey", "access_token",
     "access-token", "accesstoken", "auth_token", "auth-token", "authtoken", "bearer",
+    "token", "private", "signing", "basic",
 )
 
 
@@ -169,7 +244,7 @@ def _secret_scan(text: str) -> bool:
         folded = text.lower()
         if not any(lit in folded for lit in _SECRET_FOLDED_LITERALS):
             return False
-    return _SECRETS_RE.search(text) is not None
+    return _SECRETS_RE.search(text) is not None or _SECRETS_EXTRA_RE.search(text) is not None
 
 
 @functools.lru_cache(maxsize=_MEMO_ENTRIES)
@@ -1752,6 +1827,10 @@ def score_blocks(
 ) -> list[dict[str, Any]]:
     terms = _extract_terms(query)
     entities = _extract_entities(query)
+    # The word-boundary pattern of each short term is compiled once per call:
+    # ``re`` keeps only 512, so a long query (thousands of terms) recompiled
+    # every pattern for every block (~80k compiles for a 30 KB query).
+    term_tests = [(t, _term_test(t)) for t in terms]
     n = max(1, len(blocks))
     entity_df: dict[str, int] = {}
     term_df: dict[str, int] = {}
@@ -1827,10 +1906,6 @@ def score_blocks(
         if not re.fullmatch(r"\w{4,}", c_lower):
             continue
         df = token_counter.get(c_lower, 0)
-    # The word-boundary pattern of each short term is compiled once per call:
-    # ``re`` keeps only 512, so a long query (thousands of terms) recompiled
-    # every pattern for every block (~80k compiles for a 30 KB query).
-    term_tests = [(t, _term_test(t)) for t in terms]
         # Require the entity to be in at least 2 but at most n/2 blocks
         # (if it's in every block, it's a filler word, not a bridge)
         if 2 <= df <= n // 2:
@@ -3239,7 +3314,7 @@ def _render(
                     else:
                         for d in dropped:
                             d_text = d.get("full_text") or d["text"]
-                            digest = hashlib.sha256(d_text.encode("utf-8")).hexdigest()[:8]
+                            digest = hashlib.sha256(d_text.encode("utf-8", errors="surrogatepass")).hexdigest()[:8]
                             head = d_text.split("\n", 1)[0][:60]
                             tail = d_text.rsplit("\n", 1)[-1][:60]
                             parts.append(f'[§{digest}] "{head}"…"{tail}"')
