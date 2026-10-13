@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -11,8 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _project_version() -> str:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    return project["project"]["version"]
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    try:
+        import tomllib  # Python 3.11+; the package supports 3.10
+    except ModuleNotFoundError:
+        match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+        assert match, "pyproject.toml defines no version"
+        return match.group(1)
+    return tomllib.loads(text)["project"]["version"]
 
 
 def _init_version() -> str:
@@ -85,10 +90,9 @@ class ReleaseArtifactTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_installed_command_is_declared(self):
-        project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        self.assertEqual(
-            project["project"]["scripts"]["tameru-compress"],
-            "tameru.compress_context:main",
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertRegex(
+            text, r'(?m)^tameru-compress\s*=\s*"tameru\.compress_context:main"\s*$'
         )
 
 
