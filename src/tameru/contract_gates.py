@@ -119,7 +119,7 @@ _HYPHEN_RE = re.compile(r"\b\w+(?:-\w+)+\b")
 
 def distinctive_query_terms(query: str) -> list[str]:
     """Return first-seen distinctive selectors; empty if the query is generic."""
-    # Perf (v1.4.2): memoized for the short, repeatedly asked query string; a
+    # Perf (v1.5.0): memoized for the short, repeatedly asked query string; a
     # fresh list is returned each time.
     if type(query) is str and len(query) <= 2048:
         return list(_distinctive_query_terms_cached(query))

@@ -229,7 +229,7 @@ def mask_template(s: str) -> str:
     their own length cap.
     """
     if s.isascii():
-        # Perf (v1.4.2): on ASCII text every substitution needs characters it
+        # Perf (v1.5.0): on ASCII text every substitution needs characters it
         # can be ruled out by (a digit, a quote, ``-``, ``:``, ``/``, ``.``), so
         # most of the ten regexes are skipped for a typical line. The result is
         # the same as running them all.

@@ -116,7 +116,7 @@ def _profile_input_cached(value: str, resolved: IndustrialLimits) -> InputProfil
 
 
 def profile_input(text: str, limits: IndustrialLimits | None = None) -> InputProfile:
-    # Perf (v1.4.2): the profile (an immutable record) of a large text is
+    # Perf (v1.5.0): the profile (an immutable record) of a large text is
     # computed once per (text, limits); a retry of the same output reuses it.
     if type(text) is str and _PROFILE_MEMO_MIN_CHARS <= len(text) <= _PROFILE_MEMO_MAX_CHARS:
         return _profile_input_cached(text, limits or IndustrialLimits())

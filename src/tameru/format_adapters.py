@@ -202,7 +202,7 @@ _RECORD_SPECIAL_RE = re.compile('["\r\n]')
 
 
 def _split_delimited_records(text: str) -> list[str] | None:
-    # Perf (v1.4.2): jump from one quote / line break to the next instead of
+    # Perf (v1.5.0): jump from one quote / line break to the next instead of
     # stepping through every character; the records are identical.
     records: list[str] = []
     start = 0

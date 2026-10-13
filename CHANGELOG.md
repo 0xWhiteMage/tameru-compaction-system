@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased]
+## [1.5.0] - 2026-10-13
 
 ### Fixed
 - Weak-query diffs: a unified diff asked about with plain words ("where was frobnicate changed?", "what changed in the rollback handling?") no longer bypasses the diff adapter. `apply_agent_adapters` discarded every adapter cut when the query had no distinctive selector, so the generic block scorer cut the diff inside hunks, dropped `@@` headers and split -/+ pairs. The adapter now stays in charge: whole hunks only, every file header, per-file stats and `@@` header line kept, one gap marker per omitted run. For a weak query it keeps each hunk containing a query word (light stemming through the new `agent_formats.light_stem`: `changed`~`change`, `handling`~`handle`; identifiers are split at `_`, digits and camelCase humps) plus the first and last hunk of every file; with no hit at all just those anchors. A plain word in a file path does not select the whole file. Unchanged: an empty or filler/generic-only query ("continue", "thanks") still licenses no cut, and a distinctive query that hits nothing still fails open.

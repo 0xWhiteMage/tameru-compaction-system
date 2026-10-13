@@ -1,4 +1,4 @@
-"""v1.4.2 red-team: serving untrusted tool output from many users.
+"""v1.5.0 red-team: serving untrusted tool output from many users.
 
 Each test pins a confirmed defect: super-linear time on hostile input, a crash
 on a lone surrogate, the receipt copying the whole input, and credential shapes
@@ -207,7 +207,7 @@ LIVE = {
     "telegram": "123456789:" + "AAEhBOweik6ad9r_QXMENQjcrTu1mdk8d2k",
     "digitalocean": "dop_v1_" + "0123456789abcdef" * 4,
     "shopify": "shpat_" + "0123456789abcdef" * 2,
-    # already detected before 1.4.2: kept as a floor
+    # already detected before 1.5.0: kept as a floor
     "github": "ghp_" + "a" * 36,
     "anthropic": "sk-ant-api03-" + "a1B2_-" * 14,
     "private key": "-----BEGIN RSA PRIVATE KEY-----\nMIIE",

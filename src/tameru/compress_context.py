@@ -65,7 +65,7 @@ except Exception:
     DEFAULT_CCR_DIR = Path(tempfile.gettempdir()) / ".tameru" / "cache" / "context-compress-ccr"
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
-ENGINE_VERSION = "1.4.1"
+ENGINE_VERSION = "1.5.0"
 CCR_TTL_SECONDS = 6 * 60 * 60
 CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
 FREEZE_MAX_DECISIONS = 4096
@@ -133,7 +133,7 @@ _SECRETS_RE = re.compile(
 _RECURSION_MARKERS = ("<compressed_context", "[CC-Retrieve:")
 
 
-# Perf (v1.4.2): the pure text-level analyses below are memoized for texts of
+# Perf (v1.5.0): the pure text-level analyses below are memoized for texts of
 # a few KB or more, newest few entries only. A host that compresses the same
 # output again (a retry with another budget, a brief after an extract, an
 # error check on the original) pays for the scan once. Results are immutable
@@ -147,7 +147,7 @@ _MEMO_MAX_QUERY_CHARS = 32_768
 _MEMO_ENTRIES = 6
 
 
-# v1.4.2 red-team: credential shapes ``_SECRETS_RE`` did not know. A false
+# v1.5.0 red-team: credential shapes ``_SECRETS_RE`` did not know. A false
 # negative here means a host's recovery store, ledger or CCR archive keeps a
 # live credential, so every addition is anchored on a literal prefix or a
 # credential keyword (and bounded, so it stays linear on hostile text):
@@ -667,7 +667,7 @@ def _is_level_error_line(line: str) -> bool:
 
 # Every way a line can be an error line contains one of these literals (the
 # zero-count removal below only deletes text), so a line without any is not
-# one. Perf (v1.4.2): one scan replaces four regexes on the ~99% of log lines
+# one. Perf (v1.5.0): one scan replaces four regexes on the ~99% of log lines
 # that are not errors.
 _ERROR_LINE_HINT_RE = re.compile(
     r"ERROR|FATAL|CRITICAL|PANIC|FAIL|Error:|Exception:|Traceback \(most recent call last\)|panic:"
@@ -767,7 +767,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     trace_src: list[int] = []
     query_match_indices: set[int] = set()
     query_selectors = distinctive_query_terms(query or "")
-    # Perf (v1.4.2): a line is fingerprinted up to three times below (collapse,
+    # Perf (v1.5.0): a line is fingerprinted up to three times below (collapse,
     # count attach, error restore); the fingerprint is a pure function of it.
     fp_memo: dict[str, str | None] = {}
 
@@ -2349,7 +2349,7 @@ def _stitch_neighbors(blocks: list[dict[str, Any]], kept: set[int]) -> set[int]:
 def _block_link_terms(text: str) -> frozenset[str]:
     """Rare relation keys used only for bounded evidence-path closure.
 
-    Perf (v1.4.2): remembered per block text (a retry of the same output
+    Perf (v1.5.0): remembered per block text (a retry of the same output
     scores the same blocks again); callers only read the result.
     """
     if type(text) is str and len(text) <= 2048:
@@ -4113,7 +4113,7 @@ def _detect_json_payloads(text: str) -> list[tuple[int, int, str]]:
     Returns a list of (start, end, json_string) tuples where start/end are
     character offsets into the original text.
 
-    Perf (v1.4.2): the scanners jump between the characters that can change
+    Perf (v1.5.0): the scanners jump between the characters that can change
     their state (openers; quotes, backslashes and brackets) instead of
     stepping through every character; the spans are unchanged.
     """
@@ -4418,7 +4418,7 @@ def _brief_scan_cached(text: str, query: str):
 
 
 def _brief_scan_memo(text: str, query: str):
-    # Perf (v1.4.2): a host asks for the same output's brief at growing budgets;
+    # Perf (v1.5.0): a host asks for the same output's brief at growing budgets;
     # the scan does not depend on the budget. Everything returned is a tuple.
     if (
         type(query) is str

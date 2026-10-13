@@ -1,4 +1,4 @@
-"""v1.4.2: engine CPU. The same output is analysed once, not once per call.
+"""v1.5.0: engine CPU. The same output is analysed once, not once per call.
 
 A host that compacts one tool result asks the engine about the same text many
 times: the adaptive extract, fixed-budget retries, briefs at growing sizes,

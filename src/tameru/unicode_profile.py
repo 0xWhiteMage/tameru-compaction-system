@@ -75,7 +75,7 @@ def _is_regional_indicator(char: str) -> bool:
     return _REGIONAL_RANGE[0] <= ord(char) <= _REGIONAL_RANGE[1]
 
 
-# Perf (v1.4.2): the per-character predicates below are pure functions of one
+# Perf (v1.5.0): the per-character predicates below are pure functions of one
 # character, and the grapheme walker asks them about every character of every
 # line (a 24 KB CJK log made `unicodedata.name` alone ~250k calls). Remembered
 # per character, bounded.
@@ -256,7 +256,7 @@ def _flush_run(run: list[str], units: list[str]) -> None:
 
 def search_units(text: str) -> list[str]:
     """Return ordered, deduplicated Unicode-aware units for query matching."""
-    # Perf (v1.4.2): queries are short and asked about again and again (once per
+    # Perf (v1.5.0): queries are short and asked about again and again (once per
     # selector check of every compress call); a fresh list is returned each time.
     if type(text) is str and len(text) <= _UNITS_MEMO_MAX_CHARS:
         return list(_search_units_cached(text))
@@ -326,7 +326,7 @@ def token_units(text: str) -> list[str]:
 
     ascii_class = _ASCII_TOKEN_CLASS
     for cluster in iter_graphemes(matching_shadow(text)):
-        # Perf (v1.4.2): a one-character ASCII cluster (nearly every cluster of
+        # Perf (v1.5.0): a one-character ASCII cluster (nearly every cluster of
         # mixed text) is decided from a table; the general path below gives the
         # same answer for it.
         if len(cluster) == 1 and cluster < "\x80":

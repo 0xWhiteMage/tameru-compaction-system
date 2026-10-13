@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="assets/header.png" alt="The White Mage — Tameru Compaction System" width="100%"><br><br>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.4.1-blue.svg" alt="Version 1.4.1"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.5.0-blue.svg" alt="Version 1.5.0"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
   <a href="tests/"><img src="https://img.shields.io/badge/tests-1179%20passed-success.svg" alt="1179 tests passed"></a>

@@ -1242,7 +1242,7 @@ def apply_agent_adapters(
     "thanks", "") licenses no cut: only a lossless result is accepted.
 
     A weak query that does carry words ("where was frobnicate changed?") is
-    not filler: the adapter stays in charge (v1.4.2), because the generic block
+    not filler: the adapter stays in charge (v1.5.0), because the generic block
     scorer would cut a diff mid-hunk and drop the definition line of a
     saturated grep. A diff is cut by whole hunks only (when no hunk mentions a
     weak query its first and last hunk per file are kept); a grep result needs
