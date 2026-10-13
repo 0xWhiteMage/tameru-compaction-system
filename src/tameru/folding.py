@@ -216,6 +216,9 @@ def _volatile(placeholder: str):
     return sub
 
 
+_FIND_DIGIT = re.compile(r"\d").search
+
+
 def mask_template(s: str) -> str:
     """Mask the volatile fields of one (already lowercased) log line.
 
@@ -225,6 +228,34 @@ def mask_template(s: str) -> str:
     ``<hex>``, then digits -> ``#`` and whitespace collapsed. Callers apply
     their own length cap.
     """
+    if s.isascii():
+        # Perf (v1.4.2): on ASCII text every substitution needs characters it
+        # can be ruled out by (a digit, a quote, ``-``, ``:``, ``/``, ``.``), so
+        # most of the ten regexes are skipped for a typical line. The result is
+        # the same as running them all.
+        digit = _FIND_DIGIT(s) is not None
+        if digit:
+            if '"' in s:
+                s = _M_DQ.sub(_volatile('"<str>"'), s)
+            if "'" in s:
+                s = _M_SQ.sub(_volatile('"<str>"'), s)
+            if s.count("-") >= 2 or s.count(":") >= 2:  # a date needs two "-", a clock two ":"
+                s = _M_TS.sub("<ts>", s)
+        if s.count("-") >= 4:  # a UUID has four
+            s = _M_UUID.sub("<uuid>", s)
+        if digit and s.count(".") >= 3:  # an IPv4 address has three dots
+            s = _M_IP4.sub("<ip>", s)
+        if s.count(":") >= 2:  # an IPv6 address has at least two colons
+            s = _M_IP6.sub("<ip>", s)
+        if digit:
+            if s.count("/") >= 3:  # a path of three segments has three slashes
+                s = _M_PATH.sub(_volatile("<path>"), s)
+            s = _M_DUR.sub("<dur>", s)
+        if len(s) >= 6:
+            s = _M_HEX.sub("<hex>", s)
+        if digit:
+            s = _M_DIGITS.sub("#", s)
+        return " ".join(s.split())
     s = _M_DQ.sub(_volatile('"<str>"'), s)
     s = _M_SQ.sub(_volatile('"<str>"'), s)
     s = _M_TS.sub("<ts>", s)

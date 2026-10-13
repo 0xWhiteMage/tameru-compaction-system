@@ -1,6 +1,7 @@
 """Industrial preflight, limits, profiling, and format orchestration."""
 from __future__ import annotations
 
+import functools
 from dataclasses import asdict, dataclass, replace
 from typing import Callable
 
@@ -87,7 +88,24 @@ def _profile_sample(text: str, max_profile_chars: int) -> tuple[str, bool]:
     return text[:max_profile_chars] + text[-max_profile_chars:], True
 
 
+_PROFILE_MEMO_MIN_CHARS = 2048
+_PROFILE_MEMO_MAX_CHARS = 1_000_000  # larger texts are not pinned in the cache
+
+
+@functools.lru_cache(maxsize=6)
+def _profile_input_cached(value: str, resolved: IndustrialLimits) -> InputProfile:
+    return _profile_input(value, resolved)
+
+
 def profile_input(text: str, limits: IndustrialLimits | None = None) -> InputProfile:
+    # Perf (v1.4.2): the profile (an immutable record) of a large text is
+    # computed once per (text, limits); a retry of the same output reuses it.
+    if type(text) is str and _PROFILE_MEMO_MIN_CHARS <= len(text) <= _PROFILE_MEMO_MAX_CHARS:
+        return _profile_input_cached(text, limits or IndustrialLimits())
+    return _profile_input(text, limits)
+
+
+def _profile_input(text: str, limits: IndustrialLimits | None = None) -> InputProfile:
     value = str(text or "")
     resolved = limits or IndustrialLimits()
     line_count = value.count("\n") + (1 if value else 0)

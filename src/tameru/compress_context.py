@@ -7,14 +7,17 @@ the query signal is too weak to justify a cut.
 
 from __future__ import annotations
 
-import hashlib
 import bisect
+import collections
+import functools
+import hashlib
 import json
 import math
 import os
 import re
 import stat
 import tempfile
+import threading
 import time
 import unicodedata
 from dataclasses import asdict, dataclass, field, replace
@@ -130,8 +133,56 @@ _SECRETS_RE = re.compile(
 _RECURSION_MARKERS = ("<compressed_context", "[CC-Retrieve:")
 
 
+# Perf (v1.4.2): the pure text-level analyses below are memoized for texts of
+# a few KB or more, newest few entries only. A host that compresses the same
+# output again (a retry with another budget, a brief after an extract, an
+# error check on the original) pays for the scan once. Results are immutable
+# or copied on the way out, so a caller can never alter a cached value.
+_MEMO_MIN_CHARS = 2048
+# Texts above this are not remembered: six entries of an 8 MB input across a dozen
+# caches would pin hundreds of MB in a long-lived server process. Ordinary tool
+# output is far below it.
+_MEMO_MAX_CHARS = 1_000_000
+_MEMO_MAX_QUERY_CHARS = 32_768
+_MEMO_ENTRIES = 6
+
+
+# Every alternative of ``_SECRETS_RE`` contains one of these literals: the first
+# group exactly (case-sensitive), the second group case-insensitively (the
+# credential keywords and "bearer"). On ASCII text a plain substring test can
+# therefore rule a text out without running the regex, which has to try every
+# alternative at every position (~0.2 s on 650 KB of ordinary log). Non-ASCII
+# text keeps the regex alone: Unicode case folding (Kelvin sign, long s) makes
+# the case-insensitive groups match letters that ``lower()`` does not map.
+_SECRET_LITERALS = (
+    "-----BEGIN ", "AKIA", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_",
+    "xox", "sk-", "eyJ", "AIza", "_live_",
+)
+_SECRET_FOLDED_LITERALS = (
+    "password", "passwd", "secret", "api_key", "api-key", "apikey", "access_token",
+    "access-token", "accesstoken", "auth_token", "auth-token", "authtoken", "bearer",
+)
+
+
+def _secret_scan(text: str) -> bool:
+    if text.isascii() and not any(lit in text for lit in _SECRET_LITERALS):
+        folded = text.lower()
+        if not any(lit in folded for lit in _SECRET_FOLDED_LITERALS):
+            return False
+    return _SECRETS_RE.search(text) is not None
+
+
+@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+def _contains_secret_cached(text: str) -> bool:
+    return _secret_scan(text)
+
+
 def _contains_secret(text: str) -> bool:
-    return bool(text) and _SECRETS_RE.search(text) is not None
+    if not text:
+        return False
+    if type(text) is str and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS:
+        return _contains_secret_cached(text)
+    return _secret_scan(text)
 
 
 def contains_secret(text: str) -> bool:
@@ -262,6 +313,17 @@ _FAST_ACCOUNTING_DELETE = {ord(ch): None for ch in _FAST_ACCOUNTING_PUNCT}
 def estimate_tokens(text: str) -> int:
     if not text:
         return 0
+    if type(text) is str and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS:
+        return _estimate_tokens_cached(text)
+    return _estimate_tokens(text)
+
+
+@functools.lru_cache(maxsize=_MEMO_ENTRIES * 2)
+def _estimate_tokens_cached(text: str) -> int:
+    return _estimate_tokens(text)
+
+
+def _estimate_tokens(text: str) -> int:
     if text.isascii() or text.translate(_FAST_ACCOUNTING_DELETE).isascii():
         return max(1, len(_TOKEN_RE.findall(text)))
     return max(1, len(token_units(text)))
@@ -271,39 +333,59 @@ def _norm_newlines(text: str) -> str:
     return str(text or "").replace("\r\n", "\n").replace("\r", "\n")
 
 
+_CL_HEADING_RE = re.compile(r"^#{1,6}\s+")
+_CL_FENCE_RE = re.compile(r"^(```|~~~)")
+_CL_TRACE_RE = re.compile(
+    r"^(Traceback|Caused by:|Error:|Exception:|[A-Za-z]+Error\b|at\s+\S+\(|\s*File\s+\".+\", line \d+)"
+)
+_CL_LOG_RE = re.compile(
+    r"^\[?(20\d\d-\d\d-\d\d|\d\d:\d\d:\d\d|INFO|WARN|WARNING|ERROR|DEBUG|TRACE|ERR|FAIL|FATAL|OK)\]?"
+)
+_CL_IMPORT_RE = re.compile(r"^(import|from)\s+|^#include\s+|^using\s+")
+_CL_DEFINITION_RE = re.compile(
+    r"^(def|class|async\s+def|function|const|let|var|public|private|protected|static|fn|func)\b"
+)
+_CL_LIST_RE = re.compile(r"^[-*+]\s+|\d+\.\s+")
+_CL_TABLE_RE = re.compile(r"^\|.*\|$")
+_CL_CHAT_RE = re.compile(r"^(User|Assistant|System|Tool|Developer):")
+_CL_CHAT_TAG_RE = re.compile(r"^\[(user|assistant|system|tool|developer)\]", re.IGNORECASE)
+_CL_JSON_KEY_RE = re.compile(r'^"[A-Za-z0-9_]+"\s*:')
+_CL_COMMENT_RE = re.compile(r"^(\/\/|#|\/\*|\*)")
+
+
+def _is_trace_line(line: str) -> bool:
+    """``classify_line(line) == "trace"`` without the checks that cannot win:
+    a heading starts with ``#`` and a fence with a backtick or tilde, which no
+    trace pattern can start with."""
+    t = line.strip()
+    return bool(t) and _CL_TRACE_RE.match(t) is not None
+
+
 def classify_line(line: str) -> str:
     t = line.strip()
     if not t:
         return "blank"
-    if re.match(r"^#{1,6}\s+", t):
+    if _CL_HEADING_RE.match(t):
         return "heading"
-    if re.match(r"^(```|~~~)", t):
+    if _CL_FENCE_RE.match(t):
         return "fence"
-    if re.match(
-        r"^(Traceback|Caused by:|Error:|Exception:|[A-Za-z]+Error\b|at\s+\S+\(|\s*File\s+\".+\", line \d+)",
-        t,
-    ):
+    if _CL_TRACE_RE.match(t):
         return "trace"
-    if re.match(
-        r"^\[?(20\d\d-\d\d-\d\d|\d\d:\d\d:\d\d|INFO|WARN|WARNING|ERROR|DEBUG|TRACE|ERR|FAIL|FATAL|OK)\]?",
-        t,
-    ):
+    if _CL_LOG_RE.match(t):
         return "log"
-    if re.match(r"^(import|from)\s+|^#include\s+|^using\s+", t):
+    if _CL_IMPORT_RE.match(t):
         return "import"
-    if re.match(r"^(def|class|async\s+def|function|const|let|var|public|private|protected|static|fn|func)\b", t):
+    if _CL_DEFINITION_RE.match(t):
         return "definition"
-    if re.match(r"^[-*+]\s+|\d+\.\s+", t):
+    if _CL_LIST_RE.match(t):
         return "list"
-    if re.match(r"^\|.*\|$", t):
+    if _CL_TABLE_RE.match(t):
         return "table"
-    if re.match(r"^(User|Assistant|System|Tool|Developer):", t) or re.match(
-        r"^\[(user|assistant|system|tool|developer)\]", t, re.IGNORECASE
-    ):
+    if _CL_CHAT_RE.match(t) or _CL_CHAT_TAG_RE.match(t):
         return "chat"
-    if t[:1] in "{[" or re.match(r'^"[A-Za-z0-9_]+"\s*:', t):
+    if t[:1] in "{[" or _CL_JSON_KEY_RE.match(t):
         return "json"
-    if re.match(r"^(\/\/|#|\/\*|\*)", t):
+    if _CL_COMMENT_RE.match(t):
         return "comment"
     return "text"
 
@@ -389,13 +471,18 @@ def _template_long_enough(line: str) -> bool:
     return len(_DIGITS_RE.sub("#", " ".join(line[:_RX_LINE_CAP].lower().split()))) > 12
 
 
+_PROGRESS_BAR_RE = re.compile(r"(\[[=#>\-. ]*\]\s*)?\d{1,3}\s*(%|/\s*\d+)")
+_COMPILING_RE = re.compile(r"^Compiling [\w-]+ ")
+
+
 def _is_progress_bar(line: str) -> bool:
     t = line.strip()
     if not t:
         return False
-    if re.search(r"(\[[=#>\-. ]*\]\s*)?\d{1,3}\s*(%|/\s*\d+)", t):
+    # (the pattern needs a literal "%" or "/": most lines have neither)
+    if ("%" in t or "/" in t) and _PROGRESS_BAR_RE.search(t):
         return True
-    return bool(re.match(r"^Compiling [\w-]+ ", t))
+    return bool(_COMPILING_RE.match(t))
 
 
 # ---------------------------------------------------------------------------
@@ -503,10 +590,22 @@ def _is_level_error_line(line: str) -> bool:
     return _ERR_LEVEL_RE.search(_without_zero_counts(line[:_RX_LINE_CAP])) is not None
 
 
+# Every way a line can be an error line contains one of these literals (the
+# zero-count removal below only deletes text), so a line without any is not
+# one. Perf (v1.4.2): one scan replaces four regexes on the ~99% of log lines
+# that are not errors.
+_ERROR_LINE_HINT_RE = re.compile(
+    r"ERROR|FATAL|CRITICAL|PANIC|FAIL|Error:|Exception:|Traceback \(most recent call last\)|panic:"
+)
+
+
 def _is_error_line(line: str) -> bool:
     """Level-tagged error, ``XxxError:``/``Exception:`` head, traceback head or
     Go panic — the lines :func:`error_fingerprints` keys on."""
-    s = _without_zero_counts(line[:_RX_LINE_CAP])
+    capped = line[:_RX_LINE_CAP]
+    if _ERROR_LINE_HINT_RE.search(capped) is None:
+        return False
+    s = _without_zero_counts(capped)
     # The exception head is anchored at the line start: look past a "[×N] "
     # collapse prefix so the same failure keeps its key after a fold.
     head = s
@@ -548,6 +647,14 @@ def error_fingerprints(text: str) -> dict[str, str]:
     kept an exemplar of every failure, ``error_fingerprints(x).keys() <=
     error_fingerprints(c).keys()`` — a host can use that as a retention check.
     """
+    if not text:
+        return {}
+    if type(text) is str and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS:
+        return dict(_error_fingerprints_cached(text))
+    return _error_fingerprints_scan(text)
+
+
+def _error_fingerprints_scan(text: str) -> dict[str, str]:
     found: dict[str, str] = {}
     if not text:
         return found
@@ -558,6 +665,11 @@ def error_fingerprints(text: str) -> dict[str, str]:
         if fp and fp not in found:
             found[fp] = line
     return found
+
+
+@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+def _error_fingerprints_cached(text: str) -> dict[str, str]:
+    return _error_fingerprints_scan(text)
 
 
 def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
@@ -580,6 +692,16 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     trace_src: list[int] = []
     query_match_indices: set[int] = set()
     query_selectors = distinctive_query_terms(query or "")
+    # Perf (v1.4.2): a line is fingerprinted up to three times below (collapse,
+    # count attach, error restore); the fingerprint is a pure function of it.
+    fp_memo: dict[str, str | None] = {}
+
+    def fingerprint(line: str) -> str | None:
+        try:
+            return fp_memo[line]
+        except KeyError:
+            fp = fp_memo[line] = _log_fingerprint(line)
+            return fp
 
     def flush_trace() -> None:
         nonlocal trace, trace_src
@@ -604,13 +726,11 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
 
     query_match_source_indices: set[int] = set()
     if query_selectors:
+        selector_tests = [_term_test(selector) for selector in query_selectors]
         candidates = [
             idx
             for idx, line in enumerate(kept_lines)
-            if any(
-                _term_in_text(selector, line.casefold())
-                for selector in query_selectors
-            )
+            if _any_test(selector_tests, line.casefold())
         ]
         if len(candidates) <= MAX_QUERY_TEMPLATE_MATCHES:
             query_match_source_indices = set(candidates)
@@ -632,9 +752,8 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     n = len(kept_lines)
     while i < n:
         line = kept_lines[i]
-        kind = classify_line(line)
-        is_trace_like = kind == "trace" or bool(
-            (trace or (out and _looks_indented_frame(line))) and re.match(r"^\s+", line)
+        is_trace_like = _is_trace_line(line) or bool(
+            (trace or (out and _looks_indented_frame(line))) and _LEADING_SPACE_RE.match(line)
         )
         if is_trace_like:
             trace.append(line)
@@ -650,7 +769,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
             out_src.append(kept_src[i])
             i += 1
             continue
-        fp = _log_fingerprint(line)
+        fp = fingerprint(line)
         if fp and _template_long_enough(line):
             if fp in exemplar_idx:
                 seen[fp] += 1
@@ -675,7 +794,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
             counted_out.append(ln)
             counted_src.append(out_src[idx])
             continue
-        fp = _log_fingerprint(ln)
+        fp = fingerprint(ln)
         cnt = seen.get(fp, 1) if fp else 1
         if fp and cnt > 1 and not ln.lstrip().startswith("[\u00d7"):
             counted_out.append(f"[\u00d7{cnt}] {ln}")
@@ -705,14 +824,14 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
         present_fps: set[str] = set()
         for ln in result:
             if has_error_signal(ln):
-                fp = _log_fingerprint(_COUNT_PREFIX_RE.sub("", ln, count=1))
+                fp = fingerprint(_COUNT_PREFIX_RE.sub("", ln, count=1))
                 if fp:
                     present_fps.add(fp)
         missing: list[tuple[int, str]] = []
         for src_idx, ln in orig_errors:
             if ln in present_lines:
                 continue
-            fp = _log_fingerprint(ln)
+            fp = fingerprint(ln)
             if fp and fp in present_fps:
                 continue
             if fp:
@@ -734,19 +853,23 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     return _collapse_blanks(result)
 
 
+_FRAME_GOROUTINE_RE = re.compile(r"^\s+goroutine \d+")
+_FRAME_JAVA_RE = re.compile(r"^\s*at\s+[\w$.]+\(")
+_FRAME_GO_RE = re.compile(r"^\s*[\w().*/]+\([\w/.$-]+:\d+\)")
+_FRAME_CALL_RE = re.compile(r"^\s+[\w./$-]+\([^)]*:\d+\)")
+_LEADING_SPACE_RE = re.compile(r"^\s+")
+
+
 def _looks_indented_frame(line: str) -> bool:
     """Go/Java-style stack frame shapes (NTK classifier table, subset)."""
     t = line.strip()
-    if not t.startswith("\t") and not line.startswith("    "):
-        # also treat single-tab-ish indents via leading whitespace check below
-        pass
-    if re.match(r"^\s+goroutine \d+", t) or "goroutine" in t[:40]:
+    if _FRAME_GOROUTINE_RE.match(t) or "goroutine" in t[:40]:
         return True
-    if re.match(r"^\s*at\s+[\w$.]+\(", t):          # Java: at org.x.Y.f(Foo.java:12)
+    if _FRAME_JAVA_RE.match(t):          # Java: at org.x.Y.f(Foo.java:12)
         return True
-    if re.match(r"^\s*[\w().*/]+\([\w/.$-]+:\d+\)", t):  # Go: pkg.Fn(/path/file.go:88)
+    if _FRAME_GO_RE.match(t):  # Go: pkg.Fn(/path/file.go:88)
         return True
-    if re.match(r"^\s+[\w./$-]+\([^)]*:\d+\)", t):
+    if _FRAME_CALL_RE.match(t):
         return True
     return False
 
@@ -1203,6 +1326,28 @@ def _marker_in_tool_payload(text: str, markers: tuple[str, ...]) -> bool:
 def preprocess(
     text: str, query: str, content_hint: str | None = None
 ) -> tuple[list[str], str]:
+    if (
+        type(text) is str
+        and type(query) is str
+        and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS
+        and len(query) <= _MEMO_MAX_QUERY_CHARS
+    ):
+        lines, kind = _preprocess_cached(text, query, content_hint)
+        return list(lines), kind
+    return _preprocess_scan(text, query, content_hint)
+
+
+@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+def _preprocess_cached(
+    text: str, query: str, content_hint: str | None
+) -> tuple[tuple[str, ...], str]:
+    lines, kind = _preprocess_scan(text, query, content_hint)
+    return tuple(lines), kind
+
+
+def _preprocess_scan(
+    text: str, query: str, content_hint: str | None = None
+) -> tuple[list[str], str]:
     lines = _norm_newlines(text).split("\n")
     kind = _HINT_ROUTES.get(content_hint) or route_content_type(lines)
     if kind == "log":
@@ -1226,6 +1371,17 @@ def preprocess(
 
 
 def _extract_terms(query: str) -> list[str]:
+    if type(query) is str and len(query) <= 2048:
+        return list(_extract_terms_cached(query))
+    return _extract_terms_scan(query)
+
+
+@functools.lru_cache(maxsize=256)
+def _extract_terms_cached(query: str) -> tuple[str, ...]:
+    return tuple(_extract_terms_scan(query))
+
+
+def _extract_terms_scan(query: str) -> list[str]:
     terms: list[str] = []
     seen: set[str] = set()
     for raw in _TOKEN_RE.findall(query or ""):
@@ -1324,6 +1480,17 @@ def _topic_terms(query: str) -> list[str]:
 
 
 def _extract_entities(query: str) -> list[str]:
+    if type(query) is str and len(query) <= 2048:
+        return list(_extract_entities_cached(query))
+    return _extract_entities_scan(query)
+
+
+@functools.lru_cache(maxsize=256)
+def _extract_entities_cached(query: str) -> tuple[str, ...]:
+    return tuple(_extract_entities_scan(query))
+
+
+def _extract_entities_scan(query: str) -> list[str]:
     found: list[str] = []
     for rx in (_URI_RE, _PATH_RE, _DOTTED_RE, _CAMEL_RE, _QUOTED_RE, _CAPS_RE):
         for m in rx.finditer(query or ""):
@@ -1452,12 +1619,112 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
     return blocks
 
 
+
+@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]:
+    return tuple(segment_blocks(list(lines)))
+
+
+def _segment_blocks_memo(lines: list[str]) -> list[dict[str, Any]]:
+    """:func:`segment_blocks`, remembered for the newest few large inputs.
+
+    A block is a flat dict of str/int values, so a shallow copy per block is
+    a full copy: callers may mutate what they get back.
+    """
+    if not _MEMO_MIN_CHARS <= sum(map(len, lines)) <= _MEMO_MAX_CHARS:
+        return segment_blocks(lines)
+    return [dict(b) for b in _segment_blocks_cached(tuple(lines))]
+
+
+_SCORED_MEMO: "collections.OrderedDict[tuple, tuple[dict[str, Any], ...]]" = collections.OrderedDict()
+_SCORED_MEMO_LOCK = threading.Lock()
+
+
+def _score_blocks_memo(
+    score_lines: list[str],
+    blocks: list[dict[str, Any]],
+    query: str,
+    content_type: str | None,
+    *,
+    degraded: bool,
+) -> list[dict[str, Any]]:
+    """``score_blocks(blocks, query, content_type=...)`` for the blocks of
+    ``score_lines``, remembered for the newest few large inputs.
+
+    The key is the line content (the blocks are a function of it), the query
+    and the content type; a degraded scoring view rewrites block text and is
+    never remembered. Scored blocks are flat dicts, copied on the way out.
+    """
+    if (
+        degraded
+        or type(query) is not str
+        or len(query) > _MEMO_MAX_QUERY_CHARS
+        or not _MEMO_MIN_CHARS <= sum(map(len, score_lines)) <= _MEMO_MAX_CHARS
+    ):
+        return score_blocks(blocks, query, content_type=content_type)
+    key = (tuple(score_lines), query, content_type)
+    with _SCORED_MEMO_LOCK:
+        hit = _SCORED_MEMO.get(key)
+        if hit is not None:
+            _SCORED_MEMO.move_to_end(key)
+    if hit is None:
+        hit = tuple(score_blocks(blocks, query, content_type=content_type))
+        with _SCORED_MEMO_LOCK:
+            _SCORED_MEMO[key] = hit
+            while len(_SCORED_MEMO) > _MEMO_ENTRIES:
+                _SCORED_MEMO.popitem(last=False)
+    return [dict(b) for b in hit]
+
+
+def _clear_memos() -> None:
+    """Forget every remembered analysis (tests and benchmarks use this to
+    measure a cold call; the engine never needs it)."""
+    from . import contract_gates, industrial, unicode_profile
+
+    for fn in (
+        _contains_secret_cached, _error_fingerprints_cached, _extract_critical_lines_cached,
+        _preprocess_cached, _segment_blocks_cached, _brief_scan_cached,
+        _block_link_terms_cached, _extract_entities_cached, _extract_terms_cached,
+        _estimate_tokens_cached,
+        industrial._profile_input_cached, unicode_profile._search_units_cached,
+        contract_gates._distinctive_query_terms_cached,
+    ):
+        fn.cache_clear()
+    with _SCORED_MEMO_LOCK:
+        _SCORED_MEMO.clear()
+
+
 def _soft_has(text: str, needle: str) -> bool:
     if not needle:
         return False
     if needle in text:
         return True
     return needle.lower() in text.lower()
+
+
+def _term_test(term: str) -> Callable[[str], bool]:
+    """``lambda lower: _term_in_text(term, lower)`` with the pattern compiled once."""
+    if not term:
+        return lambda lower: False
+    o = ord(term[0])
+    syllabic = (
+        0x4E00 <= o <= 0x9FFF
+        or 0x3040 <= o <= 0x30FF
+        or 0xAC00 <= o <= 0xD7A3
+        or 0x0600 <= o <= 0x06FF
+        or 0x0E00 <= o <= 0x0E7F
+    )
+    if syllabic or len(term) > 5:
+        return lambda lower: term in lower
+    search = re.compile(rf"\b{re.escape(term)}\b").search
+    return lambda lower: search(lower) is not None
+
+
+def _any_test(tests: list[Callable[[str], bool]], lower: str) -> bool:
+    for test in tests:
+        if test(lower):
+            return True
+    return False
 
 
 def _term_in_text(term: str, lower: str) -> bool:
@@ -2000,8 +2267,23 @@ def _stitch_neighbors(blocks: list[dict[str, Any]], kept: set[int]) -> set[int]:
     }
 
 
-def _block_link_terms(text: str) -> set[str]:
-    """Rare relation keys used only for bounded evidence-path closure."""
+def _block_link_terms(text: str) -> frozenset[str]:
+    """Rare relation keys used only for bounded evidence-path closure.
+
+    Perf (v1.4.2): remembered per block text (a retry of the same output
+    scores the same blocks again); callers only read the result.
+    """
+    if type(text) is str and len(text) <= 2048:
+        return _block_link_terms_cached(text)
+    return frozenset(_block_link_terms_scan(text))
+
+
+@functools.lru_cache(maxsize=4096)
+def _block_link_terms_cached(text: str) -> frozenset[str]:
+    return frozenset(_block_link_terms_scan(text))
+
+
+def _block_link_terms_scan(text: str) -> set[str]:
     out = {e.casefold() for e in _extract_entities(text) if len(e) >= 3}
     for raw in _TOKEN_RE.findall(text or ""):
         term = raw.casefold().strip("؟?!.،,;:…\"'()[]")
@@ -2671,6 +2953,17 @@ _CRITICAL_NUM_RE = re.compile(
 
 
 def _extract_critical_lines(text: str) -> list[str]:
+    if type(text) is str and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS:
+        return list(_extract_critical_lines_cached(text))
+    return _extract_critical_lines_scan(text)
+
+
+@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+def _extract_critical_lines_cached(text: str) -> tuple[str, ...]:
+    return tuple(_extract_critical_lines_scan(text))
+
+
+def _extract_critical_lines_scan(text: str) -> list[str]:
     """Extract lines that look like critical facts: error lines, key-value
     pairs with identifiers, tracebacks, and lines containing numbers + words.
     Mirrors Baseline RAG's critical_lines_total/kept/dropped reporting.
@@ -2694,9 +2987,13 @@ def _extract_critical_lines(text: str) -> list[str]:
         start = _lead_ts_end(scan)
         # Lines with key-value patterns (config, settings, identifiers), or
         # lines containing specific numbers (dates, IDs, versions, counts)
-        if (len(t) > 15 and _CRITICAL_KV_RE.search(scan, start)) or _CRITICAL_NUM_RE.search(
-            scan, start
-        ):
+        # (the key-value pattern needs a "=" or ":" after the prefix; most log
+        # lines have neither, and the pattern is the slow part of this scan)
+        if (
+            len(t) > 15
+            and (scan.find("=", start) >= 0 or scan.find(":", start) >= 0)
+            and _CRITICAL_KV_RE.search(scan, start)
+        ) or _CRITICAL_NUM_RE.search(scan, start):
             critical.append(t)
     return critical
 
@@ -3727,53 +4024,67 @@ def list_ccr(
 # type-specific policy system.
 # ---------------------------------------------------------------------------
 
+_JSON_OPENER_RE = re.compile(r"[{\[]")
+_JSON_SCAN_RE = re.compile(r'[\\"{}\[\]]')
+
+
 def _detect_json_payloads(text: str) -> list[tuple[int, int, str]]:
     """Find JSON object/array spans in the text.
 
     Returns a list of (start, end, json_string) tuples where start/end are
     character offsets into the original text.
+
+    Perf (v1.4.2): the scanners jump between the characters that can change
+    their state (openers; quotes, backslashes and brackets) instead of
+    stepping through every character; the spans are unchanged.
     """
     payloads = []
     i = 0
     n = len(text)
+    find_opener = _JSON_OPENER_RE.search
+    find_special = _JSON_SCAN_RE.search
     while i < n:
-        ch = text[i]
-        if ch in "{[":
-            # Try to find the matching close
-            depth = 0
-            in_string = False
-            escape = False
-            j = i
-            while j < n:
-                c = text[j]
-                if escape:
-                    escape = False
-                elif c == "\\" and in_string:
-                    escape = True
-                elif c == '"':
-                    in_string = not in_string
-                elif not in_string:
-                    if c in "{[":
-                        depth += 1
-                    elif c in "}]":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                j += 1
-            if j < n and depth == 0:
-                candidate = text[i:j + 1]
-                # Only count if it's a reasonable JSON payload (> 200 chars)
-                if len(candidate) > 200:
-                    payloads.append((i, j + 1, candidate))
-                i = j + 1
-            else:
-                # The first unmatched opener already scanned the remaining
-                # suffix. Restarting at every later opener makes malformed
-                # input quadratic. Stop and preserve the original text; the
-                # caller's fail-open path is safer than speculative recovery.
+        opener = find_opener(text, i)
+        if opener is None:
+            break
+        i = opener.start()
+        # Try to find the matching close
+        depth = 0
+        in_string = False
+        j = i
+        while True:
+            hit = find_special(text, j)
+            if hit is None:
+                j = n
                 break
+            j = hit.start()
+            c = text[j]
+            if c == "\\":
+                if in_string:
+                    j += 2  # the escaped character is skipped, whatever it is
+                    continue
+            elif c == '"':
+                in_string = not in_string
+            elif not in_string:
+                if c in "{[":
+                    depth += 1
+                else:
+                    depth -= 1
+                    if depth == 0:
+                        break
+            j += 1
+        if j < n and depth == 0:
+            candidate = text[i:j + 1]
+            # Only count if it's a reasonable JSON payload (> 200 chars)
+            if len(candidate) > 200:
+                payloads.append((i, j + 1, candidate))
+            i = j + 1
         else:
-            i += 1
+            # The first unmatched opener already scanned the remaining
+            # suffix. Restarting at every later opener makes malformed
+            # input quadratic. Stop and preserve the original text; the
+            # caller's fail-open path is safer than speculative recovery.
+            break
     return payloads
 
 
@@ -3972,6 +4283,73 @@ def _query_hit_terms(query: str) -> list[str]:
     return terms
 
 
+def _brief_scan(
+    text: str, query: str
+) -> tuple[tuple[str, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    """The budget-independent part of :func:`brief_context`: the lines, the
+    running count of non-blank lines, and the indices of the error, warning
+    and query-hit exemplar lines (original order)."""
+    lines = text.split("\n")
+    nonblank = [0] * (len(lines) + 1)
+    for i, line in enumerate(lines):
+        nonblank[i + 1] = nonblank[i] + (1 if line.strip() else 0)
+
+    # Candidate lines by priority class (indices, original order).
+    err_idx: list[int] = []
+    warn_idx: list[int] = []
+    seen_err: set[str] = set()
+    seen_warn: set[str] = set()
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        if _is_error_line(line):
+            fp = _error_fp(line)
+            if fp not in seen_err:
+                seen_err.add(fp)
+                err_idx.append(i)
+        elif _WARN_LEVEL_RE.search(line[:_RX_LINE_CAP]):
+            fp = _error_fp(line)
+            if fp not in seen_warn:
+                seen_warn.add(fp)
+                warn_idx.append(i)
+    hit_idx: list[int] = []
+    terms = _query_hit_terms(query)
+    if terms:
+        tests = [_term_test(t) for t in terms]
+        ranked: list[tuple[int, int]] = []
+        seen_hit: set[str] = set()
+        for i, line in enumerate(lines):
+            if not line.strip():
+                continue
+            low = line[:_RX_LINE_CAP].casefold()
+            hits = sum(1 for test in tests if test(low))
+            if hits:
+                ranked.append((-hits, i))
+        for _, i in sorted(ranked):
+            fp = _error_fp(lines[i])
+            if fp not in seen_hit:
+                seen_hit.add(fp)
+                hit_idx.append(i)
+    return tuple(lines), tuple(nonblank), tuple(err_idx), tuple(warn_idx), tuple(hit_idx)
+
+
+@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+def _brief_scan_cached(text: str, query: str):
+    return _brief_scan(text, query)
+
+
+def _brief_scan_memo(text: str, query: str):
+    # Perf (v1.4.2): a host asks for the same output's brief at growing budgets;
+    # the scan does not depend on the budget. Everything returned is a tuple.
+    if (
+        type(query) is str
+        and len(query) <= _MEMO_MAX_QUERY_CHARS
+        and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS
+    ):
+        return _brief_scan_cached(text, query)
+    return _brief_scan(text, query)
+
+
 def brief_context(
     text: str,
     *,
@@ -4018,7 +4396,7 @@ def brief_context(
         if briefed is not None:
             return briefed
     total = len(text)
-    lines = text.split("\n")
+    lines, nonblank, err_idx, warn_idx, hit_idx = _brief_scan_memo(text, query)
     n = len(lines)
 
     def mark(omitted: int) -> str:
@@ -4044,48 +4422,8 @@ def brief_context(
             eff_cache[i] = cached = line
         return cached
 
-    nonblank = [0] * (n + 1)
-    for i, line in enumerate(lines):
-        nonblank[i + 1] = nonblank[i] + (1 if line.strip() else 0)
-
     def has_content(lo: int, hi: int) -> int:
         return 1 if nonblank[hi] - nonblank[lo] > 0 else 0
-
-    # Candidate lines by priority class (indices, original order).
-    err_idx: list[int] = []
-    warn_idx: list[int] = []
-    seen_err: set[str] = set()
-    seen_warn: set[str] = set()
-    for i, line in enumerate(lines):
-        if not line.strip():
-            continue
-        if _is_error_line(line):
-            fp = _error_fp(line)
-            if fp not in seen_err:
-                seen_err.add(fp)
-                err_idx.append(i)
-        elif _WARN_LEVEL_RE.search(line[:_RX_LINE_CAP]):
-            fp = _error_fp(line)
-            if fp not in seen_warn:
-                seen_warn.add(fp)
-                warn_idx.append(i)
-    hit_idx: list[int] = []
-    terms = _query_hit_terms(query)
-    if terms:
-        ranked: list[tuple[int, int]] = []
-        seen_hit: set[str] = set()
-        for i, line in enumerate(lines):
-            if not line.strip():
-                continue
-            low = line[:_RX_LINE_CAP].casefold()
-            hits = sum(1 for t in terms if _term_in_text(t, low))
-            if hits:
-                ranked.append((-hits, i))
-        for _, i in sorted(ranked):
-            fp = _error_fp(lines[i])
-            if fp not in seen_hit:
-                seen_hit.add(fp)
-                hit_idx.append(i)
 
     def build(head_cap: int, tail_cap: int, errors_first: bool) -> tuple[list[int], bool]:
         sel: list[int] = []
@@ -4262,12 +4600,13 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
                 break
     terms = _query_hit_terms(query)
     if terms and len(picked) < limit:
+        tests = [_term_test(t) for t in terms]
         ranked = []
         for i, line in enumerate(lines):
             if not line.strip() or i in picked:
                 continue
             low = line[:_RX_LINE_CAP].casefold()
-            hits = sum(1 for t in terms if _term_in_text(t, low))
+            hits = sum(1 for test in tests if test(low))
             if hits:
                 ranked.append((-hits, i))
         for _, i in sorted(ranked):
@@ -4782,7 +5121,7 @@ def compress_context(
     score_lines = lines
     if route_hint == "numbered_code":
         score_lines = [_GUTTER_RE.sub("", ln, count=1) for ln in lines]
-    blocks = segment_blocks(score_lines)
+    blocks = _segment_blocks_memo(score_lines)
     if len(blocks) > industrial.limits.max_blocks:
         tokens = estimate_tokens(caller_text)
         reason = (
@@ -4843,7 +5182,9 @@ def compress_context(
                     f"[… {omitted} chars omitted …]\n"
                     f"{full[-_DEGRADED_VIEW_TAIL:]}"
                 )
-    scored = score_blocks(blocks, query or "", content_type=content_type)
+    scored = _score_blocks_memo(
+        score_lines, blocks, query or "", content_type, degraded=degraded
+    )
 
     # v0.10.0 (G2, KVzip sink semantics): pinned blocks are exempt from
     # dropping in every selector path. Applied by boosting score and marking;

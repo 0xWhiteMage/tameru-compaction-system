@@ -5,6 +5,7 @@ shadow, while callers retain and return original substrings.
 """
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
@@ -74,6 +75,11 @@ def _is_regional_indicator(char: str) -> bool:
     return _REGIONAL_RANGE[0] <= ord(char) <= _REGIONAL_RANGE[1]
 
 
+# Perf (v1.4.2): the per-character predicates below are pure functions of one
+# character, and the grapheme walker asks them about every character of every
+# line (a 24 KB CJK log made `unicodedata.name` alone ~250k calls). Remembered
+# per character, bounded.
+@functools.lru_cache(maxsize=16384)
 def _is_extend(char: str) -> bool:
     category = unicodedata.category(char)
     codepoint = ord(char)
@@ -86,9 +92,22 @@ def _is_extend(char: str) -> bool:
     )
 
 
+@functools.lru_cache(maxsize=16384)
 def _is_virama(char: str) -> bool:
     name = unicodedata.name(char, "")
     return "VIRAMA" in name or "HALANT" in name
+
+
+@functools.lru_cache(maxsize=16384)
+def _char_flags(char: str) -> tuple[bool, bool, bool, bool, bool]:
+    """(extends a cluster, ZWJ/ZWNJ, virama, letter, regional indicator)."""
+    return (
+        _is_extend(char),
+        char in {_ZWJ, _ZWNJ},
+        _is_virama(char),
+        unicodedata.category(char).startswith("L"),
+        _is_regional_indicator(char),
+    )
 
 
 def iter_graphemes(text: str) -> Iterator[str]:
@@ -99,31 +118,30 @@ def iter_graphemes(text: str) -> Iterator[str]:
     """
     current = ""
     regional_count = 0
+    prev_joiner = prev_virama = prev_regional = False
     for char in str(text or ""):
+        extend, joiner, virama, letter, regional = _char_flags(char)
         if not current:
             current = char
-            regional_count = 1 if _is_regional_indicator(char) else 0
+            regional_count = 1 if regional else 0
+            prev_joiner, prev_virama, prev_regional = joiner, virama, regional
             continue
-        previous = current[-1]
-        append = (
-            _is_extend(char)
-            or char in {_ZWJ, _ZWNJ}
-            or previous in {_ZWJ, _ZWNJ}
-            or (_is_virama(previous) and unicodedata.category(char).startswith("L"))
-            or (
-                _is_regional_indicator(char)
-                and _is_regional_indicator(previous)
-                and regional_count % 2 == 1
-            )
-        )
-        if append:
+        if (
+            extend
+            or joiner
+            or prev_joiner
+            or (prev_virama and letter)
+            or (regional and prev_regional and regional_count % 2 == 1)
+        ):
             current += char
-            if _is_regional_indicator(char):
+            if regional:
                 regional_count += 1
+            prev_joiner, prev_virama, prev_regional = joiner, virama, regional
             continue
         yield current
         current = char
-        regional_count = 1 if _is_regional_indicator(char) else 0
+        regional_count = 1 if regional else 0
+        prev_joiner, prev_virama, prev_regional = joiner, virama, regional
     if current:
         yield current
 
@@ -132,10 +150,13 @@ def graphemes(text: str) -> list[str]:
     return list(iter_graphemes(text))
 
 
+_BIDI_DELETE = {ord(char): None for char in _BIDI_CONTROLS}
+
+
 def matching_shadow(text: str) -> str:
     """Return case-folded NFKC text with presentation-only bidi controls removed."""
     normalised = unicodedata.normalize("NFKC", str(text or ""))
-    return "".join(char for char in normalised if char not in _BIDI_CONTROLS).casefold()
+    return normalised.translate(_BIDI_DELETE).casefold()
 
 
 def unicode_safety_counts(text: str) -> tuple[int, int, bool]:
@@ -154,6 +175,7 @@ def unicode_safety_counts(text: str) -> tuple[int, int, bool]:
     return controls, overrides, malformed
 
 
+@functools.lru_cache(maxsize=16384)
 def script_of(char: str) -> str | None:
     """Return a stable script family for a representative character."""
     if not char:
@@ -204,6 +226,8 @@ def script_of(char: str) -> str | None:
 
 
 def _representative(cluster: str) -> str:
+    if len(cluster) == 1:  # the loop below returns that character either way
+        return cluster
     for char in cluster:
         if unicodedata.category(char)[0] in {"L", "N"}:
             return char
@@ -232,6 +256,22 @@ def _flush_run(run: list[str], units: list[str]) -> None:
 
 def search_units(text: str) -> list[str]:
     """Return ordered, deduplicated Unicode-aware units for query matching."""
+    # Perf (v1.4.2): queries are short and asked about again and again (once per
+    # selector check of every compress call); a fresh list is returned each time.
+    if type(text) is str and len(text) <= _UNITS_MEMO_MAX_CHARS:
+        return list(_search_units_cached(text))
+    return _search_units(text)
+
+
+_UNITS_MEMO_MAX_CHARS = 2048
+
+
+@functools.lru_cache(maxsize=256)
+def _search_units_cached(text: str) -> tuple[str, ...]:
+    return tuple(_search_units(text))
+
+
+def _search_units(text: str) -> list[str]:
     shadow = matching_shadow(text)
     units: list[str] = []
     run: list[str] = []
@@ -254,6 +294,23 @@ def search_units(text: str) -> list[str]:
     return ordered
 
 
+# ASCII characters as `token_units` treats them when they form a cluster of
+# their own: 0 whitespace/other (ends a run), 1 letter (script "latin"),
+# 2 digit (no script), 3 word joiner (extends a run, never starts one).
+_ASCII_TOKEN_CLASS = tuple(
+    0
+    if chr(i).isspace()
+    else 1
+    if chr(i).isalpha()
+    else 2
+    if chr(i).isdigit()
+    else 3
+    if chr(i) in _WORD_JOINERS
+    else 0
+    for i in range(128)
+)
+
+
 def token_units(text: str) -> list[str]:
     """Return non-overlapping logical units for deterministic token estimates."""
     units: list[str] = []
@@ -267,7 +324,25 @@ def token_units(text: str) -> list[str]:
             run.clear()
         run_script = None
 
+    ascii_class = _ASCII_TOKEN_CLASS
     for cluster in iter_graphemes(matching_shadow(text)):
+        # Perf (v1.4.2): a one-character ASCII cluster (nearly every cluster of
+        # mixed text) is decided from a table; the general path below gives the
+        # same answer for it.
+        if len(cluster) == 1 and cluster < "\x80":
+            kind = ascii_class[ord(cluster)]
+            if kind == 1:
+                if run and run_script and run_script != "latin":
+                    flush()
+                run.append(cluster)
+                run_script = run_script or "latin"
+            elif kind == 2:
+                run.append(cluster)
+            elif kind == 3 and run:
+                run.append(cluster)
+            else:
+                flush()
+            continue
         if not cluster or cluster.isspace():
             flush()
             continue

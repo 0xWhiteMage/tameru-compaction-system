@@ -5,6 +5,7 @@ Stdlib only. No I/O. Do not import compress_context.
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, field
 
@@ -115,6 +116,19 @@ _HYPHEN_RE = re.compile(r"\b\w+(?:-\w+)+\b")
 
 def distinctive_query_terms(query: str) -> list[str]:
     """Return first-seen distinctive selectors; empty if the query is generic."""
+    # Perf (v1.4.2): memoized for the short, repeatedly asked query string; a
+    # fresh list is returned each time.
+    if type(query) is str and len(query) <= 2048:
+        return list(_distinctive_query_terms_cached(query))
+    return _distinctive_query_terms(query)
+
+
+@functools.lru_cache(maxsize=256)
+def _distinctive_query_terms_cached(query: str) -> tuple[str, ...]:
+    return tuple(_distinctive_query_terms(query))
+
+
+def _distinctive_query_terms(query: str) -> list[str]:
     if not query or not str(query).strip():
         return []
     raw_text = str(query)
