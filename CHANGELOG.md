@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- Weak-query diffs: a unified diff asked about with plain words ("where was frobnicate changed?", "what changed in the rollback handling?") no longer bypasses the diff adapter. `apply_agent_adapters` discarded every adapter cut when the query had no distinctive selector, so the generic block scorer cut the diff inside hunks, dropped `@@` headers and split -/+ pairs. The adapter now stays in charge: whole hunks only, every file header, per-file stats and `@@` header line kept, one gap marker per omitted run. For a weak query it keeps each hunk containing a query word (light stemming through the new `agent_formats.light_stem`: `changed`~`change`, `handling`~`handle`; identifiers are split at `_`, digits and camelCase humps) plus the first and last hunk of every file; with no hit at all just those anchors. A plain word in a file path does not select the whole file. Unchanged: an empty or filler/generic-only query ("continue", "thanks") still licenses no cut, and a distinctive query that hits nothing still fails open.
+- Weak-query grep/rg: the same bypass discarded the saturated-query mode, so `where is frobnicate defined?` over an all-matching `rg` result fell to the generic scorer and lost the definition line. A plain-word query that hits now uses the grep adapter (a query that hits nothing still fails open; empty/filler queries still get only the lossless regroup).
+- Test-runner reduction (pytest/jest/go/cargo) was checked and never depended on query specificity: no change.
+- Threshold sweep and the 15-case battery are unchanged (77.3 / 68.4 / 61.2 / 41.5 / 24.9 %, 15/15); no benchmark case is a weak-query diff or grep.
+
 ### README presentation
 - Rebuild the v1.4.1 README around measured savings and retained evidence, with headline figures, a comparison chart, a runnable before/after example and clear Python, CLI and Hermes setup.
 - Keep all current comparison methods visible and expand the release QA table to all 15 workloads, grouped by documents/configuration, tool outputs, multilingual text and robustness.

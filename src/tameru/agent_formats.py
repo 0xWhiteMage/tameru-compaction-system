@@ -26,6 +26,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Callable
 
+from .contract_gates import query_has_distinctive_selectors
 from .unicode_profile import matching_shadow
 
 GapMarker = Callable[[int, int], str]
@@ -421,6 +422,56 @@ def _diff_path(f: _DiffFile) -> str:
     return last.removeprefix("b/")
 
 
+_STEM_SUFFIXES = ("ions", "ion", "ings", "ing", "ers", "er", "ed", "es", "s", "ly")
+_STEM_TOKEN_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])")
+
+
+def light_stem(word: str) -> str:
+    """A deliberately light, stdlib-only stem: ``changed``/``change``/``changes``
+    share ``chang``, ``handling``/``handle``/``handler`` share ``handl``,
+    ``retried``/``retries``/``retry`` share ``retri``. Both sides of a match go
+    through this function, so it only has to be consistent, not linguistic."""
+    w = word.lower()
+    for suffix in _STEM_SUFFIXES:
+        if w.endswith(suffix) and len(w) - len(suffix) >= 3:
+            w = w[: -len(suffix)]
+            break
+    if len(w) >= 4 and w.endswith("e"):
+        w = w[:-1]
+    if len(w) >= 4 and w[-1] == w[-2] and w[-1] not in "aeiou":
+        w = w[:-1]
+    if w.endswith("y"):
+        w = w[:-1] + "i"
+    return w
+
+
+class _StemMatcher:
+    """Matches plain alphabetic query words against the word stems of a text
+    (identifiers are split at ``_``, digits and camelCase humps)."""
+
+    def __init__(self, selectors: tuple[str, ...]):
+        self._stems = frozenset(
+            light_stem(sel)
+            for sel in selectors
+            if sel.isascii() and sel.isalpha() and len(sel) >= 3
+        )
+        self._memo: dict[str, str] = {}
+        self.empty = not self._stems
+
+    def hit(self, text: str) -> bool:
+        if self.empty:
+            return False
+        memo = self._memo
+        stems = self._stems
+        for token in _STEM_TOKEN_RE.findall(text):
+            stem = memo.get(token)
+            if stem is None:
+                stem = memo[token] = light_stem(token)
+            if stem in stems:
+                return True
+        return False
+
+
 def adapt_unified_diff(
     text: str, query: str, *, gap_marker: GapMarker | None = None
 ) -> AdapterResult | None:
@@ -430,8 +481,11 @@ def adapt_unified_diff(
     (placed after that run's hunk header lines).
 
     ``None`` when ``text`` is not a unified diff. With no distinctive query
-    terms (or none that hit) the first and last hunk of each file are kept.
-    When nothing is dropped the text is returned unchanged.
+    terms (or none that hit) the first and last hunk of each file are kept; a
+    weak query made of plain words also keeps every hunk that contains one of
+    them (light stemming, so ``changed`` finds ``change`` and ``handling``
+    finds ``handle``) in addition to those anchors. When nothing is dropped
+    the text is returned unchanged.
     """
     if not detect_unified_diff(text):
         return None
@@ -439,26 +493,40 @@ def adapt_unified_diff(
     preamble, files = _parse_diff(lines)
     if not files or not any(f.hunks for f in files):
         return None
+    from .format_adapters import _query_selectors
+
     matcher = _matcher_for(query)
+    # A weak query (plain words: "where was frobnicate changed?") has no
+    # identifier to anchor on, so hunks mentioning one of its words (stemmed:
+    # changed~change, handling~handle) are kept together with the first and
+    # last hunk of every file. A distinctive query keeps just what it names.
+    weak = not query_has_distinctive_selectors(query or "")
+    stems = _StemMatcher(_query_selectors(query or "") if weak else ())
+
+    def mentions(chunk: str) -> bool:
+        return matcher.hit(chunk) or stems.hit(chunk)
+
     total_hunks = sum(len(f.hunks) for f in files)
     keep: list[list[bool]] = []
     any_hit = False
     for f in files:
         flags = [False] * len(f.hunks)
         if not matcher.empty:
-            if matcher.hit(_diff_path(f)):
+            # (a plain word in a path does not select the whole file)
+            if not weak and matcher.hit(_diff_path(f)):
                 flags = [True] * len(f.hunks)
             else:
                 for k, hunk in enumerate(f.hunks):
-                    if matcher.hit("\n".join(hunk)):
+                    if mentions("\n".join(hunk)):
                         flags[k] = True
             any_hit = any_hit or any(flags)
         keep.append(flags)
-    if not any_hit:  # weak/empty query, or no hunk mentions it: orient the reader
-        for f, flags in zip(files, keep):
-            if flags:
-                flags[0] = True
-                flags[-1] = True
+    for flags in keep:
+        # Nothing mentions the query (or it is filler/empty), or the query is
+        # weak: orient the reader with the first and last hunk of each file.
+        if flags and (weak or not any_hit):
+            flags[0] = True
+            flags[-1] = True
     kept_hunks = sum(sum(flags) for flags in keep)
     if kept_hunks == total_hunks:
         return AdapterResult("diff", text, total_hunks, kept_hunks, "no hunks omitted", hit=any_hit)
@@ -1169,9 +1237,17 @@ def apply_agent_adapters(
     """Run the diff / grep adapter that ``hint`` names or detection finds.
 
     Returns ``(text, info)``; ``info`` is ``None`` (and ``text`` untouched)
-    unless an adapter produced a strictly shorter text. With a weak query
-    (``weak_query=True``: no distinctive terms, e.g. "continue") only a
-    lossless result is accepted: filler must not license a cut.
+    unless an adapter produced a strictly shorter text. A query with no content
+    word at all (``weak_query=True`` and no selector survives: "continue",
+    "thanks", "") licenses no cut: only a lossless result is accepted.
+
+    A weak query that does carry words ("where was frobnicate changed?") is
+    not filler: the adapter stays in charge (v1.4.2), because the generic block
+    scorer would cut a diff mid-hunk and drop the definition line of a
+    saturated grep. A diff is cut by whole hunks only (when no hunk mentions a
+    weak query its first and last hunk per file are kept); a grep result needs
+    at least one match that hits, as before. A distinctive query that hits
+    nothing still licenses no cut.
     """
     if hint not in (None, "diff", "grep"):
         return text, None
@@ -1182,12 +1258,15 @@ def apply_agent_adapters(
         result = adapt_grep_lines(text, query, gap_marker=gap_marker)
     if result is None or len(result.text) >= len(text):
         return text, None
-    if (weak_query or not result.hit) and result.kept_records < result.total_records:
-        # A filler or empty query -- or a distinctive one that selects nothing
+    if result.kept_records < result.total_records:
+        contentless = weak_query and _matcher_for(query).empty
+        # An empty/filler query -- or a distinctive one that selects nothing
         # in this output -- licenses no cut (E6): only a lossless regroup
-        # (every match kept) may apply. The adapters themselves still
-        # offer first/last-hunk orientation to direct callers.
-        return text, None
+        # (every match kept) may apply. A weak query made of plain words
+        # selects nothing by design, so for a diff (never left to the generic
+        # scorer) the first/last-hunk orientation cut stands.
+        if contentless or (not result.hit and not (weak_query and result.format == "diff")):
+            return text, None
     return result.text, {
         "name": result.format,
         "total_records": result.total_records,
