@@ -99,9 +99,12 @@ GENERIC_WORDS = frozenset(
     }
 )
 
+# The lookbehinds only skip start positions inside a run the same alternative
+# already failed on from the run's first character (a 20 KB single-word query
+# was rescanned from every position: quadratic, ~30 s); the matches are the same.
 LATIN_IDENT_RE = re.compile(
-    r"[A-Za-z]*\d[A-Za-z0-9_-]*"
-    r"|[A-Za-z0-9]+(?:[_./-][A-Za-z0-9]+)+"
+    r"(?<![A-Za-z])[A-Za-z]*\d[A-Za-z0-9_-]*"
+    r"|(?<![A-Za-z0-9])[A-Za-z0-9]+(?:[_./-][A-Za-z0-9]+)+"
     r"|[A-Z]{2,24}"
     r"|[A-Z][a-z]+[A-Z][A-Za-z0-9]*"
 )

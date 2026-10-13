@@ -315,11 +315,14 @@ def detect_format(text: str) -> str:
         return "tsv"
     if delimiter == ",":
         return "csv"
-    if len(re.findall(r"(?im)^\s*(?:CREATE|INSERT|UPDATE|DELETE|SELECT|ALTER|DROP|WITH)\b", value)) >= 2:
+    # ``^\s*`` in a multiline pattern also eats newlines, so a run of blank
+    # lines was rescanned from every line start (quadratic): same-line
+    # whitespace only, which finds the same lines.
+    if len(re.findall(r"(?im)^[^\S\n]*(?:CREATE|INSERT|UPDATE|DELETE|SELECT|ALTER|DROP|WITH)\b", value)) >= 2:
         return "sql"
     if (
-        len(re.findall(r"(?m)^\s*\[[^\]\n]+\]\s*$", value)) >= 2
-        and re.search(r"(?m)^\s*[A-Za-z_][\w.-]*\s*=", value)
+        len(re.findall(r"(?m)^[^\S\n]*\[[^\]\n]+\]\s*$", value)) >= 2
+        and re.search(r"(?m)^[^\S\n]*[A-Za-z_][\w.-]*\s*=", value)
     ):
         return "ini"
     if re.search(r"(?m)^#{1,6}\s+|^```|^~~~", value):

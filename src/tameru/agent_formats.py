@@ -168,7 +168,7 @@ _CODE_KW_RE = re.compile(
     r")"
 )
 _SQL_LIKE_RE = re.compile(
-    r"(?im)^\s*(?:CREATE|INSERT|UPDATE|DELETE|SELECT|ALTER|DROP)\b"
+    r"(?im)^[^\S\n]*(?:CREATE|INSERT|UPDATE|DELETE|SELECT|ALTER|DROP)\b"
 )
 _STANDALONE_CLOSERS = frozenset({"}", "};", "})", "});", ");", "],", "},"})
 

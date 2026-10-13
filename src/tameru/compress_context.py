@@ -1827,6 +1827,10 @@ def score_blocks(
         if not re.fullmatch(r"\w{4,}", c_lower):
             continue
         df = token_counter.get(c_lower, 0)
+    # The word-boundary pattern of each short term is compiled once per call:
+    # ``re`` keeps only 512, so a long query (thousands of terms) recompiled
+    # every pattern for every block (~80k compiles for a 30 KB query).
+    term_tests = [(t, _term_test(t)) for t in terms]
         # Require the entity to be in at least 2 but at most n/2 blocks
         # (if it's in every block, it's a filler word, not a bridge)
         if 2 <= df <= n // 2:
@@ -1845,8 +1849,8 @@ def score_blocks(
             if _soft_has(b["text"], e):
                 entity_df[e] = entity_df.get(e, 0) + 1
         lower = b["text"].lower()
-        for t in terms:
-            if _term_in_text(t, lower):
+        for t, term_test in term_tests:
+            if term_test(lower):
                 term_df[t] = term_df.get(t, 0) + 1
     # Pre-compute token document frequency for novelty + fact-density.
     # A token's DF is the number of blocks it appears in. Low DF (1-2)
@@ -1971,8 +1975,8 @@ def score_blocks(
         trust_risk = bool(
             _TRUST_RISK_RE.search(_normalise_instruction_text(b["text"]))
         )
-        for t in terms:
-            if _term_in_text(t, lower):
+        for t, term_test in term_tests:
+            if term_test(lower):
                 term_hits += 1
                 df = term_df.get(t, 1)
                 if df <= max(2, int(0.2 * n)):
