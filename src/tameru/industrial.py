@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 from dataclasses import asdict, dataclass, replace
 from typing import Callable
 
@@ -76,10 +77,27 @@ class IndustrialResult:
             "reason": self.reason,
             "profile": self.profile.to_dict(),
             "limits": self.limits.to_dict(),
-            "format_result": (
-                self.format_result.to_dict() if self.format_result is not None else None
-            ),
+            "format_result": _format_result_summary(self.format_result),
         }
+
+
+def _format_result_summary(result: FormatResult | None) -> dict[str, object] | None:
+    """``FormatResult.to_dict()`` without the text itself.
+
+    The receipt is audit metadata that hosts log and store. The adapter's text
+    is the whole input (or its reduction): copying it there duplicated every
+    input (up to the 8 MB limit) and put credentials from lines the output had
+    dropped into a field nobody screens. The length and digest identify it.
+    """
+    if result is None:
+        return None
+    summary = result.to_dict()
+    text = str(summary.pop("text", "") or "")
+    summary["text_chars"] = len(text)
+    summary["text_sha256"] = hashlib.sha256(
+        text.encode("utf-8", errors="surrogatepass")
+    ).hexdigest()
+    return summary
 
 
 def _profile_sample(text: str, max_profile_chars: int) -> tuple[str, bool]:

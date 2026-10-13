@@ -3326,7 +3326,7 @@ def _block_fingerprint(block: dict[str, Any]) -> str:
     The block id distinguishes repeated identical records that can receive
     different head/middle/tail decisions. Appending turns preserves prior ids.
     """
-    content_hash = hashlib.sha256(block["text"].encode("utf-8")).hexdigest()[:12]
+    content_hash = hashlib.sha256(block["text"].encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
     return f"{block['type']}:{block.get('id', '?')}:{content_hash}"
 
 
@@ -3360,7 +3360,7 @@ def _apply_freeze(
     decisions: dict = decision_cache[cache_key]
     decision_cache["schema_version"] = 1
 
-    query_hash = hashlib.sha256((query or "").encode("utf-8")).hexdigest()[:12]
+    query_hash = hashlib.sha256((query or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
     cached_query_hash = decision_cache.get("query_hash")
     if isinstance(cached_query_hash, str) and cached_query_hash != query_hash:
         decisions = {}
@@ -3376,7 +3376,7 @@ def _apply_freeze(
         cached_prefix_len = min(len(original_text), 500)
         decision_cache["ctx_prefix_len"] = cached_prefix_len
     ctx_hash = hashlib.sha256(
-        original_text[:cached_prefix_len].encode("utf-8")
+        original_text[:cached_prefix_len].encode("utf-8", errors="surrogatepass")
     ).hexdigest()[:12]
     if "ctx_hash" not in decision_cache:
         decision_cache["ctx_hash"] = ctx_hash
@@ -3387,7 +3387,7 @@ def _apply_freeze(
         cached_prefix_len = min(len(original_text), 500)
         decision_cache["ctx_prefix_len"] = cached_prefix_len
         ctx_hash = hashlib.sha256(
-            original_text[:cached_prefix_len].encode("utf-8")
+            original_text[:cached_prefix_len].encode("utf-8", errors="surrogatepass")
         ).hexdigest()[:12]
         decision_cache["ctx_hash"] = ctx_hash
 
@@ -3528,7 +3528,7 @@ def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any] | None:
     except OSError:
         pass
     sweep_ccr_cache(path, max_records=CCR_SWEEP_MAX_RECORDS)
-    digest = hashlib.sha256(original.encode("utf-8")).hexdigest()[:24]
+    digest = hashlib.sha256(original.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
     payload = {
         "hash": digest,
         "stored_at": time.time(),
@@ -3957,7 +3957,7 @@ def retrieve(
     original = data.get("original")
     if not isinstance(original, str):
         return None
-    if hashlib.sha256(original.encode("utf-8")).hexdigest()[:24] != ccr_hash:
+    if hashlib.sha256(original.encode("utf-8", errors="surrogatepass")).hexdigest()[:24] != ccr_hash:
         return None
     if offset or limit is not None:
         start = max(0, int(offset))
@@ -4859,7 +4859,7 @@ def compress_context(
                 "engine": "tameru",
                 "policy": "local-fail-open",
                 "query_hash": hashlib.sha256(
-                    (query_as_given or "").encode("utf-8")
+                    (query_as_given or "").encode("utf-8", errors="surrogatepass")
                 ).hexdigest()[:12],
                 "savings_pct": 0.0,
                 "risk": "high",
@@ -5089,7 +5089,7 @@ def compress_context(
                     "engine": "tameru",
                     "policy": "summarise-llm",
                     "query_hash": hashlib.sha256(
-                        (query_as_given or "").encode("utf-8")
+                        (query_as_given or "").encode("utf-8", errors="surrogatepass")
                     ).hexdigest()[:12],
                     "savings_pct": round((1.0 - keep_ratio) * 100.0, 2),
                     "risk": summary_risk,
@@ -5137,7 +5137,7 @@ def compress_context(
             "engine": "tameru",
             "policy": "local-fail-open",
             "query_hash": hashlib.sha256(
-                (query_as_given or "").encode("utf-8")
+                (query_as_given or "").encode("utf-8", errors="surrogatepass")
             ).hexdigest()[:12],
             "savings_pct": 0.0,
             "risk": "high",
@@ -5510,7 +5510,7 @@ def compress_context(
     pending_ccr_hash = None
     candidate_text = result_text
     if ccr and not fail_open and compressed != original_text and not secret_in_input:
-        pending_ccr_hash = hashlib.sha256(caller_text.encode("utf-8")).hexdigest()[:24]
+        pending_ccr_hash = hashlib.sha256(caller_text.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
         if "[CC-Retrieve:" not in candidate_text:
             candidate_text = (
                 candidate_text.rstrip()
@@ -5594,7 +5594,7 @@ def compress_context(
     )
 
     # v0.10.0 (G5 memorix receipt): machine-readable provenance.
-    query_hash = hashlib.sha256((query_as_given or "").encode("utf-8")).hexdigest()[:12]
+    query_hash = hashlib.sha256((query_as_given or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
     receipt = {
         "schema_version": "1",
         "engine": "tameru",
