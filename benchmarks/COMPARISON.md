@@ -11,6 +11,8 @@ Freshly measured on **2026-10-12**, using **Tameru v1.4.1** and the same **16 ta
 | LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8,091.08 ms | Yes |
 | LCC → JEV — unmeasured | — | — | — | — | — | — |
 
+**Status on v1.5.0.** This record was measured on Tameru v1.4.1 and is the only measurement of the competitor methods. Tameru v1.5.0 reproduces the Tameru column's outputs exactly (`python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json`: same corpus hash, same output hashes, savings and retention on all 16 cases). Timings are not restated for v1.5.0, and no competitor was re-run.
+
 All numeric cells are new measurements from this run. The earlier v1.2.0 holdout and v1.3.0 comparison have been retired from active documentation; their original records remain in Git history. No older score is relabelled as v1.4.1.
 
 ## What the measurements mean
@@ -81,10 +83,10 @@ OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 RAYON_NUM_THREADS=8 USE_TF=0 \
   python benchmarks/compare.py --laya-revision 1720e3e3357cfe1e281542e223f8273b0890ca34 \
   --lcc-source-sha 16f0ddf2b136154e5c80301237d3c860df42baac \
   --laya-source-sha 682ac6719faa5b1c04b529501feb93e58ee91f3d
-python benchmarks/compare.py --render-from benchmarks/comparison-v1.4.1.json
+python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json
 ```
 
-The default command excludes paid JEV calls. Add `--include-jev` only when you have configured `TYPESAFE_API_KEY` and intend to run that provider. `--render-from` regenerates this page, the README headline/comparison blocks and the theme-aware SVG chart from the JSON. It preserves the rest of the README.
+The default command excludes paid JEV calls. Add `--include-jev` only when you have configured `TYPESAFE_API_KEY` and intend to run that provider. `--verify-against` re-runs only the Tameru arm and exits non-zero if any output hash, saving or retention result differs from the record (timings excluded). `--render-from` regenerates this page, the README blocks and the SVG chart from a report of the same engine version, so it needs a fresh full comparison on a later release.
 
 ## Limits and interpretation
 

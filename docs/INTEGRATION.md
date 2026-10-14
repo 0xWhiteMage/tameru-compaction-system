@@ -5,10 +5,10 @@ Python API, a CLI subprocess or a self-contained vendored copy.
 
 ## 1. Python API (pip)
 
-Install the reviewed v1.4.1 engine source directly. The GitHub tag and Release are pending publication; see the [quickstart](../README.md#quickstart) for the current source pin:
+Install the reviewed v1.5.0 engine source directly. The GitHub tag and Release are pending publication; see the [quickstart](../README.md#quickstart) for the current source pin:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@976f7a5049c2a32410a112a8748dd245cf7c464c"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@933aa33f6456c16db1b623e26ecc73c9b9be95d7"
 ```
 
 ```python

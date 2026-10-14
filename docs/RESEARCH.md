@@ -2,7 +2,7 @@
 
 Continuously-updated study notes. Sources are grouped by kind; each entry lists
 what it does and what maps onto Tameru's deterministic, extractive, local-first
-design. The current measured comparisons use Tameru **v1.4.1**; see
+design. The current measured comparisons were recorded on Tameru **v1.4.1** (v1.5.0 reproduces Tameru's outputs on them); see
 [results and methodology](../benchmarks/COMPARISON.md). Research origins and
 historical implementation versions below are not additional benchmark scores.
 
@@ -51,7 +51,7 @@ historical implementation versions below are not additional benchmark scores.
 
 - **Measure retention and distractors separately.** Keeping an answer string
   does not establish that stale or excluded evidence was removed. The current
-  v1.4.1 report includes both checks on every repeated output.
+  comparison report includes both checks on every repeated output.
 - **Model results need a model pin and a working provider.** Laya's multilingual
   checkpoint is a 322M-parameter model, not a 1K-parameter model. Runtime,
   context limits, calibration and hardware affect its results. Failed or
@@ -60,7 +60,7 @@ historical implementation versions below are not additional benchmark scores.
   source, saturated grep and captured test output exercise different
   boundaries from prose paragraphs. Component-level results do not describe
   every compressor in a parent product's router.
-- **Check repeatability rather than assume it.** The v1.4.1 comparison measures
+- **Check repeatability rather than assume it.** The comparison measures
   a warmup and three timed outputs, then records whether their text is identical.
 
 ## 2026-10 survey takeaways

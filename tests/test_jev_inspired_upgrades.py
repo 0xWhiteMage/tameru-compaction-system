@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from pathlib import Path
 
 from tameru import IndustrialLimits
 from tameru.compress_context import compress_context, retrieve

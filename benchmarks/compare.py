@@ -393,8 +393,8 @@ def render_report(report: dict) -> None:
     )
     short = (
         f"**Same input. Same query. Same {count} tasks.** The current comparison covers "
-        "documents, configuration, Git/npm/YAML output, multilingual text and v1.4.1's "
-        "grep, pytest and numbered-source cases.\n\n"
+        "documents, configuration, Git/npm/YAML output, multilingual text and saturated "
+        "grep, captured pytest and numbered-source cases.\n\n"
         f"![v{__version__} comparison of mean character savings and clean cases across measured methods]"
         f"(assets/comparison-v{__version__}.svg)\n\n"
         + comparison_table(report, include_repeats=False) + "\n\n"
@@ -457,7 +457,7 @@ def render_report(report: dict) -> None:
         f"# Tameru v{__version__} — current comparisons\n\n" + intro + table + "\n\n"
         "All numeric cells are new measurements from this run. The earlier v1.2.0 holdout "
         "and v1.3.0 comparison have been retired from active documentation; their original "
-        "records remain in Git history. No older score is relabelled as v1.4.1.\n\n"
+        f"records remain in Git history. No older score is relabelled as v{__version__}.\n\n"
         "## What the measurements mean\n\n"
         "- **Required strings:** specified source evidence found in every warmup/timed output. "
         "A loss in any repeat counts as a loss.\n"
@@ -497,7 +497,7 @@ def render_report(report: dict) -> None:
         f"{env.get('cpu_model', 'CPU model unavailable')}; CPU quota "
         f"`{env.get('cpu_quota', 'not recorded')}`, thread settings "
         f"`{env.get('thread_settings')}`. Hardware and scheduling affect latency.\n\n"
-        "The [raw JSON](comparison-v1.4.1.json) records the corpus and input hashes, "
+        f"The [raw JSON](comparison-v{__version__}.json) records the corpus and input hashes, "
         "runner hash, source pins, package versions, output hashes, missing/leaked "
         "strings and individual timing samples.\n\n"
         "Documentation and chart rendering can change after a measurement run. "
@@ -526,7 +526,7 @@ def render_report(report: dict) -> None:
         f"  python benchmarks/compare.py --laya-revision {report['protocol']['laya']['revision']} \\\n"
         f"  --lcc-source-sha {pins.get('lcc')} \\\n"
         f"  --laya-source-sha {pins.get('laya')}\n"
-        "python benchmarks/compare.py --render-from benchmarks/comparison-v1.4.1.json\n```\n\n"
+        f"python benchmarks/compare.py --render-from benchmarks/comparison-v{__version__}.json\n```\n\n"
         "The default command excludes paid JEV calls. Add `--include-jev` only when "
         "you have configured `TYPESAFE_API_KEY` and intend to run that provider. "
         "`--render-from` regenerates this page, the README headline/comparison blocks "
@@ -541,6 +541,38 @@ def render_report(report: dict) -> None:
     (ROOT / "benchmarks/COMPARISON.md").write_text(full, encoding="utf-8")
 
 
+VERIFIED_FIELDS = ("status", "output_chars", "output_sha256", "savings_pct", "gold_kept", "gold_total",
+                   "missing_gold", "forbid_leaks", "leaked_forbid", "deterministic", "returned_original")
+
+
+def verify_against(recorded: dict, repeats: int = 3) -> int:
+    """Re-run the Tameru arm and compare everything but timing with a recorded report.
+
+    Competitor arms are never re-run or copied; this only answers whether the
+    current engine still produces the recorded Tameru outputs on the recorded corpus.
+    """
+    cases = current_cases()
+    manifests = [manifest(c) for c in cases]
+    if digest(json.dumps(manifests, ensure_ascii=False, sort_keys=True)) != recorded["corpus_sha256"]:
+        print("corpus differs from the recorded report", flush=True)
+        return 1
+    runner = make_runner("tameru", argparse.Namespace())
+    expected = recorded["arms"]["tameru"]["results"]
+    mismatches = []
+    common = recorded["protocol"]["common_cases"]
+    for case in cases:
+        if case["name"] not in common:
+            continue
+        row = measure(runner, case, max(2, repeats))
+        mismatches += [f"{case['name']}.{key}: recorded {expected[case['name']].get(key)!r}, now {row[key]!r}"
+                       for key in VERIFIED_FIELDS if row[key] != expected[case["name"]].get(key)]
+    print(f"Tameru v{__version__} vs recorded v{recorded['tameru_version']}: "
+          f"{len(common)} cases, {len(mismatches)} differing fields (timings excluded)", flush=True)
+    for line in mismatches:
+        print("  " + line, flush=True)
+    return 1 if mismatches else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arms", nargs="+", choices=ARMS, default=list(ARMS))
@@ -552,11 +584,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--laya-source-sha")
     parser.add_argument("--resume", action="store_true", help="resume matching inputs/settings without repeating completed measurements")
     parser.add_argument("--render-from", type=Path, help="render current docs from a completed JSON report")
+    parser.add_argument("--verify-against", type=Path,
+                        help="re-run only the Tameru arm and check its scores and output hashes against a recorded report (timings are not compared)")
     args = parser.parse_args(argv)
     if args.render_from:
         render_report(json.loads(args.render_from.read_text(encoding="utf-8")))
         print("Updated README and COMPARISON.md from the recorded results")
         return 0
+    if args.verify_against:
+        return verify_against(json.loads(args.verify_against.read_text(encoding="utf-8")), args.repeats)
     if args.repeats < 2:
         parser.error("--repeats must be at least 2 to check repeat output")
     cases = current_cases()

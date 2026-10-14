@@ -1,6 +1,6 @@
 # Tameru usage and controls
 
-The [README](../README.md) covers the first run, comparisons and v1.4.1 results. This guide covers recovery, optional models and controls for integrations.
+The [README](../README.md) covers the first run, comparisons and measured results. This guide covers recovery, optional models and controls for integrations.
 
 ## Safety, recovery and limitations
 

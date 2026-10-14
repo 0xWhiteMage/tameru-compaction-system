@@ -109,3 +109,17 @@ def test_resume_refuses_a_different_corpus(monkeypatch, tmp_path):
     monkeypatch.setattr(compare, "current_cases", lambda: [{**case, "q": "changed task"}])
     with pytest.raises(ValueError, match="corpus_sha256 changed"):
         compare.main(["--arms", "tameru", "--output", str(out), "--resume"])
+
+
+def test_verify_against_reports_identical_outputs_and_flags_changes(monkeypatch, tmp_path, capsys):
+    case = {"name": "tiny", "ctx": "alpha\n\nbeta answer\n\ngamma", "q": "answer", "gold": ["answer"]}
+    monkeypatch.setattr(compare, "current_cases", lambda: [case])
+    out = tmp_path / "results.json"
+    assert compare.main(["--arms", "tameru", "--output", str(out)]) == 0
+    assert compare.main(["--verify-against", str(out)]) == 0
+    assert "0 differing fields" in capsys.readouterr().out
+    report = json.loads(out.read_text())
+    report["arms"]["tameru"]["results"]["tiny"]["output_sha256"] = "0" * 64
+    out.write_text(json.dumps(report))
+    assert compare.main(["--verify-against", str(out)]) == 1
+    assert "output_sha256" in capsys.readouterr().out
