@@ -80,7 +80,8 @@ DEFAULT_SUMMARY_MODELS = (
 )
 DEFAULT_SUMMARY_TIMEOUT = 30.0
 _CCR_HASH_RE = re.compile(r"^[0-9a-f]{24}$")
-_CCR_SWEEP_CURSOR = 0
+_CCR_SWEEP_CURSOR: dict[str, int] = {}
+_CCR_SWEEP_LOCK = threading.Lock()
 
 # Degraded scoring view (opt-in, JEV-inspired): on input size-limit breaches,
 # score a bounded head+tail view per block while emitted output stays
@@ -3566,10 +3567,14 @@ def sweep_ccr_cache(
     records = sorted(root.glob("*.json"), key=lambda path: path.name)
     if limit is not None and records:
         total = len(records)
-        start = _CCR_SWEEP_CURSOR % total
-        count = min(limit, total)
+        key = str(root.resolve())
+        with _CCR_SWEEP_LOCK:
+            if not isinstance(_CCR_SWEEP_CURSOR, dict):
+                _CCR_SWEEP_CURSOR = {}
+            start = int(_CCR_SWEEP_CURSOR.get(key, 0)) % total
+            count = min(limit, total)
+            _CCR_SWEEP_CURSOR[key] = (start + count) % total
         records = [records[(start + offset) % total] for offset in range(count)]
-        _CCR_SWEEP_CURSOR += count
     for fp in records:
         try:
             data = json.loads(fp.read_text(encoding="utf-8-sig"))
