@@ -137,3 +137,23 @@ def test_compiler_diagnostic_gets_exemplar_in_text():
     blocks = cc.segment_blocks("\n\n".join(paragraphs).split("\n"))
     scored = cc.score_blocks(blocks, "build", content_type="text")
     assert sum(1 for b in scored if b["error_exemplar"]) == 1
+
+
+def test_dup_fp_masks_volatile_fields():
+    from tameru.compress_context import _dup_fp
+
+    a = "gcc -O2 -c src/util1.c -o build/util1.o\ngcc -O2 -c src/util2.c -o build/util2.o"
+    b = "gcc -O2 -c src/util7.c -o build/util7.o\ngcc -O2 -c src/util8.c -o build/util8.o"
+    assert _dup_fp(a) == _dup_fp(b)
+    assert _dup_fp("alpha beta") != _dup_fp("gamma delta")
+
+
+def test_hint_prefilter_is_superset_on_positive_lines():
+    from tameru.agent_formats import is_diagnostic_line
+
+    for line in POSITIVE:
+        assert is_diagnostic_line(line)
+    for line in NEGATIVE:
+        assert not is_diagnostic_line(line)
+    assert is_diagnostic_line("app/models/order.rb:33:in `subtotal'", code_only=True)
+    assert not is_diagnostic_line("2026-10-17 11:00:00 FEHLER Zahlung abgelehnt", code_only=True)

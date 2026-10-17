@@ -243,10 +243,25 @@ _DIAGNOSTIC_LOCALE_RE = re.compile(
     r"|\b(?:FEHLER|ERREUR|ОШИБКА|ERRORE|FOUT|BŁĄD)\b"
 )
 DIAGNOSTIC_LINE_RE = re.compile(DIAGNOSTIC_CODE_LINE_RE.pattern + "|" + _DIAGNOSTIC_LOCALE_RE.pattern)
+# Every DIAGNOSTIC_LINE_RE match contains one of these literals (perf prefilter; keep in sync).
+_DIAGNOSTIC_HINT_RE = re.compile(
+    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED"
+    r"|Failed asserting|but was|xpected:|got:|ctual:|Received:|at |#|:in "
+    r"|エラー|错误|錯誤|异常|異常|오류|에러|致命的|FEHLER|ERREUR|ОШИБКА|ERRORE|FOUT|BŁĄD"
+)
+
+
+def is_diagnostic_line(line: str, *, code_only: bool = False) -> bool:
+    """``DIAGNOSTIC_LINE_RE`` (or ``DIAGNOSTIC_CODE_LINE_RE`` when ``code_only``) matches ``line[:4096]``."""
+    head = line[:4096]
+    if _DIAGNOSTIC_HINT_RE.search(head) is None:
+        return False
+    rx = DIAGNOSTIC_CODE_LINE_RE if code_only else DIAGNOSTIC_LINE_RE
+    return rx.search(head) is not None
 
 def looks_like_diagnostics(text: str) -> bool:
     lines = text.split("\n")[:2000]
-    return sum(1 for line in lines if DIAGNOSTIC_LINE_RE.search(line[:4096]) is not None) >= 2
+    return sum(1 for line in lines if is_diagnostic_line(line)) >= 2
 
 def code_vetoes_yaml(text: str) -> bool:
     """Code lines count against YAML: a text with a real share of them is not."""
