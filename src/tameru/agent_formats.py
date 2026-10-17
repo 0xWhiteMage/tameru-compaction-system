@@ -248,6 +248,16 @@ DIAGNOSTIC_CODE_LINE_RE = re.compile(
     r"|^\*\* \([\w.]+\)"
     # npm (v6-v9 "ERR!", v10+ "error")
     r"|^npm (?:ERR!|error) "
+    # kubectl get pods: a status row "<name>  0/1  CrashLoopBackOff  ..."
+    r"|^\S+\s+\d+/\d+\s+(?:CrashLoopBackOff|ImagePullBackOff|ErrImagePull|OOMKilled|CreateContainerConfigError|Error)\s"
+    # kubectl events: "Warning  BackOff  2m  kubelet  ..."
+    r"|^\s*Warning\s+(?:Failed\w*|BackOff|Unhealthy|Evicted)\s"
+    # terraform diagnostics box: "│ Error: Invalid count argument"
+    r"|^[│|]\s*Error:\s"
+    # jest/vitest failing file head: " FAIL  src/x.test.ts"
+    r"|^\s*FAIL\s+\S+\.(?:test|spec)\.[cm]?[jt]sx?\b"
+    # jest failing test title: "  ● suite › test"
+    r"|^\s*● \S.*›"
     # dotnet test failed case
     r"|^\s+Failed\s+[\w.`<>,+]+\s+\[[\d.]+\s*m?s\]"
     # dotnet test summary
@@ -260,7 +270,7 @@ _DIAGNOSTIC_LOCALE_RE = re.compile(
 DIAGNOSTIC_LINE_RE = re.compile(DIAGNOSTIC_CODE_LINE_RE.pattern + "|" + _DIAGNOSTIC_LOCALE_RE.pattern)
 # Every DIAGNOSTIC_LINE_RE match contains one of these literals (perf prefilter; keep in sync).
 _DIAGNOSTIC_HINT_RE = re.compile(
-    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED|make|command not found|Permission denied|ERR!|npm error|\*\* \(|Failed"
+    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED|make|command not found|Permission denied|ERR!|npm error|\*\* \(|Failed|BackOff|ErrImage|OOMKilled|CreateContainer|Unhealthy|Evicted|FAIL|●"
     r"|Failed asserting|but was|xpected:|got:|ctual:|Received:|at |#|:in "
     r"|エラー|错误|錯誤|异常|異常|오류|에러|致命的|FEHLER|ERREUR|ОШИБКА|ERRORE|FOUT|BŁĄD"
 )
