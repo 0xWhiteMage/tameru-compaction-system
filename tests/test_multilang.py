@@ -157,3 +157,78 @@ def test_hint_prefilter_is_superset_on_positive_lines():
         assert not is_diagnostic_line(line)
     assert is_diagnostic_line("app/models/order.rb:33:in `subtotal'", code_only=True)
     assert not is_diagnostic_line("2026-10-17 11:00:00 FEHLER Zahlung abgelehnt", code_only=True)
+
+
+def test_anchor_errors_compresses_without_query():
+    from tameru.compress_context import compress_context
+
+    text = "\n".join(f"gcc -O2 -c src/util{i}.c -o build/util{i}.o" for i in range(80)) + (
+        "\nsrc/net/socket.c:58:12: error: 'addrlen' undeclared (first use in this function)\n"
+        "make: *** [Makefile:24: build/socket.o] Error 1"
+    )
+    off = compress_context(text, [], ccr=False, citations=False)
+    on = compress_context(text, [], ccr=False, citations=False, anchor_errors=True)
+    assert off.fail_open
+    assert not on.fail_open
+    assert len(on.compressed_text) < 0.5 * len(text)
+    assert "socket.c:58:12: error: 'addrlen' undeclared" in on.compressed_text
+    assert on.compression_risk != "low"
+
+
+def test_anchor_errors_no_errors_still_fails_open():
+    from tameru.compress_context import compress_context
+
+    text = "\n".join(f"line {i} of plain output with nothing wrong" for i in range(80))
+    r = compress_context(text, [], ccr=False, citations=False, anchor_errors=True)
+    assert r.fail_open
+
+
+def test_anchor_errors_does_not_override_real_query():
+    from tameru.compress_context import compress_context
+
+    text = "\n".join(f"gcc -O2 -c src/util{i}.c -o build/util{i}.o" for i in range(80)) + (
+        "\nsrc/net/socket.c:58:12: error: 'addrlen' undeclared"
+    )
+    a = compress_context(text, ["util7.c"], ccr=False, citations=False)
+    b = compress_context(text, ["util7.c"], ccr=False, citations=False, anchor_errors=True)
+    assert a.compressed_text == b.compressed_text
+
+
+def test_anchor_region_keeps_python_frames():
+    from tameru.compress_context import compress_context
+
+    log = "\n".join(f"2026-10-17 10:{i % 60:02d}:00,123 INFO worker.pool: processed batch {i * 37 % 997} ok" for i in range(150))
+    log += (
+        "\n2026-10-17 11:00:01,004 ERROR worker.pool: job crashed\nTraceback (most recent call last):\n"
+        '  File "/srv/app/worker/pool.py", line 214, in run\n    result = handler(payload)\n'
+        '  File "/srv/app/worker/handlers.py", line 57, in handle_invoice\n'
+        "    amount = payload['amount'] / payload['qty']\nZeroDivisionError: division by zero\n"
+    )
+    log += "\n".join(f"2026-10-17 11:{i % 60:02d}:30,555 INFO worker.pool: processed batch {i * 41 % 991} ok" for i in range(60))
+    r = compress_context(log, [], ccr=False, citations=False, anchor_errors=True)
+    assert not r.fail_open
+    assert 'handlers.py", line 57, in handle_invoice' in r.compressed_text
+    assert "ZeroDivisionError: division by zero" in r.compressed_text
+    assert len(r.compressed_text) < 0.6 * len(log)
+
+
+def test_make_and_shell_errors_are_diagnostics():
+    from tameru.agent_formats import is_diagnostic_line
+
+    assert is_diagnostic_line("make: *** [Makefile:24: build/socket.o] Error 1", code_only=True)
+    assert is_diagnostic_line("./scripts/migrate.sh: line 42: psql: command not found", code_only=True)
+    assert is_diagnostic_line("tar: dist/x: Cannot open: Permission denied", code_only=True)
+    assert not is_diagnostic_line("make all", code_only=True)
+
+
+def test_long_python_trace_keeps_culprit_frame():
+    from tameru.compress_context import preprocess_logs
+
+    lines = ["2026-10-17 10:00:00 INFO start", "Traceback (most recent call last):"]
+    for i in range(6):
+        lines += [f'  File "/srv/app/m{i}.py", line {10 + i}, in f{i}', f"    g{i}()"]
+    lines += ['  File "/srv/app/handlers.py", line 57, in handle_invoice', "    a / b", "ZeroDivisionError: division by zero"]
+    out = "\n".join(preprocess_logs(lines))
+    assert 'handlers.py", line 57, in handle_invoice' in out
+    assert "ZeroDivisionError: division by zero" in out
+    assert "frames omitted" in out

@@ -755,6 +755,9 @@ def _error_fingerprints_cached(text: str) -> dict[str, str]:
     return _error_fingerprints_scan(text)
 
 
+_TRACE_KEEP_HEAD = 3  # exception head + outermost frames (Java/Go/JS put the head first)
+_TRACE_KEEP_TAIL = 3  # innermost frame + source line + exception (Python), or the Caused-by root (Java)
+
 def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     """v0.9.0 log preprocessing (NTK layer1 filter adoption):
 
@@ -790,16 +793,16 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
         nonlocal trace, trace_src
         if not trace:
             return
-        if len(trace) <= 4:
+        if len(trace) <= _TRACE_KEEP_HEAD + _TRACE_KEEP_TAIL:
             out.extend(trace)
             out_src.extend(trace_src)
         else:
-            out.append(trace[0])
-            out_src.append(trace_src[0])
-            out.append(f"  ... {len(trace) - 2} frames omitted")
-            out_src.append(trace_src[1])
-            out.append(trace[-1])
-            out_src.append(trace_src[-1])
+            out.extend(trace[:_TRACE_KEEP_HEAD])
+            out_src.extend(trace_src[:_TRACE_KEEP_HEAD])
+            out.append(f"  ... {len(trace) - _TRACE_KEEP_HEAD - _TRACE_KEEP_TAIL} frames omitted")
+            out_src.append(trace_src[_TRACE_KEEP_HEAD])
+            out.extend(trace[-_TRACE_KEEP_TAIL:])
+            out_src.extend(trace_src[-_TRACE_KEEP_TAIL:])
         trace = []
         trace_src = []
 
@@ -4747,6 +4750,48 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
     return [lines[i] for i in sorted(picked)]
 
 
+_ANCHOR_REGION_BEFORE = 8
+_ANCHOR_REGION_AFTER = 12
+
+
+def _anchor_regions(text: str, max_regions: int) -> list[str]:
+    """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
+    fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
+    ``_ANCHOR_REGION_BEFORE`` before and ``_ANCHOR_REGION_AFTER`` after). A neighbour line is frame-like
+    when it is non-blank and either starts with whitespace, starts with "Caused by" or "Traceback", or is
+    itself an error/diagnostic line (``_is_error_line``). Each line is stripped and capped at
+    ``_ANCHOR_LINE_CHARS``; a region is the lines joined with "\n"."""
+    lines = _norm_newlines(text).split("\n")
+    exemplars = set(error_fingerprints(text).values())
+    regions: list[str] = []
+    seen_rows: set[int] = set()
+
+    def frame_like(s: str) -> bool:
+        return bool(s.strip()) and (
+            s[:1] in " \t" or s.lstrip().startswith(("Caused by", "Traceback")) or _is_error_line(s)
+        )
+
+    for i, line in enumerate(lines):
+        if len(regions) >= max_regions:
+            break
+        if i in seen_rows or line not in exemplars:
+            continue
+        exemplars.discard(line)
+        lo = i
+        while lo > 0 and i - lo < _ANCHOR_REGION_BEFORE and frame_like(lines[lo - 1]):
+            lo -= 1
+        hi = i
+        while hi + 1 < len(lines) and hi - i < _ANCHOR_REGION_AFTER and frame_like(lines[hi + 1]):
+            hi += 1
+        seen_rows.update(range(lo, hi + 1))
+        regions.append("\n".join(ln.strip()[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1] if ln.strip()))
+    return regions
+
+
+_ANCHOR_MAX_LINES = 8
+_ANCHOR_LINE_CHARS = 200
+
+
 def compress_context(
     context: str,
     query: str | Iterable[str],
@@ -4773,6 +4818,7 @@ def compress_context(
     summary_allow_remote: bool | None = None,
     limits: IndustrialLimits | None = None,
     derive_query: bool = False,
+    anchor_errors: bool = False,
     gap_marker: Callable[[int, int], str] | None = None,
     recursion_markers: Iterable[str] = (),
     content_hint: str | None = None,
@@ -4853,6 +4899,20 @@ def compress_context(
         derived_terms = _derive_query_terms(caller_text)
         if derived_terms:
             query = " ".join(derived_terms)
+    # v1.6.0 (multilang): error-anchored objective (opt-in). With no usable query, tool output that carries
+    # errors/diagnostics is compressed around them: the error region of each fingerprint's first exemplar
+    # (head line plus adjacent frame lines, up to _ANCHOR_MAX_LINES regions) becomes the query. Receipts mark it
+    # query_source="error-anchored"; the risk floor is medium, like a derived objective.
+    anchor_lines: list[str] = []
+    if (
+        anchor_errors
+        and not derived_terms
+        and not query_has_distinctive_selectors(query or "")
+        and not _topic_terms(query or "")
+    ):
+        anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
+        if anchor_lines:
+            query = "\n".join(anchor_lines)
     requested_mode = (mode or "adaptive").strip().lower()
     if requested_mode not in {"adaptive", "fixed", "compiler", "precision"}:
         raise ValueError(
@@ -5106,6 +5166,7 @@ def compress_context(
             degraded_view=degraded_view,
             limits=limits,
             derive_query=derive_query,
+            anchor_errors=anchor_errors,
             gap_marker=gap_marker,
             recursion_markers=recursion_markers,
             content_hint=content_hint,
@@ -5681,7 +5742,7 @@ def compress_context(
         recall = min(recall, float(verifier.get("score", 0.0)))
     # An inferred objective is advisory context, not caller intent — a
     # derived query never earns a "low" compression-risk rating.
-    if derived_terms and risk == "low":
+    if (derived_terms or anchor_lines) and risk == "low":
         risk = "medium"
     __cr = CompressResult(
         compressed_text=result_text,
@@ -5731,8 +5792,9 @@ def compress_context(
         "sufficiency_restored": selection.get("sufficiency_restored") or [],
         # TPC lesson: callers must see when the objective was inferred,
         # not supplied — a derived query is advisory context, not intent.
-        "query_source": "derived" if derived_terms else "caller",
+        "query_source": "derived" if derived_terms else ("error-anchored" if anchor_lines else "caller"),
         "derived_terms": derived_terms,
+        "anchor_lines": anchor_lines,
         # v1.4.0: E7 — the keep-set came from structural collapse alone.
         "structural_collapse_only": bool(structural_collapse_only and not fail_open),
         # v1.4.0: E8 — the caller's routing hint, always recorded.

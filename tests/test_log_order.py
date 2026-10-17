@@ -85,6 +85,8 @@ def test_frame_run_error_line_is_restored_between_first_and_last_frame():
         "\tat org.app.ExceptionHandler.handle(Handler.java:88)",
         "\tat org.app.Dao.load(Dao.java:31)",
         "\tat org.app.Dao.query(Dao.java:77)",
+        "\tat org.app.Mid.a(Mid.java:1)",
+        "\tat org.app.Mid.b(Mid.java:2)",
         "\tat org.app.Main.main(Main.java:5)",
         "INFO  recovered",
     ]

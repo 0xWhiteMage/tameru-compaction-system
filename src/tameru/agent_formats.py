@@ -237,6 +237,9 @@ DIAGNOSTIC_CODE_LINE_RE = re.compile(
     r"|^#\d+\s+(?:0x[0-9a-f]+\s+in\s+)?\S+.*\bat\s+\S+:\d+"
     r"|^#\d+\s+\S+\.php\(\d+\):"
     r"|[\w./\\-]+\.\w{1,8}:\d+:in\s+[`'(]"
+    r"|\bmake(?:\[\d+\])?: \*\*\* .*\bError \d+"
+    r"|: command not found$"
+    r"|\bPermission denied\b"
 )
 _DIAGNOSTIC_LOCALE_RE = re.compile(
     r"(?:エラー|错误|錯誤|异常|異常|오류|에러|致命的)"
@@ -245,7 +248,7 @@ _DIAGNOSTIC_LOCALE_RE = re.compile(
 DIAGNOSTIC_LINE_RE = re.compile(DIAGNOSTIC_CODE_LINE_RE.pattern + "|" + _DIAGNOSTIC_LOCALE_RE.pattern)
 # Every DIAGNOSTIC_LINE_RE match contains one of these literals (perf prefilter; keep in sync).
 _DIAGNOSTIC_HINT_RE = re.compile(
-    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED"
+    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED|make|command not found|Permission denied"
     r"|Failed asserting|but was|xpected:|got:|ctual:|Received:|at |#|:in "
     r"|エラー|错误|錯誤|异常|異常|오류|에러|致命的|FEHLER|ERREUR|ОШИБКА|ERRORE|FOUT|BŁĄD"
 )
