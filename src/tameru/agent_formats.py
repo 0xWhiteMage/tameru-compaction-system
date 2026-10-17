@@ -240,6 +240,22 @@ DIAGNOSTIC_CODE_LINE_RE = re.compile(
     r"|\bmake(?:\[\d+\])?: \*\*\* .*\bError \d+"
     r"|: command not found$"
     r"|\bPermission denied\b"
+    # eslint/stylelint stylish: "  42:7  error  msg  rule"
+    r"|^\s+\d+:\d+\s+error\s+\S"
+    # Elixir Logger / lowercase bracketed level
+    r"|\[error\]"
+    # Elixir exception head: "** (KeyError) ..."
+    r"|^\*\* \([\w.]+\)"
+    # npm (v6-v9 "ERR!", v10+ "error")
+    r"|^npm (?:ERR!|error) "
+    # kubectl
+    r"|\b(?:CrashLoopBackOff|ImagePullBackOff|ErrImagePull|OOMKilled|CreateContainerConfigError)\b"
+    # kubectl events
+    r"|^\s*Warning\s+(?:Failed\w*|BackOff|Unhealthy|Evicted)\s"
+    # dotnet test failed case
+    r"|^\s+Failed\s+[\w.`<>,+]+\s+\[[\d.]+\s*m?s\]"
+    # dotnet test summary
+    r"|^Failed!\s+-\s+Failed:"
 )
 _DIAGNOSTIC_LOCALE_RE = re.compile(
     r"(?:エラー|错误|錯誤|异常|異常|오류|에러|致命的)"
@@ -248,7 +264,7 @@ _DIAGNOSTIC_LOCALE_RE = re.compile(
 DIAGNOSTIC_LINE_RE = re.compile(DIAGNOSTIC_CODE_LINE_RE.pattern + "|" + _DIAGNOSTIC_LOCALE_RE.pattern)
 # Every DIAGNOSTIC_LINE_RE match contains one of these literals (perf prefilter; keep in sync).
 _DIAGNOSTIC_HINT_RE = re.compile(
-    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED|make|command not found|Permission denied"
+    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED|make|command not found|Permission denied|ERR!|npm error|\*\* \(|BackOff|ErrImage|OOMKilled|CreateContainer|Failed"
     r"|Failed asserting|but was|xpected:|got:|ctual:|Received:|at |#|:in "
     r"|エラー|错误|錯誤|异常|異常|오류|에러|致命的|FEHLER|ERREUR|ОШИБКА|ERRORE|FOUT|BŁĄD"
 )
