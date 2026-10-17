@@ -2016,9 +2016,10 @@ def score_blocks(
                         seen_error_fps.add(fp)
                         error_exemplar_ids.add(b["id"])
     elif content_type != "code":
-        # v1.6.0 (multilang): compiler/test/runtime diagnostics (DIAGNOSTIC_CODE_LINE_RE) in non-log output
-        # .NET/Kotlin/Swift errors, Ruby/PHP/JS runtime errors, non-English error levels) keep one
-        # exemplar block per fingerprint too; bounded so a wall of distinct warnings cannot pin all.
+        # v1.6.0 (multilang): compiler/test/runtime diagnostics (DIAGNOSTIC_CODE_LINE_RE: gcc/clang/tsc/
+        # rustc/.NET/Kotlin/Swift errors, Ruby/PHP/JS runtime errors, frames, signals) in non-log output keep
+        # one exemplar block per fingerprint; non-English level words are excluded so prose is unaffected;
+        # bounded so a wall of distinct warnings cannot pin all.
         seen_diag_fps: set[str] = set()
         for b in blocks:
             if len(error_exemplar_ids) >= _DIAG_EXEMPLAR_CAP:
