@@ -2089,12 +2089,19 @@ def score_blocks(
                 continue
             if re.search(r"[\d_./-]", t) or t[0].isupper():
                 distinctive += 1
-        topic = _topic_terms(query)
+        # A topic word present in nearly every block is not a topic (IDF floor).
+        topic = [
+            t for t in _topic_terms(query)
+            if n < 10 or term_df.get(t.lower(), 0) <= 0.8 * n
+        ]
         # English topic words (alena, cinematography) are not "weak" just
         # because they lack digits. Vague next-chat ("keep every detail")
         # still gets the uniqueness floor.
         weak_boost = 0.0 if distinctive > 0 or len(topic) >= 2 else 1.0
 
+    # IDF floor: a query term in nearly every block carries no signal; it
+    # neither scores nor counts as a hit (else every block looks relevant).
+    ubiquitous_terms = {t for t, df in term_df.items() if n >= 10 and df > 0.8 * n}
     scored = []
     for idx, b in enumerate(blocks):
         score = 0.0
@@ -2115,6 +2122,8 @@ def score_blocks(
             _TRUST_RISK_RE.search(_normalise_instruction_text(b["text"]))
         )
         for t, term_test in term_tests:
+            if t in ubiquitous_terms:
+                continue
             if term_test(lower):
                 term_hits += 1
                 df = term_df.get(t, 1)
