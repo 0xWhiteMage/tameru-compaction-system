@@ -467,6 +467,29 @@ def classify_line(line: str) -> str:
     return "text"
 
 
+def _json_lines_parse(lines: list[str]) -> bool:
+    """True when the text is JSON: the whole text parses, or at least half of the first 50 non-blank lines
+    parse on their own as JSON objects/arrays (NDJSON)."""
+    text = "\n".join(lines).strip()
+    if not text or text[:1] not in "{[":
+        sample = [ln.strip() for ln in lines if ln.strip()][:50]
+    else:
+        try:
+            json.loads(text)
+            return True
+        except (ValueError, RecursionError):
+            sample = [ln.strip() for ln in lines if ln.strip()][:50]
+    ok = 0
+    for ln in sample:
+        if ln[:1] in "{[":
+            try:
+                json.loads(ln)
+                ok += 1
+            except (ValueError, RecursionError):
+                pass
+    return bool(sample) and ok * 2 >= len(sample)
+
+
 def route_content_type(lines: list[str]) -> str:
     counts: dict[str, int] = {}
     sample = lines[:50]
@@ -485,9 +508,14 @@ def route_content_type(lines: list[str]) -> str:
     if top == "chat":
         return "chat"
     joined = "\n".join(sample).strip()
-    if joined[:1] in "{[" and re.search(r'"[A-Za-z0-9_]+"\s*:', joined) and importish == 0:
+    if (
+        joined[:1] in "{["
+        and re.search(r'"[A-Za-z0-9_]+"\s*:', joined)
+        and importish == 0
+        and _json_lines_parse(lines)
+    ):
         return "json"
-    if top in {"json", "table"} and importish == 0:
+    if top in {"json", "table"} and importish == 0 and (top == "table" or _json_lines_parse(lines)):
         return "json"
     return "text"
 

@@ -245,3 +245,22 @@ def test_identifier_repeated_within_a_line_is_not_a_bridge():
     assert not r.fail_open
     assert len(r.compressed_text) < 0.5 * len(text)
     assert "socket.c:58:12: error: 'addrlen' undeclared" in r.compressed_text
+
+
+def test_bracket_prefixed_logs_do_not_route_json():
+    from tameru.compress_context import route_content_type
+
+    lines = [f"[server] GET /api/items/{i} 200 {i}ms" for i in range(60)]
+    assert route_content_type(lines) != "json"
+    lines = [f"[{i:3d}/400] Building CXX object src/mod{i}.cpp.o" for i in range(60)]
+    assert route_content_type(lines) != "json"
+
+
+def test_real_json_still_routes_json():
+    import json as _json
+    from tameru.compress_context import route_content_type
+
+    text = _json.dumps([{"id": i, "name": f"n{i}"} for i in range(30)], indent=1)
+    assert route_content_type(text.split("\n")) == "json"
+    nd = [_json.dumps({"id": i, "v": i * 2}) for i in range(30)]
+    assert route_content_type(nd) == "json"
