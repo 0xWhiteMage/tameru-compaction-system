@@ -247,6 +247,31 @@ def test_identifier_repeated_within_a_line_is_not_a_bridge():
     assert "socket.c:58:12: error: 'addrlen' undeclared" in r.compressed_text
 
 
+def test_progress_glyph_line_compacts():
+    from tameru.compress_context import _compact_progress_line
+
+    assert _compact_progress_line("." * 900 + "F" + "." * 100) == "[progress x1001: .=1000 F=1 | F@901]"
+    assert _compact_progress_line("." * 63 + " 63 / 630 ( 10%)") == "[progress x63: .=63] 63 / 630 ( 10%)"
+    assert _compact_progress_line("......") == "......"
+    assert _compact_progress_line("a normal line") == "a normal line"
+    once = _compact_progress_line("." * 50 + "E")
+    assert _compact_progress_line(once) == once
+
+
+def test_rspec_dots_compressed_with_facts():
+    from tameru.compress_context import compress_context
+
+    text = "." * 900 + "F" + "." * 100 + (
+        "\n\nFailures:\n\n  1) Invoice#total applies tax\n     Failure/Error: expect(invoice.total).to eq(110)\n\n"
+        "       expected: 110\n            got: 100\n\n     # ./spec/models/invoice_spec.rb:19:in `block (2 levels)'\n\n"
+        "Finished in 4.2 seconds\n1001 examples, 1 failure"
+    )
+    r = compress_context(text, ["why is rspec failing"], ccr=False, citations=False)
+    assert len(r.compressed_text) < 0.5 * len(text)
+    for fact in ("expected: 110", "got: 100", "invoice_spec.rb:19", "1001 examples, 1 failure"):
+        assert fact in r.compressed_text
+
+
 def test_bracket_prefixed_logs_do_not_route_json():
     from tameru.compress_context import route_content_type
 

@@ -290,6 +290,10 @@ _TOKEN_RE = re.compile(
     r"[\u3040-\u30ff]{2,}|[\uac00-\ud7a3]{2,}|"
     r"[\u0600-\u06ff]{2,}|[\u0e00-\u0e7f]{2,}"
 )
+
+# Long punctuation runs (progress dots, rulers) cost real tokens: ~1 per 4
+# chars. Only runs of 16+ so ordinary code/prose estimates do not move.
+_ASCII_SYMBOL_RUN_RE = re.compile(r"[!-/:-@\[-`{-~]{16,}")
 _CAMEL_RE = re.compile(r"\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b")
 # Slash is required between segments. `(?:/?[\w.-]+){2,}` is catastrophic
 # on long hyphenated ids (acmecorp-genesis-v14-focused-node22-raw).
@@ -401,9 +405,10 @@ def _estimate_tokens_cached(text: str) -> int:
 
 
 def _estimate_tokens(text: str) -> int:
+    runs = sum(len(m) // 4 for m in _ASCII_SYMBOL_RUN_RE.findall(text)) if len(text) >= 16 else 0
     if text.isascii() or text.translate(_FAST_ACCOUNTING_DELETE).isascii():
-        return max(1, len(_TOKEN_RE.findall(text)))
-    return max(1, len(token_units(text)))
+        return max(1, len(_TOKEN_RE.findall(text)) + runs)
+    return max(1, len(token_units(text)) + runs)
 
 
 def _norm_newlines(text: str) -> str:
@@ -1459,10 +1464,39 @@ def _preprocess_cached(
     return tuple(lines), kind
 
 
+_PROGRESS_GLYPH_RE = re.compile(r"^([.FEsSx*!PRWN]{40,})(\s+\d+\s*/\s*\d+\s*\(\s*\d+%\))?\s*$")
+
+
+def _compact_progress_line(line: str) -> str:
+    """A run of 40+ test-progress glyphs becomes one inert summary that keeps every glyph count and the
+    1-based position of each non-'.' glyph (first 20), plus any trailing "63 / 630 ( 10%)" counter:
+    "[progress x1001: .=1000 F=1 | F@901]". Other lines are returned unchanged."""
+    m = _PROGRESS_GLYPH_RE.match(line)
+    if m is None:
+        return line
+    run = m.group(1)
+    counts: dict[str, int] = {}
+    for ch in run:
+        counts[ch] = counts.get(ch, 0) + 1
+    marks = [f"{ch}@{i + 1}" for i, ch in enumerate(run) if ch != "."][:20]
+    summary = " ".join(f"{ch}={n}" for ch, n in sorted(counts.items()))
+    tail = f" | {' '.join(marks)}" if marks else ""
+    counter = (m.group(2) or "").strip()
+    return f"[progress x{len(run)}: {summary}{tail}]" + (f" {counter}" if counter else "")
+
+
+def _compact_progress_lines(lines: list[str]) -> list[str]:
+    """``_compact_progress_line`` over ``lines`` (the same list object when no line qualifies)."""
+    if any(len(ln) >= 40 and _PROGRESS_GLYPH_RE.match(ln) for ln in lines):
+        return [_compact_progress_line(ln) for ln in lines]
+    return lines
+
+
 def _preprocess_scan(
     text: str, query: str, content_hint: str | None = None
 ) -> tuple[list[str], str]:
     lines = _norm_newlines(text).split("\n")
+    lines = _compact_progress_lines(lines)
     kind = _HINT_ROUTES.get(content_hint) or route_content_type(lines)
     if kind == "log":
         return preprocess_logs(lines, query), kind
@@ -5328,7 +5362,7 @@ def compress_context(
         # (Perf, v1.4.0: preprocess() output was computed and then discarded
         # on this path — ~0.4 s of log collapsing per 650 KB — so it is not
         # run at all; the result is identical.)
-        lines = text.split("\n")
+        lines = _compact_progress_lines(text.split("\n"))
         content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
