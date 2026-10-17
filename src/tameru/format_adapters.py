@@ -12,6 +12,7 @@ from typing import Callable
 from .agent_formats import (
     code_vetoes_yaml,
     detect_grep_lines,
+    looks_like_diagnostics,
     detect_test_runner,
     detect_unified_diff,
     is_numbered_code,
@@ -256,8 +257,11 @@ def _detect_delimiter(text: str) -> str | None:
     records = _split_delimited_records(text)
     if not records or len(records) < 2:
         return None
+    n = len(records)
+    idx = sorted(set(list(range(min(8, n))) + list(range(max(0, n - 8), n)) + [i * n // 17 for i in range(1, 17)]))
+    sample = [records[i] for i in idx]
     for delimiter in ("\t", ","):
-        parsed = [_parse_delimited_record(record, delimiter, FormatLimits()) for record in records[:8]]
+        parsed = [_parse_delimited_record(record, delimiter, FormatLimits()) for record in sample]
         if any(row is None for row in parsed):
             continue
         widths = [len(row or []) for row in parsed]
@@ -309,6 +313,8 @@ def detect_format(text: str) -> str:
     if is_code:
         return "code"
     delimiter = _detect_delimiter(value)
+    if delimiter and looks_like_diagnostics(value):
+        delimiter = None  # compiler/test/runtime diagnostics, not a table
     if delimiter and rejects_table(value, stable_columns=False):
         delimiter = None  # code with commas/tabs, not a table
     if delimiter == "\t":
@@ -335,7 +341,7 @@ def detect_format(text: str) -> str:
         r"(?m)^[ \t]+(?:[-?][ \t]+)?[^\s:#][^:\n]{0,120}:\s*(?:\S.*)?$",
         value,
     )
-    if yaml_parent and yaml_child and not code_vetoes_yaml(value):
+    if yaml_parent and yaml_child and not code_vetoes_yaml(value) and not looks_like_diagnostics(value):
         return "yaml"
     if _looks_vertical(value):
         return "vertical"

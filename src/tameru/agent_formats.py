@@ -217,6 +217,37 @@ def looks_like_code(text: str) -> bool:
     return semi >= 0.5 and not _SQL_LIKE_RE.search(text)
 
 
+# Compiler/test/runtime diagnostics of many languages (file:line errors, error codes, frames, signals).
+DIAGNOSTIC_CODE_LINE_RE = re.compile(
+    r"[\w./\\-]+\.\w{1,8}:\d+(?::\d+)?:\s*(?:fatal\s+)?(?:error|warning)\b"
+    r"|[\w./\\-]+\.\w{1,8}\(\d+(?:,\d+)?\):\s*(?:error|warning)\b"
+    r"|\berror\[E\d{4}\]"
+    r"|\b(?:error|warning)\s+(?:TS|CS|MSB|NU)\d{3,5}\b"
+    r"|^\s*[ew]:\s+(?:file://)?\S+:\d+:\d+\s"
+    r"|\bthread '[^'\n]*' panicked at\b"
+    r"|\b(?:PHP\s+)?(?:Fatal error|Parse error):"
+    r"|^\s*(?:\w+::)*\w*(?:Error|Exception)\s+\("
+    r"|\b(?:SIGSEGV|SIGABRT|SIGBUS|SIGILL|SIGFPE|Segmentation fault)\b"
+    r"|^\s*Failure/Error:"
+    r"|^\s*\S+\s+>\s+\S.*\bFAILED$"
+    r"|\bFailed asserting that\b"
+    r"|\bexpected:\s*<[^>\n]*>\s*but was:\s*<"
+    r"|^\s+(?:expected|got|actual|Expected|Received|Actual|but was):\s+\S"
+    r"|^\s+at\s+[\w$.<>/\[\] ]+\([^()\n]*:\d+(?::\d+)?\)"
+    r"|^#\d+\s+(?:0x[0-9a-f]+\s+in\s+)?\S+.*\bat\s+\S+:\d+"
+    r"|^#\d+\s+\S+\.php\(\d+\):"
+    r"|[\w./\\-]+\.\w{1,8}:\d+:in\s+[`'(]"
+)
+_DIAGNOSTIC_LOCALE_RE = re.compile(
+    r"(?:エラー|错误|錯誤|异常|異常|오류|에러|致命的)"
+    r"|\b(?:FEHLER|ERREUR|ОШИБКА|ERRORE|FOUT|BŁĄD)\b"
+)
+DIAGNOSTIC_LINE_RE = re.compile(DIAGNOSTIC_CODE_LINE_RE.pattern + "|" + _DIAGNOSTIC_LOCALE_RE.pattern)
+
+def looks_like_diagnostics(text: str) -> bool:
+    lines = text.split("\n")[:2000]
+    return sum(1 for line in lines if DIAGNOSTIC_LINE_RE.search(line[:4096]) is not None) >= 2
+
 def code_vetoes_yaml(text: str) -> bool:
     """Code lines count against YAML: a text with a real share of them is not."""
     strong, semi, n = code_scores(text)
