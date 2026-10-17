@@ -1101,6 +1101,10 @@ def _looks_like_csv(text: str) -> bool:
     lines = [ln for ln in text.split("\n") if ln.strip()]
     if len(lines) < 6 or lines[0].count(",") < 2:
         return False
+    # Paragraph prose is not a table: CSV rows are not separated by blank lines.
+    raw = text.split("\n", 120)[:120]
+    if sum(1 for ln in raw if not ln.strip()) > 0.3 * len(raw):
+        return False
     similar = sum(1 for ln in lines[1:40] if ln.count(",") >= 2)
     if similar < 4:
         return False
@@ -3045,6 +3049,67 @@ def select_adaptive(
     return _ret(kept, False, risk, path)
 
 
+# v1.6.0 (multilang): no-query prose brief (opt-in ``prose_brief``).
+_PROSE_DATA_RE = re.compile(
+    r"\d[\d,.]*\s*(?:%|％|万|萬|億|亿|元|円|원|€|\$|£|¥|[kKmM]\b|GB|MB|ms\b)"
+    r"|[$€£¥]\s*\d"
+    r"|\b[A-Za-z]{1,8}[-_]\d{2,}\b"
+    r"|\d{4,}"
+    r"|\d+\.\d+"
+    r"|\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b"
+)
+_PROSE_DUP_JACCARD = 0.8
+_PROSE_REP_WINDOW = 64
+_PROSE_MIN_BLOCKS = 8
+
+
+def _prose_shingles(text: str) -> frozenset[str]:
+    """Character 3-gram set of ``text`` (lowercased, digits -> '#', whitespace collapsed, first 2000 chars)."""
+    s = " ".join(re.sub(r"\d", "#", text[:2000].lower()).split())
+    if len(s) < 3:
+        return frozenset({s})
+    return frozenset(s[i : i + 3] for i in range(len(s) - 2))
+
+
+def select_prose_brief(
+    blocks: list[dict[str, Any]], *, out: dict[str, Any] | None = None
+) -> tuple[set[int], bool, str]:
+    """Keep-set for the no-query prose brief (see ``prose_brief`` in :func:`compress_context`)."""
+    def _ret(kept: set[int], fail: bool, risk: str, name: str) -> tuple[set[int], bool, str]:
+        if out is not None:
+            out["path"] = name
+        return kept, fail, risk
+
+    all_ids = {b["id"] for b in blocks}
+    if len(blocks) < _PROSE_MIN_BLOCKS:
+        return _ret(all_ids, True, "high", "prose-brief-small")
+    kept: set[int] = set()
+    reps: list[frozenset[str]] = []
+    for pos, b in enumerate(blocks):
+        if b.get("trust_risk") and not b.get("pinned"):
+            continue
+        if pos in (0, len(blocks) - 1) or b.get("pinned") or b.get("error_exemplar"):
+            kept.add(b["id"])
+            reps.append(_prose_shingles(b["text"]))
+            continue
+        sh = _prose_shingles(b["text"])
+        dup = False
+        for rep in reps[-_PROSE_REP_WINDOW:]:
+            union = len(sh | rep)
+            if union and len(sh & rep) / union >= _PROSE_DUP_JACCARD:
+                dup = True
+                break
+        if not dup:
+            reps.append(sh)
+            kept.add(b["id"])
+        elif _PROSE_DATA_RE.search(b["text"]):
+            kept.add(b["id"])
+    total = sum(b["tokens"] for b in blocks) or 1
+    if sum(b["tokens"] for b in blocks if b["id"] in kept) / total > 0.9:
+        return _ret(all_ids, True, "high", "prose-brief-saturated")
+    return _ret(kept, False, "medium", "prose-brief")
+
+
 def select_fixed(
     blocks: list[dict[str, Any]],
     budget_ratio: float,
@@ -4911,6 +4976,7 @@ def compress_context(
     limits: IndustrialLimits | None = None,
     derive_query: bool = False,
     anchor_errors: bool = False,
+    prose_brief: bool = False,
     gap_marker: Callable[[int, int], str] | None = None,
     recursion_markers: Iterable[str] = (),
     content_hint: str | None = None,
@@ -4919,6 +4985,13 @@ def compress_context(
     """Query-aware extractive compression of ``context``.
 
     New in 1.4.0 (all optional, defaults keep 1.3.x behaviour):
+    ``prose_brief`` (1.6.0, opt-in)
+        With no usable query (empty or filler, no derived or error-anchored objective) on content routed
+        as ``text``, keep a structure-preserving extractive brief instead of failing open: the first and
+        last block, the first paragraph of every near-duplicate group (character 3-gram shingles, Jaccard
+        >= 0.8 — script-agnostic, so CJK needs no word segmentation) and any repeat that carries data
+        (amounts, percentages, ids, long numbers, decimals, dates). Risk is at least ``medium``;
+        receipts mark ``query_source="prose-brief"``. Over 90% kept still fails open.
 
     ``gap_marker(omitted_chars, total_chars) -> str``
         Replaces every gap marker the renderer emits when ``citations=False``
@@ -5550,13 +5623,21 @@ def compress_context(
                     scored, ratio, out=selection, reserve_tokens=reserve
                 )
     else:
-        kept, fail_open, risk = select_adaptive(
-            scored,
-            needle_only=query_has_distinctive_selectors(query or ""),
-            query=query or "",
-            semantic_tier=resolve_tier(semantic_tier) if semantic_tier is not None else None,
-            out=selection,
-        )
+        if (
+            prose_brief
+            and not (query or "").strip()
+            and content_type == "text"
+            and not code_hint
+        ):
+            kept, fail_open, risk = select_prose_brief(scored, out=selection)
+        else:
+            kept, fail_open, risk = select_adaptive(
+                scored,
+                needle_only=query_has_distinctive_selectors(query or ""),
+                query=query or "",
+                semantic_tier=resolve_tier(semantic_tier) if semantic_tier is not None else None,
+                out=selection,
+            )
         ratio = budget_ratio if budget_ratio is not None else 0.0
     if not fail_open:
         if decision_cache is not None:
@@ -5595,8 +5676,10 @@ def compress_context(
         risk = "high"
 
     q = query or ""
-    if not q.strip() or (
-        not query_has_distinctive_selectors(q) and not _topic_terms(q)
+    prose_brief_used = selection.get("path") == "prose-brief" and not fail_open
+    if not prose_brief_used and (
+        not q.strip()
+        or (not query_has_distinctive_selectors(q) and not _topic_terms(q))
     ):
         fail_open = True
         risk = "high"
@@ -5929,7 +6012,11 @@ def compress_context(
         "sufficiency_restored": selection.get("sufficiency_restored") or [],
         # TPC lesson: callers must see when the objective was inferred,
         # not supplied — a derived query is advisory context, not intent.
-        "query_source": "derived" if derived_terms else ("error-anchored" if anchor_lines else "caller"),
+        "query_source": "derived" if derived_terms else (
+            "error-anchored" if anchor_lines else (
+                "prose-brief" if selection.get("path") == "prose-brief" else "caller"
+            )
+        ),
         "derived_terms": derived_terms,
         "anchor_lines": anchor_lines,
         # v1.4.0: E7 — the keep-set came from structural collapse alone.

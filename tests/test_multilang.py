@@ -313,3 +313,8 @@ def test_anchor_region_bridges_blank_before_assertion_detail():
     text = "\n".join(f" PASS  src/c/W{i}.test.tsx ({i} ms)" for i in range(20)) + "\n FAIL  src/hooks/useCart.test.ts\n  ● useCart › removes item\n\n    expect(received).toHaveLength(expected)\n\n    Expected length: 0\n    Received length: 1\n\n      at Object.<anonymous> (src/hooks/useCart.test.ts:31:24)\n\nTests:       1 failed, 20 passed, 21 total"
     joined = "\n".join(_anchor_regions(text, 8))
     assert "Received length: 1" in joined and "useCart.test.ts:31:24" in joined and "PASS" not in joined
+def test_paragraph_prose_with_ascii_commas_is_not_csv():
+    from tameru.compress_context import _looks_like_csv
+    text = "\n\n".join(["本季度销售情况总体平稳,各区域按计划推进,没有需要特别说明的事项。"] * 10)
+    assert not _looks_like_csv(text)
+    assert _looks_like_csv("a,b,c\n" + "\n".join(f"{i},x{i},y{i}" for i in range(10)))
