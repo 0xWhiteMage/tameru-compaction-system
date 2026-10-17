@@ -1464,25 +1464,30 @@ def _preprocess_cached(
     return tuple(lines), kind
 
 
-_PROGRESS_GLYPH_RE = re.compile(r"^([.FEsSx*!PRWN]{40,})(\s+\d+\s*/\s*\d+\s*\(\s*\d+%\))?\s*$")
+_PROGRESS_GLYPH_RE = re.compile(
+    r"^(?P<prefix>\S+\.\w{1,8}\s+)?([.FEsSx*!PRWN]{40,})"
+    r"(\s+\d+\s*/\s*\d+\s*\(\s*\d+%\)|\s+\[\s*\d+%\])?\s*$"
+)
 
 
 def _compact_progress_line(line: str) -> str:
     """A run of 40+ test-progress glyphs becomes one inert summary that keeps every glyph count and the
-    1-based position of each non-'.' glyph (first 20), plus any trailing "63 / 630 ( 10%)" counter:
+    1-based position of each non-'.' glyph (first 20), plus any trailing "63 / 630 ( 10%)" counter or
+    "[ 60%]" suffix, after an optional "path.py " prefix:
     "[progress x1001: .=1000 F=1 | F@901]". Other lines are returned unchanged."""
     m = _PROGRESS_GLYPH_RE.match(line)
     if m is None:
         return line
-    run = m.group(1)
+    run = m.group(2)
     counts: dict[str, int] = {}
     for ch in run:
         counts[ch] = counts.get(ch, 0) + 1
     marks = [f"{ch}@{i + 1}" for i, ch in enumerate(run) if ch != "."][:20]
     summary = " ".join(f"{ch}={n}" for ch, n in sorted(counts.items()))
     tail = f" | {' '.join(marks)}" if marks else ""
-    counter = (m.group(2) or "").strip()
-    return f"[progress x{len(run)}: {summary}{tail}]" + (f" {counter}" if counter else "")
+    counter = (m.group(3) or "").strip()
+    prefix = m.group("prefix") or ""
+    return prefix + f"[progress x{len(run)}: {summary}{tail}]" + (f" {counter}" if counter else "")
 
 
 def _compact_progress_lines(lines: list[str]) -> list[str]:

@@ -289,3 +289,14 @@ def test_real_json_still_routes_json():
     assert route_content_type(text.split("\n")) == "json"
     nd = [_json.dumps({"id": i, "v": i * 2}) for i in range(30)]
     assert route_content_type(nd) == "json"
+
+
+def test_progress_line_with_pytest_file_prefix():
+    from tameru.compress_context import _compact_progress_line
+    line = "tests/test_db.py " + "." * 50 + "F" + "." * 9 + " [100%]"
+    assert _compact_progress_line(line) == "tests/test_db.py [progress x60: .=59 F=1 | F@51] [100%]"
+
+
+def test_progress_line_prefix_requires_glyph_run():
+    from tameru.compress_context import _compact_progress_line
+    assert _compact_progress_line("tests/test_db.py ... [100%]") == "tests/test_db.py ... [100%]"
