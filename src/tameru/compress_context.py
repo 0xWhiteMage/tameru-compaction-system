@@ -4975,16 +4975,61 @@ def compress_context(
     # errors/diagnostics is compressed around them: the error region of each fingerprint's first exemplar
     # (head line plus adjacent frame lines, up to _ANCHOR_MAX_LINES regions) becomes the query. Receipts mark it
     # query_source="error-anchored"; the risk floor is medium, like a derived objective.
+    # A generic query with no informative topic word (absent, or on >80% of lines) also gets the error regions,
+    # appended after the caller's words when a side-effect-free probe shows that keeps every error fingerprint in less text.
     anchor_lines: list[str] = []
     if (
         anchor_errors
         and not derived_terms
         and not query_has_distinctive_selectors(query or "")
-        and not _topic_terms(query or "")
     ):
-        anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
-        if anchor_lines:
-            query = "\n".join(anchor_lines)
+        topic = _topic_terms(query or "")
+        if topic:
+            # A generic query whose topic words are absent from the text or on
+            # nearly every line carries no signal: anchor on the errors too,
+            # keeping the caller's words in front.
+            sample = [ln.casefold() for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
+            tests = [_term_test(t.casefold()) for t in topic]
+            uninformative = bool(sample) and all(
+                (hits := sum(1 for ln in sample if test(ln))) == 0 or hits > 0.8 * len(sample)
+                for test in tests
+            )
+            if uninformative:
+                anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
+                if anchor_lines:
+                    anchored_query = (query or "") + "\n" + "\n".join(anchor_lines)
+                    # Probe both objectives side-effect free (no CCR archive, log or
+                    # decision cache); keep the anchored one only when it fails closed,
+                    # retains every error fingerprint and is smaller than the plain one.
+                    probe = dict(
+                        mode=mode, budget_ratio=budget_ratio, ccr=False, cache_prefix=False,
+                        citations=citations, ccr_dir=ccr_dir, decision_cache=None, strategy=strategy,
+                        ambiguity_fail_open=ambiguity_fail_open, reorder_best=reorder_best,
+                        semantic_tier=semantic_tier, log_dir=None, pin_patterns=pin_patterns,
+                        pin_recent=pin_recent, min_savings_ratio=min_savings_ratio,
+                        degraded_view=degraded_view, summary_endpoint=None, limits=limits,
+                        derive_query=False, anchor_errors=False, gap_marker=gap_marker,
+                        recursion_markers=recursion_markers, content_hint=content_hint,
+                        inline_short_gaps=inline_short_gaps,
+                    )
+                    want = set(error_fingerprints(caller_text))
+
+                    def _probe_ok(res: CompressResult) -> bool:
+                        return not res.fail_open and want <= set(error_fingerprints(res.compressed_text))
+
+                    plain_probe = compress_context(caller_text, query or "", **probe)
+                    anchored_probe = compress_context(caller_text, anchored_query, **probe)
+                    if _probe_ok(anchored_probe) and (
+                        not _probe_ok(plain_probe)
+                        or len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
+                    ):
+                        query = anchored_query
+                    else:
+                        anchor_lines = []
+        else:
+            anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
+            if anchor_lines:
+                query = "\n".join(anchor_lines)
     requested_mode = (mode or "adaptive").strip().lower()
     if requested_mode not in {"adaptive", "fixed", "compiler", "precision"}:
         raise ValueError(
