@@ -8,12 +8,8 @@ POSITIVES = [
     "** (KeyError) key :sku not found in: %{qty: 2}",
     "npm ERR! code ERESOLVE",
     "npm error code ENOENT",
-    "pod/worker-1   0/1   CrashLoopBackOff   12   40m",
-    "  Warning  BackOff  2m  kubelet  Back-off restarting failed container",
     "  Failed Shop.Tests.CartTests.AppliesCoupon [12 ms]",
     "Failed!  - Failed:     1, Passed:    80, Skipped:     0, Total:    81",
-    "  Warning  Unhealthy  1m  kubelet  Readiness probe failed",
-    "  Warning  Evicted  1m  kubelet  The node was low on resource: memory",
 ]
 
 NEGATIVES = [
@@ -23,6 +19,10 @@ NEGATIVES = [
     "pod/web-1   1/1   Running   0   3h",
     "  Passed Shop.Tests.CartTests.Case1 [3 ms]",
     "Passed!  - Failed:     0, Passed:    81",
+    "pod/worker-1   0/1   CrashLoopBackOff   12   40m",
+    "  Warning  BackOff  2m  kubelet  Back-off restarting failed container",
+    "  Warning  Unhealthy  1m  kubelet  Readiness probe failed",
+    "  Warning  Evicted  1m  kubelet  The node was low on resource: memory",
 ]
 
 @pytest.mark.parametrize("line", POSITIVES)
