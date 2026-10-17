@@ -1864,12 +1864,11 @@ def score_blocks(
     lower_texts = [b["text"].lower() for b in blocks]
     # Perf (v0.6.0): deduplicate candidates globally and resolve df via a
     # token Counter for single-token candidates (the vast majority). Only
-    # multi-token phrases pay the exact substring scan. df for a single
-    # \w-delimited token equals its token frequency except when it is a
-    # substring of a LONGER token (e.g. "module_9" inside "module_90");
-    # such boundary cases shift the boost amount marginally but never flip
-    # the 2 <= df <= n//2 gate's intent.
+    # multi-token phrases pay the exact substring scan. df is the number of
+    # blocks holding the token (each token counted once per block), so an
+    # identifier repeated inside one block is not a bridge.
     token_counter: dict[str, int] = {}
+    token_block_df: dict[str, int] = {}
     # Perf (v0.6.0): one shared \w+ tokenisation per block feeds the counter,
     # the candidate scan AND tok_df below (previously 3 separate passes).
     block_token_lists: list[list[str]] = []
@@ -1878,6 +1877,8 @@ def score_blocks(
         block_token_lists.append(toks)
         for w in toks:
             token_counter[w] = token_counter.get(w, 0) + 1
+        for w in set(toks):
+            token_block_df[w] = token_block_df.get(w, 0) + 1
     seen_candidates: set[str] = set()
     candidate_blocks: dict[str, int] = {}
     _PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b")
@@ -1921,7 +1922,7 @@ def score_blocks(
         # log). Skipping them changes no score.
         if not re.fullmatch(r"\w{4,}", c_lower):
             continue
-        df = token_counter.get(c_lower, 0)
+        df = token_block_df.get(c_lower, 0)
         # Require the entity to be in at least 2 but at most n/2 blocks
         # (if it's in every block, it's a filler word, not a bridge)
         if 2 <= df <= n // 2:

@@ -232,3 +232,16 @@ def test_long_python_trace_keeps_culprit_frame():
     assert 'handlers.py", line 57, in handle_invoice' in out
     assert "ZeroDivisionError: division by zero" in out
     assert "frames omitted" in out
+
+def test_identifier_repeated_within_a_line_is_not_a_bridge():
+    from tameru.compress_context import compress_context
+
+    text = "\n".join(f"gcc -O2 -Wall -c src/util{i}.c -o build/util{i}.o" for i in range(80)) + (
+        "\nsrc/net/socket.c: In function 'open_conn':\n"
+        "src/net/socket.c:58:12: error: 'addrlen' undeclared (first use in this function)\n"
+        "make: *** [Makefile:24: build/socket.o] Error 1"
+    )
+    r = compress_context(text, ["why does make fail"], ccr=False, citations=False)
+    assert not r.fail_open
+    assert len(r.compressed_text) < 0.5 * len(text)
+    assert "socket.c:58:12: error: 'addrlen' undeclared" in r.compressed_text
