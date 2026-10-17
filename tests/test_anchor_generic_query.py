@@ -1,3 +1,4 @@
+from tameru.compress_context import compress_context
 
 
 def test_maven_like_plain_path_already_wins_does_not_get_worse():
@@ -11,7 +12,6 @@ def test_maven_like_plain_path_already_wins_does_not_get_worse():
     a = compress_context(text, ["why does mvn test fail"], ccr=False, citations=False, min_savings_ratio=0.1, anchor_errors=True)
     b = compress_context(text, ["why does mvn test fail"], ccr=False, citations=False, min_savings_ratio=0.1, anchor_errors=False)
     assert len(a.compressed_text) <= len(b.compressed_text) and "expected: <19.99> but was: <20.0>" in a.compressed_text
-from tameru.compress_context import compress_context
 
 
 def test_anchor_generic_query():
