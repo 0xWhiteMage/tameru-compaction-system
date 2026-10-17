@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -49,3 +50,60 @@ def test_sweep_cursor_accepts_legacy_int_reset(tmp_path, monkeypatch):
     removed = cc.sweep_ccr_cache(root, now=now, max_records=2)
     assert removed == 2
     assert isinstance(cc._CCR_SWEEP_CURSOR, dict)
+
+
+def test_sweep_zero_limit_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "_CCR_SWEEP_CURSOR", {})
+
+    root = tmp_path / "root"
+    root.mkdir()
+    now = time.time()
+    for index in range(3):
+        _write_record(root / f"{index:024x}.json", stored_at=0, ttl=1)
+
+    removed = cc.sweep_ccr_cache(root, now=now, max_records=0)
+    assert removed == 0
+    assert all((root / f"{index:024x}.json").exists() for index in range(3))
+
+
+def test_sweep_concurrent_same_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "_CCR_SWEEP_CURSOR", {})
+
+    root = tmp_path / "root"
+    root.mkdir()
+    now = time.time()
+    for index in range(40):
+        _write_record(root / f"{index:024x}.json", stored_at=0, ttl=1)
+
+    errors = []
+
+    def worker() -> None:
+        try:
+            cc.sweep_ccr_cache(root, now=now, max_records=5)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not errors
+    cc.sweep_ccr_cache(root, now=now, max_records=None)
+    assert list(root.glob("*.json")) == []
+
+
+def test_sweep_cursor_key_resolves_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "_CCR_SWEEP_CURSOR", {})
+
+    directory = tmp_path / "d"
+    directory.mkdir()
+    now = time.time()
+    for index in range(4):
+        _write_record(directory / f"{index:024x}.json", stored_at=now, ttl=3600)
+
+    (tmp_path / "x").mkdir()
+    cc.sweep_ccr_cache(tmp_path / "d", now=now, max_records=2)
+    cc.sweep_ccr_cache(tmp_path / "x" / ".." / "d", now=now, max_records=2)
+    assert len(cc._CCR_SWEEP_CURSOR) == 1
