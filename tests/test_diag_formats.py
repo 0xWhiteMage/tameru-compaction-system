@@ -12,6 +12,8 @@ POSITIVES = [
     "  Warning  BackOff  2m  kubelet  Back-off restarting failed container",
     "  Failed Shop.Tests.CartTests.AppliesCoupon [12 ms]",
     "Failed!  - Failed:     1, Passed:    80, Skipped:     0, Total:    81",
+    "  Warning  Unhealthy  1m  kubelet  Readiness probe failed",
+    "  Warning  Evicted  1m  kubelet  The node was low on resource: memory",
 ]
 
 NEGATIVES = [
