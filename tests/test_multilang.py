@@ -300,3 +300,16 @@ def test_progress_line_with_pytest_file_prefix():
 def test_progress_line_prefix_requires_glyph_run():
     from tameru.compress_context import _compact_progress_line
     assert _compact_progress_line("tests/test_db.py ... [100%]") == "tests/test_db.py ... [100%]"
+
+def test_anchor_region_skips_repetitive_indented_rows():
+    from tameru.compress_context import _anchor_regions
+    text = "\n".join(f" PASS  src/c/W{i}.test.tsx ({i} ms)" for i in range(20)) + "\n FAIL  src/hooks/useCart.test.ts\n  ● useCart › removes item\n\n      at Object.<anonymous> (src/hooks/useCart.test.ts:31:24)"
+    regions = _anchor_regions(text, 8)
+    assert regions and not any("PASS" in r for r in regions)
+    assert any("useCart.test.ts" in r for r in regions)
+
+def test_anchor_region_bridges_blank_before_assertion_detail():
+    from tameru.compress_context import _anchor_regions
+    text = "\n".join(f" PASS  src/c/W{i}.test.tsx ({i} ms)" for i in range(20)) + "\n FAIL  src/hooks/useCart.test.ts\n  ● useCart › removes item\n\n    expect(received).toHaveLength(expected)\n\n    Expected length: 0\n    Received length: 1\n\n      at Object.<anonymous> (src/hooks/useCart.test.ts:31:24)\n\nTests:       1 failed, 20 passed, 21 total"
+    joined = "\n".join(_anchor_regions(text, 8))
+    assert "Received length: 1" in joined and "useCart.test.ts:31:24" in joined and "PASS" not in joined

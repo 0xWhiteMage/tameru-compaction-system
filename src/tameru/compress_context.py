@@ -4837,7 +4837,7 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     ``_ANCHOR_REGION_BEFORE`` before and ``_ANCHOR_REGION_AFTER`` after). A neighbour line is frame-like
     when it is non-blank and either starts with whitespace, starts with "Caused by" or "Traceback", or is
     itself an error/diagnostic line (``_is_error_line``). Each line is stripped and capped at
-    ``_ANCHOR_LINE_CHARS``; a region is the lines joined with "\n"."""
+    ``_ANCHOR_LINE_CHARS``; a region is the lines joined with "\n". A neighbour whose masked shape equals the next line further out (a repetitive run such as PASS rows) is context noise, not a frame."""
     lines = _norm_newlines(text).split("\n")
     exemplars = set(error_fingerprints(text).values())
     regions: list[str] = []
@@ -4848,6 +4848,14 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             s[:1] in " \t" or s.lstrip().startswith(("Caused by", "Traceback")) or _is_error_line(s)
         )
 
+    def repetitive(j: int, step: int) -> bool:
+        # lines[j] repeats the template of the next line further out (same masked
+        # shape, e.g. a run of " PASS  x.test.ts (12 ms)" rows): context noise.
+        k = j + step
+        if not (0 <= k < len(lines)) or _is_error_line(lines[j]):
+            return False
+        return _error_fp(lines[j].strip()) == _error_fp(lines[k].strip())
+
     for i, line in enumerate(lines):
         if len(regions) >= max_regions:
             break
@@ -4855,11 +4863,18 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             continue
         exemplars.discard(line)
         lo = i
-        while lo > 0 and i - lo < _ANCHOR_REGION_BEFORE and frame_like(lines[lo - 1]):
+        while lo > 0 and i - lo < _ANCHOR_REGION_BEFORE and frame_like(lines[lo - 1]) and not repetitive(lo - 1, -1):
             lo -= 1
         hi = i
-        while hi + 1 < len(lines) and hi - i < _ANCHOR_REGION_AFTER and frame_like(lines[hi + 1]):
-            hi += 1
+        while hi + 1 < len(lines) and hi - i < _ANCHOR_REGION_AFTER:
+            nxt = hi + 1
+            # bridge one blank line when a frame-like line follows it (assertion
+            # detail after a blank, as jest/pytest/cargo print it)
+            if not lines[nxt].strip() and nxt + 1 < len(lines) and lines[nxt + 1].strip():
+                nxt += 1
+            if not (frame_like(lines[nxt]) and not repetitive(nxt, 1)):
+                break
+            hi = nxt
         seen_rows.update(range(lo, hi + 1))
         regions.append("\n".join(ln.strip()[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1] if ln.strip()))
     return regions
