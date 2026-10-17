@@ -28,3 +28,11 @@ def test_prose_brief_ignores_non_empty_query():
     text = _doc(["Routine paragraph about nothing in particular, repeated." for _ in range(30)], "Key: contract K-5521 cancelled.", ["Done." for _ in range(5)])
     r = compress_context(text, ["which contract was cancelled"], ccr=False, citations=False, prose_brief=True)
     assert r.receipt["query_source"] == "caller" and "K-5521" in r.compressed_text
+
+
+def test_prose_brief_never_drops_one_word_outlier():
+    paras = [f"The access request from the platform team number {i} was reviewed by the security board and approved." for i in range(12)]
+    paras[7] = paras[7].replace("approved", "rejected")
+    text = "Board minutes.\n\n" + "\n\n".join(paras) + "\n\nEnd of minutes."
+    r = compress_context(text, [], ccr=False, citations=False, prose_brief=True)
+    assert "rejected" in r.compressed_text

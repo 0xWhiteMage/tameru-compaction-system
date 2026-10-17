@@ -3058,17 +3058,12 @@ _PROSE_DATA_RE = re.compile(
     r"|\d+\.\d+"
     r"|\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b"
 )
-_PROSE_DUP_JACCARD = 0.8
-_PROSE_REP_WINDOW = 64
 _PROSE_MIN_BLOCKS = 8
 
 
-def _prose_shingles(text: str) -> frozenset[str]:
-    """Character 3-gram set of ``text`` (lowercased, digits -> '#', whitespace collapsed, first 2000 chars)."""
-    s = " ".join(re.sub(r"\d", "#", text[:2000].lower()).split())
-    if len(s) < 3:
-        return frozenset({s})
-    return frozenset(s[i : i + 3] for i in range(len(s) - 2))
+def _prose_key(text: str) -> str:
+    """Repeat key of a paragraph: lowercased, digits -> '#', whitespace collapsed, first 2000 chars."""
+    return " ".join(re.sub(r"\d", "#", text[:2000].lower()).split())
 
 
 def select_prose_brief(
@@ -3084,23 +3079,17 @@ def select_prose_brief(
     if len(blocks) < _PROSE_MIN_BLOCKS:
         return _ret(all_ids, True, "high", "prose-brief-small")
     kept: set[int] = set()
-    reps: list[frozenset[str]] = []
+    seen: set[str] = set()
     for pos, b in enumerate(blocks):
         if b.get("trust_risk") and not b.get("pinned"):
             continue
         if pos in (0, len(blocks) - 1) or b.get("pinned") or b.get("error_exemplar"):
             kept.add(b["id"])
-            reps.append(_prose_shingles(b["text"]))
+            seen.add(_prose_key(b["text"]))
             continue
-        sh = _prose_shingles(b["text"])
-        dup = False
-        for rep in reps[-_PROSE_REP_WINDOW:]:
-            union = len(sh | rep)
-            if union and len(sh & rep) / union >= _PROSE_DUP_JACCARD:
-                dup = True
-                break
-        if not dup:
-            reps.append(sh)
+        key = _prose_key(b["text"])
+        if key not in seen:
+            seen.add(key)
             kept.add(b["id"])
         elif _PROSE_DATA_RE.search(b["text"]):
             kept.add(b["id"])
@@ -4988,8 +4977,7 @@ def compress_context(
     ``prose_brief`` (1.6.0, opt-in)
         With no usable query (empty or filler, no derived or error-anchored objective) on content routed
         as ``text``, keep a structure-preserving extractive brief instead of failing open: the first and
-        last block, the first paragraph of every near-duplicate group (character 3-gram shingles, Jaccard
-        >= 0.8 — script-agnostic, so CJK needs no word segmentation) and any repeat that carries data
+        last block, the first paragraph of every repeat group (exact repeats modulo digits, case and whitespace — script-agnostic, so CJK needs no word segmentation; a paragraph differing by any word is never collapsed) and any repeat that carries data
         (amounts, percentages, ids, long numbers, decimals, dates). Risk is at least ``medium``;
         receipts mark ``query_source="prose-brief"``. Over 90% kept still fails open.
 
