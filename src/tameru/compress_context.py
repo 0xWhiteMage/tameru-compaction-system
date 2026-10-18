@@ -4942,6 +4942,36 @@ _GO_STACK_LINE_RE = re.compile(
 _ANCHOR_GO_TAIL_LINES = 2  # the last frame (function line + its file:line) of a Go stack longer than the region
 
 
+# Log-record prefix: ISO-ish timestamp, level word, optional [thread], optional
+# logger token followed by " - " or ": ". The level word is captured (group 1)
+# so it can be kept when the rest of the prefix is stripped from an anchor line.
+# WARNING is listed before WARN so "WARNING" is not truncated to "WARN".
+_ANCHOR_LOG_PREFIX_RE = re.compile(
+    r"^\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d)?"
+    r"\s+(TRACE|DEBUG|INFO|WARNING|WARN|ERROR|FATAL|CRITICAL|SEVERE)\b"
+    r"(?:\s*\[[^\]]+\])?"
+    r"(?:\s+[A-Za-z0-9_.$]+\s*(?:-\s+|:\s+))?"
+)
+
+
+def _strip_anchor_prefix(line: str) -> str:
+    """Drop the log-record prefix from an anchor line, keeping the level word.
+
+    ``"2026-10-18 11:59:00.001 ERROR [t] o.e.billing.Api - request failed"``
+    becomes ``"ERROR request failed"`` so the anchored query no longer carries
+    the thread/logger/timestamp entities that appear on every INFO line.
+    Returns the line unchanged when it is not a log record, or when stripping
+    would leave no message (e.g. a bare ``"… ERROR"`` line).
+    """
+    m = _ANCHOR_LOG_PREFIX_RE.match(line)
+    if m is None:
+        return line
+    out = _ANCHOR_LOG_PREFIX_RE.sub(r"\1 ", line, count=1).strip()
+    if out == m.group(1):
+        return line
+    return out
+
+
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
@@ -5010,12 +5040,12 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
                     rows = list(range(lo, hi + 1)) + tail
                     seen_rows.update(rows)
                     regions.append(
-                        "\n".join(lines[j].strip()[:_ANCHOR_LINE_CHARS] for j in rows if lines[j].strip())
+                        "\n".join(_strip_anchor_prefix(lines[j].strip())[:_ANCHOR_LINE_CHARS] for j in rows if lines[j].strip())
                     )
                     continue
         seen_rows.update(range(lo, hi + 1))
         regions.append(
-            "\n".join(ln.strip()[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1] if ln.strip())
+            "\n".join(_strip_anchor_prefix(ln.strip())[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1] if ln.strip())
         )
     return regions
 

@@ -119,3 +119,65 @@ def test_full_frame_query_collapses_to_single_marker() -> None:
 
     markers = re.findall(r"  \.\.\. \d+ frames omitted", compressed_text)
     assert markers == ["  ... 19 frames omitted"]
+
+
+from tameru.compress_context import (  # noqa: E402
+    _ANCHOR_LOG_PREFIX_RE,
+    _anchor_regions,
+    _strip_anchor_prefix,
+)
+
+
+def test_anchor_regions_strips_log_prefix_keeps_level():
+    log = (
+        "2026-10-18 11:59:00.001 ERROR [http-nio-8080-exec-3] o.e.billing.Api - request failed\n"
+        "java.lang.NullPointerException: boom\n"
+        "\tat org.example.billing.Step1.run(Step1.java:10)\n"
+        "\tat org.example.billing.Step2.run(Step2.java:11)\n"
+        "\tat org.example.billing.Step3.run(Step3.java:12)\n"
+    )
+    regions = _anchor_regions(log, 8)
+    assert regions, "expected at least one anchor region"
+    first = regions[0]
+    assert first.startswith("ERROR request failed")
+    assert "http-nio-8080-exec-3" not in first
+
+
+def test_anchor_errors_avoids_fail_open_on_logback_log():
+    ts = "2026-10-18 11:59:00.001"
+    info_lines = [
+        f"{ts} INFO  [http-nio-8080-exec-1] o.e.billing.Api - handled request id={i}"
+        for i in range(30)
+    ]
+    frames = [
+        f"\tat org.example.billing.Step{i}.run(Step{i}.java:{10 + i})"
+        for i in range(8)
+    ]
+    text = "\n".join(
+        info_lines
+        + [
+            f"{ts} ERROR [http-nio-8080-exec-3] o.e.billing.Api - request failed",
+            "java.lang.NullPointerException: boom",
+        ]
+        + frames
+    )
+    result = compress_context(
+        text,
+        query="",
+        anchor_errors=True,
+        prose_brief=True,
+        inline_short_gaps=True,
+        ccr=False,
+        citations=False,
+        min_savings_ratio=0.1,
+    )
+    assert not result.fail_open
+    assert len(result.compressed_text) < 0.6 * len(text)
+    assert "request failed" in result.compressed_text
+    assert "NullPointerException" in result.compressed_text
+
+
+def test_non_log_pytest_anchor_unchanged():
+    line = "E       assert 1 == 2"
+    assert _strip_anchor_prefix(line) == line
+    assert not _ANCHOR_LOG_PREFIX_RE.match(line)
