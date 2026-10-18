@@ -126,7 +126,7 @@ def test_finalize_reused_probe_not_called_when_flag_false(monkeypatch):
     assert len(calls) == 0
 
 
-def test_finalize_reused_probe_not_called_with_ccr(monkeypatch, tmp_path):
+def test_finalize_reused_probe_called_with_ccr(monkeypatch, tmp_path):
     calls = _spy_finalize_reused_probe(monkeypatch)
     monkeypatch.setattr(cc, "_REUSE_PROBE_RESULT", True)
     run(
@@ -139,7 +139,8 @@ def test_finalize_reused_probe_not_called_with_ccr(monkeypatch, tmp_path):
         anchor_errors=True,
         prose_brief=True,
     )
-    assert len(calls) == 0
+    assert len(calls) == 1
+    assert len(list(tmp_path.glob("*.json"))) == 1
 
 
 def test_finalize_reused_probe_not_called_empty_query(monkeypatch):

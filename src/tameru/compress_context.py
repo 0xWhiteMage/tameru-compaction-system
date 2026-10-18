@@ -5065,7 +5065,7 @@ _ANCHOR_GO_TAIL_LINES = 2  # the last frame (function line + its file:line) of a
 # WARNING is listed before WARN so "WARNING" is not truncated to "WARN".
 _ANCHOR_LOG_PREFIX_RE = re.compile(
     r"^\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d)?"
-    r"\s+(TRACE|DEBUG|INFO|WARNING|WARN|ERROR|FATAL|CRITICAL|SEVERE)\b"
+    r"\s+(EMERGENCY|CRITICAL|WARNING|VERBOSE|SEVERE|NOTICE|FINEST|FINER|EMERG|ALERT|TRACE|DEBUG|ERROR|FATAL|WARN|INFO|CRIT|FINE|ERR)\b"
     r"(?:\s*\[[^\]]+\])?"
     r"(?:\s+[A-Za-z0-9_.$]+\s*(?:-\s+|:\s+))?"
 )
@@ -5256,6 +5256,84 @@ def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
     return out
 
 
+_STATE_CHANGE_PREFILTER = (
+    "marked",
+    "is now",
+    "became",
+    "went",
+    "transition",
+    "changed",
+    "set to",
+    "state",
+    "->",
+    "circuit",
+    "fail",
+    "promot",
+    "leader",
+    "primary",
+    "evict",
+    "cordon",
+    "drain",
+    "recover",
+    "online",
+    "restored",
+)
+_STATE_CHANGE_RE = re.compile(
+    r"\b(?:marked|is now|became|went|transitioned to|changed to|set to)\s+(?:down|degraded|unhealthy|unavailable|offline|read-only|readonly|not ?ready|unreachable|suspended|quarantined)\b"
+    r"|\bstate changed\b"
+    r"|\b(?:CLOSED|OPEN|HALF_OPEN|HALF-OPEN)\s*->\s*(?:CLOSED|OPEN|HALF_OPEN|HALF-OPEN)\b"
+    r"|\bcircuit\b[^\n]{0,60}\b(?:opened|open|half-open|tripped|closed again)\b"
+    r"|\bfail\s?over\s+(?:started|initiated|triggered|completed|in progress)\b"
+    r"|\bpromot(?:ing|ed)\b[^\n]{0,40}\b(?:leader|primary|master)\b"
+    r"|\b(?:leader|primary)\s+(?:changed|lost|elected)\b"
+    r"|\b(?:evicted|cordoned|drained)\b"
+    r"|\b(?:recovered|back online|restored)\b",
+    re.IGNORECASE,
+)
+
+
+def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
+    """Last-resort anchors: rare INFO/NOTICE state-change lines.
+
+    Returns at most ``max_regions`` matching lines in original order when all strict guards pass:
+    at least 20 non-blank lines, at most two matching lines and at most 5% of non-blank lines,
+    and each chosen line's error fingerprint occurs only once among all lines.
+    """
+    if max_regions <= 0:
+        return []
+
+    nonblank = [line for line in lines if line.strip()]
+    if len(nonblank) < 20:
+        return []
+
+    matches: list[str] = []
+    for line in nonblank:
+        low = line.lower()
+        if not any(token in low for token in _STATE_CHANGE_PREFILTER):
+            continue
+        if _STATE_CHANGE_RE.search(line):
+            matches.append(line)
+
+    if not matches:
+        return []
+    if len(matches) > 2 or len(matches) * 100 > len(nonblank) * 5:
+        return []
+
+    fp_counts: dict[str, int] = {}
+    for line in lines:
+        fp = _error_fp(line.strip())
+        fp_counts[fp] = fp_counts.get(fp, 0) + 1
+
+    out: list[str] = []
+    for line in matches:
+        if fp_counts.get(_error_fp(line.strip()), 0) != 1:
+            return []
+        out.append(line)
+        if len(out) >= max_regions:
+            break
+    return out
+
+
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
@@ -5282,6 +5360,9 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     if not exemplars:
         # Last resort: isolated WARN anchors in a strictly leveled log.
         exemplars = set(_isolated_warn_lines(lines, max_regions))
+    if not exemplars:
+        # Final fallback: rare state-change anchors in otherwise healthy logs.
+        exemplars = set(_state_change_lines(lines, max_regions))
     regions: list[str] = []
     seen_rows: set[int] = set()
 
@@ -5392,6 +5473,7 @@ def compress_context(
     recursion_markers: Iterable[str] = (),
     content_hint: str | None = None,
     inline_short_gaps: bool = False,
+    _ccr_defer: bool = False,
 ) -> CompressResult:
     """Query-aware extractive compression of ``context``.
 
@@ -5512,8 +5594,9 @@ def compress_context(
                     # Probe both objectives side-effect free (no CCR archive, log or
                     # decision cache); keep the anchored one only when it fails closed,
                     # retains every error fingerprint and is smaller than the plain one.
+                    probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
                     probe = dict(
-                        mode=mode, budget_ratio=budget_ratio, ccr=False, cache_prefix=False,
+                        mode=mode, budget_ratio=budget_ratio, ccr=probe_ccr, cache_prefix=False,
                         citations=citations, ccr_dir=ccr_dir, decision_cache=None, strategy=strategy,
                         ambiguity_fail_open=ambiguity_fail_open, reorder_best=reorder_best,
                         semantic_tier=semantic_tier, log_dir=None, pin_patterns=pin_patterns,
@@ -5522,6 +5605,7 @@ def compress_context(
                         derive_query=False, anchor_errors=False, gap_marker=gap_marker,
                         recursion_markers=recursion_markers, content_hint=content_hint,
                         inline_short_gaps=inline_short_gaps, prose_brief=prose_brief,
+                        _ccr_defer=True,
                     )
                     want = set(error_fingerprints(caller_text))
 
@@ -5579,16 +5663,28 @@ def compress_context(
             anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
             if anchor_lines:
                 query = "\n".join(anchor_lines)
+    probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
     if (
         _REUSE_PROBE_RESULT
         and chosen_probe is not None
-        and not ccr
+        and (not ccr or probe_ccr)
         and not cache_prefix
         and decision_cache is None
         and log_dir is None
         and summary_endpoint is None
     ):
-        return _finalize_reused_probe(chosen_probe, query_as_given, anchor_lines)
+        reused = _finalize_reused_probe(chosen_probe, query_as_given, anchor_lines)
+        if ccr and isinstance(chosen_probe.ccr, dict) and chosen_probe.ccr.get("deferred"):
+            try:
+                info = _ccr_store(caller_text, ccr_dir)
+            except OSError:
+                info = None
+            if info is not None:
+                return dataclasses.replace(reused, ccr=info)
+            # Store refused/failed — fall through to the normal path, which
+            # retries the store and strips the marker on failure.
+        else:
+            return reused
     requested_mode = (mode or "adaptive").strip().lower()
     if requested_mode not in {"adaptive", "fixed", "compiler", "precision"}:
         raise ValueError(
@@ -6398,17 +6494,21 @@ def compress_context(
     else:
         result_text = candidate_text
         if pending_ccr_hash is not None:
-            try:
-                # Recovery means the caller's exact bytes, not a preprocessed view.
-                ccr_info = _ccr_store(caller_text, ccr_dir)
-            except OSError:
-                ccr_info = None
-            if ccr_info is None:
-                # Store refused (secret screen) or failed — never emit a
-                # dangling retrieval pointer.
-                result_text = result_text.replace(
-                    f"\n[CC-Retrieve: {pending_ccr_hash}]\n", ""
-                )
+            if _ccr_defer:
+                # Probe path: keep the marker; the caller stores once at reuse.
+                ccr_info = {"hash": pending_ccr_hash, "path": None, "deferred": True}
+            else:
+                try:
+                    # Recovery means the caller's exact bytes, not a preprocessed view.
+                    ccr_info = _ccr_store(caller_text, ccr_dir)
+                except OSError:
+                    ccr_info = None
+                if ccr_info is None:
+                    # Store refused (secret screen) or failed — never emit a
+                    # dangling retrieval pointer.
+                    result_text = result_text.replace(
+                        f"\n[CC-Retrieve: {pending_ccr_hash}]\n", ""
+                    )
 
     kept_tokens = estimate_tokens(result_text)
     keep_ratio = kept_tokens / max(1, original_tokens)
