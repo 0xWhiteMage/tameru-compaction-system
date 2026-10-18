@@ -996,7 +996,7 @@ def detect_test_runner(text: str) -> str | None:
     line with many ``N passed`` fragments made the old whole-text regex cubic).
     """
     if _RUNNER_HINT_RE.search(text) is None:
-        return None
+        return "status_table" if _detect_status_table(text) else None
     running = cargo_result = jest_suites = jest_tests = go = pytest_open = pytest_sum = False
     gradle_task = gradle_end = rspec = phpunit = dotnet = pytest_q = pytest_prog = False
     first = None
@@ -1088,6 +1088,8 @@ def detect_test_runner(text: str) -> str | None:
                     return "kubectl_pods"
             else:
                 break
+    if _detect_status_table(text):
+        return "status_table"
     return None
 
 def _classify_kubectl_pods(lines):
@@ -1751,6 +1753,104 @@ def _classify_kubectl_events(lines):
     return [i in keep for i in range(len(lines))], [0] * len(lines), [0] * len(lines)
 
 
+def _status_table_numeric(value):
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)(m|Mi|Gi|Ki|G|M|K|T|%|ms|s)?", value)
+    if not m:
+        return None
+    return float(m.group(1)), m.group(2) or ""
+
+def _status_table_median(values):
+    values = sorted(values)
+    mid = len(values) // 2
+    if len(values) % 2:
+        return values[mid]
+    return (values[mid - 1] + values[mid]) / 2.0
+
+def _detect_status_table(text):
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 16:
+        return False
+    header = lines[0]
+    if "," in header or "\t" in header:
+        return False
+    tokens = header.split()
+    if len(tokens) < 2:
+        return False
+    if any(re.fullmatch(r"\d+", tok) for tok in tokens):
+        return False
+    if sum(1 for tok in tokens if tok[:1].isupper()) < 0.8 * len(tokens):
+        return False
+    rows = lines[1:]
+    if len(rows) < 15:
+        return False
+    counts = {}
+    for ln in rows:
+        c = len(ln.split())
+        counts[c] = counts.get(c, 0) + 1
+    modal = max(counts, key=counts.get)
+    if modal < 2 or counts[modal] < 0.9 * len(rows):
+        return False
+    if _K8S_GET_PODS_HDR_RE.match(header):
+        return False
+    return True
+
+def _classify_status_table(lines):
+    n = len(lines)
+    keep = [False] * n
+    header_idx = None
+    for i, ln in enumerate(lines):
+        if ln.strip():
+            header_idx = i
+            break
+    if header_idx is None:
+        return [False] * n, [0] * n, [0] * n
+    keep[header_idx] = True
+    rows = [(i, ln) for i, ln in enumerate(lines) if i != header_idx and ln.strip()]
+    if not rows:
+        return keep, [0] * n, [0] * n
+    counts = {}
+    for _, ln in rows:
+        c = len(ln.split())
+        counts[c] = counts.get(c, 0) + 1
+    modal = max(counts, key=counts.get)
+    parsed = []
+    for i, ln in rows:
+        if len(ln.split()) != modal:
+            if is_diagnostic_line(ln):
+                keep[i] = True
+            continue
+        parsed.append((i, ln.split()))
+    if not parsed:
+        return keep, [0] * n, [0] * n
+    outliers = set()
+    for col in range(len(parsed[0][1])):
+        values = [tokens[col] for _, tokens in parsed]
+        if len(set(values)) <= 5:
+            val_counts = {}
+            for v in values:
+                val_counts[v] = val_counts.get(v, 0) + 1
+            dominant, freq = max(val_counts.items(), key=lambda kv: kv[1])
+            if freq >= 0.75 * len(values):
+                for (i, _), v in zip(parsed, values):
+                    if v != dominant:
+                        outliers.add(i)
+        numeric = [_status_table_numeric(v) for v in values]
+        if sum(1 for x in numeric if x is not None) >= 0.9 * len(values):
+            nums = [x[0] for x in numeric if x is not None]
+            if nums:
+                med = _status_table_median(nums)
+                for (i, _), item in zip(parsed, numeric):
+                    if item is None:
+                        continue
+                    v, unit = item
+                    if (med > 0 and v >= 5 * med) or (unit == "%" and v >= 90):
+                        outliers.add(i)
+    if not outliers or len(outliers) > 0.2 * len(rows):
+        return [True] * n, [0] * n, [0] * n
+    for i in outliers:
+        keep[i] = True
+    return keep, [0] * n, [0] * n
+
 _RUNNERS = {
     "pytest": _classify_pytest,
     "jest": _classify_jest,
@@ -1764,6 +1864,7 @@ _RUNNERS = {
     "kubectl": _classify_kubectl,
     "kubectl_events": _classify_kubectl_events,
     "kubectl_pods": _classify_kubectl_pods,
+    "status_table": _classify_status_table,
 }
 
 
@@ -1840,7 +1941,8 @@ def preprocess_test_output(
             if runner == "phpunit"
             else ("event rows" if runner == "kubectl_events"
                   else ("pod rows" if runner == "kubectl_pods"
-                        else ("describe lines" if runner == "kubectl" else None)))
+                        else ("table rows" if runner == "status_table"
+                              else ("describe lines" if runner == "kubectl" else None))))
         ),
     )
     return out if len(out) < len(text) else None
