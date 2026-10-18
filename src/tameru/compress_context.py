@@ -819,6 +819,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     out_src: list[int] = []
     trace: list[str] = []
     trace_src: list[int] = []
+    trace_idx: list[int] = []
     query_match_indices: set[int] = set()
     query_selectors = distinctive_query_terms(query or "")
     # Perf (v1.5.0): a line is fingerprinted up to three times below (collapse,
@@ -833,7 +834,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
             return fp
 
     def flush_trace() -> None:
-        nonlocal trace, trace_src
+        nonlocal trace, trace_src, trace_idx
         if not trace:
             return
         if len(trace) <= _TRACE_KEEP_HEAD + _TRACE_KEEP_TAIL:
@@ -842,12 +843,40 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
         else:
             out.extend(trace[:_TRACE_KEEP_HEAD])
             out_src.extend(trace_src[:_TRACE_KEEP_HEAD])
-            out.append(f"  ... {len(trace) - _TRACE_KEEP_HEAD - _TRACE_KEEP_TAIL} frames omitted")
-            out_src.append(trace_src[_TRACE_KEEP_HEAD])
+            tail_start = len(trace) - _TRACE_KEEP_TAIL
+            middle = trace[_TRACE_KEEP_HEAD:tail_start]
+            middle_src = trace_src[_TRACE_KEEP_HEAD:tail_start]
+            middle_idx = trace_idx[_TRACE_KEEP_HEAD:tail_start]
+
+            matched = [idx in query_match_source_indices for idx in middle_idx]
+            if sum(matched) > _TRACE_KEEP_HEAD + _TRACE_KEEP_TAIL:
+                out.append(f"  ... {len(middle)} frames omitted")
+                out_src.append(middle_src[0])
+            else:
+                omitted_run = 0
+                omitted_start_src = 0
+                for frame, src, idx in zip(middle, middle_src, middle_idx):
+                    if idx in query_match_source_indices:
+                        if omitted_run:
+                            out.append(f"  ... {omitted_run} frames omitted")
+                            out_src.append(omitted_start_src)
+                            omitted_run = 0
+                        out.append(frame)
+                        out_src.append(src)
+                    else:
+                        if omitted_run == 0:
+                            omitted_start_src = src
+                        omitted_run += 1
+
+                if omitted_run:
+                    out.append(f"  ... {omitted_run} frames omitted")
+                    out_src.append(omitted_start_src)
+
             out.extend(trace[-_TRACE_KEEP_TAIL:])
             out_src.extend(trace_src[-_TRACE_KEEP_TAIL:])
         trace = []
         trace_src = []
+        trace_idx = []
 
     # First pass: drop progress bars but remember whether we saw any.
     kept_src = [i for i, ln in enumerate(lines) if not _is_progress_bar(ln)]
@@ -887,6 +916,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
         if is_trace_like:
             trace.append(line)
             trace_src.append(kept_src[i])
+            trace_idx.append(i)
             i += 1
             continue
         flush_trace()
@@ -5539,6 +5569,8 @@ def compress_context(
         lines, content_type = preprocess(text, query or "", content_hint=route_hint)
         if industrial.applied:
             content_type = industrial.profile.format
+        # Recall must be measured against the text the selector actually saw.
+        recall_base = "\n".join(lines) if content_type == "log" else text
     else:
         # Do not fingerprint-collapse logs or crush JSON on a generic query.
         # (Perf, v1.4.0: preprocess() output was computed and then discarded
@@ -5546,6 +5578,7 @@ def compress_context(
         # run at all; the result is identical.)
         lines = _compact_progress_lines(text.split("\n"))
         content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
+        recall_base = text
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
     score_lines = lines
@@ -5790,7 +5823,7 @@ def compress_context(
             content_lines=score_lines,
         )
 
-    recall = _entity_recall(text, compressed, query or "")
+    recall = _entity_recall(recall_base, compressed, query or "")
     if recall < 0.66 and not fail_open:
         # One expansion pass: add any dropped block that still holds a query key.
         keys = _extract_entities(query or "") + _extract_terms(query or "")
@@ -5806,7 +5839,7 @@ def compress_context(
             gap_marker=gap_marker, total_chars=len(caller_text),
             content_lines=score_lines,
         )
-        recall = _entity_recall(text, compressed, query or "")
+        recall = _entity_recall(recall_base, compressed, query or "")
         trust_risks = {
             b["id"]
             for b in scored
