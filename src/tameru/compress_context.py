@@ -5721,7 +5721,9 @@ def compress_context(
 
     q = query or ""
     prose_brief_used = selection.get("path") == "prose-brief" and not fail_open
-    if not prose_brief_used and (
+    # Structural test-runner output is query-independent; skip the empty/filler guard.
+    test_output_adapter = adapter_info is not None and adapter_info.get("name") == "test_output"
+    if not prose_brief_used and not test_output_adapter and (
         not q.strip()
         or (not query_has_distinctive_selectors(q) and not _topic_terms(q))
     ):
@@ -5886,7 +5888,13 @@ def compress_context(
         # compression overhead. If we're saving less than 10%, the
         # citation/CCR overhead likely exceeds the benefit, especially
         # when the provider cache makes the original cheap to re-send.
-        savings_ratio = 1.0 - (kept_tokens / max(1, original_tokens))
+        if adapter_info is not None:
+            # Estimator undercounts identifier-like dropped lines, so use char savings as a floor.
+            token_savings = 1.0 - kept_tokens / max(1, original_tokens)
+            char_savings = 1.0 - len(compressed) / max(1, len(original_text))
+            savings_ratio = max(token_savings, char_savings)
+        else:
+            savings_ratio = 1.0 - (kept_tokens / max(1, original_tokens))
         if savings_ratio < min_savings_ratio and not trust_filtered:
             compressed = original_text
             kept = {b["id"] for b in scored}

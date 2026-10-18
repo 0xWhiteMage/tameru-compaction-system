@@ -173,3 +173,134 @@ def test_phpunit_diff_context_shortened():
     for want in ("testDiscount", "'total' => 90", "'total' => 100", "'k29' => 29", "CartTest.php:77", "Failures: 1", "unchanged diff lines omitted"):
         assert want in out
     assert "'k5' => 5" not in out
+
+
+def _spec55_node_text(label_count, event_count=20, condition_count=2):
+    reasons = [
+        "FailedMount",
+        "FailedAttachVolume",
+        "EvictionThresholdMet",
+        "ImageGCFailed",
+        "FreeDiskSpaceFailed",
+        "SystemOOM",
+        "ContainerGCFailed",
+        "Rebooted",
+        "NodeNotReady",
+        "InvalidDiskCapacity",
+        "FailedCreatePodSandBox",
+        "NetworkNotReady",
+    ]
+    s = "Name:               w-100\nRoles:              worker\nLabels:             os=linux\n"
+    s += "".join(f"                    label{i}=value{100 + i}\n" for i in range(label_count))
+    s += (
+        "Conditions:\n"
+        "  Type             Status  LastHeartbeatTime                 Reason                       Message\n"
+    )
+    for c in ["MemoryPressure", "DiskPressure", "PIDPressure", "Ready"][:condition_count]:
+        s += (
+            f"  {c:16} False   Sun, 18 Oct 2026 04:00:00 +0000   "
+            f"KubeletHasSufficient{c}   kubelet has sufficient {c.lower()} available\n"
+        )
+    s += "Events:\n  Type     Reason                 Age   From     Message\n"
+    for i in range(event_count):
+        reason = reasons[i % len(reasons)]
+        s += (
+            f"  Warning  {reason:22} {i + 1}m    kubelet  "
+            f"{reason} on volume vol-{1000 + i} attempt {i}: rpc error code {1 + i}\n"
+        )
+    return s.rstrip()
+
+
+def test_kubectl_describe_node_adapter_uses_char_savings_for_min_savings():
+    from tameru.compress_context import compress_context, _estimate_tokens
+    from tameru.agent_formats import preprocess_test_output
+
+    label_count = 20
+    while True:
+        text = _spec55_node_text(label_count, 20, 2)
+        preprocessed = preprocess_test_output(text, "")
+        char_ratio = len(preprocessed) / max(1, len(text))
+        token_ratio = _estimate_tokens(preprocessed) / max(1, _estimate_tokens(text))
+        if char_ratio < 0.9 and token_ratio > 0.9:
+            break
+        label_count += 1
+        assert label_count <= 60, "could not build sample with required savings profile"
+
+    result = compress_context(
+        text,
+        "why is the node unhealthy",
+        ccr=False,
+        citations=False,
+        inline_short_gaps=True,
+        anchor_errors=True,
+        prose_brief=True,
+        min_savings_ratio=0.1,
+    )
+    assert not result.fail_open
+    assert len(result.compressed_text) < 0.95 * len(text)
+    assert not any("savings below min_savings_ratio" in str(reason) for reason in result.reasons)
+    assert "FailedMount on volume vol-1000 attempt 0" in result.compressed_text
+    assert "Rebooted on volume vol-1019 attempt 19" in result.compressed_text
+
+
+def test_non_adapter_low_savings_still_fails_open():
+    from tameru.compress_context import compress_context
+
+    text = " ".join(
+        f"word{i} is a plain prose token used to pad the context"
+        for i in range(50)
+    )
+    result = compress_context(
+        text,
+        "word is plain prose token used pad context",
+        ccr=False,
+        citations=False,
+        min_savings_ratio=0.99,
+    )
+    assert result.compressed_text == text or any(
+        "savings below min_savings_ratio" in str(reason) for reason in result.reasons
+    )
+
+
+def test_pytest_output_survives_empty_query_guard():
+    from tameru.agent_formats import detect_test_runner
+    from tameru.compress_context import compress_context
+
+    lines = [
+        "============================= test session starts ==============================",
+        "platform linux -- Python 3.12.1, pytest-8.2.0",
+        "collected 301 items",
+    ]
+    for i in range(300):
+        pct = round((i + 1) / 301 * 100)
+        lines.append(f"tests/test_x.py::test_{i} PASSED      [ {pct:3d}%]")
+    lines.extend(
+        [
+            "",
+            "FAILURES",
+            "_____ test_fail _____",
+            ">       assert 1 == 2",
+            "E       assert 1 == 2",
+            "tests/test_x.py:3: AssertionError",
+            "",
+            "short test summary info",
+            "FAILED tests/test_x.py::test_fail - assert 1 == 2",
+            "========================= 1 failed, 300 passed in 0.12s =========================",
+        ]
+    )
+    text = "\n".join(lines)
+
+    assert detect_test_runner(text) == "pytest"
+
+    result = compress_context(text, "", ccr=False, citations=False)
+    assert result.fail_open is False
+    assert "FAILED tests/test_x.py::test_fail" in result.compressed_text
+    assert "1 failed, 300 passed" in result.compressed_text
+
+
+def test_plain_prose_empty_query_still_returns_input():
+    from tameru.compress_context import compress_context
+
+    prose = " ".join(["lorem"] * 300)
+    result = compress_context(prose, "", ccr=False, citations=False)
+    assert result.compressed_text == prose
