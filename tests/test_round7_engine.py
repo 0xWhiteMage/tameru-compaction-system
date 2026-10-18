@@ -114,3 +114,13 @@ def test_node_describe_repeated_warnings_collapse():
     assert "batch-120" not in out
     res = compress_context(text, "", ccr=False, citations=False)
     assert len(res.compressed_text) < 0.5 * len(text)
+
+
+def test_runner_prefilter_keeps_detection():
+    import random
+    rng = random.Random(0)
+    prose = "\n\n".join(f"Paragraph {i} discusses module {i % 13} with words {rng.random()}." for i in range(200))
+    assert detect_test_runner(prose) is None
+    assert detect_test_runner("running 2 tests\ntest a ... ok\ntest b ... ok\n\ntest result: ok. 2 passed; 0 failed") == "cargo"
+    assert detect_test_runner("=== RUN   TestA\n--- PASS: TestA (0.00s)\nok  \tex.com/a\t0.01s") == "go"
+    assert detect_test_runner("tests/t.py ..... [100%]\n5 passed in 0.10s") == "pytest"

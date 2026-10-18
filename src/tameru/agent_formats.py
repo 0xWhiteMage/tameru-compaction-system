@@ -973,6 +973,13 @@ _LINE_CAP = 400  # test-runner structure lines are short; a longer line is data
 
 _SUREFIRE_RUN_RE = re.compile(r"^(?:\[(?:INFO|ERROR|WARNING)\] )?Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: \d+")
 _SUREFIRE_RUNNING_RE = re.compile(r"^(?:\[INFO\] )?Running \S+$")
+# Every runner detect_test_runner can return needs at least one of these literals somewhere in the text.
+_RUNNER_HINT_RE = re.compile(
+    r"test result: |Test Suites:|--- (?:PASS|FAIL):|=== RUN |^(?:ok|FAIL)\s|==="
+    r"|\d (?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?)\b"
+    r"|> Task :|Tests run: |\d examples?, |PHPUnit |, Assertions: |Failed:|^Events:",
+    re.MULTILINE,
+)
 
 
 def detect_test_runner(text: str) -> str | None:
@@ -983,6 +990,8 @@ def detect_test_runner(text: str) -> str | None:
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
     line with many ``N passed`` fragments made the old whole-text regex cubic).
     """
+    if _RUNNER_HINT_RE.search(text) is None:
+        return None
     running = cargo_result = jest_suites = jest_tests = go = pytest_open = pytest_sum = False
     gradle_task = gradle_end = rspec = phpunit = dotnet = pytest_q = pytest_prog = False
     first = None

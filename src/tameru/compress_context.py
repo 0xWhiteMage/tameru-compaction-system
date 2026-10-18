@@ -1911,6 +1911,7 @@ def _term_in_text(term: str, lower: str) -> bool:
     return re.search(rf"\b{re.escape(term)}\b", lower) is not None
 
 
+@functools.lru_cache(maxsize=16384)
 def _dup_fp(text: str) -> str:
     """Duplicate-block key: lowercased, volatile fields masked per line (``mask_template``), capped at 240."""
     parts: list[str] = []
