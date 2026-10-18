@@ -924,13 +924,13 @@ _DOTNET_PASSED_RE = re.compile(r"^\s+Passed \S+")
 _K8S_EVENTS_HDR_RE = re.compile(r"^\s*Type\s+Reason\s+Age\s+From\s+Message\s*$")
 _K8S_KEEP_TOP = frozenset({
     "Name", "Namespace", "Node", "Status", "Reason", "Message", "Controlled By", "Roles", "Type",
-    "Priority Class Name", "IP", "Start Time", "Taints", "Unschedulable",
+    "Priority Class Name", "IP", "Start Time", "Taints", "Unschedulable", "Non-terminated Pods",
 })
 _K8S_KEEP_CONTAINER = frozenset({
     "Image", "State", "Reason", "Exit Code", "Signal", "Message", "Last State", "Ready", "Restart Count",
     "Started", "Finished", "Command", "Args",
 })
-_K8S_KEEP_SECTIONS = frozenset({"Conditions", "Capacity", "Allocatable", "Allocated resources"})
+_K8S_KEEP_SECTIONS = frozenset({"Conditions", "Capacity", "Allocatable", "Allocated resources", "Addresses"})
 
 
 _LINE_CAP = 400  # test-runner structure lines are short; a longer line is data
@@ -1390,9 +1390,8 @@ def _classify_kubectl(lines):
             else:
                 base = False
         keep[i] = base or is_diagnostic_line(ln)
-    if len(normal_events) > 2:
-        for i in normal_events[-2:]:
-            keep[i] = True
+    for i in normal_events[-2:]:
+        keep[i] = True
     return keep, tests, suites
 
 

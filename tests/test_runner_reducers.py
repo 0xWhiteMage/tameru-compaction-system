@@ -110,3 +110,25 @@ def test_kubectl():
     assert "tier=web" not in out
     assert "describe lines omitted" in out
     assert "Normal   Pulled" not in out
+
+def test_kubectl_describe_node_keeps_pressure_and_events():
+    text = (
+        "Name:               worker-3\nRoles:              <none>\nLabels:             kubernetes.io/arch=amd64\n"
+        "                    kubernetes.io/hostname=worker-3\nAnnotations:        node.alpha.kubernetes.io/ttl: 0\n"
+        "Taints:             node.kubernetes.io/disk-pressure:NoSchedule\nUnschedulable:      false\n"
+        "Conditions:\n  Type             Status  Reason                  Message\n"
+        "  MemoryPressure   False   KubeletHasSufficientMemory  ok\n  DiskPressure     True    KubeletHasDiskPressure  kubelet has disk pressure\n"
+        "Addresses:\n  InternalIP:  10.0.3.17\nCapacity:\n  ephemeral-storage:  101445540Ki\n"
+        "System Info:\n" + "".join(f"  Field{i}:  value{i}\n" for i in range(12)) +
+        "Non-terminated Pods:          (14 in total)\n" + "".join(f"  shop  worker-{i:02}-6d8f9c  100m (1%)  0 (0%)  3d\n" for i in range(14)) +
+        "Events:\n  Type     Reason                 Age   From     Message\n"
+        "  Normal   NodeHasNoDiskPressure  20d   kubelet  no disk pressure\n"
+        "  Warning  EvictionThresholdMet   20m   kubelet  Attempting to reclaim ephemeral-storage\n"
+        "  Normal   NodeHasDiskPressure    20m   kubelet  status is now: NodeHasDiskPressure"
+    )
+    assert detect_test_runner(text) == "kubectl"
+    out = preprocess_test_output(text)
+    assert out
+    for want in ("disk-pressure:NoSchedule", "KubeletHasDiskPressure", "10.0.3.17", "101445540Ki", "(14 in total)", "EvictionThresholdMet", "NodeHasDiskPressure    20m"):
+        assert want in out
+    assert "Field3" not in out and "worker-05-6d8f9c" not in out and "kubernetes.io/hostname" not in out
