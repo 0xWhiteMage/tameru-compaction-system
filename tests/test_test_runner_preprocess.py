@@ -177,8 +177,9 @@ def test_pytest_all_passing_reduces_to_the_summary():
 
 def test_quiet_pytest_summary_line_is_kept():
     text = "\n".join(["." * 60] * 3 + ["tests/t.py ....."] * 5 + ["2 passed in 0.10s"])
-    # not a recognised runner shape without headers: left alone
-    assert preprocess_test_output(text, "") is None
+    # round 5: quiet pytest (summary + progress lines) is recognised
+    out = preprocess_test_output(text, "")
+    assert out is not None and "2 passed in 0.10s" in out
 
 
 def test_jest_keeps_failure_blocks_and_summary():

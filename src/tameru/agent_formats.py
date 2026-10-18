@@ -912,21 +912,63 @@ _PYTEST_FINAL_RE = re.compile(
     r"^={3,} .*\b\d+ (?:passed|failed|errors?|skipped)\b.* in [\d.]+s.* ={3,}$"
 )
 
+_GRADLE_TASK_RE = re.compile(r"^> Task :\S+(?:\s+(UP-TO-DATE|NO-SOURCE|FROM-CACHE|SKIPPED))?$")
+_GRADLE_END_RE = re.compile(r"^(?:BUILD (?:SUCCESSFUL|FAILED)\b|FAILURE: Build failed|\d+ tests? completed)")
+_GRADLE_TEST_RE = re.compile(r"^\S.* > \S.*\b(PASSED|FAILED|SKIPPED)$")
+_RSPEC_SUMMARY_RE = re.compile(r"^\d+ examples?, \d+ failures?")
+_RSPEC_PROGRESS_RE = re.compile(r"^[.F*]+$")
+_PHPUNIT_HEAD_RE = re.compile(r"^PHPUnit \d[\w.]* by Sebastian Bergmann")
+_PHPUNIT_PROGRESS_RE = re.compile(r"^([.FEWRSIND]+)(?:\s+\d+\s*/\s*\d+\s*\(\s*\d+%\))?$")
+_DOTNET_SUMMARY_RE = re.compile(r"^\s*(?:Passed|Failed)!\s+-\s+Failed:\s+\d+")
+_DOTNET_PASSED_RE = re.compile(r"^\s+Passed \S+")
+_K8S_EVENTS_HDR_RE = re.compile(r"^\s*Type\s+Reason\s+Age\s+From\s+Message\s*$")
+_K8S_KEEP_TOP = frozenset({
+    "Name", "Namespace", "Node", "Status", "Reason", "Message", "Controlled By", "Roles", "Type",
+    "Priority Class Name", "IP", "Start Time", "Taints", "Unschedulable",
+})
+_K8S_KEEP_CONTAINER = frozenset({
+    "Image", "State", "Reason", "Exit Code", "Signal", "Message", "Last State", "Ready", "Restart Count",
+    "Started", "Finished", "Command", "Args",
+})
+_K8S_KEEP_SECTIONS = frozenset({"Conditions", "Capacity", "Allocatable", "Allocated resources"})
+
 
 _LINE_CAP = 400  # test-runner structure lines are short; a longer line is data
 
 
 def detect_test_runner(text: str) -> str | None:
-    """``"cargo"``, ``"go"``, ``"jest"`` or ``"pytest"`` for recognised output.
+    """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
+    ``"phpunit"``, ``"dotnet"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
     line with many ``N passed`` fragments made the old whole-text regex cubic).
     """
     running = cargo_result = jest_suites = jest_tests = go = pytest_open = pytest_sum = False
+    gradle_task = gradle_end = rspec = phpunit = dotnet = pytest_q = pytest_prog = False
+    first = None
+    k8s_events = False
     for ln in text.split("\n"):
         if len(ln) > _LINE_CAP:
             continue
+        if first is None and ln.strip():
+            first = ln
+        if _GRADLE_TASK_RE.match(ln):
+            gradle_task = True
+        if _GRADLE_END_RE.match(ln):
+            gradle_end = True
+        if _RSPEC_SUMMARY_RE.match(ln):
+            rspec = True
+        if _PHPUNIT_HEAD_RE.match(ln) or ln.startswith("Tests: ") and ", Assertions: " in ln:
+            phpunit = True
+        if _DOTNET_SUMMARY_RE.match(ln):
+            dotnet = True
+        if _PYTEST_Q_SUMMARY_RE.match(ln.strip()):
+            pytest_q = True
+        if _PYTEST_PROGRESS_RE.match(ln):
+            pytest_prog = True
+        if ln.startswith("Events:"):
+            k8s_events = True
         if ln.startswith("running ") and _CARGO_RUNNING_RE.match(ln):
             running = True
         elif ln.startswith("test result: "):
@@ -948,8 +990,18 @@ def detect_test_runner(text: str) -> str | None:
         return "jest"
     if go:
         return "go"
-    if pytest_open or pytest_sum:
+    if gradle_task and gradle_end:
+        return "gradle"
+    if rspec:
+        return "rspec"
+    if phpunit:
+        return "phpunit"
+    if dotnet:
+        return "dotnet"
+    if pytest_open or pytest_sum or (pytest_q and pytest_prog):
         return "pytest"
+    if first is not None and first.startswith("Name:") and k8s_events:
+        return "kubectl"
     return None
 
 
@@ -961,6 +1013,7 @@ def _render_kept(
     gap_marker: GapMarker | None,
     total: int,
     captured: list[int] | None = None,
+    other_label: str | None = None,
 ) -> str:
     out: list[str] = []
     run: list[int] = []
@@ -987,6 +1040,10 @@ def _render_kept(
             n_captured = sum(1 for i in run if lines[i].strip())
             if n_captured:
                 out.append(f"[… {n_captured} captured lines omitted …]")
+        elif other_label is not None:
+            n_other = sum(1 for i in run if lines[i].strip())
+            if n_other:
+                out.append(f"[… {n_other} {other_label} omitted …]")
         run.clear()
 
     for i, ln in enumerate(lines):
@@ -1234,11 +1291,121 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
     return keep, tests, suites
 
 
+def _classify_gradle(lines):
+    keep = [True] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    for i, ln in enumerate(lines):
+        m = _GRADLE_TASK_RE.match(ln)
+        if m:
+            keep[i] = False
+            suites[i] = 1
+            continue
+        m = _GRADLE_TEST_RE.match(ln)
+        if m:
+            if m.group(1) == "PASSED":
+                keep[i] = False
+                tests[i] = 1
+            elif m.group(1) == "SKIPPED":
+                keep[i] = False
+    return keep, tests, suites
+
+
+def _classify_rspec(lines):
+    keep = [True] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    failures = False
+    for i, ln in enumerate(lines):
+        if not failures and ln.strip() == "Failures:":
+            failures = True
+            continue
+        if failures:
+            continue
+        m = _RSPEC_PROGRESS_RE.match(ln)
+        if m and "F" not in ln:
+            keep[i] = False
+            tests[i] = ln.count(".")
+        elif ln.startswith(" ") and ln.strip() and "FAILED" not in ln and "PENDING" not in ln and "Error" not in ln:
+            keep[i] = False
+            tests[i] = 1
+    return keep, tests, suites
+
+
+def _classify_phpunit(lines):
+    keep = [True] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    for i, ln in enumerate(lines):
+        m = _PHPUNIT_PROGRESS_RE.match(ln)
+        if m and not any(g in m.group(1) for g in "FEWR"):
+            keep[i] = False
+            tests[i] = m.group(1).count(".")
+    return keep, tests, suites
+
+
+def _classify_dotnet(lines):
+    keep = [True] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    for i, ln in enumerate(lines):
+        if _DOTNET_PASSED_RE.match(ln):
+            keep[i] = False
+            tests[i] = 1
+    return keep, tests, suites
+
+
+def _classify_kubectl(lines):
+    keep = [False] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    section = ""
+    normal_events = []
+    for i, ln in enumerate(lines):
+        base = False
+        if not ln.strip():
+            base = False
+        else:
+            indent = len(ln) - len(ln.lstrip(" "))
+            if indent == 0:
+                key = ln.split(":", 1)[0].strip()
+                if ln.endswith(":"):
+                    base = True
+                    section = key
+                else:
+                    base = key in _K8S_KEEP_TOP
+                    section = ""
+            elif section in ("Containers", "Init Containers"):
+                stripped = ln.strip()
+                key = stripped.split(":", 1)[0].strip() if ":" in stripped else stripped
+                base = (indent == 2 and stripped.endswith(":")) or key in _K8S_KEEP_CONTAINER
+            elif section in _K8S_KEEP_SECTIONS:
+                base = True
+            elif section == "Events":
+                stripped = ln.strip()
+                if _K8S_EVENTS_HDR_RE.match(ln) or not stripped.startswith("Normal"):
+                    base = True
+                else:
+                    normal_events.append(i)
+            else:
+                base = False
+        keep[i] = base or is_diagnostic_line(ln)
+    if len(normal_events) > 2:
+        for i in normal_events[-2:]:
+            keep[i] = True
+    return keep, tests, suites
+
+
 _RUNNERS = {
     "pytest": _classify_pytest,
     "jest": _classify_jest,
     "go": _classify_go,
     "cargo": _classify_cargo,
+    "gradle": _classify_gradle,
+    "rspec": _classify_rspec,
+    "phpunit": _classify_phpunit,
+    "dotnet": _classify_dotnet,
+    "kubectl": _classify_kubectl,
 }
 
 
@@ -1250,8 +1417,7 @@ def preprocess_test_output(
     force: bool = False,
     total_chars: int | None = None,
 ) -> str | None:
-    """Reduce pytest / jest / go test / cargo test output to the failures and
-    summary lines; passing per-test lines become a count marker.
+    """Reduce pytest / jest / go / cargo / gradle / rspec / phpunit / dotnet test output to the failures and summary lines, and `kubectl describe` output to its state, conditions and warning events; passing per-test lines become a count marker.
 
     ``None`` when the output is not a recognised runner's, or nothing would be
     dropped. A dropped line that mentions the query is kept. ``force`` is the
@@ -1288,6 +1454,7 @@ def preprocess_test_output(
         gap_marker,
         total_chars if total_chars else len(text),
         captured=captured,
+        other_label="describe lines" if runner == "kubectl" else None,
     )
     return out if len(out) < len(text) else None
 
