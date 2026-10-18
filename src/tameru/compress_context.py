@@ -2158,6 +2158,52 @@ def score_blocks(
                         seen_diag_fps.add(fp)
                         error_exemplar_ids.add(b["id"])
 
+    line_ubiquitous_terms = set()
+    if is_log_context and n < 10 and blocks:
+        non_blank_lines = [
+            line.lower()
+            for block in blocks
+            for line in block["text"].splitlines()
+            if line.strip()
+        ]
+        if non_blank_lines:
+            term_test_by_term = {t.lower(): test for t, test in term_tests}
+            candidate_terms = {t.lower() for t in term_df}
+            candidate_terms.update(t.lower() for t in _topic_terms(query))
+            candidate_terms.update(t.lower() for t, _ in term_tests)
+            line_counts = {}
+            for term in sorted(candidate_terms):
+                test = term_test_by_term.get(term)
+                if test is None:
+                    continue
+                line_counts[term] = sum(
+                    1 for line in non_blank_lines if test(line)
+                )
+            entity_line_counts = {}
+            entity_block_hits = {}
+            for entity in entities:
+                entity_line_counts[entity] = sum(
+                    1 for line in non_blank_lines if _soft_has(line, entity)
+                )
+                entity_block_hits[entity] = sum(
+                    1 for block in blocks if _soft_has(block["text"], entity)
+                )
+            raw_line_ubiquitous = {
+                term
+                for term, count in line_counts.items()
+                if count / len(non_blank_lines) > 0.8
+            }
+            has_selective_signal = any(
+                df > 0 and term.lower() not in raw_line_ubiquitous
+                for term, df in term_df.items()
+            ) or any(
+                entity_block_hits.get(entity, 0) > 0
+                and entity_line_counts.get(entity, 0) / len(non_blank_lines) <= 0.8
+                for entity in entities
+            )
+            if has_selective_signal:
+                line_ubiquitous_terms = raw_line_ubiquitous
+
     # Weak-query adaptive floor (rate-distortion H(Q) theory):
     # When the query has low information content, raise the novelty floor
     # and recency ramp so middle blocks survive. A vague "keep track of
@@ -2184,7 +2230,8 @@ def score_blocks(
         # A topic word present in nearly every block is not a topic (IDF floor).
         topic = [
             t for t in _topic_terms(query)
-            if n < 10 or term_df.get(t.lower(), 0) <= 0.8 * n
+            if (n < 10 or term_df.get(t.lower(), 0) <= 0.8 * n)
+            and t.lower() not in line_ubiquitous_terms
         ]
         # English topic words (alena, cinematography) are not "weak" just
         # because they lack digits. Vague next-chat ("keep every detail")
@@ -2193,7 +2240,10 @@ def score_blocks(
 
     # IDF floor: a query term in nearly every block carries no signal; it
     # neither scores nor counts as a hit (else every block looks relevant).
-    ubiquitous_terms = {t for t, df in term_df.items() if n >= 10 and df > 0.8 * n}
+    ubiquitous_terms = {
+        t for t, df in term_df.items()
+        if (n >= 10 and df > 0.8 * n) or t.lower() in line_ubiquitous_terms
+    }
     scored = []
     for idx, b in enumerate(blocks):
         score = 0.0
@@ -4954,22 +5004,24 @@ _ANCHOR_LOG_PREFIX_RE = re.compile(
 )
 
 
+_ANCHOR_JVM_LINE_RE = re.compile(r"\((\w[\w$]*\.(?:java|kt|scala|groovy|clj)):\d+\)")
+
 def _strip_anchor_prefix(line: str) -> str:
     """Drop the log-record prefix from an anchor line, keeping the level word.
 
     ``"2026-10-18 11:59:00.001 ERROR [t] o.e.billing.Api - request failed"``
     becomes ``"ERROR request failed"`` so the anchored query no longer carries
     the thread/logger/timestamp entities that appear on every INFO line.
+    JVM frame line numbers are rewritten to the file name so anchors do not carry bare numbers.
     Returns the line unchanged when it is not a log record, or when stripping
     would leave no message (e.g. a bare ``"… ERROR"`` line).
     """
     m = _ANCHOR_LOG_PREFIX_RE.match(line)
-    if m is None:
-        return line
-    out = _ANCHOR_LOG_PREFIX_RE.sub(r"\1 ", line, count=1).strip()
-    if out == m.group(1):
-        return line
-    return out
+    if m is not None:
+        out = _ANCHOR_LOG_PREFIX_RE.sub(r"\1 ", line, count=1).strip()
+        if out != m.group(1):
+            line = out
+    return _ANCHOR_JVM_LINE_RE.sub(r"(\1)", line)
 
 
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
@@ -5052,6 +5104,11 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
 
 _ANCHOR_MAX_LINES = 8
 _ANCHOR_LINE_CHARS = 200
+
+
+# Small logs whose plain objective fails open still get one error-anchored retry
+# probe; large logs never pay the second pass.
+_ANCHOR_RETRY_MAX_CHARS = 20000
 
 
 def compress_context(
@@ -5191,7 +5248,15 @@ def compress_context(
                 (hits := sum(1 for ln in sample if test(ln))) == 0 or hits > 0.8 * len(sample)
                 for test in tests
             )
-            if uninformative:
+            # A small log whose plain objective fails open but still has errors to
+            # anchor on is worth the same side-effect-free probe as an uninformative
+            # query; large logs never pay the second pass.
+            retry_fail_open = (
+                not uninformative
+                and len(caller_text) <= _ANCHOR_RETRY_MAX_CHARS
+                and bool(error_fingerprints(caller_text))
+            )
+            if uninformative or retry_fail_open:
                 anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
                 if anchor_lines:
                     anchored_query = (query or "") + "\n" + "\n".join(anchor_lines)
@@ -5215,14 +5280,19 @@ def compress_context(
                         return not res.fail_open and want <= set(error_fingerprints(res.compressed_text))
 
                     plain_probe = compress_context(caller_text, query or "", **probe)
-                    anchored_probe = compress_context(caller_text, anchored_query, **probe)
-                    if _probe_ok(anchored_probe) and (
-                        not _probe_ok(plain_probe)
-                        or len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
-                    ):
-                        query = anchored_query
-                    else:
+                    # The fail-open retry only proceeds when the plain objective
+                    # actually failed open; otherwise nothing extra is adopted.
+                    if retry_fail_open and not plain_probe.fail_open:
                         anchor_lines = []
+                    else:
+                        anchored_probe = compress_context(caller_text, anchored_query, **probe)
+                        if _probe_ok(anchored_probe) and (
+                            not _probe_ok(plain_probe)
+                            or len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
+                        ):
+                            query = anchored_query
+                        else:
+                            anchor_lines = []
         else:
             anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
             if anchor_lines:

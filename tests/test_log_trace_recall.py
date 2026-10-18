@@ -181,3 +181,11 @@ def test_non_log_pytest_anchor_unchanged():
     line = "E       assert 1 == 2"
     assert _strip_anchor_prefix(line) == line
     assert not _ANCHOR_LOG_PREFIX_RE.match(line)
+
+
+def test_strip_anchor_prefix_rewrites_jvm_line_numbers():
+    from tameru.compress_context import _strip_anchor_prefix
+
+    assert _strip_anchor_prefix("at org.example.billing.Step0.run(Step0.java:10)") == "at org.example.billing.Step0.run(Step0.java)"
+    assert _strip_anchor_prefix('  File "/app/x.py", line 3, in f') == '  File "/app/x.py", line 3, in f'
+    assert _strip_anchor_prefix("at Native Method") == "at Native Method"
