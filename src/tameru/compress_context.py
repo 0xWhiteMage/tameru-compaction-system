@@ -5121,6 +5121,59 @@ def _strip_anchor_prefix(line: str) -> str:
     return _ANCHOR_JVM_LINE_RE.sub(r"(\1)", line)
 
 
+# Weak failure anchors: a fallback for the no-query error-anchored objective when a log carries
+# its only failure as a non-ERROR line. A cheap literal prefilter lets ~99% of lines skip the rest
+# (perf: must not slow the 9000-line INFO log bench).
+_WEAK_LINE_HINT_RE = re.compile(
+    r"WARN|warn|Failed|exited with|status=|code=|HTTP/"
+)
+_WEAK_WARN_LEVEL_RE = re.compile(r"\b(?:WARN|WARNING)\b")
+_WEAK_STRUCT_LEVEL_RE = re.compile(
+    r"(?i)\b(?:level|lvl|severity)\s*[=:]\s*[\"']?(?:warn|warning)\b"
+)
+_WEAK_FAILURE_WORD_RE = re.compile(
+    r"\b(?:failed|failure|failing|fails|timeout|timed\s+out|refused|denied|"
+    r"unreachable|rejected|aborted|unavailable|unauthorized|forbidden|crashed|"
+    r"exhausted|could\s+not|unable\s+to)\b",
+    re.IGNORECASE,
+)
+_WEAK_FAILED_TO_RE = re.compile(r"[fF]ailed to [a-z]")
+_WEAK_EXITED_RE = re.compile(r"[eE]xited with (?:code|status) [1-9]\d*\b")
+_WEAK_STATUS_RE = re.compile(r"[sS]tatus=[1-9]\d*/")
+_WEAK_CODE_RE = re.compile(r"[cC]ode=(?:killed|dumped)")
+_WEAK_HTTP_5XX_RE = re.compile(r'HTTP/\d(?:\.\d)?"\s5\d\d\s\d+')
+_WEAK_EXCLUDE_RE = re.compile(
+    r"succeeded|recovered|resolved|no longer|0 failed|without fail",
+    re.IGNORECASE,
+)
+
+
+def _is_weak_failure_line(line: str) -> bool:
+    """Weak failure anchor: a non-error line that still signals a failure, used only as a fallback
+    inside ``_anchor_regions`` when there are no error-fingerprint exemplars. True when the line
+    (after ``_without_zero_counts``) has a warning level token AND a failure word, or a level-less
+    strong failure shape (systemd ``Failed to``/``status=N/``, ``exited with code/status N``,
+    ``code=killed|dumped``, or an HTTP access-log 5xx status), and is not excluded by a
+    recovery/zero-count phrase."""
+    line = line[:_RX_LINE_CAP]
+    if not _WEAK_LINE_HINT_RE.search(line):
+        return False
+    line = _without_zero_counts(line)
+    if _WEAK_EXCLUDE_RE.search(line):
+        return False
+    if (
+        _WEAK_WARN_LEVEL_RE.search(line) or _WEAK_STRUCT_LEVEL_RE.search(line)
+    ) and _WEAK_FAILURE_WORD_RE.search(line):
+        return True
+    return bool(
+        _WEAK_FAILED_TO_RE.search(line)
+        or _WEAK_EXITED_RE.search(line)
+        or _WEAK_STATUS_RE.search(line)
+        or _WEAK_CODE_RE.search(line)
+        or _WEAK_HTTP_5XX_RE.search(line)
+    )
+
+
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
@@ -5130,6 +5183,20 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     ``_ANCHOR_LINE_CHARS``; a region is the lines joined with "\n". A neighbour whose masked shape equals the next line further out (a repetitive run such as PASS rows) is context noise, not a frame."""
     lines = _norm_newlines(text).split("\n")
     exemplars = set(error_fingerprints(text).values())
+    if not exemplars:
+        # No error-fingerprint exemplars: fall back to weak failure anchors. Keep the first line
+        # per fingerprint, at most ``max_regions``; the region loop below is reused unchanged.
+        weak: set[str] = set()
+        seen_fp: set[str] = set()
+        for line in lines:
+            if len(weak) >= max_regions:
+                break
+            if _is_weak_failure_line(line):
+                fp = _error_fp(line.strip())
+                if fp not in seen_fp:
+                    seen_fp.add(fp)
+                    weak.add(line)
+        exemplars = weak
     regions: list[str] = []
     seen_rows: set[int] = set()
 
