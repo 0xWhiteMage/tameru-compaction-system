@@ -5204,6 +5204,58 @@ def _is_weak_failure_line(line: str) -> bool:
     )
 
 
+_ISO_LEVEL_TOKEN_RE = re.compile(r"\b(?:TRACE|DEBUG|INFO|NOTICE|WARN|WARNING)\b")
+_ISO_WARN_TOKEN_RE = re.compile(r"\b(?:WARN|WARNING)\b")
+_ISO_STRUCT_LEVEL_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*)(?:trace|debug|info|notice|warn|warning)\b")
+_ISO_STRUCT_WARN_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*)warn(?:ing)?\b")
+
+
+def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
+    """Last-resort anchors: isolated WARN lines in a mostly leveled log.
+
+    Returns at most ``max_regions`` WARN lines in original order when all strict guards pass:
+    at least 20 non-blank lines, at least 90% of non-blank lines carry a level token, at most
+    two WARN-level lines and at most 5% of non-blank lines, and each chosen WARN fingerprint
+    occurs only once among all non-blank lines.
+    """
+    if max_regions <= 0:
+        return []
+    if not any("WARN" in line or "warn" in line.lower() for line in lines):
+        return []
+    nonblank = [line for line in lines if line.strip()]
+    if len(nonblank) < 20:
+        return []
+
+    level_count = 0
+    warn_lines: list[str] = []
+    for line in nonblank:
+        if _ISO_LEVEL_TOKEN_RE.search(line) or _ISO_STRUCT_LEVEL_RE.search(line):
+            level_count += 1
+        if _ISO_WARN_TOKEN_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line):
+            warn_lines.append(line)
+
+    if level_count * 100 < len(nonblank) * 90:
+        return []
+    if len(warn_lines) > 2 or len(warn_lines) * 100 > len(nonblank) * 5:
+        return []
+    if not warn_lines:
+        return []
+
+    fp_counts: dict[str, int] = {}
+    for line in nonblank:
+        fp = _error_fp(line.strip())
+        fp_counts[fp] = fp_counts.get(fp, 0) + 1
+
+    out: list[str] = []
+    for line in warn_lines:
+        if fp_counts.get(_error_fp(line.strip()), 0) != 1:
+            return []
+        out.append(line)
+        if len(out) >= max_regions:
+            break
+    return out
+
+
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
@@ -5227,6 +5279,9 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
                     seen_fp.add(fp)
                     weak.add(line)
         exemplars = weak
+    if not exemplars:
+        # Last resort: isolated WARN anchors in a strictly leveled log.
+        exemplars = set(_isolated_warn_lines(lines, max_regions))
     regions: list[str] = []
     seen_rows: set[int] = set()
 
