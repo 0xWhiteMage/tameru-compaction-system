@@ -667,6 +667,10 @@ def _is_critical_line(line: str) -> bool:
 # Level-tagged error lines. Case-sensitive on purpose: "error" in prose is not
 # a log level, ERROR is.
 _ERR_LEVEL_RE = re.compile(r"\b(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)\b")
+_ERR_STRUCT_LEVEL_RE = re.compile(
+    r"(?:^|[\s{,])\"?(?:level|lvl|severity|log\.level)\"?\s*[=:]\s*\"?(?:error|err|fatal|critical|crit|panic|emerg|alert)\b",
+    re.IGNORECASE,
+)
 _ERR_EXC_RE = re.compile(r"^\s*(?:\w+\.)*\w*(?:Error|Exception):")
 _ERR_PANIC_RE = re.compile(r"\bpanic:")
 _ERR_TRACEBACK = "Traceback (most recent call last)"
@@ -706,7 +710,7 @@ def _is_level_error_line(line: str) -> bool:
 # one. Perf (v1.5.0): one scan replaces four regexes on the ~99% of log lines
 # that are not errors.
 _ERROR_LINE_HINT_RE = re.compile(
-    r"ERROR|FATAL|CRITICAL|PANIC|FAIL|Error:|Exception:|Traceback \(most recent call last\)|panic:"
+    r"ERROR|FATAL|CRITICAL|PANIC|FAIL|Error:|Exception:|Traceback \(most recent call last\)|panic:|level|lvl|severity|Level|LEVEL|Severity|SEVERITY"
 )
 
 
@@ -714,7 +718,8 @@ _DIAG_EXEMPLAR_CAP = 32
 
 
 def _is_error_line(line: str) -> bool:
-    """Level-tagged error, ``XxxError:``/``Exception:`` head, traceback head or
+    """Level-tagged error, structured level field (``level=error``, JSON
+    ``"level": "error"``), ``XxxError:``/``Exception:`` head, traceback head or
     Go panic, or a multi-language compiler/test/runtime diagnostic
     (agent_formats.DIAGNOSTIC_LINE_RE) — the lines :func:`error_fingerprints` keys on."""
     capped = line[:_RX_LINE_CAP]
@@ -732,6 +737,7 @@ def _is_error_line(line: str) -> bool:
     return bool(
         _ERR_LEVEL_RE.search(s)
         or _ERR_EXC_RE.match(head)
+        or _ERR_STRUCT_LEVEL_RE.search(s)
         or _ERR_TRACEBACK in s
         or _ERR_PANIC_RE.search(s)
     )
@@ -1899,6 +1905,25 @@ def _soft_has(text: str, needle: str) -> bool:
     return needle.lower() in text.lower()
 
 
+_INFLECT_SUFFIXES = ("ures", "ure", "ing", "ed", "es", "s")
+_INFLECT_RE_TAIL = r"(?:s|es|ed|ing|ure|ures)?"
+
+
+@functools.lru_cache(maxsize=4096)
+def _inflection_stem(term: str) -> str | None:
+    if not (term.isascii() and term.isalpha() and len(term) >= 4):
+        return None
+    for suffix in _INFLECT_SUFFIXES:
+        if term.endswith(suffix):
+            remainder = term[:-len(suffix)]
+            if len(remainder) < 4:
+                continue
+            if suffix == "s" and (remainder[-1] in "sui" or term.endswith("ss")):
+                continue
+            return remainder
+    return term
+
+
 def _term_test(term: str) -> Callable[[str], bool]:
     """``lambda lower: _term_in_text(term, lower)`` with the pattern compiled once."""
     if not term:
@@ -1912,9 +1937,22 @@ def _term_test(term: str) -> Callable[[str], bool]:
         or 0x0E00 <= o <= 0x0E7F
     )
     if syllabic or len(term) > 5:
-        return lambda lower: term in lower
-    search = re.compile(rf"\b{re.escape(term)}\b").search
-    return lambda lower: search(lower) is not None
+        def base(lower: str) -> bool:
+            return term in lower
+    else:
+        search = re.compile(rf"\b{re.escape(term)}\b").search
+
+        def base(lower: str) -> bool:
+            return search(lower) is not None
+    stem = _inflection_stem(term)
+    if stem is None:
+        return base
+    inflect = re.compile(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b").search
+
+    def test(lower: str) -> bool:
+        return base(lower) or inflect(lower) is not None
+
+    return test
 
 
 def _any_test(tests: list[Callable[[str], bool]], lower: str) -> bool:
@@ -1936,9 +1974,19 @@ def _term_in_text(term: str, lower: str) -> bool:
         or 0x0600 <= o <= 0x06FF
         or 0x0E00 <= o <= 0x0E7F
     )
-    if syllabic or len(term) > 5:
-        return term in lower
-    return re.search(rf"\b{re.escape(term)}\b", lower) is not None
+    if syllabic:
+        if len(term) > 5:
+            return term in lower
+        return re.search(rf"\b{re.escape(term)}\b", lower) is not None
+    if len(term) > 5:
+        base = term in lower
+    else:
+        base = re.search(rf"\b{re.escape(term)}\b", lower) is not None
+    if not base:
+        stem = _inflection_stem(term)
+        if stem is not None and re.search(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b", lower):
+            return True
+    return base
 
 
 @functools.lru_cache(maxsize=16384)
@@ -5005,6 +5053,52 @@ _ANCHOR_LOG_PREFIX_RE = re.compile(
 
 
 _ANCHOR_JVM_LINE_RE = re.compile(r"\((\w[\w$]*\.(?:java|kt|scala|groovy|clj)):\d+\)")
+_ANCHOR_LOGFMT_PAIR_RE = re.compile(r'(\w[\w.]*)=("(?:[^"\\]|\\.)*"|\S+)')
+
+def _strip_structured_anchor(line):
+    if line.lstrip().startswith("{"):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            record = None
+        if isinstance(record, dict):
+            level = None
+            for key in ("level", "lvl", "severity"):
+                value = record.get(key)
+                if isinstance(value, str) and value:
+                    level = value
+                    break
+            parts = []
+            for key in ("msg", "message", "error", "err", "reason", "exception", "status", "code"):
+                if key in record:
+                    value = str(record[key])
+                    if value:
+                        parts.append(value)
+            if level is not None and parts:
+                return " ".join([level.upper()] + parts)
+            return None
+    pairs = _ANCHOR_LOGFMT_PAIR_RE.findall(line)
+    if len(pairs) >= 3:
+        fields = {}
+        for key, value in pairs:
+            if key not in fields:
+                if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                fields[key] = value
+        level = None
+        for key in ("level", "lvl", "severity"):
+            if key in fields:
+                level = fields[key]
+                break
+        parts = []
+        for key in ("msg", "message", "error", "err", "reason", "exception", "status", "code"):
+            value = fields.get(key)
+            if value:
+                parts.append(value)
+        if level is not None and parts:
+            return " ".join([level.upper()] + parts)
+    return None
+
 
 def _strip_anchor_prefix(line: str) -> str:
     """Drop the log-record prefix from an anchor line, keeping the level word.
@@ -5016,6 +5110,9 @@ def _strip_anchor_prefix(line: str) -> str:
     Returns the line unchanged when it is not a log record, or when stripping
     would leave no message (e.g. a bare ``"… ERROR"`` line).
     """
+    stripped = _strip_structured_anchor(line)
+    if stripped is not None:
+        line = stripped
     m = _ANCHOR_LOG_PREFIX_RE.match(line)
     if m is not None:
         out = _ANCHOR_LOG_PREFIX_RE.sub(r"\1 ", line, count=1).strip()
@@ -5248,15 +5345,14 @@ def compress_context(
                 (hits := sum(1 for ln in sample if test(ln))) == 0 or hits > 0.8 * len(sample)
                 for test in tests
             )
-            # A small log whose plain objective fails open but still has errors to
-            # anchor on is worth the same side-effect-free probe as an uninformative
-            # query; large logs never pay the second pass.
-            retry_fail_open = (
+            # A small erroring log is worth the same side-effect-free anchored
+            # probe as an uninformative query; large logs never pay the second pass.
+            small_erroring_log = (
                 not uninformative
                 and len(caller_text) <= _ANCHOR_RETRY_MAX_CHARS
                 and bool(error_fingerprints(caller_text))
             )
-            if uninformative or retry_fail_open:
+            if uninformative or small_erroring_log:
                 anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
                 if anchor_lines:
                     anchored_query = (query or "") + "\n" + "\n".join(anchor_lines)
@@ -5280,19 +5376,14 @@ def compress_context(
                         return not res.fail_open and want <= set(error_fingerprints(res.compressed_text))
 
                     plain_probe = compress_context(caller_text, query or "", **probe)
-                    # The fail-open retry only proceeds when the plain objective
-                    # actually failed open; otherwise nothing extra is adopted.
-                    if retry_fail_open and not plain_probe.fail_open:
-                        anchor_lines = []
+                    anchored_probe = compress_context(caller_text, anchored_query, **probe)
+                    if _probe_ok(anchored_probe) and (
+                        not _probe_ok(plain_probe)
+                        or len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
+                    ):
+                        query = anchored_query
                     else:
-                        anchored_probe = compress_context(caller_text, anchored_query, **probe)
-                        if _probe_ok(anchored_probe) and (
-                            not _probe_ok(plain_probe)
-                            or len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
-                        ):
-                            query = anchored_query
-                        else:
-                            anchor_lines = []
+                        anchor_lines = []
         else:
             anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
             if anchor_lines:

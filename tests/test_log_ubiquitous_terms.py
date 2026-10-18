@@ -124,3 +124,47 @@ def test_compress_context_no_errors_informative_query_runs_no_probe() -> None:
 
     assert result.compressed_text == baseline.compressed_text
     assert result.fail_open == baseline.fail_open
+
+
+def test_generic_small_erroring_log_prefers_anchored_result():
+    lines = [
+        f"2026-10-18 05:10:{i:02d}.{100 + i} INFO  [pool-2-thread-{i}] c.shop.order.OrderService - order processed ok id={500 + i}"
+        for i in range(45)
+    ]
+    lines.append("2026-10-18 05:11:00.010 ERROR [pool-2-thread-7] c.shop.order.OrderService - order processing failed")
+    lines.append('org.springframework.dao.DataIntegrityViolationException: duplicate key value violates unique constraint "orders_pkey"')
+    lines.extend(f"\tat c.shop.order.Repo{i}.save(Repo{i}.java:{200 + i})" for i in range(18))
+    lines.append("\t... 30 more")
+    lines.extend(
+        f"2026-10-18 05:11:{i:02d}.{200 + i} INFO  [pool-2-thread-{i}] c.shop.order.OrderService - order processed ok id={600 + i}"
+        for i in range(8)
+    )
+    text = "\n".join(lines)
+    query = "why did order processing fail"
+
+    result = compress_context(
+        text,
+        query,
+        ccr=False,
+        citations=False,
+        inline_short_gaps=True,
+        anchor_errors=True,
+        prose_brief=True,
+        min_savings_ratio=0.1,
+    )
+    plain = compress_context(
+        text,
+        query,
+        ccr=False,
+        citations=False,
+        inline_short_gaps=True,
+        anchor_errors=False,
+        prose_brief=True,
+        min_savings_ratio=0.1,
+    )
+
+    assert not result.fail_open
+    assert "DataIntegrityViolationException" in result.compressed_text
+    assert "order processing failed" in result.compressed_text
+    assert len(result.compressed_text) <= len(plain.compressed_text)
+    assert len(result.compressed_text) < 0.35 * len(text)
