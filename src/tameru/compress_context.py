@@ -5159,7 +5159,7 @@ _WEAK_LINE_HINT_RE = re.compile(
 )
 _WEAK_WARN_LEVEL_RE = re.compile(r"\b(?:WARN|WARNING)\b")
 _WEAK_STRUCT_LEVEL_RE = re.compile(
-    r"(?i)\b(?:level|lvl|severity)\s*[=:]\s*[\"']?(?:warn|warning)\b"
+    r"(?i)\b(?:level|lvl|severity)\s*[\"']?\s*[=:]\s*[\"']?(?:warn|warning)\b"
 )
 _WEAK_FAILURE_WORD_RE = re.compile(
     r"\b(?:failed|failure|failing|fails|timeout|timed\s+out|refused|denied|"
