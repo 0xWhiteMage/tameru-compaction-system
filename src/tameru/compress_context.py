@@ -5100,6 +5100,14 @@ def _strip_structured_anchor(line):
     return None
 
 
+_ANCHOR_ACCESS_LOG_RE = re.compile(
+    r'^\S+ \S+ \S+ \[[^\]]*\] '
+    r'"(?P<method>GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) '
+    r'(?P<path>[^\s?]+)(?:\?[^\s]*)? HTTP/\d+(?:\.\d+)?" '
+    r'(?P<status>\d{3})(?=\s|$)'
+)
+
+
 def _strip_anchor_prefix(line: str) -> str:
     """Drop the log-record prefix from an anchor line, keeping the level word.
 
@@ -5110,6 +5118,9 @@ def _strip_anchor_prefix(line: str) -> str:
     Returns the line unchanged when it is not a log record, or when stripping
     would leave no message (e.g. a bare ``"… ERROR"`` line).
     """
+    m = _ANCHOR_ACCESS_LOG_RE.match(line)
+    if m is not None:
+        return f"{m.group('method')} {m.group('path')} {m.group('status')}"
     stripped = _strip_structured_anchor(line)
     if stripped is not None:
         line = stripped
