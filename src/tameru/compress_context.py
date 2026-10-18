@@ -5375,11 +5375,44 @@ def compress_context(
                     def _probe_ok(res: CompressResult) -> bool:
                         return not res.fail_open and want <= set(error_fingerprints(res.compressed_text))
 
+                    def _keeps_error_context(anchored: CompressResult, plain: CompressResult) -> bool:
+                        def _output_lines(text):
+                            lines = set()
+                            for raw in text.splitlines():
+                                line = raw.strip()
+                                if not line:
+                                    continue
+                                if line.startswith("[×") or line.startswith("[last]"):
+                                    continue
+                                lines.add(line)
+                            return lines
+
+                        plain_lines = _output_lines(plain.compressed_text)
+                        anchored_lines = _output_lines(anchored.compressed_text)
+                        original_lines = caller_text.splitlines()
+                        template_counts = collections.Counter(mask_template(raw.strip().lower()) for raw in original_lines)
+                        error_flags = [_is_error_line(line.strip()) for line in original_lines]
+                        total = len(original_lines)
+                        for index, raw in enumerate(original_lines):
+                            line = raw.strip()
+                            if not line:
+                                continue
+                            if not any(error_flags[max(0, index - 2):min(total, index + 3)]):
+                                continue
+                            if line in plain_lines and line not in anchored_lines:
+                                if template_counts.get(mask_template(line.lower()), 0) >= 3:
+                                    continue
+                                return False
+                        return True
+
                     plain_probe = compress_context(caller_text, query or "", **probe)
                     anchored_probe = compress_context(caller_text, anchored_query, **probe)
                     if _probe_ok(anchored_probe) and (
                         not _probe_ok(plain_probe)
-                        or len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
+                        or (
+                            len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
+                            and _keeps_error_context(anchored_probe, plain_probe)
+                        )
                     ):
                         query = anchored_query
                     else:

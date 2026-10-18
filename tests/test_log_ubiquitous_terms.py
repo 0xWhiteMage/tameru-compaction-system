@@ -168,3 +168,38 @@ def test_generic_small_erroring_log_prefers_anchored_result():
     assert "order processing failed" in result.compressed_text
     assert len(result.compressed_text) <= len(plain.compressed_text)
     assert len(result.compressed_text) < 0.35 * len(text)
+
+
+def test_anchored_preference_keeps_error_adjacent_context():
+    lines = []
+    for i in range(1, 81):
+        if i == 40:
+            lines.append("ERROR payment gateway timeout order=991")
+        elif i == 41:
+            lines.append("retry 1/3")
+        elif i == 42:
+            lines.append("ERROR payment gateway timeout order=992")
+        else:
+            lines.append(
+                f"2026-10-11 12:00:{i:02d} INFO worker-{i % 10} processed batch {i:03d} in 12ms "
+                + "x" * 40
+            )
+
+    text = "\n".join(lines)
+    result = compress_context(
+        text,
+        "why did the payment gateway time out?",
+        ccr=False,
+        citations=False,
+        inline_short_gaps=True,
+        anchor_errors=True,
+        gap_marker=lambda omitted, total: f"[{omitted} lines omitted]",
+        min_savings_ratio=0.1,
+    )
+
+    assert (
+        "ERROR payment gateway timeout order=991\n"
+        "retry 1/3\n"
+        "ERROR payment gateway timeout order=992"
+    ) in result.compressed_text
+    assert result.receipt["query_source"] in ("caller", "error-anchored")
