@@ -16,10 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - kubectl `describe` and `get events` reducers; recognises diagnostics from eslint, Elixir, npm, make/shell, terraform, jest/vitest.
 - Go panic stacks keep the goroutine header, frames and last frame.
 - Opt-in `prose_brief` for no-query extractive briefs on prose in any language.
+- Added: `kubectl get pods` reducer (keeps unhealthy, not-ready and restarted pods).
+- Added: last-resort isolated-WARN anchors for leveled logs with no errors or failure lines (at most 2 WARN lines, unique wording, >=20 lines, >=90% of lines level-tagged).
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
 - Query words match simple inflections such as fail/failed/failing and error/errors.
+- Changed: weak failure anchors also recognise JSON-style `"level": "warn"`.
+- Changed: when a call has no side effects (no CCR, cache prefix, decision cache, audit log or summary endpoint), the winning trial compression is returned directly instead of compressing again; output and receipt are identical.
 
 ---
 
