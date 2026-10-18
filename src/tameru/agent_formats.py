@@ -978,11 +978,13 @@ _RUNNER_HINT_RE = re.compile(
     r"test result: |Test Suites:|--- (?:PASS|FAIL):|=== RUN |^(?:ok|FAIL)\s|==="
     r"|\d (?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?)\b"
     r"|> Task :|Tests run: |\d examples?, |PHPUnit |, Assertions: |Failed:|^Events:"
-    r"|LAST SEEN\s+TYPE\s+REASON",
+    r"|LAST SEEN\s+TYPE\s+REASON|NAME\s+READY\s+STATUS\s+RESTARTS",
     re.MULTILINE,
 )
 
 _K8S_GET_EVENTS_HDR_RE = re.compile(r"^(?:NAMESPACE\s+)?LAST SEEN\s+TYPE\s+REASON\s+\S")
+_K8S_GET_PODS_HDR_RE = re.compile(r"^(?:NAMESPACE\s+)?NAME\s+READY\s+STATUS\s+RESTARTS\s+AGE\b")
+_K8S_GET_PODS_ROW_RE = re.compile(r"^\S+\s+(?:\S+\s+)?\d+/\d+\s+\S+\s+\d+")
 
 
 def detect_test_runner(text: str) -> str | None:
@@ -1070,7 +1072,83 @@ def detect_test_runner(text: str) -> str | None:
             seen += 1
             if seen == 3:
                 return "kubectl_events"
+    if first is not None and _K8S_GET_PODS_HDR_RE.match(first):
+        rows = 0
+        for ln in text.split("\n", 50):
+            if not ln.strip():
+                continue
+            if rows == 0:
+                if not _K8S_GET_PODS_HDR_RE.match(ln):
+                    break
+                rows = 1
+                continue
+            if _K8S_GET_PODS_ROW_RE.match(ln):
+                rows += 1
+                if rows == 3:
+                    return "kubectl_pods"
+            else:
+                break
     return None
+
+def _classify_kubectl_pods(lines):
+    n = len(lines)
+    keep = [False] * n
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.strip():
+            header_idx = i
+            break
+    if header_idx is None:
+        return [False] * n, [0] * n, [0] * n
+    keep[header_idx] = True
+
+    healthy = []
+    for i, line in enumerate(lines):
+        if i == header_idx or not line.strip():
+            continue
+        if not _K8S_GET_PODS_ROW_RE.match(line):
+            if is_diagnostic_line(line):
+                keep[i] = True
+            continue
+
+        tokens = line.split()
+        ready_idx = None
+        for j, tok in enumerate(tokens):
+            if re.fullmatch(r"\d+/\d+", tok):
+                ready_idx = j
+                break
+        if ready_idx is None or ready_idx + 2 >= len(tokens):
+            if is_diagnostic_line(line):
+                keep[i] = True
+            continue
+
+        ready = tokens[ready_idx]
+        status = tokens[ready_idx + 1]
+        restarts_token = tokens[ready_idx + 2]
+        restarts_match = re.match(r"\d+", restarts_token)
+        restarts = int(restarts_match.group()) if restarts_match else 0
+
+        try:
+            x, y = (int(part) for part in ready.split("/"))
+        except ValueError:
+            if is_diagnostic_line(line):
+                keep[i] = True
+            continue
+
+        if (
+            status not in {"Running", "Completed", "Succeeded"}
+            or (status == "Running" and x != y)
+            or restarts > 0
+        ):
+            keep[i] = True
+        elif status == "Running" and x == y and restarts == 0:
+            healthy.append(i)
+
+    if healthy:
+        keep[healthy[0]] = True
+        keep[healthy[-1]] = True
+
+    return keep, [0] * n, [0] * n
 
 
 def _render_kept(
@@ -1685,6 +1763,7 @@ _RUNNERS = {
     "dotnet": _classify_dotnet,
     "kubectl": _classify_kubectl,
     "kubectl_events": _classify_kubectl_events,
+    "kubectl_pods": _classify_kubectl_pods,
 }
 
 
@@ -1760,7 +1839,8 @@ def preprocess_test_output(
             "unchanged diff lines"
             if runner == "phpunit"
             else ("event rows" if runner == "kubectl_events"
-                  else ("describe lines" if runner == "kubectl" else None))
+                  else ("pod rows" if runner == "kubectl_pods"
+                        else ("describe lines" if runner == "kubectl" else None)))
         ),
     )
     return out if len(out) < len(text) else None
