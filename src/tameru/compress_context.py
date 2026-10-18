@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import unicodedata
+import dataclasses
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
@@ -308,6 +309,24 @@ _QUOTED_RE = re.compile(r"[\"']([^\"']{2,64})[\"']")
 _CAPS_RE = re.compile(r"\b[A-Z]{2,24}\b")
 _URI_RE = re.compile(r"\b[a-z][a-z0-9+.-]{0,31}://\S+")
 _FAST_ACCOUNTING_PUNCT = frozenset("§…×–—“”‘’")
+
+
+_REUSE_PROBE_RESULT = True
+
+
+def _finalize_reused_probe(res, query_as_given, anchor_lines) -> "CompressResult":
+    receipt = dict(res.receipt) if res.receipt else res.receipt
+    if receipt is not None:
+        receipt["query_hash"] = hashlib.sha256(
+            (query_as_given or "").encode("utf-8", errors="surrogatepass")
+        ).hexdigest()[:12]
+        if anchor_lines:
+            receipt["query_source"] = "error-anchored"
+            receipt["anchor_lines"] = list(anchor_lines)
+            if res.compression_risk == "low":
+                receipt["risk"] = "medium"
+    new_risk = "medium" if (anchor_lines and res.compression_risk == "low") else res.compression_risk
+    return dataclasses.replace(res, receipt=receipt, compression_risk=new_risk)
 
 
 @dataclass
@@ -5407,6 +5426,7 @@ def compress_context(
     # A generic query with no informative topic word (absent, or on >80% of lines) also gets the error regions,
     # appended after the caller's words when a side-effect-free probe shows that keeps every error fingerprint in less text.
     anchor_lines: list[str] = []
+    chosen_probe = None
     if (
         anchor_errors
         and not derived_terms
@@ -5446,7 +5466,7 @@ def compress_context(
                         degraded_view=degraded_view, summary_endpoint=None, limits=limits,
                         derive_query=False, anchor_errors=False, gap_marker=gap_marker,
                         recursion_markers=recursion_markers, content_hint=content_hint,
-                        inline_short_gaps=inline_short_gaps,
+                        inline_short_gaps=inline_short_gaps, prose_brief=prose_brief,
                     )
                     want = set(error_fingerprints(caller_text))
 
@@ -5494,14 +5514,26 @@ def compress_context(
                             )
                         ):
                             query = anchored_query
+                            chosen_probe = anchored_probe
                         else:
                             anchor_lines = []
+                            chosen_probe = plain_probe
                     else:
                         anchor_lines = []
         else:
             anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
             if anchor_lines:
                 query = "\n".join(anchor_lines)
+    if (
+        _REUSE_PROBE_RESULT
+        and chosen_probe is not None
+        and not ccr
+        and not cache_prefix
+        and decision_cache is None
+        and log_dir is None
+        and summary_endpoint is None
+    ):
+        return _finalize_reused_probe(chosen_probe, query_as_given, anchor_lines)
     requested_mode = (mode or "adaptive").strip().lower()
     if requested_mode not in {"adaptive", "fixed", "compiler", "precision"}:
         raise ValueError(
