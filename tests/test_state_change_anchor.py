@@ -1,4 +1,4 @@
-from tameru.compress_context import _anchor_regions, compress_context
+from tameru.compress_context import _anchor_regions, _state_change_lines, compress_context
 
 
 def _filler_lines(count: int, start: int = 0) -> list[str]:
@@ -92,7 +92,8 @@ def test_state_change_anchor_rejects_repeated_healthy_degraded_states():
         lines.append(f"2026-10-18 09:00:{i:02d} INFO health: svc-{i} state={state}")
     lines.append("2026-10-18 09:00:40 INFO health: summary 20/40 degraded")
     text = "\n".join(lines)
-    assert _anchor_regions(text, 8) == []
+    assert _state_change_lines(text.split("\n"), 8) == ["2026-10-18 09:00:40 INFO health: summary 20/40 degraded"]
+    assert not any("svc-" in line for line in _state_change_lines(text.split("\n"), 8))
 
 
 def test_state_change_anchor_rejects_more_than_two_matches():

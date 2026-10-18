@@ -72,8 +72,8 @@ def test_restored_lines_keep_order_among_collapsed_exemplars():
     out = preprocess_logs(lines)
     positions = _original_positions(lines, out)
     assert positions == sorted(positions)
-    # One restored exemplar for the whole "batch N/60 failed" template.
-    assert sum("batch" in ln for ln in out) == 1
+    # The error template is kept as a first/last pair.
+    assert sum("batch" in ln for ln in out) == 2
     assert sum("slow response" in ln for ln in out) == 1
 
 

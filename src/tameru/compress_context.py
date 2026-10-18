@@ -28,7 +28,9 @@ from typing import Any, Callable, Iterable, Optional
 from .agent_formats import (
     GUTTER_RE as _AGENT_GUTTER_RE,
     apply_agent_adapters,
+    detect_grep_lines,
     detect_test_runner,
+    detect_unified_diff,
     is_numbered_code,
     is_diagnostic_line,
     is_kubectl_status_line,
@@ -603,6 +605,13 @@ def _template_long_enough(line: str) -> bool:
 
 _PROGRESS_BAR_RE = re.compile(r"(\[[=#>\-. ]*\]\s*)?\d{1,3}\s*(%|/\s*\d+)")
 _COMPILING_RE = re.compile(r"^Compiling [\w-]+ ")
+_PROGRESS_WORD_RE = re.compile(
+    r"\b(downloading|uploading|fetching|extracting|receiving|resolving|"
+    r"writing|counting|compressing|copying|processing|progress|step|"
+    r"pulling|installing|unpacking)\b",
+    re.IGNORECASE,
+)
+_LETTERS_RE = re.compile(r"[A-Za-z]")
 
 
 def _is_progress_bar(line: str) -> bool:
@@ -611,7 +620,14 @@ def _is_progress_bar(line: str) -> bool:
         return False
     # (the pattern needs a literal "%" or "/": most lines have neither)
     if ("%" in t or "/" in t) and _PROGRESS_BAR_RE.search(t):
-        return True
+        has_progress_word = _PROGRESS_WORD_RE.search(t) is not None
+        for m in _PROGRESS_BAR_RE.finditer(t):
+            if "%" in m.group(0) or m.group(1) is not None:
+                return True
+            if has_progress_word:
+                return True
+            if not _LETTERS_RE.search(t.replace(m.group(0), "", 1)):
+                return True
     return bool(_COMPILING_RE.match(t))
 
 
@@ -1589,7 +1605,65 @@ def _preprocess_scan(
         processed = preprocess_flat_records(text, query)
         if processed != text:
             return processed.split("\n"), kind
+        query_text = query or ""
+        distinctive_terms = [
+            term
+            for term in distinctive_query_terms(query_text)
+            if not term.startswith("script:")
+        ]
+        joined_lines = "\n".join(lines).lower()
+        if (
+            not (
+                query_has_distinctive_selectors(query_text)
+                and distinctive_terms
+                and not any(
+                    term.lower() in joined_lines for term in distinctive_terms
+                )
+            )
+            and _looks_like_repetitive_tool_output(lines)
+        ):
+            return preprocess_logs(lines, query), kind
     return _collapse_blanks(lines), kind
+
+
+def _looks_like_repetitive_tool_output(lines: list[str]) -> bool:
+    """Heuristic: text-routed tool output that is mostly repeated templates.
+
+    Strict guards (all required) so prose, markdown and short outputs never
+    route here: >= 20 non-blank lines; blank lines <= 20% of all lines; no
+    markdown structure (a ``^#{1,6} `` heading or a ``` fence); mean non-blank
+    line length <= 200; no diff/grep-shaped output; and lines whose
+    _log_fingerprint template occurs >= 5 times make up >= 50% of the
+    non-blank lines.
+    """
+    non_blank = [ln for ln in lines if ln.strip()]
+    if len(non_blank) < 20:
+        return False
+    if len(lines) - len(non_blank) > 0.2 * len(lines):
+        return False
+    text = "\n".join(lines)
+    if detect_unified_diff(text):
+        return False
+    if detect_grep_lines(text):
+        paths = set()
+        for ln in non_blank:
+            m = re.match(r"^([^\s:][^:]*):(\d+):", ln)
+            if m:
+                paths.add(m.group(1))
+        if len(paths) >= 2 or any("/" in p for p in paths):
+            return False
+    for ln in lines:
+        if re.match(r"^#{1,6} ", ln) or ln.startswith("```"):
+            return False
+    if sum(len(ln) for ln in non_blank) / len(non_blank) > 200:
+        return False
+    counts: dict[str, int] = {}
+    for ln in non_blank:
+        fp = _log_fingerprint(ln)
+        if fp is not None:
+            counts[fp] = counts.get(fp, 0) + 1
+    repeated = sum(c for c in counts.values() if c >= 5)
+    return repeated >= 0.5 * len(non_blank)
 
 
 def _extract_terms(query: str) -> list[str]:
@@ -5292,12 +5366,42 @@ _STATE_CHANGE_RE = re.compile(
 )
 
 
-def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
-    """Last-resort anchors: rare INFO/NOTICE state-change lines.
+_STATE_SUMMARY_RE = re.compile(
+    r"\b(\d+\s*/\s*\d+)\s+(?:services?\s+|nodes?\s+|pods?\s+|checks?\s+|targets?\s+)?(?:degraded|down|unhealthy|failed|failing|not\s+ready|unavailable|offline|unreachable|critical)\b"
+    r"|\b(\d+\s+(?:of|out of)\s+\d+)\s+(?:services?\s+|nodes?\s+|pods?\s+|checks?\s+|targets?\s+)?(?:are\s+|is\s+)?(?:degraded|down|unhealthy|failed|failing|not\s+ready|unavailable|offline|unreachable|critical)\b",
+    re.IGNORECASE,
+)
+
+
+def _summary_count_text(line: str) -> str:
+    """The matched count phrase (e.g. ``"20/40"`` or ``"3 of 12"``) of a summary
+    line, with internal whitespace collapsed. Returns ``""`` when the line does
+    not carry a summary count phrase."""
+    for m in _STATE_SUMMARY_RE.finditer(line):
+        phrase = m.group(1) or m.group(2)
+        if phrase:
+            return " ".join(phrase.split())
+    return ""
+
+
+def _summary_anchor_region(line: str, lines: list[str]) -> str | None:
+    """Region text for a summary-tier exemplar: the summary line without timestamp/level.
+
+    Returns ``None`` when the result is empty.
+    """
+    s = _strip_anchor_prefix(line.strip())
+    s = re.sub(r"^\s*(?:TRACE|DEBUG|INFO|NOTICE|WARN|WARNING)\b\s*", "", s, flags=re.IGNORECASE)
+    s = " ".join(s.split())
+    return s or None
+
+
+def _state_summary_lines(lines: list[str], max_regions: int) -> list[str]:
+    """Last-resort anchors: dashboard summary-count lines.
 
     Returns at most ``max_regions`` matching lines in original order when all strict guards pass:
-    at least 20 non-blank lines, at most two matching lines and at most 5% of non-blank lines,
-    and each chosen line's error fingerprint occurs only once among all lines.
+    at least 20 non-blank lines, one or two matching lines, a positive numerator,
+    each chosen line's error fingerprint occurs only once among all lines, and each
+    chosen line's summary region is non-empty and not too common in the text.
     """
     if max_regions <= 0:
         return []
@@ -5309,15 +5413,24 @@ def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
     matches: list[str] = []
     for line in nonblank:
         low = line.lower()
-        if not any(token in low for token in _STATE_CHANGE_PREFILTER):
+        if "/" not in low and " of " not in low:
             continue
-        if _STATE_CHANGE_RE.search(line):
+
+        matched = False
+        for m in _STATE_SUMMARY_RE.finditer(line):
+            numerator = int(re.match(r"\d+", line[m.start():]).group())
+            if numerator > 0:
+                matched = True
+                break
+        if matched:
             matches.append(line)
 
-    if not matches:
+    if not matches or len(matches) > 2:
         return []
-    if len(matches) > 2 or len(matches) * 100 > len(nonblank) * 5:
-        return []
+
+    for line in matches:
+        if _summary_anchor_region(line, lines) is None:
+            return []
 
     fp_counts: dict[str, int] = {}
     for line in lines:
@@ -5334,6 +5447,50 @@ def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
     return out
 
 
+def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
+    """Last-resort anchors: rare INFO/NOTICE state-change lines.
+
+    Returns at most ``max_regions`` matching lines in original order when all strict guards pass:
+    at least 20 non-blank lines, at most two matching lines and at most 5% of non-blank lines,
+    and each chosen line's error fingerprint occurs only once among all lines.
+
+    If the state-change tier declines, falls back to dashboard summary-count anchors.
+    """
+    if max_regions <= 0:
+        return []
+
+    nonblank = [line for line in lines if line.strip()]
+    if len(nonblank) < 20:
+        return _state_summary_lines(lines, max_regions)
+
+    matches: list[str] = []
+    for line in nonblank:
+        low = line.lower()
+        if not any(token in low for token in _STATE_CHANGE_PREFILTER):
+            continue
+        if _STATE_CHANGE_RE.search(line):
+            matches.append(line)
+
+    if not matches:
+        return _state_summary_lines(lines, max_regions)
+    if len(matches) > 2 or len(matches) * 100 > len(nonblank) * 5:
+        return _state_summary_lines(lines, max_regions)
+
+    fp_counts: dict[str, int] = {}
+    for line in lines:
+        fp = _error_fp(line.strip())
+        fp_counts[fp] = fp_counts.get(fp, 0) + 1
+
+    out: list[str] = []
+    for line in matches:
+        if fp_counts.get(_error_fp(line.strip()), 0) != 1:
+            return _state_summary_lines(lines, max_regions)
+        out.append(line)
+        if len(out) >= max_regions:
+            break
+    return out
+
+
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
@@ -5342,6 +5499,7 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     itself an error/diagnostic line (``_is_error_line``). Each line is stripped and capped at
     ``_ANCHOR_LINE_CHARS``; a region is the lines joined with "\n". A neighbour whose masked shape equals the next line further out (a repetitive run such as PASS rows) is context noise, not a frame."""
     lines = _norm_newlines(text).split("\n")
+    summary_exemplars: set[str] = set()
     exemplars = set(error_fingerprints(text).values())
     if not exemplars:
         # No error-fingerprint exemplars: fall back to weak failure anchors. Keep the first line
@@ -5362,7 +5520,14 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
         exemplars = set(_isolated_warn_lines(lines, max_regions))
     if not exemplars:
         # Final fallback: rare state-change anchors in otherwise healthy logs.
-        exemplars = set(_state_change_lines(lines, max_regions))
+        state_change = _state_change_lines(lines, max_regions)
+        exemplars = set(state_change)
+        # The summary tier is active only when the state-change tier declined, in
+        # which case _state_change_lines returns the summary lines. Remember those
+        # so their region text is the count phrase (e.g. "20/40"), not the whole
+        # line — the state word in the line would otherwise anchor every
+        # per-service "state=degraded" row and defeat the savings gate.
+        summary_exemplars = set(state_change) & set(_state_summary_lines(lines, max_regions))
     regions: list[str] = []
     seen_rows: set[int] = set()
 
@@ -5389,6 +5554,15 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
         if i in seen_rows or line not in exemplars:
             continue
         exemplars.discard(line)
+        if line in summary_exemplars:
+            # Summary-tier anchor: keep the summary line with timestamp and level
+            # removed (e.g. "health: summary 20/40 degraded"), so the count phrase
+            # remains available as the anchor region.
+            region = _summary_anchor_region(line, lines)
+            seen_rows.add(i)
+            if region:
+                regions.append(region[:_ANCHOR_LINE_CHARS])
+            continue
         lo = i
         while lo > 0 and i - lo < _ANCHOR_REGION_BEFORE and frame_like(lines[lo - 1]) and not repetitive(lo - 1, -1):
             lo -= 1

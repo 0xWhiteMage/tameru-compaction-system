@@ -320,13 +320,31 @@ def old_extract_critical_lines(text):
     return critical
 
 
-def old_is_progress_bar(line):
+def old_is_progress_bar(
+    line,
+    _re=re,
+    _bar_re=re.compile(r"(\[[=#>\-. ]*\]\s*)?\d{1,3}\s*(%|/\s*\d+)"),
+    _word_re=re.compile(
+        r"\b(downloading|uploading|fetching|extracting|receiving|resolving|"
+        r"writing|counting|compressing|copying|processing|progress|step|"
+        r"pulling|installing|unpacking)\b",
+        re.IGNORECASE,
+    ),
+    _letters_re=re.compile(r"[A-Za-z]"),
+):
     t = line.strip()
     if not t:
         return False
-    if re.search(r"(\[[=#>\-. ]*\]\s*)?\d{1,3}\s*(%|/\s*\d+)", t):
-        return True
-    return bool(re.match(r"^Compiling [\w-]+ ", t))
+    if ("%" in t or "/" in t) and _bar_re.search(t):
+        has_progress_word = _word_re.search(t) is not None
+        for m in _bar_re.finditer(t):
+            if "%" in m.group(0) or m.group(1) is not None:
+                return True
+            if has_progress_word:
+                return True
+            if not _letters_re.search(t.replace(m.group(0), "", 1)):
+                return True
+    return bool(_re.match(r"^Compiling [\w-]+ ", t))
 
 
 FRAGMENTS = [
