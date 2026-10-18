@@ -19,13 +19,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `kubectl get pods` reducer (keeps unhealthy, not-ready and restarted pods).
 - Last-resort isolated-WARN anchors for leveled logs with no errors or failure lines (at most 2 WARN lines, unique wording, >=20 lines, >=90% of lines level-tagged).
 - State-change anchors (marked degraded/down, circuit open, failover started, recovered) as a last resort for logs with no errors, failures or isolated warnings, with strict guards.
+- Repeated lines in text tool output (helm, ansible and similar) collapse like log lines; unique facts and errors stay.
+- Status-table reducer for health tables, `df` and `kubectl top`: keeps the header and the abnormal rows (rare status, a value 5x the column median, or 90%+ use); keeps everything when there are none or too many.
+- Dashboard summary lines such as `summary 20/40 degraded` anchor no-query compression as a last resort, with a few affected rows kept.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
 - Query words match simple inflections such as fail/failed/failing and error/errors.
 - Weak failure anchors also recognise JSON-style `"level": "warn"`.
-- When a call has no side effects (no CCR, cache prefix, decision cache, audit log or summary endpoint), the winning trial compression is returned directly instead of compressing again; output and receipt are identical. CCR-on calls also reuse the chosen result, writing one CCR record for it and none for trials.
+- No-side-effect calls reuse the best trial compression as the result instead of compressing again; output and receipt are unchanged.
+- With CCR on, the reused result is stored once and trial compressions no longer write CCR records.
 - Anchor lines also drop log prefixes with NOTICE, CRIT, ALERT and other syslog levels.
+
+### Fixed
+- Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
 
 ---
 
