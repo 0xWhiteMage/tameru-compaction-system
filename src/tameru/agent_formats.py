@@ -977,9 +977,12 @@ _SUREFIRE_RUNNING_RE = re.compile(r"^(?:\[INFO\] )?Running \S+$")
 _RUNNER_HINT_RE = re.compile(
     r"test result: |Test Suites:|--- (?:PASS|FAIL):|=== RUN |^(?:ok|FAIL)\s|==="
     r"|\d (?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?)\b"
-    r"|> Task :|Tests run: |\d examples?, |PHPUnit |, Assertions: |Failed:|^Events:",
+    r"|> Task :|Tests run: |\d examples?, |PHPUnit |, Assertions: |Failed:|^Events:"
+    r"|LAST SEEN\s+TYPE\s+REASON",
     re.MULTILINE,
 )
+
+_K8S_GET_EVENTS_HDR_RE = re.compile(r"^(?:NAMESPACE\s+)?LAST SEEN\s+TYPE\s+REASON\s+\S")
 
 
 def detect_test_runner(text: str) -> str | None:
@@ -1057,6 +1060,16 @@ def detect_test_runner(text: str) -> str | None:
         return "pytest"
     if first is not None and first.startswith("Name:") and k8s_events:
         return "kubectl"
+    if first is not None and _K8S_GET_EVENTS_HDR_RE.match(first):
+        seen = 0
+        for ln in text.split("\n", 50):
+            if not ln.strip():
+                continue
+            if seen == 0 and not _K8S_GET_EVENTS_HDR_RE.match(ln):
+                break
+            seen += 1
+            if seen == 3:
+                return "kubectl_events"
     return None
 
 
@@ -1541,7 +1554,123 @@ def _classify_kubectl(lines):
             if len(indices) > 2:
                 for i in indices[1:-1]:
                     keep[i] = False
+    conditions_sections = []
+    current_conditions = None
+    for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if not stripped or _is_k8s_separator(stripped):
+            continue
+        indent = len(ln) - len(ln.lstrip(" "))
+        if indent == 0 and _is_k8s_header(stripped):
+            if current_conditions is not None:
+                conditions_sections.append(current_conditions)
+                current_conditions = None
+            if stripped[:-1].strip() == "Conditions":
+                current_conditions = []
+            continue
+        if current_conditions is not None:
+            if indent == 0 and not _is_k8s_header(stripped):
+                conditions_sections.append(current_conditions)
+                current_conditions = None
+                continue
+            current_conditions.append(i)
+    if current_conditions is not None:
+        conditions_sections.append(current_conditions)
+
+    for section_rows in conditions_sections:
+        header_idx = None
+        for i in section_rows:
+            if lines[i].split(None, 1)[0] == "Type":
+                header_idx = i
+                break
+        data_rows = [
+            i
+            for i in section_rows
+            if i != header_idx and not _is_k8s_separator(lines[i].strip())
+        ]
+        if len(data_rows) <= 5:
+            continue
+        if header_idx is not None:
+            keep[header_idx] = True
+        for i in data_rows:
+            toks = lines[i].split()
+            first = toks[0] if toks else ""
+            status = toks[1] if len(toks) > 1 else ""
+            if first == "Ready" or status != "False":
+                keep[i] = True
+            elif is_diagnostic_line(lines[i]) and status != "False":
+                keep[i] = True
+            else:
+                keep[i] = False
     return keep, tests, suites
+
+
+def _classify_kubectl_events(lines):
+    keep = set()
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.strip():
+            header_idx = i
+            break
+    if header_idx is None:
+        return [False] * len(lines), [0] * len(lines), [0] * len(lines)
+    header = lines[header_idx]
+    keep.add(header_idx)
+    type_offset = header.find("TYPE")
+    if type_offset < 0:
+        type_offset = 0
+    nonnormal = {}
+    normal = []
+    for i, line in enumerate(lines):
+        if i == header_idx or not line.strip():
+            continue
+        spans = list(re.finditer(r"\S+", line))
+        if len(spans) < 3:
+            if is_diagnostic_line(line):
+                keep.add(i)
+            continue
+        type_token = None
+        covering = [m for m in spans if m.start() <= type_offset < m.end()]
+        if covering:
+            type_token = covering[0].group()
+        else:
+            after = [m for m in spans if m.start() >= type_offset]
+            if after:
+                type_token = after[0].group()
+        if type_token not in {"Normal", "Warning"}:
+            for m in spans:
+                if m.group() in {"Normal", "Warning"}:
+                    type_token = m.group()
+                    break
+        if type_token is None:
+            if is_diagnostic_line(line):
+                keep.add(i)
+            continue
+        if type_token == "Normal":
+            normal.append(i)
+            continue
+        if is_diagnostic_line(line):
+            keep.add(i)
+        type_idx = None
+        for j, m in enumerate(spans):
+            if m.group() == type_token:
+                type_idx = j
+                break
+        if type_idx is None:
+            type_idx = 0
+        reason = spans[type_idx + 1].group() if type_idx + 1 < len(spans) else ""
+        message = " ".join(m.group() for m in spans[type_idx + 2:])
+        key = (type_token, reason, re.sub(r"\d+", "#", message))
+        if key in nonnormal:
+            nonnormal[key][1] = i
+        else:
+            nonnormal[key] = [i, i]
+    for first_i, last_i in nonnormal.values():
+        keep.add(first_i)
+        keep.add(last_i)
+    for i in normal[-2:]:
+        keep.add(i)
+    return [i in keep for i in range(len(lines))], [0] * len(lines), [0] * len(lines)
 
 
 _RUNNERS = {
@@ -1555,6 +1684,7 @@ _RUNNERS = {
     "phpunit": _classify_phpunit,
     "dotnet": _classify_dotnet,
     "kubectl": _classify_kubectl,
+    "kubectl_events": _classify_kubectl_events,
 }
 
 
@@ -1629,7 +1759,8 @@ def preprocess_test_output(
         other_label=(
             "unchanged diff lines"
             if runner == "phpunit"
-            else ("describe lines" if runner == "kubectl" else None)
+            else ("event rows" if runner == "kubectl_events"
+                  else ("describe lines" if runner == "kubectl" else None))
         ),
     )
     return out if len(out) < len(text) else None
