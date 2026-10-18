@@ -4902,6 +4902,14 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
 _ANCHOR_REGION_BEFORE = 8
 _ANCHOR_REGION_AFTER = 12
 
+_GO_STACK_LINE_RE = re.compile(
+    r"^(?:goroutine \d+ \[[^\]]*\]:"
+    r"|\[signal [^\]]*\]"
+    r"|created by \S+.*"
+    r"|[\w.\-/]+(?:\.\(\*?\w+\))?(?:\.\w+)?\(.*\))$"
+)
+_ANCHOR_GO_TAIL_LINES = 2  # the last frame (function line + its file:line) of a Go stack longer than the region
+
 
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
@@ -4916,8 +4924,12 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     seen_rows: set[int] = set()
 
     def frame_like(s: str) -> bool:
+        if s.strip() and _GO_STACK_LINE_RE.match(s):
+            return True
         return bool(s.strip()) and (
-            s[:1] in " \t" or s.lstrip().startswith(("Caused by", "Traceback")) or _is_error_line(s)
+            s[:1] in " \t"
+            or s.lstrip().startswith(("Caused by", "Traceback"))
+            or _is_error_line(s)
         )
 
     def repetitive(j: int, step: int) -> bool:
@@ -4947,8 +4959,33 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             if not (frame_like(lines[nxt]) and not repetitive(nxt, 1)):
                 break
             hi = nxt
+        if line.startswith("panic: "):
+            nxt = hi + 1
+            if nxt < len(lines):
+                if not lines[nxt].strip() and nxt + 1 < len(lines) and lines[nxt + 1].strip():
+                    nxt += 1
+                if frame_like(lines[nxt]):
+                    end = nxt
+                    while end + 1 < len(lines):
+                        cand = end + 1
+                        if not lines[cand].strip() and cand + 1 < len(lines) and lines[cand + 1].strip():
+                            cand += 1
+                        if frame_like(lines[cand]):
+                            end = cand
+                        else:
+                            break
+                    start = max(hi + 1, end - _ANCHOR_GO_TAIL_LINES + 1)
+                    tail = [j for j in range(start, end + 1) if lines[j].strip()]
+                    rows = list(range(lo, hi + 1)) + tail
+                    seen_rows.update(rows)
+                    regions.append(
+                        "\n".join(lines[j].strip()[:_ANCHOR_LINE_CHARS] for j in rows if lines[j].strip())
+                    )
+                    continue
         seen_rows.update(range(lo, hi + 1))
-        regions.append("\n".join(ln.strip()[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1] if ln.strip()))
+        regions.append(
+            "\n".join(ln.strip()[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1] if ln.strip())
+        )
     return regions
 
 

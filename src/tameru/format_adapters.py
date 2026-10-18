@@ -11,6 +11,7 @@ from typing import Callable
 
 from .agent_formats import (
     code_vetoes_yaml,
+    looks_like_stack_trace,
     detect_grep_lines,
     looks_like_diagnostics,
     detect_test_runner,
@@ -341,7 +342,13 @@ def detect_format(text: str) -> str:
         r"(?m)^[ \t]+(?:[-?][ \t]+)?[^\s:#][^:\n]{0,120}:\s*(?:\S.*)?$",
         value,
     )
-    if yaml_parent and yaml_child and not code_vetoes_yaml(value) and not looks_like_diagnostics(value):
+    if (
+        yaml_parent
+        and yaml_child
+        and not code_vetoes_yaml(value)
+        and not looks_like_diagnostics(value)
+        and not looks_like_stack_trace(value)
+    ):
         return "yaml"
     if _looks_vertical(value):
         return "vertical"

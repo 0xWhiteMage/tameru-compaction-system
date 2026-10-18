@@ -300,6 +300,29 @@ def looks_like_diagnostics(text: str) -> bool:
     lines = text.split("\n")[:2000]
     return sum(1 for line in lines if is_diagnostic_line(line)) >= 2
 
+_STACK_TRACE_LINE_RE = re.compile(
+    r"^(?:goroutine \d+ \[[^\]]*\]:\s*$"
+    r"|Traceback \(most recent call last\):"
+    r"|\s+at [\w$.<>]+\(.*\)\s*$"
+    r"|\t\S+\.go:\d+(?: \+0x[0-9a-f]+)?\s*$)"
+)
+
+
+def looks_like_stack_trace(text: str) -> bool:
+    """A Go goroutine header or Python traceback head, or two
+    Java/Go frame lines: stack-trace text, never YAML."""
+    hits = 0
+    for line in text.split("\n")[:5000]:
+        m = _STACK_TRACE_LINE_RE.match(line)
+        if m is None:
+            continue
+        if line.startswith(("goroutine ", "Traceback")):
+            return True
+        hits += 1
+        if hits >= 2:
+            return True
+    return False
+
 def code_vetoes_yaml(text: str) -> bool:
     """Code lines count against YAML: a text with a real share of them is not."""
     strong, semi, n = code_scores(text)
@@ -948,6 +971,10 @@ _K8S_KEEP_SECTIONS = frozenset({"Conditions", "Capacity", "Allocatable", "Alloca
 _LINE_CAP = 400  # test-runner structure lines are short; a longer line is data
 
 
+_SUREFIRE_RUN_RE = re.compile(r"^(?:\[(?:INFO|ERROR|WARNING)\] )?Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: \d+")
+_SUREFIRE_RUNNING_RE = re.compile(r"^(?:\[INFO\] )?Running \S+$")
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"`` or ``"kubectl"`` for recognised output.
@@ -959,6 +986,7 @@ def detect_test_runner(text: str) -> str | None:
     running = cargo_result = jest_suites = jest_tests = go = pytest_open = pytest_sum = False
     gradle_task = gradle_end = rspec = phpunit = dotnet = pytest_q = pytest_prog = False
     first = None
+    surefire_run = surefire_running = False
     k8s_events = False
     for ln in text.split("\n"):
         if len(ln) > _LINE_CAP:
@@ -981,6 +1009,10 @@ def detect_test_runner(text: str) -> str | None:
             pytest_prog = True
         if not k8s_events and ln.startswith("Events:"):
             k8s_events = True
+        if not surefire_run and "Tests run: " in ln and _SUREFIRE_RUN_RE.match(ln):
+            surefire_run = True
+        if not surefire_running and "Running " in ln and _SUREFIRE_RUNNING_RE.match(ln):
+            surefire_running = True
         if ln.startswith("running ") and _CARGO_RUNNING_RE.match(ln):
             running = True
         elif ln.startswith("test result: "):
@@ -1004,6 +1036,8 @@ def detect_test_runner(text: str) -> str | None:
         return "go"
     if gradle_task and gradle_end:
         return "gradle"
+    if surefire_run and surefire_running:
+        return "maven"
     if rspec:
         return "rspec"
     if phpunit:
@@ -1303,6 +1337,28 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
     return keep, tests, suites
 
 
+def _classify_maven(lines):
+    keep = [True] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    for i, ln in enumerate(lines):
+        if _SUREFIRE_RUNNING_RE.match(ln):
+            keep[i] = False
+            suites[i] = 1
+            continue
+        m = _SUREFIRE_RUN_RE.match(ln)
+        if m:
+            failures = m.group(2)
+            errors = m.group(3)
+            if failures == "0" and errors == "0" and "Time elapsed" in ln:
+                keep[i] = False
+                tests[i] = int(m.group(1))
+            continue
+        if ln in ("[INFO]", "[INFO] "):
+            keep[i] = False
+    return keep, tests, suites
+
+
 def _classify_gradle(lines):
     keep = [True] * len(lines)
     tests = [0] * len(lines)
@@ -1465,6 +1521,7 @@ _RUNNERS = {
     "go": _classify_go,
     "cargo": _classify_cargo,
     "gradle": _classify_gradle,
+    "maven": _classify_maven,
     "rspec": _classify_rspec,
     "phpunit": _classify_phpunit,
     "dotnet": _classify_dotnet,
@@ -1501,7 +1558,7 @@ def preprocess_test_output(
     force: bool = False,
     total_chars: int | None = None,
 ) -> str | None:
-    """Reduce pytest / jest / go / cargo / gradle / rspec / phpunit / dotnet test output to the failures and summary lines, and `kubectl describe` output to its state, conditions and warning events; passing per-test lines become a count marker.
+    """Reduce pytest / jest / go / cargo / gradle / maven / rspec / phpunit / dotnet test output to the failures and summary lines, and `kubectl describe` output to its state, conditions and warning events; passing per-test lines become a count marker.
 
     ``None`` when the output is not a recognised runner's, or nothing would be
     dropped. A dropped line that mentions the query is kept. ``force`` is the
