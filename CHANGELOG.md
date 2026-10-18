@@ -20,7 +20,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
 - Query words match simple inflections such as fail/failed/failing and error/errors.
-- No slowdown on the 9000-line log and prose benches.
 
 ---
 

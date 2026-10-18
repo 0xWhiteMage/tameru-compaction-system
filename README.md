@@ -130,7 +130,7 @@ This is an excerpt of the input structure; the Python example below constructs a
 | Terminal and build logs | ANSI handling, repeated-template reduction, structured (logfmt/JSON) levels, error exemplars and last-occurrence retention |
 | Numbered source reads | `cat -n` and common `read_file` gutters; code stays recognisable |
 | Unified diffs and grep/rg | Hunk or file grouping, query matches, headers and saturated-query selection |
-| Pytest, Jest, Go, Cargo, Gradle, RSpec, PHPUnit, dotnet test, Maven Surefire and quiet pytest output | Failure evidence and summaries, with conservative handling of unknown surrounding lines |
+| Pytest (incl. quiet mode), Jest, Go, Cargo, Gradle, RSpec, PHPUnit, dotnet test, Maven Surefire | Failure evidence and summaries, with conservative handling of unknown surrounding lines |
 | kubectl output | `describe` and `get events` reducers; events collapsed and only abnormal node Conditions kept |
 | JSON/NDJSON and CSV/TSV | Query-aware records, quote-aware framing, headers and JSON briefs for large object arrays |
 | Markdown | Heading ancestry and fenced-code protection |
