@@ -132,3 +132,44 @@ def test_kubectl_describe_node_keeps_pressure_and_events():
     for want in ("disk-pressure:NoSchedule", "KubeletHasDiskPressure", "10.0.3.17", "101445540Ki", "(14 in total)", "EvictionThresholdMet", "NodeHasDiskPressure    20m"):
         assert want in out
     assert "Field3" not in out and "worker-05-6d8f9c" not in out and "kubernetes.io/hostname" not in out
+
+
+def test_kubectl_events_at_indent_zero_and_name_terms():
+    text = ("Name:         checkout-api-7d9f-x2k4q\nNamespace:    shop\nLabels:       app=checkout-api\n"
+            "              pod-template-hash=7d9f\nStatus:       Running\nIPs:\n  IP:  10.42.3.17\nContainers:\n  checkout-api:\n"
+            "    Image:          registry/checkout-api:v1\n    Image ID:       registry/checkout-api@sha256:" + "a" * 64 + "\n"
+            "    State:          Waiting\n      Reason:       CrashLoopBackOff\n    Restart Count:  9\n"
+            "Volumes:\n  kube-api-access:\n    Type:  Projected\nEvents:\n"
+            "Type      Reason      Age                   From      Message\n"
+            "Warning   Unhealthy   4m (x59 over 29m)     kubelet   Liveness probe failed: HTTP probe failed with statuscode: 503\n"
+            "Normal    Pulled      7m (x9 over 31m)      kubelet   Container image \"registry/checkout-api:v1\" already present\n"
+            "Normal    Created     7m (x9 over 31m)      kubelet   Created container checkout-api\n"
+            "Normal    Started     8m (x9 over 31m)      kubelet   Started container checkout-api\n"
+            "Warning   BackOff     1m (x93 over 28m)     kubelet   Back-off restarting failed container checkout-api")
+    out = preprocess_test_output(text, "why is checkout-api crashing")
+    assert out
+    for want in ("CrashLoopBackOff", "Restart Count:  9", "Liveness probe failed", "Back-off restarting", "Started container"):
+        assert want in out
+    for gone in ("sha256", "Pulled", "IPs:", "Volumes:", "pod-template-hash"):
+        assert gone not in out
+
+
+def test_kubectl_separator_rows_dropped():
+    text = ("Name:  n1\n"
+            "Labels:  a=1\n" + "".join(f"         l{i}=v{i}\n" for i in range(12)) +
+            "Conditions:\n  Type    Status\n  ----    ------\n  Ready   False\nEvents:\n"
+            "  Type     Reason  Age  From     Message\n  ----     ------  ---  ----     -------\n  Warning  Evicted  1m   kubelet  evicted")
+    out = preprocess_test_output(text)
+    assert out and "----" not in out and "Ready   False" in out and "Evicted" in out and "l7=v7" not in out
+
+
+def test_phpunit_diff_context_shortened():
+    ctx = "\n".join(f"     'k{i}' => {i}" for i in range(30))
+    text = ("PHPUnit 10.5.0 by Sebastian Bergmann and contributors.\n\n" + "." * 60 + " 60 / 61 (98%)\nF\n\nThere was 1 failure:\n\n"
+            "1) Tests\\CartTest::testDiscount\nFailed asserting that two arrays are equal.\n--- Expected\n+++ Actual\n@@ @@\n Array (\n"
+            + ctx + "\n-    'total' => 90\n+    'total' => 100\n )\n\n/app/tests/CartTest.php:77\n\nFAILURES!\nTests: 61, Assertions: 70, Failures: 1.")
+    out = preprocess_test_output(text)
+    assert out
+    for want in ("testDiscount", "'total' => 90", "'total' => 100", "'k29' => 29", "CartTest.php:77", "Failures: 1", "unchanged diff lines omitted"):
+        assert want in out
+    assert "'k5' => 5" not in out

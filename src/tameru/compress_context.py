@@ -30,6 +30,7 @@ from .agent_formats import (
     detect_test_runner,
     is_numbered_code,
     is_diagnostic_line,
+    is_kubectl_status_line,
     preprocess_test_output,
     rejects_table,
 )
@@ -748,7 +749,7 @@ def _error_fp(line: str) -> str:
     return mask_template(s)[:_FINGERPRINT_CAP]
 
 
-def error_fingerprints(text: str) -> dict[str, str]:
+def error_fingerprints(text: str, *, status_rows: bool = True) -> dict[str, str]:
     """Map error fingerprint -> first exemplar line, in original order (v1.4.0).
 
     An error line is a level-tagged ``ERROR``/``FATAL``/``CRITICAL``/``PANIC``/
@@ -762,12 +763,21 @@ def error_fingerprints(text: str) -> dict[str, str]:
     Deterministic and stable under compaction: for compressed text ``c`` that
     kept an exemplar of every failure, ``error_fingerprints(x).keys() <=
     error_fingerprints(c).keys()`` — a host can use that as a retention check.
+
+    ``status_rows=False`` leaves out kubectl pod status rows and Warning event
+    rows (``agent_formats.is_kubectl_status_line``): hosts that size summaries
+    or briefs by error count use it so per-pod state does not crowd out
+    distinct failures.
     """
     if not text:
         return {}
     if type(text) is str and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS:
-        return dict(_error_fingerprints_cached(text))
-    return _error_fingerprints_scan(text)
+        result = dict(_error_fingerprints_cached(text))
+    else:
+        result = _error_fingerprints_scan(text)
+    if not status_rows:
+        result = {k: v for k, v in result.items() if not is_kubectl_status_line(v)}
+    return result
 
 
 def _error_fingerprints_scan(text: str) -> dict[str, str]:
@@ -1903,7 +1913,15 @@ def _term_in_text(term: str, lower: str) -> bool:
 
 def _dup_fp(text: str) -> str:
     """Duplicate-block key: lowercased, volatile fields masked per line (``mask_template``), capped at 240."""
-    return " ".join(mask_template(line.lower()) for line in text[:4000].split("\n"))[:240]
+    parts: list[str] = []
+    size = -1
+    for line in text[:4000].split("\n"):
+        masked = mask_template(line.lower())
+        parts.append(masked)
+        size += len(masked) + 1
+        if size >= 240:
+            break
+    return " ".join(parts)[:240]
 
 
 def score_blocks(

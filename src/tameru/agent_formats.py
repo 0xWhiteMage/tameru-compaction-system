@@ -284,6 +284,18 @@ def is_diagnostic_line(line: str, *, code_only: bool = False) -> bool:
     rx = DIAGNOSTIC_CODE_LINE_RE if code_only else DIAGNOSTIC_LINE_RE
     return rx.search(head) is not None
 
+KUBECTL_STATUS_LINE_RE = re.compile(
+    r"^\S+\s+\d+/\d+\s+(?:CrashLoopBackOff|ImagePullBackOff|ErrImagePull|OOMKilled|CreateContainerConfigError|Error)\s"
+    r"|^\s*Warning\s+(?:Failed\w*|BackOff|Unhealthy|Evicted)\s"
+)
+
+
+def is_kubectl_status_line(line: str) -> bool:
+    """A kubectl pod status row ("<name>  0/1  CrashLoopBackOff ...") or Warning event row: diagnostics that steer
+    compression, but per-pod state rather than a distinct failure a summary must carry (see ``error_fingerprints``)."""
+    return KUBECTL_STATUS_LINE_RE.search(line[:4096]) is not None
+
+
 def looks_like_diagnostics(text: str) -> bool:
     lines = text.split("\n")[:2000]
     return sum(1 for line in lines if is_diagnostic_line(line)) >= 2
@@ -953,21 +965,21 @@ def detect_test_runner(text: str) -> str | None:
             continue
         if first is None and ln.strip():
             first = ln
-        if _GRADLE_TASK_RE.match(ln):
+        if not gradle_task and ln.startswith("> Task :") and _GRADLE_TASK_RE.match(ln):
             gradle_task = True
-        if _GRADLE_END_RE.match(ln):
+        if not gradle_end and (ln[:1] in ("B", "F") or ln[:1].isdigit()) and _GRADLE_END_RE.match(ln):
             gradle_end = True
-        if _RSPEC_SUMMARY_RE.match(ln):
+        if not rspec and ln[:1].isdigit() and _RSPEC_SUMMARY_RE.match(ln):
             rspec = True
-        if _PHPUNIT_HEAD_RE.match(ln) or ln.startswith("Tests: ") and ", Assertions: " in ln:
+        if not phpunit and (ln.startswith("PHPUnit ") and _PHPUNIT_HEAD_RE.match(ln) or ln.startswith("Tests: ") and ", Assertions: " in ln):
             phpunit = True
-        if _DOTNET_SUMMARY_RE.match(ln):
+        if not dotnet and "Failed:" in ln and _DOTNET_SUMMARY_RE.match(ln):
             dotnet = True
-        if _PYTEST_Q_SUMMARY_RE.match(ln.strip()):
+        if not pytest_q and ln.lstrip()[:1].isdigit() and _PYTEST_Q_SUMMARY_RE.match(ln.strip()):
             pytest_q = True
-        if _PYTEST_PROGRESS_RE.match(ln):
+        if not pytest_prog and _PYTEST_PROGRESS_RE.match(ln):
             pytest_prog = True
-        if ln.startswith("Events:"):
+        if not k8s_events and ln.startswith("Events:"):
             k8s_events = True
         if ln.startswith("running ") and _CARGO_RUNNING_RE.match(ln):
             running = True
@@ -1341,6 +1353,36 @@ def _classify_phpunit(lines):
         if m and not any(g in m.group(1) for g in "FEWR"):
             keep[i] = False
             tests[i] = m.group(1).count(".")
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() == "--- Expected":
+            end = i + 1
+            while end < len(lines) and lines[end].strip():
+                end += 1
+            keep_diff = set()
+            diff_lines = []
+            for j in range(i, end):
+                stripped = lines[j].strip()
+                if stripped.startswith(("-", "+")):
+                    diff_lines.append(j)
+                if (
+                    stripped == "--- Expected"
+                    or stripped == "+++ Actual"
+                    or stripped.startswith("@@")
+                ):
+                    keep_diff.add(j)
+            for j in diff_lines:
+                keep_diff.add(j)
+                if j - 1 >= i:
+                    keep_diff.add(j - 1)
+                if j + 1 < end:
+                    keep_diff.add(j + 1)
+            for j in range(i, end):
+                if j not in keep_diff:
+                    keep[j] = False
+            i = end
+        else:
+            i += 1
     return keep, tests, suites
 
 
@@ -1355,6 +1397,23 @@ def _classify_dotnet(lines):
     return keep, tests, suites
 
 
+def _is_k8s_separator(stripped: str) -> bool:
+    parts = stripped.split()
+    return bool(parts) and all(len(part) >= 2 and set(part) == {"-"} for part in parts)
+
+
+def _is_k8s_header(stripped: str) -> bool:
+    if not stripped:
+        return False
+    first = stripped[0]
+    return (
+        first.isascii()
+        and first.isupper()
+        and stripped.endswith(":")
+        and ":" not in stripped[:-1]
+    )
+
+
 def _classify_kubectl(lines):
     keep = [False] * len(lines)
     tests = [0] * len(lines)
@@ -1362,33 +1421,38 @@ def _classify_kubectl(lines):
     section = ""
     normal_events = []
     for i, ln in enumerate(lines):
+        stripped = ln.strip()
+        if not stripped:
+            keep[i] = False
+            continue
+        if _is_k8s_separator(stripped):
+            keep[i] = False
+            continue
+        indent = len(ln) - len(ln.lstrip(" "))
         base = False
-        if not ln.strip():
-            base = False
-        else:
-            indent = len(ln) - len(ln.lstrip(" "))
-            if indent == 0:
-                key = ln.split(":", 1)[0].strip()
-                if ln.endswith(":"):
-                    base = True
-                    section = key
-                else:
-                    base = key in _K8S_KEEP_TOP
-                    section = ""
-            elif section in ("Containers", "Init Containers"):
-                stripped = ln.strip()
-                key = stripped.split(":", 1)[0].strip() if ":" in stripped else stripped
-                base = (indent == 2 and stripped.endswith(":")) or key in _K8S_KEEP_CONTAINER
-            elif section in _K8S_KEEP_SECTIONS:
+        if indent == 0 and _is_k8s_header(stripped):
+            key = stripped[:-1].strip()
+            section = key
+            base = key in _K8S_KEEP_SECTIONS or key in (
+                "Containers", "Init Containers", "Events", "Conditions"
+            )
+        elif section == "Events":
+            first = stripped.split(None, 1)[0]
+            if _K8S_EVENTS_HDR_RE.match(ln) or first != "Normal":
                 base = True
-            elif section == "Events":
-                stripped = ln.strip()
-                if _K8S_EVENTS_HDR_RE.match(ln) or not stripped.startswith("Normal"):
-                    base = True
-                else:
-                    normal_events.append(i)
             else:
-                base = False
+                normal_events.append(i)
+        elif indent == 0:
+            key = stripped.split(":", 1)[0].strip()
+            base = key in _K8S_KEEP_TOP
+            section = ""
+        elif section in ("Containers", "Init Containers"):
+            key = stripped.split(":", 1)[0].strip() if ":" in stripped else stripped
+            base = (indent == 2 and stripped.endswith(":")) or key in _K8S_KEEP_CONTAINER
+        elif section in _K8S_KEEP_SECTIONS:
+            base = True
+        else:
+            base = False
         keep[i] = base or is_diagnostic_line(ln)
     for i in normal_events[-2:]:
         keep[i] = True
@@ -1406,6 +1470,27 @@ _RUNNERS = {
     "dotnet": _classify_dotnet,
     "kubectl": _classify_kubectl,
 }
+
+
+def _strip_object_name_terms(query: str, lines: list[str]) -> str:
+    """Return ``query`` without words from the ``Name:`` value.
+
+    This keeps "why is checkout-api crashing" from re-keeping every line
+    that mentions pod checkout-api-7d9f8c6b5d-x2k4q.
+    """
+    name = ""
+    for ln in lines[:5]:
+        if ln.startswith("Name:"):
+            name = ln[5:].strip().lower()
+            break
+    if not name:
+        return query
+    words = query.split()
+    return " ".join(
+        w
+        for w in words
+        if len(w) < 3 or w.strip("?.,:;!\"'()").lower() not in name
+    )
 
 
 def preprocess_test_output(
@@ -1434,6 +1519,8 @@ def preprocess_test_output(
         keep, tests, suites, captured = result
     else:
         keep, tests, suites = result
+    if runner == "kubectl" and query:
+        query = _strip_object_name_terms(query, lines)
     matcher = _matcher_for(query)
     if not matcher.empty:
         dropped = [i for i, ln in enumerate(lines) if not keep[i] and ln.strip()]
@@ -1453,7 +1540,11 @@ def preprocess_test_output(
         gap_marker,
         total_chars if total_chars else len(text),
         captured=captured,
-        other_label="describe lines" if runner == "kubectl" else None,
+        other_label=(
+            "unchanged diff lines"
+            if runner == "phpunit"
+            else ("describe lines" if runner == "kubectl" else None)
+        ),
     )
     return out if len(out) < len(text) else None
 
