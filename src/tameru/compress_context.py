@@ -1950,7 +1950,7 @@ def _term_test(term: str) -> Callable[[str], bool]:
     inflect = re.compile(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b").search
 
     def test(lower: str) -> bool:
-        return base(lower) or inflect(lower) is not None
+        return base(lower) or (stem in lower and inflect(lower) is not None)
 
     return test
 
@@ -1984,7 +1984,7 @@ def _term_in_text(term: str, lower: str) -> bool:
         base = re.search(rf"\b{re.escape(term)}\b", lower) is not None
     if not base:
         stem = _inflection_stem(term)
-        if stem is not None and re.search(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b", lower):
+        if stem is not None and stem in lower and re.search(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b", lower):
             return True
     return base
 
