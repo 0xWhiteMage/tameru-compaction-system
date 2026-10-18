@@ -5472,16 +5472,19 @@ def compress_context(
                                 return False
                         return True
 
-                    plain_probe = compress_context(caller_text, query or "", **probe)
                     anchored_probe = compress_context(caller_text, anchored_query, **probe)
-                    if _probe_ok(anchored_probe) and (
-                        not _probe_ok(plain_probe)
-                        or (
-                            len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
-                            and _keeps_error_context(anchored_probe, plain_probe)
-                        )
-                    ):
-                        query = anchored_query
+                    if _probe_ok(anchored_probe):
+                        plain_probe = compress_context(caller_text, query or "", **probe)
+                        if (
+                            not _probe_ok(plain_probe)
+                            or (
+                                len(anchored_probe.compressed_text) < len(plain_probe.compressed_text)
+                                and _keeps_error_context(anchored_probe, plain_probe)
+                            )
+                        ):
+                            query = anchored_query
+                        else:
+                            anchor_lines = []
                     else:
                         anchor_lines = []
         else:
