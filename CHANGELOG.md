@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [Unreleased]
+
+### Added
+- Error-anchored compression now covers generic queries that match little or nearly everything, and small erroring logs where the anchored result is smaller and keeps every error fingerprint and nearby context.
+- Structured log levels (`level=error`, JSON `"level": "error"`) count as error lines.
+- Weak failure anchors for no-query, no-error cases: WARN failure words, systemd `Failed to start`, `exited with code N` (N>0), HTTP 5xx.
+- Test-runner reducers for Gradle, RSpec, PHPUnit, dotnet test, Maven Surefire and quiet pytest.
+- kubectl `describe` and `get events` reducers; recognises diagnostics from eslint, Elixir, npm, make/shell, terraform, jest/vitest.
+- Go panic stacks keep the goroutine header, frames and last frame.
+- Opt-in `prose_brief` for no-query extractive briefs on prose in any language.
+
+### Changed
+- Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
+- Query words match simple inflections such as fail/failed/failing and error/errors.
+- No slowdown on the 9000-line log and prose benches.
+
+---
+
 ## [1.5.0] - 2026-10-13
 
 ### Fixed
