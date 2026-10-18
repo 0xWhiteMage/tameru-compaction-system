@@ -1471,11 +1471,14 @@ def _is_k8s_header(stripped: str) -> bool:
 
 
 def _classify_kubectl(lines):
+    import re
+
     keep = [False] * len(lines)
     tests = [0] * len(lines)
     suites = [0] * len(lines)
     section = ""
     normal_events = []
+    nonnormal_events = []
     for i, ln in enumerate(lines):
         stripped = ln.strip()
         if not stripped:
@@ -1496,6 +1499,8 @@ def _classify_kubectl(lines):
             first = stripped.split(None, 1)[0]
             if _K8S_EVENTS_HDR_RE.match(ln) or first != "Normal":
                 base = True
+                if not _K8S_EVENTS_HDR_RE.match(ln) and first != "Normal":
+                    nonnormal_events.append(i)
             else:
                 normal_events.append(i)
         elif indent == 0:
@@ -1512,6 +1517,21 @@ def _classify_kubectl(lines):
         keep[i] = base or is_diagnostic_line(ln)
     for i in normal_events[-2:]:
         keep[i] = True
+    if nonnormal_events:
+        groups = {}
+        for i in nonnormal_events:
+            toks = lines[i].split()
+            message = " ".join(toks[4:]) if len(toks) >= 5 else ""
+            key = (
+                toks[0] if toks else "",
+                toks[1] if len(toks) > 1 else "",
+                re.sub(r"\d+", "#", message),
+            )
+            groups.setdefault(key, []).append(i)
+        for indices in groups.values():
+            if len(indices) > 2:
+                for i in indices[1:-1]:
+                    keep[i] = False
     return keep, tests, suites
 
 

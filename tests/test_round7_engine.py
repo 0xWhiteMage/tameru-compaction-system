@@ -70,3 +70,47 @@ def test_maven_old_surefire_without_in_suffix():
     assert out and len(out) < len(text) // 3
     for want in ("TaxTest.vat", "TaxTest.java:33", "Tests run: 612, Failures: 1", "BUILD FAILURE", "Tests run: 12, Failures: 1"):
         assert want in out
+
+
+def test_node_describe_repeated_warnings_collapse():
+    head = (
+        "Name:               ip-10-0-7-21\nRoles:              worker\n"
+        + "".join(
+            f"                    label{i}=value{i}\n" for i in range(30)
+        )
+    )
+    head += (
+        "Conditions:\n"
+        "  Type             Status  Reason                       Message\n"
+        "  MemoryPressure   True    KubeletHasInsufficientMemory "
+        "kubelet has insufficient memory available\n"
+    )
+    ev = (
+        "Events:\n"
+        "  Type     Reason                Age   From     Message\n"
+        "  Warning  OOMKilling  9m  kernel-monitor  "
+        "Memory cgroup out of memory\n"
+    )
+    ev += "".join(
+        f"  Warning  EvictionThresholdMet  {i}m    kubelet  "
+        f"Attempting to reclaim memory from pod batch-{100 + i}\n"
+        for i in range(40)
+    )
+    ev += (
+        "  Normal   NodeReady             2d    kubelet  "
+        "Node status is now: NodeReady"
+    )
+    text = head + ev
+    out = preprocess_test_output(text)
+    assert out
+    for want in (
+        "MemoryPressure   True",
+        "OOMKilling",
+        "batch-100",
+        "batch-139",
+        "NodeReady",
+    ):
+        assert want in out
+    assert "batch-120" not in out
+    res = compress_context(text, "", ccr=False, citations=False)
+    assert len(res.compressed_text) < 0.5 * len(text)
