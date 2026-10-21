@@ -1430,10 +1430,101 @@ def _classify_terraform_plan(lines: list[str]) -> tuple[list[bool], list[int], l
     return keep, [0] * n, [0] * n
 
 
+_VITE_ASSET_RE = re.compile(
+    r"^\s*(?P<name>\S+)\s+"
+    r"(?P<size>\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)"
+    r"\s*(?P<unit>B|kB|MB)\b"
+    r"(?:\s*[│|].*)?$"
+)
+_WEBPACK_ASSET_RE = re.compile(
+    r"^\s*asset\s+(?P<name>\S+)\s+"
+    r"(?P<size>\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)"
+    r"\s*(?P<unit>bytes|KiB|MiB)\b"
+    r".*$"
+)
+_ESBUILD_ASSET_RE = re.compile(
+    r"^\s*(?P<name>\S+)\s+"
+    r"(?P<size>\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)"
+    r"\s*(?P<unit>b|kb|mb|gb)\b"
+    r".*$"
+)
+_BUNDLE_ASSET_REGEXES = (_VITE_ASSET_RE, _WEBPACK_ASSET_RE, _ESBUILD_ASSET_RE)
+
+
+def _bundle_asset_size(line: str) -> float | None:
+    for regex in _BUNDLE_ASSET_REGEXES:
+        match = regex.match(line)
+        if match is None:
+            continue
+        try:
+            value = float(match.group("size").replace(",", ""))
+        except ValueError:
+            return None
+        unit = match.group("unit")
+        if unit in ("B", "bytes", "b"):
+            return value / 1024.0
+        if unit in ("kB", "KiB", "kb"):
+            return value
+        if unit in ("MB", "MiB", "mb"):
+            return value * 1024.0
+        if unit == "gb":
+            return value * 1024.0 * 1024.0
+    return None
+
+
+def _detect_bundle_assets(text: str) -> bool:
+    if not any(token in text for token in (" kB", "KiB", "MiB", "kb", "mb")):
+        return False
+    non_blank = 0
+    asset_lines = 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        non_blank += 1
+        if _bundle_asset_size(line) is not None:
+            asset_lines += 1
+    return non_blank > 0 and asset_lines >= 8 and asset_lines * 2 >= non_blank
+
+
+def _classify_bundle_assets(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [False] * len(lines)
+    asset_positions: list[int] = []
+    asset_sizes: list[float] = []
+    for index, line in enumerate(lines):
+        size = _bundle_asset_size(line)
+        if size is None:
+            keep[index] = True
+        else:
+            asset_positions.append(index)
+            asset_sizes.append(size)
+    if asset_positions:
+        keep_positions = set(asset_positions[:2])
+        largest_positions = sorted(
+            range(len(asset_positions)),
+            key=lambda position: (-asset_sizes[position], asset_positions[position]),
+        )[:3]
+        keep_positions.update(asset_positions[position] for position in largest_positions)
+        flagged_positions = [
+            position
+            for position, index in enumerate(asset_positions)
+            if "[big]" in lines[index] or "⚠" in lines[index]
+        ]
+        if len(flagged_positions) > 5:
+            flagged_positions = sorted(
+                flagged_positions,
+                key=lambda position: (-asset_sizes[position], asset_positions[position]),
+            )[:5]
+        keep_positions.update(asset_positions[position] for position in flagged_positions)
+        for index in asset_positions:
+            if index in keep_positions:
+                keep[index] = True
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1448,6 +1539,8 @@ def detect_test_runner(text: str) -> str | None:
             return "env_dump"
         if _detect_terraform_plan(text):
             return "terraform_plan"
+        if _detect_bundle_assets(text):
+            return "bundle_assets"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1552,6 +1645,8 @@ def detect_test_runner(text: str) -> str | None:
         return "env_dump"
     if _detect_terraform_plan(text):
         return "terraform_plan"
+    if _detect_bundle_assets(text):
+        return "bundle_assets"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2550,6 +2645,7 @@ _RUNNERS = {
     "slowlog": _classify_slowlog,
     "env_dump": _classify_env_dump,
     "terraform_plan": _classify_terraform_plan,
+    "bundle_assets": _classify_bundle_assets,
 }
 
 
@@ -2659,7 +2755,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else None)))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else None))))))))))
         ),
     )
     if runner == "pytest":
