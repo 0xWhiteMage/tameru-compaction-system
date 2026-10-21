@@ -443,7 +443,7 @@ _CL_TRACE_RE = re.compile(
     r"^(Traceback|Caused by:|Error:|Exception:|[A-Za-z]+Error\b|at\s+\S+\(|\s*File\s+\".+\", line \d+)"
 )
 _CL_LOG_RE = re.compile(
-    r"^\[?(20\d\d-\d\d-\d\d|20\d\d/\d\d/\d\d[ T]\d\d:\d\d:\d\d|\d\d:\d\d:\d\d|INFO|WARN|WARNING|ERROR|DEBUG|TRACE|ERR|FAIL|FATAL|OK)\]?"
+    r"^\[?(20\d\d-\d\d-\d\d|20\d\d/\d\d/\d\d[ T]\d\d:\d\d:\d\d|\d\d:\d\d:\d\d|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d|INFO|WARN|WARNING|ERROR|DEBUG|TRACE|ERR|FAIL|FATAL|OK)\]?"
 )
 _CL_LOGFMT_RE = re.compile(
     r"^(?:ts|time|timestamp|t)=[^\s]+(?:\s+level=[A-Za-z0-9_.]+|\s+.*\slevel=[A-Za-z0-9_.]+)"
