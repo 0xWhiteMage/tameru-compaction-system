@@ -1859,10 +1859,51 @@ def _classify_ps_aux(lines: list[str]) -> tuple[list[bool], list[int], list[int]
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_DOCKER_PS_HEADER_RE = re.compile(r"^CONTAINER ID\s+IMAGE\s+COMMAND\s+CREATED\s+STATUS\s+PORTS\s+NAMES\s*$")
+_DOCKER_PS_UP_RE = re.compile(r"\s{2,}Up (?:\d+|About|Less than)[^\n]*?(?=\s{2,}|$)")
+
+
+def _detect_docker_ps(text: str) -> bool:
+    non_blank = [line for line in text.splitlines() if line.strip()]
+    if not non_blank or not _DOCKER_PS_HEADER_RE.match(non_blank[0]):
+        return False
+    return len(non_blank) >= 9
+
+
+def _classify_docker_ps(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [False] * len(lines)
+    header_index = None
+    for i, line in enumerate(lines):
+        if line.strip():
+            header_index = i
+            break
+    if header_index is None:
+        return keep, [0] * len(lines), [0] * len(lines)
+
+    keep[header_index] = True
+
+    for i, line in enumerate(lines):
+        if i == header_index:
+            continue
+        if not line.strip():
+            keep[i] = True
+            continue
+
+        m = _DOCKER_PS_UP_RE.search(line)
+        if m is not None and not any(
+            marker in m.group(0)
+            for marker in ("(unhealthy)", "(health: starting)", "(Paused)")
+        ):
+            continue
+        keep[i] = True
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1891,6 +1932,8 @@ def detect_test_runner(text: str) -> str | None:
             return "package_install"
         if _detect_ps_aux(text):
             return "ps_aux"
+        if _detect_docker_ps(text):
+            return "docker_ps"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2022,6 +2065,8 @@ def detect_test_runner(text: str) -> str | None:
         return "package_install"
     if _detect_ps_aux(text):
         return "ps_aux"
+    if _detect_docker_ps(text):
+        return "docker_ps"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3049,6 +3094,7 @@ _RUNNERS = {
     "git_status": _classify_git_status,
     "package_install": _classify_package_install,
     "ps_aux": _classify_ps_aux,
+    "docker_ps": _classify_docker_ps,
 }
 
 
@@ -3158,7 +3204,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else None)))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else None))))))))))))))))))
         ),
     )
     if runner == "pytest":
