@@ -53,6 +53,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Bundler output (vite/rollup, webpack, esbuild) keeps the first assets, the largest ones and any flagged as too big; the rest fold.
 - Ansible output with a large PLAY RECAP folds clean host lines per task and status and keeps failed or unreachable hosts.
 - pip install output with progress bars drops the finished bars and folds download lines; errors and conflicts are kept.
+- Kubernetes klog lines from helm, kubectl, and client-go are routed as log lines so repeated warnings collapse.
+- Web access-log lines in nginx and Apache common/combined formats are routed as log lines; repeated 2xx/3xx requests fold per method and status class, while 4xx/5xx requests are kept.
+- cargo build and rustc output fold warning diagnostics into one marker while keeping every error block and summary line in full.
+- Long git status output keeps the branch line, section headers, the first entries of each section, and every conflict entry; the rest fold.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -71,6 +75,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A weak query on a diff of many single-hunk files keeps the matching files whole and reduces the rest to their `diff --git` line plus one marker per run.
 - Rare-line anchors also work on short syslog-style logs (15 lines or more), so a lone cron `MAIL` line is kept.
 - The block split after a collapsed repeat run applies before an error line again; tsc output is covered by the lint reducer.
+- A query word that matches every line of a repeated log template no longer stops that template from collapsing when it also matches a more specific line.
+- Gradle task lines dropped by the reducer are labelled "gradle tasks" instead of "passing suites".
+- df no longer counts snap loop devices, which are always 100% used, as full-disk outliers, so the real nearly-full disk stands out.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
