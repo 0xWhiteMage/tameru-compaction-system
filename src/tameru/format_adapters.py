@@ -435,6 +435,157 @@ def _adapt_delimited(
     )
 
 
+def _adapt_delimited_outliers(
+    text: str,
+    query: str,
+    limits: FormatLimits,
+    delimiter: str,
+    format_name: str,
+    gap_marker: Callable[[int, int], str] | None = None,
+) -> FormatResult:
+    records = _split_delimited_records(text)
+    if records is None:
+        return _decline(text, format_name, "unmatched quote", structurally_valid=False)
+    if len(records) - 1 > limits.max_records:
+        return _decline(text, format_name, "record limit exceeded", total_records=max(0, len(records) - 1))
+    parsed = [_parse_delimited_record(record, delimiter, limits) for record in records]
+    if not parsed or any(row is None for row in parsed):
+        return _decline(text, format_name, "invalid delimited record", structurally_valid=False)
+    width = len(parsed[0] or [])
+    if width < 2 or any(len(row or []) != width for row in parsed[1:]):
+        return _decline(text, format_name, "inconsistent field count", structurally_valid=False)
+
+    data_rows = parsed[1:]
+    total = max(0, len(data_rows))
+    if total < 20:
+        return _decline(text, format_name, "too few records for outliers", total_records=total)
+
+    import re
+
+    outlier_flags = [False] * total
+
+    for col in range(width):
+        values = [row[col] if row and col < len(row) else "" for row in data_rows]
+        distinct = set(values)
+        if len(distinct) > 5:
+            continue
+        counts: dict[str, int] = {}
+        for value in values:
+            counts[value] = counts.get(value, 0) + 1
+        if not counts:
+            continue
+        most_common_value, most_common_count = max(counts.items(), key=lambda item: item[1])
+        if most_common_count * 100 >= total * 75:
+            for index, value in enumerate(values):
+                if value != most_common_value:
+                    outlier_flags[index] = True
+
+    numeric_pattern = re.compile(r"^-?\d+(\.\d+)?%?$")
+    for col in range(width):
+        values = [row[col] if row and col < len(row) else "" for row in data_rows]
+        parsed_values: list[tuple[int, str, float]] = []
+        for row_index, value in enumerate(values):
+            if numeric_pattern.fullmatch(value):
+                number_text = value[:-1] if value.endswith("%") else value
+                try:
+                    parsed_values.append((row_index, value, float(number_text)))
+                except ValueError:
+                    continue
+        if len(parsed_values) * 10 < total * 9:
+            continue
+        numbers = sorted(number for _, _, number in parsed_values)
+        if not numbers:
+            continue
+        midpoint = len(numbers) // 2
+        if len(numbers) % 2:
+            median = numbers[midpoint]
+        else:
+            median = (numbers[midpoint - 1] + numbers[midpoint]) / 2
+        if median > 0:
+            threshold = 5 * median
+            for row_index, _, number in parsed_values:
+                if number >= threshold:
+                    outlier_flags[row_index] = True
+        for row_index, value, number in parsed_values:
+            if value.endswith("%") and number >= 90:
+                outlier_flags[row_index] = True
+
+    filler_words = set(FILLER_WORDS)
+    generic_words = set(GENERIC_WORDS)
+    stop_words = {
+        "which", "what", "where", "when", "why", "how",
+        "the", "was", "were", "are", "is", "did", "does",
+    }
+    guard_words: set[str] = set()
+    query_words: set[str] = set()
+    for word in re.findall(r"[a-z]{3,}", (query or "").lower()):
+        if word in stop_words or word in filler_words:
+            continue
+        guard_words.add(word)
+        if word not in generic_words:
+            query_words.add(word)
+        for suffix in ("ing", "ed", "s"):
+            if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+                stem = word[: -len(suffix)]
+                if stem in stop_words or stem in filler_words:
+                    continue
+                guard_words.add(stem)
+                if word not in generic_words and stem not in generic_words:
+                    query_words.add(stem)
+
+    lower_text = text.lower()
+    if guard_words and not any(word in lower_text for word in guard_words):
+        return _decline(text, format_name, "query unrelated to table", total_records=total)
+
+    query_flags = [False] * total
+    if query_words:
+        lower_rows = [delimiter.join(row or []).lower() for row in data_rows]
+        for word in query_words:
+            matches = [index for index, row in enumerate(lower_rows) if word in row]
+            if len(matches) * 5 <= total:
+                for index in matches:
+                    query_flags[index] = True
+
+    kept_indices = [
+        index for index in range(total) if outlier_flags[index] or query_flags[index]
+    ]
+    if not kept_indices:
+        return _decline(text, format_name, "no outliers", total_records=total)
+    if len(kept_indices) * 5 > total:
+        return _decline(text, format_name, "too many outliers", total_records=total)
+
+    keep_flags = [False] * total
+    for index in kept_indices:
+        keep_flags[index] = True
+
+    if gap_marker is None:
+        kept_records = [records[1 + index] for index in kept_indices]
+        omitted = total - len(kept_indices)
+        result_records = [
+            records[0],
+            *kept_records,
+            f"... {omitted} of {total} rows omitted (no outliers)",
+        ]
+    else:
+        result_records = [
+            records[0],
+            *_with_gaps(records[1:], keep_flags, "\n", gap_marker, len(text)),
+        ]
+
+    return FormatResult(
+        format=format_name,
+        applied=True,
+        text=_line_separator(text).join(result_records),
+        total_records=total,
+        kept_records=len(kept_indices),
+        reason="header plus outlier and matching records",
+    )
+
+
+def _selector_is_distinctive(selector: str) -> bool:
+    return any(ch.isdigit() or ch in "._:/-" or ord(ch) > 127 for ch in selector)
+
+
 def _adapt_markdown(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
@@ -829,6 +980,36 @@ def adapt_format(
     value = str(text or "")
     resolved_format = format_name or detect_format(value)
     selectors = _query_selectors(query)
+
+    if resolved_format in {"csv", "tsv"}:
+        if not selectors:
+            return _adapt_delimited_outliers(
+                value,
+                query,
+                limits or FormatLimits(),
+                "," if resolved_format == "csv" else "\t",
+                resolved_format,
+                gap_marker,
+            )
+        adapter = _ADAPTERS.get(resolved_format)
+        if adapter is None:
+            return _decline(value, resolved_format, "no safe extractive adapter")
+        result = adapter(value, selectors, limits or FormatLimits(), gap_marker)
+        if (
+            not result.applied
+            and result.reason == "no selective record match"
+            and not any(_selector_is_distinctive(selector) for selector in selectors)
+        ):
+            return _adapt_delimited_outliers(
+                value,
+                query,
+                limits or FormatLimits(),
+                "," if resolved_format == "csv" else "\t",
+                resolved_format,
+                gap_marker,
+            )
+        return result
+
     if not selectors:
         return _decline(value, resolved_format, "query has no distinctive selectors")
     adapter = _ADAPTERS.get(resolved_format)
