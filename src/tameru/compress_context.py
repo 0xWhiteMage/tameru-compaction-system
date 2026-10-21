@@ -5327,6 +5327,8 @@ _ANCHOR_LOG_PREFIX_RE = re.compile(
 
 
 _ANCHOR_JVM_LINE_RE = re.compile(r"\((\w[\w$]*\.(?:java|kt|scala|groovy|clj)):\d+\)")
+_ANCHOR_JS_FRAME_RE = re.compile(r"\((node:[\w/]+|[\w./@\\-]*node_modules/[\w./@\\-]*\.(?:js|mjs|cjs|ts|tsx|jsx|mts|cts)):\d+(?::\d+)?\)")
+_ANCHOR_JS_BARE_FRAME_RE = re.compile(r"^(\s*at\s+)(node:[\w/]+|[\w./@\\-]*node_modules/[\w./@\\-]*\.(?:js|mjs|cjs|ts|tsx|jsx|mts|cts)):\d+(?::\d+)?\s*$")
 _ANCHOR_LOGFMT_PAIR_RE = re.compile(r'(\w[\w.]*)=("(?:[^"\\]|\\.)*"|\S+)')
 
 
@@ -5486,7 +5488,9 @@ def _strip_anchor_prefix(line: str) -> str:
         out = _ANCHOR_LOG_PREFIX_RE.sub(r"\1 ", line, count=1).strip()
         if out != m.group(1):
             line = out
-    return _ANCHOR_JVM_LINE_RE.sub(r"(\1)", line)
+    line = _ANCHOR_JVM_LINE_RE.sub(r"(\1)", line)
+    line = _ANCHOR_JS_FRAME_RE.sub(r"(\1)", line)
+    return _ANCHOR_JS_BARE_FRAME_RE.sub(r"\1\2", line)
 
 
 # Weak failure anchors: a fallback for the no-query error-anchored objective when a log carries
