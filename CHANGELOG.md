@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Repeated lines in text tool output (helm, ansible and similar) collapse like log lines; unique facts and errors stay.
 - Status-table reducer for health tables, `df` and `kubectl top`: keeps the header and the abnormal rows (rare status, a value 5x the column median, or 90%+ use); keeps everything when there are none or too many.
 - Dashboard summary lines such as `summary 20/40 degraded` anchor no-query compression as a last resort, with a few affected rows kept.
+- JSON API responses with a large uniform array of objects keep one example item, the unusual items (extra keys, different values, error words) and items matching the query, plus a count/schema line for the rest; used on generic and empty queries with strict guards.
+- No-query anchors for quiet logs: the one or two lines that break an otherwise uniform leveled log (for example a skipped cron job) are kept.
+- Docker build reducer (classic and BuildKit): keeps the failing step, error lines and the final image name/digest; cached and passing steps collapse.
+- Frequent short log lines such as Ansible `ok: [host]` fold into a count (key=value lines are left alone).
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -33,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
+- Docker `Step N/M` lines were dropped as progress bars, which could lose the failing build step.
 
 ---
 
