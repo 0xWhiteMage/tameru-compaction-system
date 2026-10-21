@@ -49,6 +49,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Env/config dumps (KEY=value lines) fold repeated keys of one prefix to the first line. Secret-looking lines (password, token, key, credential names, or long opaque values) are never kept on their own and never moved; the CCR secret screen is unchanged.
 - `kubectl describe job` keeps Pods Statuses, Completions, Parallelism, Backoff Limit and Completed At.
 - The lint reducer reads MSBuild/dotnet and tsc `file(line,col): warning CODE:` locations.
+- Terraform/OpenTofu plans fold repeated updates of one resource type to the first block; destroy and replace blocks are always kept.
+- Bundler output (vite/rollup, webpack, esbuild) keeps the first assets, the largest ones and any flagged as too big; the rest fold.
+- Ansible output with a large PLAY RECAP folds clean host lines per task and status and keeps failed or unreachable hosts.
+- pip install output with progress bars drops the finished bars and folds download lines; errors and conflicts are kept.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -65,6 +69,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - kubectl output drops decorative `----` separator rows without a marker.
 - Collapsed repeat summaries no longer force the lead block into needle selection.
 - A weak query on a diff of many single-hunk files keeps the matching files whole and reduces the rest to their `diff --git` line plus one marker per run.
+- Rare-line anchors also work on short syslog-style logs (15 lines or more), so a lone cron `MAIL` line is kept.
+- The block split after a collapsed repeat run applies before an error line again; tsc output is covered by the lint reducer.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
