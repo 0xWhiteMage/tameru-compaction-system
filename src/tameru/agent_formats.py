@@ -996,6 +996,8 @@ def detect_test_runner(text: str) -> str | None:
     line with many ``N passed`` fragments made the old whole-text regex cubic).
     """
     if _RUNNER_HINT_RE.search(text) is None:
+        if _detect_docker_build(text):
+            return "docker_build"
         return "status_table" if _detect_status_table(text) else None
     running = cargo_result = jest_suites = jest_tests = go = pytest_open = pytest_sum = False
     gradle_task = gradle_end = rspec = phpunit = dotnet = pytest_q = pytest_prog = False
@@ -1088,6 +1090,8 @@ def detect_test_runner(text: str) -> str | None:
                     return "kubectl_pods"
             else:
                 break
+    if _detect_docker_build(text):
+        return "docker_build"
     if _detect_status_table(text):
         return "status_table"
     return None
@@ -1766,6 +1770,96 @@ def _status_table_median(values):
         return values[mid]
     return (values[mid - 1] + values[mid]) / 2.0
 
+_DOCKER_CLASSIC_STEP_RE = re.compile(r"^Step \d+/\d+ : ")
+_DOCKER_BUILDKIT_LINE_RE = re.compile(r"^#(\d+) ")
+_DOCKER_BUILDKIT_STAGE_RE = re.compile(r"^#\d+ \[")
+_DOCKER_FAIL_RE = re.compile(
+    r"\bERROR\b|\berror:|returned a non-zero code|"
+    r"did not complete successfully|exit code: [1-9]"
+)
+_DOCKER_IMAGE_RE = re.compile(
+    r"writing image sha256:|naming to |Successfully built |"
+    r"Successfully tagged |exporting to image"
+)
+
+
+def _docker_is_diagnostic(line):
+    fn = globals().get("is_diagnostic_line")
+    return bool(fn(line)) if fn else False
+
+
+def _docker_line_fails(line):
+    return bool(_DOCKER_FAIL_RE.search(line) or _docker_is_diagnostic(line))
+
+
+def _detect_docker_build(text):
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 8:
+        return False
+    if sum(1 for ln in lines if _DOCKER_CLASSIC_STEP_RE.match(ln)) >= 3:
+        return True
+    if sum(1 for ln in lines if _DOCKER_BUILDKIT_LINE_RE.match(ln)) >= 5:
+        if sum(1 for ln in lines if _DOCKER_BUILDKIT_STAGE_RE.match(ln)) >= 2:
+            return True
+    return False
+
+
+def _classify_docker_build(lines):
+    n = len(lines)
+    keep = [False] * n
+    classic_starts = [i for i, ln in enumerate(lines) if _DOCKER_CLASSIC_STEP_RE.match(ln)]
+    if classic_starts:
+        first = classic_starts[0]
+        last = classic_starts[-1]
+        for i in range(first):
+            keep[i] = True
+        keep[first] = True
+        for i in range(last, n):
+            keep[i] = True
+        for pos, start in enumerate(classic_starts):
+            end = classic_starts[pos + 1] if pos + 1 < len(classic_starts) else n
+            if any(_docker_line_fails(lines[j]) for j in range(start, end)):
+                for j in range(start, end):
+                    keep[j] = True
+        for i, ln in enumerate(lines):
+            if _DOCKER_IMAGE_RE.search(ln) or _docker_line_fails(ln):
+                keep[i] = True
+        return keep, [0] * n, [0] * n
+
+    first_idx = None
+    current = None
+    step_first = {}
+    step_lines = {}
+    for i, ln in enumerate(lines):
+        m = _DOCKER_BUILDKIT_LINE_RE.match(ln)
+        if m:
+            num = int(m.group(1))
+            if first_idx is None:
+                first_idx = i
+            if num != current:
+                current = num
+                step_first.setdefault(num, i)
+            step_lines.setdefault(num, []).append(i)
+        elif current is not None:
+            step_lines.setdefault(current, []).append(i)
+    if first_idx is None:
+        return [True] * n, [0] * n, [0] * n
+    last_start = step_first.get(current, first_idx)
+    for i in range(first_idx):
+        keep[i] = True
+    keep[first_idx] = True
+    for i in range(last_start, n):
+        keep[i] = True
+    for idxs in step_lines.values():
+        if any(_docker_line_fails(lines[j]) for j in idxs):
+            for j in idxs:
+                keep[j] = True
+    for i, ln in enumerate(lines):
+        if _DOCKER_IMAGE_RE.search(ln) or _docker_line_fails(ln):
+            keep[i] = True
+    return keep, [0] * n, [0] * n
+
+
 def _detect_status_table(text):
     lines = [ln for ln in text.splitlines() if ln.strip()]
     if len(lines) < 16:
@@ -1865,6 +1959,7 @@ _RUNNERS = {
     "kubectl_events": _classify_kubectl_events,
     "kubectl_pods": _classify_kubectl_pods,
     "status_table": _classify_status_table,
+    "docker_build": _classify_docker_build,
 }
 
 
@@ -1941,8 +2036,9 @@ def preprocess_test_output(
             if runner == "phpunit"
             else ("event rows" if runner == "kubectl_events"
                   else ("pod rows" if runner == "kubectl_pods"
-                        else ("table rows" if runner == "status_table"
-                              else ("describe lines" if runner == "kubectl" else None))))
+                        else ("build lines" if runner == "docker_build"
+                              else ("table rows" if runner == "status_table"
+                                    else ("describe lines" if runner == "kubectl" else None)))))
         ),
     )
     return out if len(out) < len(text) else None

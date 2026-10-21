@@ -326,7 +326,7 @@ def old_is_progress_bar(
     _bar_re=re.compile(r"(\[[=#>\-. ]*\]\s*)?\d{1,3}\s*(%|/\s*\d+)"),
     _word_re=re.compile(
         r"\b(downloading|uploading|fetching|extracting|receiving|resolving|"
-        r"writing|counting|compressing|copying|processing|progress|step|"
+        r"writing|counting|compressing|copying|processing|progress|"
         r"pulling|installing|unpacking)\b",
         re.IGNORECASE,
     ),

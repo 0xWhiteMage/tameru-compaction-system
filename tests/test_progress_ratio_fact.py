@@ -14,7 +14,7 @@ def test_progress_lines_are_progress():
     assert cc._is_progress_bar("Receiving objects: 45% (9/20)")
     assert cc._is_progress_bar("[=====>   ] 50%")
     assert cc._is_progress_bar("  12/100  ")
-    assert cc._is_progress_bar("Step 3/7 : RUN make")
+    assert not cc._is_progress_bar("Step 3/7 : RUN make")
 
 
 def test_preprocess_logs_keeps_summary_after_alternating_lines():

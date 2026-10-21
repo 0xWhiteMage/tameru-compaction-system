@@ -607,7 +607,7 @@ _PROGRESS_BAR_RE = re.compile(r"(\[[=#>\-. ]*\]\s*)?\d{1,3}\s*(%|/\s*\d+)")
 _COMPILING_RE = re.compile(r"^Compiling [\w-]+ ")
 _PROGRESS_WORD_RE = re.compile(
     r"\b(downloading|uploading|fetching|extracting|receiving|resolving|"
-    r"writing|counting|compressing|copying|processing|progress|step|"
+    r"writing|counting|compressing|copying|processing|progress|"
     r"pulling|installing|unpacking)\b",
     re.IGNORECASE,
 )
