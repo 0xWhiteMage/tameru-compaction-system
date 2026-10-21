@@ -1269,12 +1269,60 @@ def _summarize_json_arrays(value: Any, query: str) -> tuple[Any, bool]:
 
     return process(value, 0), changed
 
+def _summarize_ndjson(stripped: str, query: str) -> str | None:
+    lines = [line for line in stripped.splitlines() if line.strip()]
+    if len(lines) < 20:
+        return None
+
+    parsed = []
+    for line in lines:
+        try:
+            obj = json.loads(line)
+        except (ValueError, RecursionError):
+            return None
+        if not isinstance(obj, dict):
+            return None
+        parsed.append(obj)
+
+    try:
+        result, changed = _summarize_json_arrays(parsed, query)
+    except RecursionError:
+        return None
+
+    if not changed or not isinstance(result, list):
+        return None
+
+    used = set()
+    rendered = []
+    for item in result:
+        if isinstance(item, str):
+            rendered.append(item)
+        else:
+            for j, candidate in enumerate(parsed):
+                if j in used:
+                    continue
+                if candidate == item:
+                    used.add(j)
+                    rendered.append(lines[j])
+                    break
+            else:
+                return None
+
+    rendered_text = "\n".join(rendered)
+    if len(rendered_text) < len(stripped) * 0.92:
+        return rendered_text
+    return None
+
+
 def preprocess_json(text: str, query: str) -> str:
     stripped = text.strip()
     if not query_has_distinctive_selectors(query):
         try:
             parsed = json.loads(stripped)
         except (ValueError, RecursionError):
+            ndjson = _summarize_ndjson(stripped, query)
+            if ndjson is not None:
+                return ndjson
             return text
         try:
             result, changed = _summarize_json_arrays(parsed, query)
