@@ -1155,10 +1155,114 @@ def _json_query_needles(query: str) -> list[str]:
     }
     return sorted(strong or terms)
 
+_JSON_SUMMARY_STOP_WORDS = {
+    "which", "what", "where", "when", "there", "their", "about", "with",
+    "from", "that", "this", "have", "were", "been", "does", "didn", "why",
+    "show", "list", "item", "items",
+}
+_JSON_SUMMARY_TRIGGERS = (
+    "error", "fail", "exception", "denied", "invalid", "refund",
+    "suspend", "timeout", "quota", "reject", "cancel",
+)
+
+def _summarize_json_arrays(value: Any, query: str) -> tuple[Any, bool]:
+    changed = False
+    query_words = set()
+    for word in re.findall(r"[a-z]+", query.lower()):
+        if len(word) < 4 or word in _JSON_SUMMARY_STOP_WORDS:
+            continue
+        query_words.add(word)
+        for suffix in ("s", "ed", "ing"):
+            if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+                query_words.add(word[:-len(suffix)])
+
+    def process(node: Any, depth: int) -> Any:
+        nonlocal changed
+        if depth > 10:
+            return node
+        if isinstance(node, dict):
+            return {key: process(val, depth + 1) for key, val in node.items()}
+        if isinstance(node, list):
+            items = [process(item, depth + 1) for item in node]
+            if len(items) >= 20 and all(isinstance(item, dict) for item in items):
+                key_counts = {}
+                for item in items:
+                    for key in item:
+                        key_counts[key] = key_counts.get(key, 0) + 1
+                common = {key for key, count in key_counts.items() if count >= len(items) * 0.9}
+                dominant = {}
+                dominant_counts = {}
+                for key in common:
+                    values = [item.get(key) for item in items]
+                    if all(isinstance(val, (str, bool)) or val is None for val in values):
+                        value_counts = {}
+                        for val in values:
+                            value_counts[val] = value_counts.get(val, 0) + 1
+                        best, best_count = max(value_counts.items(), key=lambda kv: kv[1])
+                        if best_count >= len(items) * 0.8:
+                            dominant[key] = best
+                            dominant_counts[key] = best_count
+                keep = []
+                item_texts = [json.dumps(item, ensure_ascii=False).lower() for item in items]
+                distinctive_query_words = {
+                    word
+                    for word in query_words
+                    if sum(word in item_text for item_text in item_texts) <= len(items) * 0.2
+                }
+                for item, item_text in zip(items, item_texts):
+                    unusual = any(key not in common for key in item)
+                    if not unusual:
+                        unusual = any(item.get(key) != val for key, val in dominant.items())
+                    if not unusual:
+                        unusual = any(trigger in item_text for trigger in _JSON_SUMMARY_TRIGGERS)
+                    if not unusual and distinctive_query_words:
+                        unusual = any(word in item_text for word in distinctive_query_words)
+                    if unusual:
+                        keep.append(item)
+                if keep and len(keep) <= len(items) * 0.2:
+                    changed = True
+                    first = items[0]
+                    new_items = []
+                    if not any(first is item for item in keep):
+                        new_items.append(first)
+                    new_items.extend(keep)
+                    omitted = len(items) - len(new_items)
+                    common_ordered = [key for key in first if key in common]
+                    if dominant:
+                        summary = "; ".join(
+                            f"{key}={json.dumps(dominant[key], ensure_ascii=False)} x{dominant_counts[key]}"
+                            for key in common_ordered
+                            if key in dominant
+                        ) or "no dominant values"
+                    else:
+                        summary = "no dominant values"
+                    new_items.append(
+                        f"... {omitted} similar items omitted (keys: {', '.join(common_ordered)}; {summary})"
+                    )
+                    return new_items
+            return items
+        return node
+
+    return process(value, 0), changed
 
 def preprocess_json(text: str, query: str) -> str:
     stripped = text.strip()
     if not query_has_distinctive_selectors(query):
+        try:
+            parsed = json.loads(stripped)
+        except (ValueError, RecursionError):
+            return text
+        try:
+            result, changed = _summarize_json_arrays(parsed, query)
+        except RecursionError:
+            return text
+        if changed:
+            try:
+                dumped = json.dumps(result, ensure_ascii=False, indent=2)
+            except (TypeError, ValueError, RecursionError):
+                return text
+            if len(dumped) < len(stripped) * 0.92:
+                return dumped
         return text
     needles = _json_query_needles(query)
     try:
@@ -6240,6 +6344,10 @@ def compress_context(
         # run at all; the result is identical.)
         lines = _compact_progress_lines(text.split("\n"))
         content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
+        if content_type == "json":
+            summarized = preprocess_json(text, query or "")
+            if summarized != text:
+                lines = _compact_progress_lines(summarized.split("\n"))
         recall_base = text
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
