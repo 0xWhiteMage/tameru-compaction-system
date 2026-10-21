@@ -40,6 +40,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - pytest output shortens decorative `=====` / `_____` banners; the final summary line and captured-output and error banners stay verbatim.
 - kubectl `describe` keeps the `Replicas:` and `Pods Status:` lines (deployments and replica sets).
 - PHP error logs: stack frames (`Stack trace:`, `#N ...`, `thrown in`) join the fatal error, and `PHP Warning:` is a weak failure anchor.
+- Lint and type-checker output (ruff, flake8, pylint, mypy) keeps every distinct diagnostic and folds a rule that repeats to its first line; grep output is not affected.
+- MySQL slow query logs keep the first entry, the slowest one and entries whose Query_time or Rows_examined stand out; routine entries fold.
+- Multi-document YAML with no query keeps the first document of each repeated shape and any document whose values differ from the rest (for example a lone Secret among ConfigMaps).
+- nginx `[error]`/`[crit]`/`[alert]`/`[emerg]` and Apache `[module:error]` lines count as error lines.
+- Apache error logs are routed as logs.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -50,6 +55,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Anchor lines also drop log prefixes with NOTICE, CRIT, ALERT and other syslog levels.
 - Anchor regions stop at repeats of the anchor's own diagnostic (same error code and message), so tsc, Kotlin and Java runs of one error keep one copy.
 - Anchors drop the `PHP Fatal error:`-style log prefix and date.
+- Anchors drop the nginx, Apache and MySQL 8 error-log prefixes (date, pid, thread id), keeping the level and message.
+- HAProxy HTTP log anchors reduce to backend/server, status and termination state.
+- Anchors drop line numbers from Node.js internal and `node_modules` frames; your own source locations stay.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
