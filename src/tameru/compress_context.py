@@ -724,6 +724,7 @@ _ERR_STRUCT_LEVEL_RE = re.compile(
     r"(?:^|[\s{,])\"?(?:level|lvl|severity|log\.level)\"?\s*[=:]\s*\"?(?:error|err|fatal|critical|crit|panic|emerg|alert)\b",
     re.IGNORECASE,
 )
+_ERR_BRACKET_LEVEL_RE = re.compile(r"\[(?:[A-Za-z_]+:)?(?:error|crit|alert|emerg)\]")
 _ERR_EXC_RE = re.compile(r"^\s*(?:\w+\.)*\w*(?:Error|Exception):")
 _ERR_PANIC_RE = re.compile(r"\bpanic:")
 _ERR_TRACEBACK = "Traceback (most recent call last)"
@@ -763,7 +764,7 @@ def _is_level_error_line(line: str) -> bool:
 # one. Perf (v1.5.0): one scan replaces four regexes on the ~99% of log lines
 # that are not errors.
 _ERROR_LINE_HINT_RE = re.compile(
-    r"ERROR|FATAL|CRITICAL|PANIC|FAIL|Error:|Exception:|Traceback \(most recent call last\)|panic:|level|lvl|severity|Level|LEVEL|Severity|SEVERITY"
+    r"ERROR|FATAL|CRITICAL|PANIC|FAIL|Error:|Exception:|Traceback \(most recent call last\)|panic:|level|lvl|severity|Level|LEVEL|Severity|SEVERITY|error\]|crit\]|alert\]|emerg\]"
 )
 
 
@@ -791,6 +792,7 @@ def _is_error_line(line: str) -> bool:
         _ERR_LEVEL_RE.search(s)
         or _ERR_EXC_RE.match(head)
         or _ERR_STRUCT_LEVEL_RE.search(s)
+        or _ERR_BRACKET_LEVEL_RE.search(s)
         or _ERR_TRACEBACK in s
         or _ERR_PANIC_RE.search(s)
     )
@@ -5429,6 +5431,8 @@ _ANCHOR_ACCESS_LOG_RE = re.compile(
 
 
 _PHP_LOG_PREFIX_RE = re.compile(r"^\[\d{1,2}-[A-Z][a-z]{2}-\d{4} \d\d:\d\d:\d\d(?: [A-Za-z_/+-]+)?\]\s+(?:PHP\s+)?")
+_NGINX_ERR_PREFIX_RE = re.compile(r"^20\d\d/\d\d/\d\d \d\d:\d\d:\d\d \[([a-z]+)\] \d+#\d+: (?:\*\d+ )?")
+_APACHE_ERR_PREFIX_RE = re.compile(r"^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d(?:\.\d+)? \d{4}\] \[(?:[\w-]+:)?([a-z]+\d?)\](?: \[pid \d+(?::tid \d+)?\])?(?: \[client [^\]]+\])? ")
 _PHP_BARE_PREFIX_RE = re.compile(r"^PHP\s+(?=(?:Fatal error|Parse error|Warning|Notice|Deprecated|Catchable fatal error):)")
 _PHP_STACK_FRAME_RE = re.compile(r"^#\d+ ")
 
@@ -5462,6 +5466,18 @@ def _strip_anchor_prefix(line: str) -> str:
         php_bare_remainder = line[php_bare_m.end():]
         if php_bare_remainder.strip():
             line = php_bare_remainder
+
+    nginx_err_m = _NGINX_ERR_PREFIX_RE.match(line)
+    if nginx_err_m is not None:
+        nginx_err_remainder = line[nginx_err_m.end():]
+        if nginx_err_remainder.strip():
+            line = nginx_err_m.group(1) + " " + nginx_err_remainder
+
+    apache_err_m = _APACHE_ERR_PREFIX_RE.match(line)
+    if apache_err_m is not None:
+        apache_err_remainder = line[apache_err_m.end():]
+        if apache_err_remainder.strip():
+            line = apache_err_m.group(1) + " " + apache_err_remainder
     stripped = _strip_structured_anchor(line)
     if stripped is not None:
         line = stripped
