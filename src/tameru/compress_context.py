@@ -3479,8 +3479,7 @@ _PROSE_MIN_BLOCKS = 8
 
 def _prose_key(text: str) -> str:
     """Repeat key: NFKC-normalised, digit runs -> '#', lowercased, whitespace collapsed, first 2000 chars."""
-    normalized = unicodedata.normalize("NFKC", text)
-    return " ".join(re.sub(r"\d+", "#", normalized[:2000].lower()).split())
+    return " ".join(re.sub(r"\d+", "#", unicodedata.normalize("NFKC", text[:2000]).lower()).split())
 
 
 def select_prose_brief(
