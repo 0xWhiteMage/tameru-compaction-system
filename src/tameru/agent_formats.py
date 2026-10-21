@@ -1587,10 +1587,78 @@ def _classify_ansible(lines: list[str]) -> tuple[list[bool], list[int], list[int
     return keep, tests, suites
 
 
+_PIP_BAR_RE = re.compile(r"^\s*[\u2501\u2578\u257a\u2588-\u258f\-]{10,}\s+[\d.]+/[\d.]+\s*[kKMG]?i?B\b")
+_PIP_NOISE_RE = re.compile(r"^\s*(?:Downloading |Using cached |Requirement already satisfied: |Obtaining dependency information |  Preparing metadata|Collecting )")
+
+
+def _pip_requirement_name(requirement: str) -> str:
+    match = re.match(r"[A-Za-z0-9._-]+", requirement)
+    return match.group(0).lower() if match else ""
+
+
+def _detect_pip_install(text: str) -> bool:
+    if not ("Collecting " in text or "Requirement already satisfied" in text or "Downloading " in text):
+        return False
+
+    bar_matched = 0
+    anchored = False
+    for line in text.splitlines():
+        if _PIP_BAR_RE.match(line):
+            bar_matched += 1
+        if (
+            line.startswith("Collecting ")
+            or line.startswith("Requirement already satisfied: ")
+            or line.startswith("Installing collected packages")
+            or line.startswith("Successfully installed")
+        ):
+            anchored = True
+
+    return bar_matched >= 3 and anchored
+
+
+def _classify_pip_install(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [False] * len(lines)
+
+    noise_indices = [i for i, line in enumerate(lines) if _PIP_NOISE_RE.match(line)]
+    keep_noise = set(noise_indices[:2])
+    if noise_indices:
+        keep_noise.add(noise_indices[-1])
+
+    error_text = "\n".join(
+        line
+        for line in lines
+        if line.lstrip().startswith("ERROR") or "conflict" in line.lower()
+    )
+
+    for i, line in enumerate(lines):
+        if _PIP_BAR_RE.match(line):
+            continue
+
+        if _PIP_NOISE_RE.match(line):
+            if i in keep_noise:
+                keep[i] = True
+                continue
+
+            stripped = line.lstrip()
+            if stripped.startswith("Collecting "):
+                name = _pip_requirement_name(stripped[len("Collecting "):])
+                if name and re.search(
+                    rf"(?<![A-Za-z0-9._-]){re.escape(name)}(?![A-Za-z0-9._-])",
+                    error_text,
+                    re.IGNORECASE,
+                ):
+                    keep[i] = True
+            continue
+
+        keep[i] = True
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1609,6 +1677,8 @@ def detect_test_runner(text: str) -> str | None:
             return "bundle_assets"
         if _detect_ansible(text):
             return "ansible"
+        if _detect_pip_install(text):
+            return "pip_install"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1717,6 +1787,8 @@ def detect_test_runner(text: str) -> str | None:
         return "bundle_assets"
     if _detect_ansible(text):
         return "ansible"
+    if _detect_pip_install(text):
+        return "pip_install"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2717,6 +2789,7 @@ _RUNNERS = {
     "terraform_plan": _classify_terraform_plan,
     "bundle_assets": _classify_bundle_assets,
     "ansible": _classify_ansible,
+    "pip_install": _classify_pip_install,
 }
 
 
@@ -2826,7 +2899,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else None)))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else None))))))))))))
         ),
     )
     if runner == "pytest":
