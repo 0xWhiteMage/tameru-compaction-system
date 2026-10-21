@@ -35,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - JSON Lines with a weak or empty query are summarised like JSON arrays: one example record, unusual records, matching records and a count line.
 - The no-query prose brief treats paragraphs that differ only in numbers or full-width characters as repeats (CJK-safe), and no longer keeps an earlier copy of the closing paragraph.
 - Markdown pipe tables with a weak or empty query keep the header, outlier rows, matching rows and a count line, like CSV/TSV.
+- Slash-dated log lines (nginx error log, Go `log` package) are routed as logs.
+- With a query on a log where the query words hit many lines, the few lines matching a rare query word become anchors.
+- pytest output shortens decorative `=====` / `_____` banners; the final summary line and captured-output and error banners stay verbatim.
+- kubectl `describe` keeps the `Replicas:` and `Pods Status:` lines (deployments and replica sets).
+- PHP error logs: stack frames (`Stack trace:`, `#N ...`, `thrown in`) join the fatal error, and `PHP Warning:` is a weak failure anchor.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -43,10 +48,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - No-side-effect calls reuse the best trial compression as the result instead of compressing again; output and receipt are unchanged.
 - With CCR on, the reused result is stored once and trial compressions no longer write CCR records.
 - Anchor lines also drop log prefixes with NOTICE, CRIT, ALERT and other syslog levels.
+- Anchor regions stop at repeats of the anchor's own diagnostic (same error code and message), so tsc, Kotlin and Java runs of one error keep one copy.
+- Anchors drop the `PHP Fatal error:`-style log prefix and date.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
 - Docker `Step N/M` lines were dropped as progress bars, which could lose the failing build step.
+- kubectl `describe` Conditions tables treated pod rows under a node's conditions as conditions; only rows with a True/False/Unknown status count now.
+- A query matching a top-level key in multi-document YAML (such as `kind: Secret`) kept only that line; it now keeps the whole document.
 
 ---
 
