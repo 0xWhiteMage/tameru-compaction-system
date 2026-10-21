@@ -1213,15 +1213,24 @@ def _env_match(line: str):
 
 
 def _detect_env_dump(text: str) -> bool:
+    if text.count("=") < 20:
+        return False
+
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 20:
         return False
 
+    allowed_misses = len(lines) - (len(lines) * 9 + 9) // 10
     env_pairs = []
+    misses = 0
     for line in lines:
         m = _env_match(line)
         if m is not None:
             env_pairs.append((m.group(1), m.group(2)))
+        else:
+            misses += 1
+            if misses > allowed_misses:
+                return False
 
     if len(env_pairs) * 10 < len(lines) * 9:
         return False
