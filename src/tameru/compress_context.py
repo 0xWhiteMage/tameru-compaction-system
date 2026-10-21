@@ -947,6 +947,12 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     exemplar_idx: dict[str, int] = {}
     last_seen: dict[str, str] = {}  # v1.4.0 (E10): last instance of each template
 
+    short_counts: dict[str, int] = {}
+    for line in kept_lines:
+        fp = fingerprint(line)
+        if fp:
+            short_counts[fp] = short_counts.get(fp, 0) + 1
+
     i = 0
     n = len(kept_lines)
     while i < n:
@@ -970,7 +976,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
             i += 1
             continue
         fp = fingerprint(line)
-        if fp and _template_long_enough(line):
+        if fp and (_template_long_enough(line) or (short_counts.get(fp, 0) >= 5 and sum(ch.isalpha() for ch in line) >= 2 and "=" not in line)):
             if fp in exemplar_idx:
                 seen[fp] += 1
                 last_seen[fp] = line
