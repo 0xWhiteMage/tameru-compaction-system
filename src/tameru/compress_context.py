@@ -1816,6 +1816,35 @@ def _compact_progress_lines(lines: list[str]) -> list[str]:
     return lines
 
 
+_REPEAT_LINE_MIN_CHARS = 60
+_REPEAT_UNIT_MIN_CHARS = 20
+_REPEAT_MIN_COUNT = 3
+
+
+def _fold_repeated_sentences(lines: list[str]) -> list[str]:
+    """Fold a line made of one unit repeated back to back into "[\u00d7N] unit".
+
+    Language-independent: uses the line's own repeated whitespace period, not a
+    sentence splitter. Lossless apart from exact whitespace between copies.
+    """
+    folded: list[str] = []
+    for line in lines:
+        t = " ".join(line.split())
+        if len(t) >= _REPEAT_LINE_MIN_CHARS:
+            u = t + " "
+            p = (u + u).find(u, 1)
+            if (
+                _REPEAT_UNIT_MIN_CHARS <= p < len(u)
+                and len(u) % p == 0
+                and len(u) // p >= _REPEAT_MIN_COUNT
+            ):
+                indent = line[: len(line) - len(line.lstrip())]
+                folded.append(f"{indent}[\u00d7{len(u) // p}] {u[:p].strip()}")
+                continue
+        folded.append(line)
+    return folded
+
+
 def _preprocess_scan(
     text: str, query: str, content_hint: str | None = None
 ) -> tuple[list[str], str]:
@@ -1839,6 +1868,7 @@ def _preprocess_scan(
         processed = preprocess_flat_records(text, query)
         if processed != text:
             return processed.split("\n"), kind
+        lines = _fold_repeated_sentences(lines)
         query_text = query or ""
         distinctive_terms = [
             term
@@ -6764,6 +6794,8 @@ def compress_context(
             summarized = preprocess_json(text, query or "")
             if summarized != text:
                 lines = _compact_progress_lines(summarized.split("\n"))
+        elif content_type == "text":
+            lines = _fold_repeated_sentences(lines)
         recall_base = text
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
