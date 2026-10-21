@@ -1334,9 +1334,106 @@ def _classify_lint(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     return keep, tests, suites
 
 
+_TF_HEADER_RE = re.compile(
+    r"^\s*# (\S+) (will be (?:created|updated in-place|destroyed|read during apply)|must be replaced|has moved to \S+)"
+)
+
+
+def _detect_terraform_plan(text: str) -> bool:
+    if "# " not in text or (" will be " not in text and " must be replaced" not in text):
+        return False
+
+    header_count = 0
+    has_plan_marker = False
+    for line in text.splitlines():
+        if _TF_HEADER_RE.match(line):
+            header_count += 1
+        if not has_plan_marker:
+            stripped = line.strip()
+            if (
+                re.match(r"^Plan: \d+ to add, \d+ to change, \d+ to destroy", stripped)
+                or stripped == "Terraform will perform the following actions:"
+                or stripped == "OpenTofu will perform the following actions:"
+            ):
+                has_plan_marker = True
+
+    return header_count >= 6 and has_plan_marker
+
+
+def _classify_terraform_plan(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    n = len(lines)
+    keep = [True] * n
+
+    def resource_type(address: str) -> str:
+        addr = re.sub(r"^(?:module\.[^.]+)+\.", "", address)
+        addr = re.sub(r"\[.*\]", "", addr)
+        return addr.split(".", 1)[0] if "." in addr else addr
+
+    blocks: list[tuple[int, int, str, str]] = []
+    start: int | None = None
+    action = ""
+    rtype = ""
+
+    def close_block(end: int) -> None:
+        nonlocal start, action, rtype
+        if start is not None:
+            blocks.append((start, end, action, rtype))
+            start = None
+            action = ""
+            rtype = ""
+
+    for i, line in enumerate(lines):
+        m = _TF_HEADER_RE.match(line)
+        if m:
+            close_block(i)
+            start = i
+            action = m.group(2)
+            rtype = resource_type(m.group(1))
+            continue
+
+        if start is not None and line.lstrip().startswith(
+            ("Plan:", "Changes to Outputs:", "Warning:", "Error:", "─")
+        ):
+            close_block(i)
+
+    close_block(n)
+
+    groups: dict[tuple[str, str], list[int]] = {}
+    for idx, (_, _, block_action, block_type) in enumerate(blocks):
+        groups.setdefault((block_action, block_type), []).append(idx)
+
+    keep_block = [False] * len(blocks)
+    for (block_action, _), idxs in groups.items():
+        if block_action in ("will be destroyed", "must be replaced") or len(idxs) <= 3:
+            for idx in idxs:
+                keep_block[idx] = True
+        else:
+            keep_block[idxs[0]] = True
+
+    for idx, (block_start, block_end, _, _) in enumerate(blocks):
+        if keep_block[idx]:
+            for i in range(block_start, block_end):
+                keep[i] = True
+        else:
+            for i in range(block_start, block_end):
+                keep[i] = False
+            special = [
+                i
+                for i in range(block_start, block_end)
+                if "forces replacement" in lines[i] or "Error" in lines[i]
+            ]
+            if special:
+                keep[block_start] = True
+                for i in special:
+                    keep[i] = True
+
+    return keep, [0] * n, [0] * n
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
-    ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"`` or ``"kubectl"`` for recognised output.
+    ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
+    ``"terraform_plan"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1349,6 +1446,8 @@ def detect_test_runner(text: str) -> str | None:
             return "slowlog"
         if _detect_env_dump(text):
             return "env_dump"
+        if _detect_terraform_plan(text):
+            return "terraform_plan"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1451,6 +1550,8 @@ def detect_test_runner(text: str) -> str | None:
         return "slowlog"
     if _detect_env_dump(text):
         return "env_dump"
+    if _detect_terraform_plan(text):
+        return "terraform_plan"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2448,6 +2549,7 @@ _RUNNERS = {
     "lint": _classify_lint,
     "slowlog": _classify_slowlog,
     "env_dump": _classify_env_dump,
+    "terraform_plan": _classify_terraform_plan,
 }
 
 
@@ -2557,7 +2659,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else None))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else None)))))))))
         ),
     )
     if runner == "pytest":
