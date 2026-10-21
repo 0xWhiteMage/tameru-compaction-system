@@ -2304,8 +2304,14 @@ def _classify_jest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     return keep, tests, suites
 
 
+_GO_PKG_OK_RE = re.compile(r"^ok\s+(\S+)\s+(?:[\d.]+s|\(cached\))")
+_GO_PKG_NOTEST_RE = re.compile(r"^\?\s+\S+\s+\[no test files\]")
+_GO_PKG_FOLD_MIN = 5
+
+
 def _classify_go(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     n = len(lines)
+    fold_pkgs = sum(1 for ln in lines if _GO_PKG_OK_RE.match(ln)) >= _GO_PKG_FOLD_MIN
     keep = [True] * n
     tests = [0] * n
     suites = [0] * n
@@ -2336,6 +2342,18 @@ def _classify_go(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
                 tests[i] = 1
         elif indented:
             pending.append(i)
+        elif fold_pkgs and _GO_PKG_OK_RE.match(ln):
+            m = _GO_PKG_OK_RE.match(ln)
+            keep[i] = False
+            suites[i] = 1
+            pending = []
+            dropping = False
+            if i > 0 and keep[i - 1] and lines[i - 1] == f"# {m.group(1)}":
+                keep[i - 1] = False
+        elif fold_pkgs and _GO_PKG_NOTEST_RE.match(ln):
+            keep[i] = False
+            pending = []
+            dropping = False
         else:
             pending = []
             dropping = False
