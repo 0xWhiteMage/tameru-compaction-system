@@ -2111,6 +2111,24 @@ def _strip_object_name_terms(query: str, lines: list[str]) -> str:
     )
 
 
+_PYTEST_BANNER_RE = re.compile(r"^([=_])\1{9,} (.+?) \1{9,}$")
+_PYTEST_RULE_RE = re.compile(r"^([=_])\1{19,}$")
+
+
+def _shorten_pytest_banner(line: str) -> str:
+    m = _PYTEST_BANNER_RE.match(line)
+    if m:
+        c = m.group(1)
+        title = m.group(2)
+        if is_diagnostic_line(line) or re.search(r"(?i)\berror\b", title):
+            return line
+        return f"{c * 3} {title} {c * 3}"
+    m = _PYTEST_RULE_RE.match(line)
+    if m:
+        return m.group(1) * 3
+    return line
+
+
 def preprocess_test_output(
     text: str,
     query: str = "",
@@ -2168,6 +2186,22 @@ def preprocess_test_output(
                                     else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else None)))))
         ),
     )
+    if runner == "pytest":
+        trailing = len(out) - len(out.rstrip("\n"))
+        lines = out.splitlines()
+        last_nonblank = None
+        for index in range(len(lines) - 1, -1, -1):
+            if lines[index].strip():
+                last_nonblank = index
+                break
+        if last_nonblank is not None:
+            lines = [
+                line if index == last_nonblank else _shorten_pytest_banner(line)
+                for index, line in enumerate(lines)
+            ]
+        out = "\n".join(lines)
+        if trailing:
+            out += "\n" * trailing
     return out if len(out) < len(text) else None
 
 
