@@ -45,6 +45,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Multi-document YAML with no query keeps the first document of each repeated shape and any document whose values differ from the rest (for example a lone Secret among ConfigMaps).
 - nginx `[error]`/`[crit]`/`[alert]`/`[emerg]` and Apache `[module:error]` lines count as error lines.
 - Apache error logs are routed as logs.
+- Redis logs are routed as logs; a lone `#` (warning) line becomes an isolated-warning anchor.
+- Env/config dumps (KEY=value lines) fold repeated keys of one prefix to the first line. Secret-looking lines (password, token, key, credential names, or long opaque values) are never kept on their own and never moved; the CCR secret screen is unchanged.
+- `kubectl describe job` keeps Pods Statuses, Completions, Parallelism, Backoff Limit and Completed At.
+- The lint reducer reads MSBuild/dotnet and tsc `file(line,col): warning CODE:` locations.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -58,12 +62,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Anchors drop the nginx, Apache and MySQL 8 error-log prefixes (date, pid, thread id), keeping the level and message.
 - HAProxy HTTP log anchors reduce to backend/server, status and termination state.
 - Anchors drop line numbers from Node.js internal and `node_modules` frames; your own source locations stay.
+- kubectl output drops decorative `----` separator rows without a marker.
+- Collapsed repeat summaries no longer force the lead block into needle selection.
+- A weak query on a diff of many single-hunk files keeps the matching files whole and reduces the rest to their `diff --git` line plus one marker per run.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
 - Docker `Step N/M` lines were dropped as progress bars, which could lose the failing build step.
 - kubectl `describe` Conditions tables treated pod rows under a node's conditions as conditions; only rows with a True/False/Unknown status count now.
 - A query matching a top-level key in multi-document YAML (such as `kind: Secret`) kept only that line; it now keeps the whole document.
+- A short numeric query term such as an error code could match inside clock times (`12:03:45`); numbers next to a colon-digit pair no longer match.
+- Output could be a few characters longer than the input when no tokens were saved; it now returns the input unchanged.
 
 ---
 
