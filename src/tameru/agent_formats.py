@@ -997,6 +997,8 @@ def detect_test_runner(text: str) -> str | None:
     line with many ``N passed`` fragments made the old whole-text regex cubic).
     """
     if _RUNNER_HINT_RE.search(text) is None:
+        if _detect_git_log(text):
+            return "git_log"
         if _detect_docker_build(text):
             return "docker_build"
         return "status_table" if _detect_status_table(text) else None
@@ -1091,6 +1093,8 @@ def detect_test_runner(text: str) -> str | None:
                     return "kubectl_pods"
             else:
                 break
+    if _detect_git_log(text):
+        return "git_log"
     if _detect_docker_build(text):
         return "docker_build"
     if _detect_status_table(text):
@@ -1946,8 +1950,127 @@ def _classify_status_table(lines):
         keep[i] = True
     return keep, [0] * n, [0] * n
 
+_GIT_ONELINE_RE = r"^(?:[*|/\\ ]+)?[0-9a-f]{7,40} \S"
+_GIT_COMMIT_RE = r"^commit [0-9a-f]{40}\b"
+
+
+def _git_subject_template(subject: str) -> str:
+    return re.sub(r"\d+", "#", subject.lower())
+
+
+def _detect_git_log(text: str) -> bool:
+    lines = text.splitlines()
+    nonblank = [line for line in lines if line.strip()]
+    if len(nonblank) >= 10:
+        matches = sum(1 for line in nonblank if re.match(_GIT_ONELINE_RE, line))
+        if matches / len(nonblank) >= 0.9:
+            return True
+    commit_lines = sum(1 for line in lines if re.match(_GIT_COMMIT_RE, line))
+    author_lines = sum(1 for line in lines if line.startswith("Author: "))
+    return commit_lines >= 3 and author_lines >= 3
+
+
+def _classify_git_log(lines):
+    n = len(lines)
+    keep = [True] * n
+    is_full = any(re.match(_GIT_COMMIT_RE, line) for line in lines)
+    commits = []
+
+    if is_full:
+        starts = [i for i, line in enumerate(lines) if re.match(_GIT_COMMIT_RE, line)]
+        for idx, start in enumerate(starts):
+            end = starts[idx + 1] if idx + 1 < len(starts) else n
+            date_idx = None
+            for j in range(start, end):
+                if lines[j].startswith("Date:"):
+                    date_idx = j
+                    break
+            search_from = date_idx + 1 if date_idx is not None else start + 1
+            subject_idx = None
+            for j in range(search_from, end):
+                if lines[j].startswith("    ") and lines[j].strip():
+                    subject_idx = j
+                    break
+            subject = lines[subject_idx].strip() if subject_idx is not None else ""
+            commits.append({
+                "start": start,
+                "end": end,
+                "subject_idx": subject_idx,
+                "template": _git_subject_template(subject),
+            })
+    else:
+        starts = [i for i, line in enumerate(lines) if re.match(_GIT_ONELINE_RE, line)]
+        for idx, start in enumerate(starts):
+            end = starts[idx + 1] if idx + 1 < len(starts) else n
+            m = re.match(r"^(?:[*|/\\ ]+)?[0-9a-f]{7,40} (.*)$", lines[start])
+            subject = m.group(1).strip() if m else lines[start].strip()
+            commits.append({
+                "start": start,
+                "end": end,
+                "subject_idx": start,
+                "template": _git_subject_template(subject),
+            })
+
+    if len(commits) < 10:
+        return keep, [0] * n, [0] * n
+
+    counts = {}
+    first = {}
+    for commit in commits:
+        template = commit["template"]
+        counts[template] = counts.get(template, 0) + 1
+        if template not in first:
+            first[template] = commit
+
+    routine_templates = {template for template, count in counts.items() if count >= 3}
+    if not routine_templates:
+        return keep, [0] * n, [0] * n
+
+    keep = [False] * n
+    for i in range(commits[0]["start"]):
+        keep[i] = True
+
+    for commit in commits:
+        start = commit["start"]
+        end = commit["end"]
+        template = commit["template"]
+
+        if template in routine_templates:
+            if commit is first[template]:
+                if is_full:
+                    keep[start] = True
+                    if commit["subject_idx"] is not None:
+                        keep[commit["subject_idx"]] = True
+                else:
+                    keep[start] = True
+            continue
+
+        if is_full:
+            in_diff = False
+            for i in range(start, end):
+                line = lines[i]
+                if line.startswith("diff --git "):
+                    keep[i] = True
+                    in_diff = True
+                elif in_diff:
+                    if line.startswith("+++") or line.startswith("---"):
+                        keep[i] = True
+                    elif line.startswith(("+", "-", " ", "@@")):
+                        keep[i] = False
+                    else:
+                        keep[i] = True
+                else:
+                    keep[i] = True
+        else:
+            for i in range(start, end):
+                keep[i] = True
+
+    return keep, [0] * n, [0] * n
+
+
 _RUNNERS = {
     "pytest": _classify_pytest,
+    "git_log": _classify_git_log,
     "jest": _classify_jest,
     "go": _classify_go,
     "cargo": _classify_cargo,
@@ -2039,7 +2162,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("describe lines" if runner == "kubectl" else None)))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else None)))))
         ),
     )
     return out if len(out) < len(text) else None
