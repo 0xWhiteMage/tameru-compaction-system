@@ -1919,10 +1919,61 @@ def _classify_requirements(lines: list[str]) -> tuple[list[bool], list[int], lis
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_NPM_AUDIT_SEVERITY_RE = re.compile(r"^Severity: (low|moderate|high|critical)\b", re.IGNORECASE)
+
+
+def _detect_npm_audit(text: str) -> bool:
+    if "# npm audit report" not in text:
+        return False
+    return sum(1 for line in text.splitlines() if _NPM_AUDIT_SEVERITY_RE.match(line.strip())) >= 3
+
+
+def _classify_npm_audit(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    first_header_seen = False
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        if lines[i].strip() == "":
+            i += 1
+            continue
+
+        start = i
+        while i < n and lines[i].strip() != "":
+            i += 1
+        end = i - 1
+        block = lines[start : end + 1]
+
+        is_low_block = False
+        for line in block:
+            match = _NPM_AUDIT_SEVERITY_RE.match(line.strip())
+            if match and match.group(1).lower() == "low":
+                is_low_block = True
+                break
+
+        if is_low_block:
+            for idx in range(start, end + 1):
+                keep[idx] = False
+            if end + 1 < n and lines[end + 1].strip() == "":
+                keep[end + 1] = False
+
+        for idx, line in enumerate(block, start=start):
+            if line.strip() == "# npm audit report":
+                if first_header_seen:
+                    keep[idx] = False
+                    if idx + 1 < n and lines[idx + 1].strip() == "":
+                        keep[idx + 1] = False
+                else:
+                    first_header_seen = True
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1955,6 +2006,8 @@ def detect_test_runner(text: str) -> str | None:
             return "docker_ps"
         if _detect_requirements(text):
             return "requirements"
+        if _detect_npm_audit(text):
+            return "npm_audit"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2090,6 +2143,8 @@ def detect_test_runner(text: str) -> str | None:
         return "docker_ps"
     if _detect_requirements(text):
         return "requirements"
+    if _detect_npm_audit(text):
+        return "npm_audit"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3119,6 +3174,7 @@ _RUNNERS = {
     "ps_aux": _classify_ps_aux,
     "docker_ps": _classify_docker_ps,
     "requirements": _classify_requirements,
+    "npm_audit": _classify_npm_audit,
 }
 
 
@@ -3206,7 +3262,12 @@ def preprocess_test_output(
     requirement_hits = []
     if not matcher.empty:
         dropped = [i for i, ln in enumerate(lines) if not keep[i] and ln.strip()]
-        hits = [i for i in dropped if matcher.hit(lines[i])]
+        hits = [
+            i
+            for i in dropped
+            if matcher.hit(lines[i])
+            and not (runner == "npm_audit" and _NPM_AUDIT_SEVERITY_RE.search(lines[i].strip()))
+        ]
         # A query word that appears on a large share of the dropped lines
         # ("test" in "test tests::ok_17 ... ok") selects nothing: ignore it.
         if hits and len(hits) <= 0.2 * len(dropped):
@@ -3232,7 +3293,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else None)))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else None))))))))))))))))))))
         ),
     )
     if runner == "pytest":
