@@ -6122,8 +6122,35 @@ def compress_context(
                 and len(caller_text) <= _ANCHOR_RETRY_MAX_CHARS
                 and bool(error_fingerprints(caller_text))
             )
-            if uninformative or small_erroring_log:
+            rare_topic_lines = []
+            if (
+                not uninformative
+                and not small_erroring_log
+                and len(sample) >= 20
+                and len(caller_text) <= _ANCHOR_RETRY_MAX_CHARS
+                and route_content_type(caller_text.split("\n", 50)[:50]) == "log"
+            ):
+                originals = [ln for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
+                rare_hits = []
+                seen_rare_lines = set()
+                rare_hit_limit = max(2, len(sample) // 50)
+                for test in tests:
+                    hit_idx = [k for k, ln in enumerate(sample) if test(ln)]
+                    if 1 <= len(hit_idx) <= rare_hit_limit:
+                        for k in hit_idx:
+                            line = originals[k]
+                            if line not in seen_rare_lines:
+                                seen_rare_lines.add(line)
+                                rare_hits.append(line)
+                if rare_hits and len(rare_hits) <= _ANCHOR_MAX_LINES:
+                    rare_topic_lines = rare_hits
+            if uninformative or small_erroring_log or rare_topic_lines:
                 anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
+                if not anchor_lines and rare_topic_lines:
+                    anchor_lines = [
+                        _strip_anchor_prefix(line.strip())[:_ANCHOR_LINE_CHARS]
+                        for line in rare_topic_lines
+                    ]
                 if anchor_lines:
                     anchored_query = (query or "") + "\n" + "\n".join(anchor_lines)
                     # Probe both objectives side-effect free (no CCR archive, log or
