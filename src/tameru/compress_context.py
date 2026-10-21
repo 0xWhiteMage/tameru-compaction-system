@@ -479,6 +479,9 @@ _SYSLOG_PREFIX_RE = re.compile(
 )
 
 
+_REDIS_LINE_RE = re.compile(r"^\d+:[XCSM] \d{1,2} [A-Z][a-z]{2}(?: \d{4})? \d\d:\d\d:\d\d\.\d{3} ([.*#-]) ")
+
+
 def classify_line(line: str) -> str:
     t = line.strip()
     if not t:
@@ -492,6 +495,8 @@ def classify_line(line: str) -> str:
     if _CL_LOG_RE.match(t):
         return "log"
     if _SYSLOG_PREFIX_RE.match(t):
+        return "log"
+    if _REDIS_LINE_RE.match(t):
         return "log"
     if _CL_LOGFMT_RE.match(t) and _cl_logfmt_pairs(t) >= 3:
         return "log"
@@ -5487,6 +5492,11 @@ def _strip_anchor_prefix(line: str) -> str:
         mysql_err_remainder = line[mysql_err_m.end():]
         if mysql_err_remainder.strip():
             line = mysql_err_m.group(1).upper() + " " + mysql_err_remainder
+    redis_m = _REDIS_LINE_RE.match(line)
+    if redis_m:
+        remainder = line[redis_m.end():].strip()
+        if remainder:
+            line = ("WARNING " if redis_m.group(1) == "#" else "") + remainder
     m = _HAPROXY_HTTP_RE.match(line)
     if m:
         return f"{m.group(1)} {m.group(2)} {m.group(3)}"
@@ -5575,7 +5585,15 @@ def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
     """
     if max_regions <= 0:
         return []
-    if not any("WARN" in line or "warn" in line.lower() for line in lines):
+
+    def _redis_warn(line: str) -> bool:
+        m = _REDIS_LINE_RE.match(line)
+        return bool(m and m.group(1) == "#")
+
+    if not any(
+        "WARN" in line or "warn" in line.lower() or _redis_warn(line)
+        for line in lines
+    ):
         return []
     nonblank = [line for line in lines if line.strip()]
     if len(nonblank) < 20:
@@ -5584,9 +5602,9 @@ def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
     level_count = 0
     warn_lines: list[str] = []
     for line in nonblank:
-        if _ISO_LEVEL_TOKEN_RE.search(line) or _ISO_STRUCT_LEVEL_RE.search(line):
+        if _ISO_LEVEL_TOKEN_RE.search(line) or _ISO_STRUCT_LEVEL_RE.search(line) or _REDIS_LINE_RE.match(line):
             level_count += 1
-        if _ISO_WARN_TOKEN_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line):
+        if _ISO_WARN_TOKEN_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line) or _redis_warn(line):
             warn_lines.append(line)
 
     if level_count * 100 < len(nonblank) * 90:
