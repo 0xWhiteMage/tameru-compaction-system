@@ -5845,11 +5845,17 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             or _is_error_line(s)
         )
 
-    def repetitive(j: int, step: int) -> bool:
+    def repetitive(j: int, step: int, anchor_fp=None) -> bool:
         # lines[j] repeats the template of the next line further out (same masked
         # shape, e.g. a run of " PASS  x.test.ts (12 ms)" rows): context noise.
+        # A candidate that repeats the anchor's fingerprint is a repeat of the
+        # anchor, not frame context, so it also stops region growth.
+        if anchor_fp is not None and _error_fp(lines[j].strip()) == anchor_fp:
+            return True
         k = j + step
-        if not (0 <= k < len(lines)) or _is_error_line(lines[j]):
+        if not (0 <= k < len(lines)):
+            return False
+        if _is_error_line(lines[j]) and not _is_error_line(lines[k]):
             return False
         return _error_fp(lines[j].strip()) == _error_fp(lines[k].strip())
 
@@ -5892,7 +5898,8 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
                 regions.append(region[:_ANCHOR_LINE_CHARS])
             continue
         lo = i
-        while lo > 0 and i - lo < _ANCHOR_REGION_BEFORE and frame_like(lines[lo - 1]) and not repetitive(lo - 1, -1):
+        anchor_fp = _error_fp(lines[i].strip())
+        while lo > 0 and i - lo < _ANCHOR_REGION_BEFORE and frame_like(lines[lo - 1]) and not repetitive(lo - 1, -1, anchor_fp):
             lo -= 1
         hi = i
         while hi + 1 < len(lines) and hi - i < _ANCHOR_REGION_AFTER:
@@ -5901,7 +5908,7 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             # detail after a blank, as jest/pytest/cargo print it)
             if not lines[nxt].strip() and nxt + 1 < len(lines) and lines[nxt + 1].strip():
                 nxt += 1
-            if not (frame_like(lines[nxt]) and not repetitive(nxt, 1)):
+            if not (frame_like(lines[nxt]) and not repetitive(nxt, 1, anchor_fp)):
                 break
             hi = nxt
         if line.startswith("panic: "):
