@@ -57,6 +57,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Web access-log lines in nginx and Apache common/combined formats are routed as log lines; repeated 2xx/3xx requests fold per method and status class, while 4xx/5xx requests are kept.
 - cargo build and rustc output fold warning diagnostics into one marker while keeping every error block and summary line in full.
 - Long git status output keeps the branch line, section headers, the first entries of each section, and every conflict entry; the rest fold.
+- npm, yarn and composer install output folds per-package lines (deprecation warnings, locking/installing lines) into one marker; errors and problems are kept, and a package named in an error keeps its line.
+- `ps aux` listings keep the header and the processes that stand out (high CPU or memory, zombie or D-state, the top CPU and top memory process); the rest are counted.
+- `docker ps` listings keep the header and every container that is not healthy and running (restarting, exited, unhealthy and so on); running ones are counted.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -78,6 +81,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A query word that matches every line of a repeated log template no longer stops that template from collapsing when it also matches a more specific line.
 - Gradle task lines dropped by the reducer are labelled "gradle tasks" instead of "passing suites".
 - df no longer counts snap loop devices, which are always 100% used, as full-disk outliers, so the real nearly-full disk stands out.
+- jest output without the final "Test Suites:" summary is recognised, and the snapshot summary bullets are kept.
+- go test output folds passing package `ok` lines (and their `# pkg` headers and `[no test files]` lines) when five or more packages pass.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
