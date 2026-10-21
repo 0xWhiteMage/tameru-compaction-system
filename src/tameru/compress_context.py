@@ -295,6 +295,17 @@ _TOKEN_RE = re.compile(
     r"[\u0600-\u06ff]{2,}|[\u0e00-\u0e7f]{2,}"
 )
 
+# Query-term tokens: like _TOKEN_RE, but a Latin word also takes letters with
+# diacritics (Latin-1 Supplement letters, Latin Extended-A/B, Latin Extended
+# Additional for Vietnamese) and combining marks, so "réplica" stays one term.
+_TERM_TOKEN_RE = re.compile(
+    r"[A-Za-z_\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u1E00-\u1EFF]"
+    r"[A-Za-z_\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u1E00-\u1EFF0-9\u0300-\u036F]*"
+    r"|\d+(?:\.\d+)?|"
+    r"[\u4e00-\u9fff]|"
+    r"[\u3040-\u30ff]{2,}|[\uac00-\ud7a3]{2,}|"
+    r"[\u0600-\u06ff]{2,}|[\u0e00-\u0e7f]{2,}"
+)
 # Long punctuation runs (progress dots, rulers) cost real tokens: ~1 per 4
 # chars. Only runs of 16+ so ordinary code/prose estimates do not move.
 _ASCII_SYMBOL_RUN_RE = re.compile(r"[!-/:-@\[-`{-~]{16,}")
@@ -1944,7 +1955,7 @@ def _extract_terms_cached(query: str) -> tuple[str, ...]:
 def _extract_terms_scan(query: str) -> list[str]:
     terms: list[str] = []
     seen: set[str] = set()
-    for raw in _TOKEN_RE.findall(query or ""):
+    for raw in _TERM_TOKEN_RE.findall(query or ""):
         term = raw.lower().strip("؟?!.،,;:…\"'()[]")
         if not term:
             continue
