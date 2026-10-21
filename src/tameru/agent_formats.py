@@ -1521,10 +1521,76 @@ def _classify_bundle_assets(lines: list[str]) -> tuple[list[bool], list[int], li
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_ANSIBLE_HEADER_RE = re.compile(r"^(PLAY|TASK|RUNNING HANDLER|PLAY RECAP)\b.*\*{3,}\s*$")
+_ANSIBLE_HOST_RE = re.compile(r"^(ok|changed|skipping|included):\s+\[[^\]]+\]")
+_ANSIBLE_RECAP_ROW_RE = re.compile(r"^\S+\s+:\s+ok=\d+\s+changed=\d+\s+unreachable=(\d+)\s+failed=(\d+)(?:\s+skipped=\d+)?(?:\s+rescued=(\d+))?")
+
+
+def _detect_ansible(text: str) -> bool:
+    if "PLAY [" not in text and "TASK [" not in text:
+        return False
+    header_count = 0
+    result_count = 0
+    recap_count = 0
+    for line in text.splitlines():
+        if _ANSIBLE_HEADER_RE.match(line):
+            header_count += 1
+        elif _ANSIBLE_HOST_RE.match(line) or _ANSIBLE_RECAP_ROW_RE.match(line):
+            result_count += 1
+            if _ANSIBLE_RECAP_ROW_RE.match(line):
+                recap_count += 1
+    return header_count >= 2 and result_count >= 8 and recap_count >= 5
+
+
+def _classify_ansible(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    seen_statuses: set[str] = set()
+    in_recap = False
+    seen_recap = False
+
+    for i, line in enumerate(lines):
+        if _ANSIBLE_HEADER_RE.match(line):
+            if line.startswith("PLAY RECAP"):
+                in_recap = True
+                seen_recap = False
+            else:
+                seen_statuses.clear()
+            keep[i] = True
+            continue
+
+        host_match = _ANSIBLE_HOST_RE.match(line)
+        if host_match and not in_recap:
+            status = host_match.group(1)
+            if status in seen_statuses:
+                keep[i] = False
+            else:
+                seen_statuses.add(status)
+                keep[i] = True
+            continue
+
+        recap_match = _ANSIBLE_RECAP_ROW_RE.match(line)
+        if recap_match and in_recap:
+            unreachable = int(recap_match.group(1))
+            failed = int(recap_match.group(2))
+            rescued = int(recap_match.group(3)) if recap_match.group(3) is not None else 0
+            if not seen_recap or unreachable > 0 or failed > 0 or rescued > 0:
+                keep[i] = True
+            else:
+                keep[i] = False
+            seen_recap = True
+            continue
+
+        keep[i] = True
+
+    return keep, tests, suites
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1541,6 +1607,8 @@ def detect_test_runner(text: str) -> str | None:
             return "terraform_plan"
         if _detect_bundle_assets(text):
             return "bundle_assets"
+        if _detect_ansible(text):
+            return "ansible"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1647,6 +1715,8 @@ def detect_test_runner(text: str) -> str | None:
         return "terraform_plan"
     if _detect_bundle_assets(text):
         return "bundle_assets"
+    if _detect_ansible(text):
+        return "ansible"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2646,6 +2716,7 @@ _RUNNERS = {
     "env_dump": _classify_env_dump,
     "terraform_plan": _classify_terraform_plan,
     "bundle_assets": _classify_bundle_assets,
+    "ansible": _classify_ansible,
 }
 
 
@@ -2755,7 +2826,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else None))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else None)))))))))))
         ),
     )
     if runner == "pytest":
