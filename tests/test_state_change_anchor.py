@@ -119,12 +119,12 @@ def test_state_change_anchor_rejects_filler_only():
 
 def test_state_change_anchor_rejects_open_without_circuit():
     text = _event_log("INFO runtime: open file handles 120")
-    assert _anchor_regions(text, 8) == []
+    assert _state_change_lines(text.split("\n"), 8) == []
 
 
 def test_state_change_anchor_rejects_went_home():
     text = _event_log("INFO ops: node went home")
-    assert _anchor_regions(text, 8) == []
+    assert _state_change_lines(text.split("\n"), 8) == []
 
 
 def test_error_anchor_precedes_state_change_anchor():

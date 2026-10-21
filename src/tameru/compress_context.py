@@ -5595,6 +5595,61 @@ def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
     return out
 
 
+def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
+    """Last-resort anchors: one or two lines whose template is unique in an otherwise uniform log.
+
+    Guards:
+    - max_regions > 0
+    - at least 30 non-blank lines
+    - at least 90% of non-blank lines carry a level token
+    """
+    if max_regions <= 0:
+        return []
+
+    nonblank = [line for line in lines if line.strip()]
+    if len(nonblank) < 30:
+        return []
+
+    leveled = sum(
+        1
+        for line in nonblank
+        if _ISO_LEVEL_TOKEN_RE.search(line) or _ISO_STRUCT_LEVEL_RE.search(line)
+    )
+    if leveled * 10 < len(nonblank) * 9:
+        return []
+
+    counts: dict[str, int] = {}
+    first_lines: dict[str, str] = {}
+    for line in nonblank:
+        fp = _error_fp(line.strip())
+        counts[fp] = counts.get(fp, 0) + 1
+        if fp not in first_lines:
+            first_lines[fp] = line.strip().lower()
+
+    dominant = [fp for fp, count in counts.items() if count >= 5]
+    if not 1 <= len(dominant) <= 3:
+        return []
+
+    dominant_cover = sum(counts[fp] for fp in dominant)
+    if dominant_cover * 10 < len(nonblank) * 9:
+        return []
+
+    rare = [line for line in nonblank if counts[_error_fp(line.strip())] == 1]
+    if not 1 <= len(rare) <= 2:
+        return []
+
+    dominant_words: set[str] = set()
+    for fp in dominant:
+        dominant_words.update(re.findall(r"[A-Za-z]{4,}", first_lines[fp]))
+
+    for line in rare:
+        words = set(re.findall(r"[A-Za-z]{4,}", line.lower()))
+        if not words - dominant_words:
+            return []
+
+    return rare[:max_regions]
+
+
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
@@ -5632,6 +5687,9 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
         # line — the state word in the line would otherwise anchor every
         # per-service "state=degraded" row and defeat the savings gate.
         summary_exemplars = set(state_change) & set(_state_summary_lines(lines, max_regions))
+    if not exemplars:
+        # Last resort: the one or two lines that break an otherwise uniform log.
+        exemplars = set(_rare_template_lines(lines, max_regions))
     regions: list[str] = []
     seen_rows: set[int] = set()
 

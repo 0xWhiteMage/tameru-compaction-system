@@ -1,4 +1,4 @@
-from tameru.compress_context import _anchor_regions, compress_context
+from tameru.compress_context import _anchor_regions, _isolated_warn_lines, _rare_template_lines, compress_context
 
 
 def test_isolated_warn_anchor_basic():
@@ -34,6 +34,8 @@ def test_isolated_warn_guard_b_not_leveled_log():
     lines.append("WARNING: do not run this in production")
     text = "\n".join(lines)
 
+    assert _isolated_warn_lines(text.split("\n"), 8) == []
+    assert _rare_template_lines(text.split("\n"), 8) == []
     assert _anchor_regions(text, 8) == []
 
 
