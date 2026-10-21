@@ -2449,6 +2449,19 @@ def preprocess_test_output(
         keep, tests, suites, captured = result
     else:
         keep, tests, suites = result
+    if runner in ("kubectl", "kubectl_events", "kubectl_pods"):
+        drop = {
+            i
+            for i, (k, line) in enumerate(zip(keep, lines))
+            if not k and line.strip() and _is_k8s_separator(line.strip())
+        }
+        if drop:
+            lines = [line for i, line in enumerate(lines) if i not in drop]
+            keep = [k for i, k in enumerate(keep) if i not in drop]
+            tests = [t for i, t in enumerate(tests) if i not in drop]
+            suites = [s for i, s in enumerate(suites) if i not in drop]
+            if captured is not None:
+                captured = [c for i, c in enumerate(captured) if i not in drop]
     if runner == "kubectl" and query:
         query = _strip_object_name_terms(query, lines)
     matcher = _matcher_for(query)
