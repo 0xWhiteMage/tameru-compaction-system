@@ -1655,10 +1655,57 @@ def _classify_pip_install(lines: list[str]) -> tuple[list[bool], list[int], list
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_RUST_WARNING_RE = re.compile(r"^warning(?:\[[\w-]+\])?: ")
+_RUST_LOCATION_RE = re.compile(r"^\s*--> \S+:\d+:\d+")
+_RUST_SUMMARY_RE = re.compile(r"^(?:warning: `[^`]+` \(.+\) generated \d+ warnings?|warning: build failed|error: could not compile|error: aborting due to)")
+_RUST_ERROR_RE = re.compile(r"^error(?:\[E\d{4}\])?: ")
+
+
+def _detect_rust_build(text: str) -> bool:
+    warning_count = 0
+    location_count = 0
+    has_error_or_summary = False
+    for line in text.splitlines():
+        if _RUST_WARNING_RE.match(line) and not _RUST_SUMMARY_RE.match(line):
+            warning_count += 1
+        if _RUST_LOCATION_RE.match(line):
+            location_count += 1
+        if _RUST_ERROR_RE.match(line) or _RUST_SUMMARY_RE.match(line):
+            has_error_or_summary = True
+    return warning_count >= 3 and location_count >= 3 and has_error_or_summary
+
+
+def _classify_rust_build(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _RUST_WARNING_RE.match(line) and not _RUST_SUMMARY_RE.match(line):
+            keep[i] = False
+            i += 1
+            while i < len(lines):
+                current = lines[i]
+                if not current.strip():
+                    keep[i] = False
+                    i += 1
+                    break
+                if (
+                    _RUST_SUMMARY_RE.match(current)
+                    or _RUST_WARNING_RE.match(current)
+                    or _RUST_ERROR_RE.match(current)
+                ):
+                    break
+                keep[i] = False
+                i += 1
+        else:
+            i += 1
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1679,6 +1726,8 @@ def detect_test_runner(text: str) -> str | None:
             return "ansible"
         if _detect_pip_install(text):
             return "pip_install"
+        if _detect_rust_build(text):
+            return "rust_build"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1789,6 +1838,8 @@ def detect_test_runner(text: str) -> str | None:
         return "ansible"
     if _detect_pip_install(text):
         return "pip_install"
+    if _detect_rust_build(text):
+        return "rust_build"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2790,6 +2841,7 @@ _RUNNERS = {
     "bundle_assets": _classify_bundle_assets,
     "ansible": _classify_ansible,
     "pip_install": _classify_pip_install,
+    "rust_build": _classify_rust_build,
 }
 
 
@@ -2899,7 +2951,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else None))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else None)))))))))))))
         ),
     )
     if runner == "pytest":
