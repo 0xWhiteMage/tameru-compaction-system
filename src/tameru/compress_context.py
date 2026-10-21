@@ -5827,7 +5827,7 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
 
     Guards:
     - max_regions > 0
-    - at least 30 non-blank lines
+    - at least 30 non-blank lines (15 for the syslog-shaped path)
     - at least 90% of non-blank lines carry a level token, or at least 90% match _SYSLOG_PREFIX_RE
     - dominant templates: count >= 5 for leveled path, >= 3 for syslog-shaped path
     """
@@ -5835,7 +5835,7 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
         return []
 
     nonblank = [line for line in lines if line.strip()]
-    if len(nonblank) < 30:
+    if len(nonblank) < 15:
         return []
 
     leveled = sum(
@@ -5853,6 +5853,8 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
             return []
         min_count = 3
     else:
+        if len(nonblank) < 30:
+            return []
         min_count = 5
 
     counts: dict[str, int] = {}
