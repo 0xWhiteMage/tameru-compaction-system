@@ -591,8 +591,11 @@ def adapt_unified_diff(
     terms (or none that hit) the first and last hunk of each file are kept; a
     weak query made of plain words also keeps every hunk that contains one of
     them (light stemming, so ``changed`` finds ``change`` and ``handling``
-    finds ``handle``) in addition to those anchors. When nothing is dropped
-    the text is returned unchanged.
+    finds ``handle``) in addition to those anchors; when those anchors would
+    keep every hunk (for example many single-hunk files) and some hunk hits,
+    only the hitting hunks are kept and each run of files without a match is
+    reduced to its ``diff --git`` line plus one marker. When nothing is
+    dropped the text is returned unchanged.
     """
     if not detect_unified_diff(text):
         return None
@@ -628,6 +631,7 @@ def adapt_unified_diff(
                         flags[k] = True
             any_hit = any_hit or any(flags)
         keep.append(flags)
+    hit_flags = [list(fl) for fl in keep]
     for flags in keep:
         # Nothing mentions the query (or it is filler/empty), or the query is
         # weak: orient the reader with the first and last hunk of each file.
@@ -635,11 +639,63 @@ def adapt_unified_diff(
             flags[0] = True
             flags[-1] = True
     kept_hunks = sum(sum(flags) for flags in keep)
+    if kept_hunks == total_hunks and weak and any_hit:
+        keep = hit_flags
+        kept_hunks = sum(sum(flags) for flags in keep)
+        compact_untouched = True
+    else:
+        compact_untouched = False
     if kept_hunks == total_hunks:
         return AdapterResult("diff", text, total_hunks, kept_hunks, "no hunks omitted", hit=any_hit)
 
     out: list[str] = list(preamble)
+    untouched_run: list = []
+
+    def _identifying_header_line(f) -> str:
+        for line in f.header:
+            if line.startswith("diff --git"):
+                return line
+        for line in f.header:
+            if line.startswith("+++ "):
+                return line
+        return f.header[0] if f.header else ""
+
+    def flush_untouched() -> None:
+        if not untouched_run:
+            return
+        omitted_lines: list[str] = []
+        for uf in untouched_run:
+            ident = _identifying_header_line(uf)
+            if ident:
+                out.append(ident)
+            header_lines = list(uf.header)
+            if ident:
+                try:
+                    header_lines.remove(ident)
+                except ValueError:
+                    pass
+            omitted_lines.extend(header_lines)
+            for hunk in uf.hunks:
+                omitted_lines.extend(hunk)
+            for trailers in uf.trailers:
+                if trailers:
+                    omitted_lines.extend(trailers)
+        omitted_chars = len("\n".join(omitted_lines)) if omitted_lines else 0
+        out.append(
+            _marker(
+                gap_marker,
+                omitted_chars,
+                len(text),
+                f"[… {_plural(len(untouched_run), 'file')} without a match: bodies omitted …]",
+            )
+        )
+        untouched_run.clear()
+
     for f, flags in zip(files, keep):
+        if compact_untouched and not any(flags):
+            untouched_run.append(f)
+            continue
+        flush_untouched()
         added = removed = 0
         for hunk in f.hunks:
             for ln in hunk[1:]:
@@ -676,6 +732,7 @@ def adapt_unified_diff(
                 flush()
                 out.extend(f.trailers[k])
         flush()
+    flush_untouched()
     return AdapterResult(
         "diff",
         "\n".join(out),
