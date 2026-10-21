@@ -1802,10 +1802,67 @@ def _classify_package_install(lines: list[str]) -> tuple[list[bool], list[int], 
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_PS_AUX_HEADER_RE = re.compile(r"^USER\s+PID\s+%CPU\s+%MEM\s+VSZ\s+RSS\s+TTY\s+STAT\s+START\s+TIME\s+COMMAND\s*$")
+_PS_CPU_HIGH = 20.0
+_PS_MEM_HIGH = 10.0
+
+
+def _detect_ps_aux(text: str) -> bool:
+    non_blank = [line for line in text.splitlines() if line.strip()]
+    if len(non_blank) < 11:
+        return False
+    return bool(_PS_AUX_HEADER_RE.match(non_blank[0]))
+
+
+def _classify_ps_aux(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [False] * len(lines)
+    parsed: list[tuple[int, float, float, str]] = []
+
+    for index, line in enumerate(lines):
+        if not line.strip():
+            keep[index] = True
+            continue
+        if _PS_AUX_HEADER_RE.match(line):
+            keep[index] = True
+            continue
+        parts = line.split(None, 10)
+        if len(parts) < 11:
+            keep[index] = True
+            continue
+        try:
+            cpu = float(parts[2])
+            mem = float(parts[3])
+        except ValueError:
+            keep[index] = True
+            continue
+        parsed.append((index, cpu, mem, parts[7]))
+
+    if parsed:
+        highest_cpu = max(parsed, key=lambda item: item[1])
+        highest_mem = max(parsed, key=lambda item: item[2])
+        highest_cpu_index = highest_cpu[0]
+        highest_mem_index = highest_mem[0]
+    else:
+        highest_cpu_index = -1
+        highest_mem_index = -1
+
+    for index, cpu, mem, stat in parsed:
+        if (
+            cpu >= _PS_CPU_HIGH
+            or mem >= _PS_MEM_HIGH
+            or stat.startswith(("Z", "D"))
+            or index == highest_cpu_index
+            or index == highest_mem_index
+        ):
+            keep[index] = True
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1832,6 +1889,8 @@ def detect_test_runner(text: str) -> str | None:
             return "git_status"
         if _detect_package_install(text):
             return "package_install"
+        if _detect_ps_aux(text):
+            return "ps_aux"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1961,6 +2020,8 @@ def detect_test_runner(text: str) -> str | None:
         return "git_status"
     if _detect_package_install(text):
         return "package_install"
+    if _detect_ps_aux(text):
+        return "ps_aux"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2969,6 +3030,7 @@ _RUNNERS = {
     "rust_build": _classify_rust_build,
     "git_status": _classify_git_status,
     "package_install": _classify_package_install,
+    "ps_aux": _classify_ps_aux,
 }
 
 
@@ -3078,7 +3140,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else None))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else None)))))))))))))))))
         ),
     )
     if runner == "pytest":
