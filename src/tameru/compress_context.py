@@ -7042,7 +7042,14 @@ def compress_context(
     # and the compression overhead may not be worth it. We model this
     # with a simple heuristic: if the savings are < 10%, the overhead of
     # citations + CCR marker likely exceeds the cache-read savings.
-    if not fail_open and kept_tokens > original_tokens and not trust_filtered:
+    if (
+        not fail_open
+        and (
+            kept_tokens > original_tokens
+            or (kept_tokens >= original_tokens and len(compressed) > len(original_text))
+        )
+        and not trust_filtered
+    ):
         compressed = original_text
         kept = {b["id"] for b in scored}
         fail_open = True
