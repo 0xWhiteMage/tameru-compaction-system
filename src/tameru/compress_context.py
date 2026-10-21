@@ -5428,6 +5428,11 @@ _ANCHOR_ACCESS_LOG_RE = re.compile(
 )
 
 
+_PHP_LOG_PREFIX_RE = re.compile(r"^\[\d{1,2}-[A-Z][a-z]{2}-\d{4} \d\d:\d\d:\d\d(?: [A-Za-z_/+-]+)?\]\s+(?:PHP\s+)?")
+_PHP_BARE_PREFIX_RE = re.compile(r"^PHP\s+(?=(?:Fatal error|Parse error|Warning|Notice|Deprecated|Catchable fatal error):)")
+_PHP_STACK_FRAME_RE = re.compile(r"^#\d+ ")
+
+
 def _strip_anchor_prefix(line: str) -> str:
     """Drop the log-record prefix from an anchor line, keeping the level word.
 
@@ -5447,6 +5452,16 @@ def _strip_anchor_prefix(line: str) -> str:
         syslog_remainder = line[syslog_m.end():]
         if syslog_remainder.strip():
             line = syslog_remainder
+    php_m = _PHP_LOG_PREFIX_RE.match(line)
+    if php_m is not None:
+        php_remainder = line[php_m.end():]
+        if php_remainder.strip():
+            line = php_remainder
+    php_bare_m = _PHP_BARE_PREFIX_RE.match(line)
+    if php_bare_m is not None:
+        php_bare_remainder = line[php_bare_m.end():]
+        if php_bare_remainder.strip():
+            line = php_bare_remainder
     stripped = _strip_structured_anchor(line)
     if stripped is not None:
         line = stripped
@@ -5493,6 +5508,9 @@ def _is_weak_failure_line(line: str) -> bool:
     ``code=killed|dumped``, or an HTTP access-log 5xx status), and is not excluded by a
     recovery/zero-count phrase."""
     line = line[:_RX_LINE_CAP]
+    if "PHP Warning:" in line:
+        line = _without_zero_counts(line)
+        return not _WEAK_EXCLUDE_RE.search(line)
     if not _WEAK_LINE_HINT_RE.search(line):
         return False
     line = _without_zero_counts(line)
@@ -5836,8 +5854,16 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     regions: list[str] = []
     seen_rows: set[int] = set()
 
+
+
     def frame_like(s: str) -> bool:
         if s.strip() and _GO_STACK_LINE_RE.match(s):
+            return True
+        if s.strip() == "Stack trace:":
+            return True
+        if _PHP_STACK_FRAME_RE.match(s):
+            return True
+        if s.lstrip().startswith("thrown in "):
             return True
         return bool(s.strip()) and (
             s[:1] in " \t"
