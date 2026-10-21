@@ -2077,7 +2077,6 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
                 and lines[i - 1].lstrip().startswith("[last] ")
                 and line.strip()
                 and not line.lstrip().startswith(("[\u00d7", "[last] "))
-                and not _is_error_line(line)
             )
             or kind == "list"
             or (prev_type == "blank" and kind != "blank")
