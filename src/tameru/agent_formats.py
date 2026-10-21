@@ -1133,6 +1133,87 @@ def _classify_slowlog(lines):
     return keep, tests, suites
 
 
+_ENV_LINE_RE = re.compile(r"^(?:export |declare -x )?([A-Za-z_][A-Za-z0-9_.]*)=(.*)$")
+_ENV_SECRET_KEY_RE = re.compile(r"(?i)password|passwd|secret|token|api_?key|access_?key|private_?key|credential|auth")
+_ENV_DIGITS_RE = re.compile(r"\d+")
+_ENV_LOGFMT_TAIL_RE = re.compile(r"\s[A-Za-z_][\w.]*=")
+
+
+def _env_is_sensitive(key: str, value: str) -> bool:
+    return bool(_ENV_SECRET_KEY_RE.search(key) or (len(value) >= 20 and " " not in value))
+
+
+def _env_match(line: str):
+    if len(line) > _LINE_CAP:
+        return None
+    m = _ENV_LINE_RE.match(line)
+    if m is None:
+        return None
+    if _ENV_LOGFMT_TAIL_RE.search(m.group(2)):
+        return None
+    return m
+
+
+def _detect_env_dump(text: str) -> bool:
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 20:
+        return False
+
+    env_pairs = []
+    for line in lines:
+        m = _env_match(line)
+        if m is not None:
+            env_pairs.append((m.group(1), m.group(2)))
+
+    if len(env_pairs) * 10 < len(lines) * 9:
+        return False
+
+    group_counts: dict[tuple[str, str], int] = {}
+    for key, value in env_pairs:
+        group = (_ENV_DIGITS_RE.sub("#", key), value)
+        group_counts[group] = group_counts.get(group, 0) + 1
+
+    return any(count >= 5 for count in group_counts.values())
+
+
+def _classify_env_dump(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    env_counts: dict[tuple[str, str], int] = {}
+    for line in lines:
+        if not line.strip():
+            continue
+        m = _env_match(line)
+        if m is None:
+            continue
+        key = m.group(1)
+        value = m.group(2)
+        group = (_ENV_DIGITS_RE.sub("#", key), value)
+        env_counts[group] = env_counts.get(group, 0) + 1
+
+    keep = [False] * len(lines)
+    seen_groups: set[tuple[str, str]] = set()
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        m = _env_match(line)
+        if m is None:
+            keep[i] = True
+            continue
+
+        key = m.group(1)
+        value = m.group(2)
+        group = (_ENV_DIGITS_RE.sub("#", key), value)
+        is_first = group not in seen_groups
+        if is_first:
+            seen_groups.add(group)
+
+        if _env_is_sensitive(key, value):
+            keep[i] = False
+        elif env_counts.get(group, 0) < 5 or is_first:
+            keep[i] = True
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def _detect_lint(text: str) -> bool:
     nonblank = []
     for line in text.splitlines():
@@ -1188,7 +1269,7 @@ def _classify_lint(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
 
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
-    ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"`` or ``"kubectl"`` for recognised output.
+    ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1199,6 +1280,8 @@ def detect_test_runner(text: str) -> str | None:
             return "lint"
         if _detect_slowlog(text):
             return "slowlog"
+        if _detect_env_dump(text):
+            return "env_dump"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1299,6 +1382,8 @@ def detect_test_runner(text: str) -> str | None:
         return "lint"
     if _detect_slowlog(text):
         return "slowlog"
+    if _detect_env_dump(text):
+        return "env_dump"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2295,6 +2380,7 @@ _RUNNERS = {
     "docker_build": _classify_docker_build,
     "lint": _classify_lint,
     "slowlog": _classify_slowlog,
+    "env_dump": _classify_env_dump,
 }
 
 
@@ -2391,7 +2477,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else None)))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else None))))))))
         ),
     )
     if runner == "pytest":
