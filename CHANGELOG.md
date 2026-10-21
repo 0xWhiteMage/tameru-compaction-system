@@ -30,6 +30,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - logfmt logs (`ts=... level=info msg=...`) are routed as logs, not plain text.
 - Last-resort no-query anchors in structured logs also keep key=value pairs that appear on no other line (for example a new `error_code=`), up to four.
 - apt/dpkg `E: ...` errors (such as `E: Unable to locate package ...`) are recognised as diagnostics and anchor compression.
+- syslog, journal (short-iso) and dmesg lines are routed as logs; with no query, the one or two odd lines in an otherwise uniform level-less log become anchors (strict guards), and anchors drop the date/host/pid prefix.
+- `git log` output (oneline or full) keeps notable commits and the first commit of each routine subject pattern (such as dependency bumps); the rest fold into a count, and diff hunk lines inside kept commits are dropped.
+- JSON Lines with a weak or empty query are summarised like JSON arrays: one example record, unusual records, matching records and a count line.
+- The no-query prose brief treats paragraphs that differ only in numbers or full-width characters as repeats (CJK-safe), and no longer keeps an earlier copy of the closing paragraph.
+- Markdown pipe tables with a weak or empty query keep the header, outlier rows, matching rows and a count line, like CSV/TSV.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
