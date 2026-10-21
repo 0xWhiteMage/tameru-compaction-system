@@ -480,6 +480,9 @@ _SYSLOG_PREFIX_RE = re.compile(
 
 
 _KLOG_LINE_RE = re.compile(r"^[IWEF]\d{4} \d\d:\d\d:\d\d\.\d+\s+\d+ [\w.-]+:\d+\] ")
+_ACCESS_LOG_LINE_RE = re.compile(
+    r'^\S+ \S+ \S+ \[\d{1,2}/[A-Z][a-z]{2}/\d{4}:\d\d:\d\d:\d\d [+-]\d{4}\] "([A-Z]+) \S+ HTTP/[\d.]+" (\d)\d\d '
+)
 _REDIS_LINE_RE = re.compile(r"^\d+:[XCSM] \d{1,2} [A-Z][a-z]{2}(?: \d{4})? \d\d:\d\d:\d\d\.\d{3} ([.*#-]) ")
 
 
@@ -500,6 +503,8 @@ def classify_line(line: str) -> str:
     if _REDIS_LINE_RE.match(t):
         return "log"
     if _KLOG_LINE_RE.match(t):
+        return "log"
+    if _ACCESS_LOG_LINE_RE.match(t):
         return "log"
     if _CL_LOGFMT_RE.match(t) and _cl_logfmt_pairs(t) >= 3:
         return "log"
@@ -616,7 +621,13 @@ def _log_fingerprint(line: str) -> str | None:
     # v1.4.0 (E10): volatile fields (ids, ips, timestamps, durations, quoted
     # strings, paths) are masked before the digits, by the same function the
     # error fingerprint uses.
+    # Access-log 2xx/3xx fold by method/status class; 4xx/5xx stay verbatim.
+    access = _ACCESS_LOG_LINE_RE.match(line.strip())
+    if access and access.group(2) in "45":
+        return None
     s = mask_template(line[:_RX_LINE_CAP].lower())
+    if access:
+        s = f"{s[:220]} <{access.group(1)} {access.group(2)}xx>"
     return s[:240] or None
 
 
