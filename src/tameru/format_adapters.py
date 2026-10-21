@@ -313,6 +313,8 @@ def detect_format(text: str) -> str:
     is_code = looks_like_code(value)
     if is_code:
         return "code"
+    if _looks_pipe_table(value):
+        return "markdown_table"
     delimiter = _detect_delimiter(value)
     if delimiter and looks_like_diagnostics(value):
         delimiter = None  # compiler/test/runtime diagnostics, not a table
@@ -963,6 +965,95 @@ _ADAPTERS: dict[str, Callable[..., FormatResult]] = {
 }
 
 
+_PIPE_SEPARATOR_RE = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
+
+
+def _looks_pipe_table(text: str) -> bool:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 4:
+        return False
+    if not all(line.startswith("|") and line.endswith("|") for line in lines):
+        return False
+    if not _PIPE_SEPARATOR_RE.match(lines[1]):
+        return False
+    header_cells = lines[0][1:-1].split("|")
+    if any("\t" in cell for cell in header_cells):
+        return False
+    for line in lines[1:]:
+        cells = line[1:-1].split("|")
+        if len(cells) != len(header_cells):
+            return False
+        if any("\t" in cell for cell in cells):
+            return False
+    return True
+
+
+def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
+    lines = [line for line in text.splitlines() if line.strip()]
+    header = lines[0]
+    separator = lines[1]
+    data = lines[2:]
+
+    tsv_lines = []
+    for line in [header] + data:
+        cells = line.strip()[1:-1].split("|")
+        tsv_lines.append("\t".join(cell.strip() for cell in cells))
+    tsv = "\n".join(tsv_lines)
+
+    result = _adapt_delimited_outliers(tsv, query, limits, "\t", "markdown_table", None)
+    if not result.applied:
+        return _decline(text, "markdown_table", result.reason, total_records=len(data))
+
+    result_lines = result.text.splitlines()
+    if len(result_lines) >= 2 and (
+        result_lines[-1].startswith("...") or "omitted" in result_lines[-1]
+    ):
+        kept_tsv_lines = result_lines[1:-1]
+        omitted_line = result_lines[-1]
+    else:
+        kept_tsv_lines = result_lines[1:]
+        omitted_line = None
+
+    kept_counts = {}
+    for line in kept_tsv_lines:
+        kept_counts[line] = kept_counts.get(line, 0) + 1
+
+    kept_original = []
+    keep_flags = []
+    for line in data:
+        cells = line.strip()[1:-1].split("|")
+        tsv_row = "\t".join(cell.strip() for cell in cells)
+        count = kept_counts.get(tsv_row, 0)
+        if count > 0:
+            kept_counts[tsv_row] = count - 1
+            kept_original.append(line)
+            keep_flags.append(True)
+        else:
+            keep_flags.append(False)
+
+    if gap_marker is None:
+        out = [header, separator] + kept_original
+        if omitted_line:
+            out.append(omitted_line)
+    else:
+        gap_text = _with_gaps(data, keep_flags, "\n", gap_marker, len(text))
+        out = [header, separator]
+        if isinstance(gap_text, str):
+            if gap_text:
+                out.extend(gap_text.splitlines())
+        else:
+            out.extend(gap_text)
+
+    return FormatResult(
+        format="markdown_table",
+        applied=True,
+        text="\n".join(out),
+        total_records=len(data),
+        kept_records=len(kept_original),
+        reason="header plus outlier and matching records",
+    )
+
+
 def adapt_format(
     text: str,
     query: str,
@@ -1010,6 +1101,10 @@ def adapt_format(
             )
         return result
 
+    if resolved_format == "markdown_table":
+        if not selectors or not any(_selector_is_distinctive(s) for s in selectors):
+            return _adapt_pipe_table_outliers(value, query, limits or FormatLimits(), gap_marker)
+        return _decline(value, resolved_format, "no safe extractive adapter")
     if not selectors:
         return _decline(value, resolved_format, "query has no distinctive selectors")
     adapter = _ADAPTERS.get(resolved_format)
