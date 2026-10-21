@@ -3478,8 +3478,9 @@ _PROSE_MIN_BLOCKS = 8
 
 
 def _prose_key(text: str) -> str:
-    """Repeat key of a paragraph: lowercased, digits -> '#', whitespace collapsed, first 2000 chars."""
-    return " ".join(re.sub(r"\d", "#", text[:2000].lower()).split())
+    """Repeat key: NFKC-normalised, digit runs -> '#', lowercased, whitespace collapsed, first 2000 chars."""
+    normalized = unicodedata.normalize("NFKC", text)
+    return " ".join(re.sub(r"\d+", "#", normalized[:2000].lower()).split())
 
 
 def select_prose_brief(
@@ -3496,6 +3497,9 @@ def select_prose_brief(
         return _ret(all_ids, True, "high", "prose-brief-small")
     kept: set[int] = set()
     seen: set[str] = set()
+    last_block = blocks[-1]
+    if not last_block.get("trust_risk") or last_block.get("pinned"):
+        seen.add(_prose_key(last_block["text"]))
     for pos, b in enumerate(blocks):
         if b.get("trust_risk") and not b.get("pinned"):
             continue
