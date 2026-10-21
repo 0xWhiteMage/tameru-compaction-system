@@ -2670,6 +2670,7 @@ def _classify_status_table(lines):
         parsed.append((i, ln.split()))
     if not parsed:
         return keep, [0] * n, [0] * n
+    loop_rows = {i for i, tokens in parsed if tokens[0].startswith("/dev/loop")}
     outliers = set()
     for col in range(len(parsed[0][1])):
         values = [tokens[col] for _, tokens in parsed]
@@ -2691,7 +2692,9 @@ def _classify_status_table(lines):
                     if item is None:
                         continue
                     v, unit = item
-                    if (med > 0 and v >= 5 * med) or (unit == "%" and v >= 90):
+                    # Snap squashfs loop devices are always 100% full; exclude them
+                    # from the high-usage outlier rule so real disks remain visible.
+                    if (med > 0 and v >= 5 * med) or (unit == "%" and v >= 90 and i not in loop_rows):
                         outliers.add(i)
     if not outliers or len(outliers) > 0.2 * len(rows):
         return [True] * n, [0] * n, [0] * n
