@@ -2071,6 +2071,12 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
         if (
             start is None
             or kind in {"heading", "fence", "definition"}
+            or (
+                line.strip()
+                and not _is_error_line(line)
+                and not line.lstrip().startswith(("[\u00d7", "[last] "))
+                and i > 0 and lines[i - 1].lstrip().startswith("[last] ")
+            )
             or kind == "list"
             or (prev_type == "blank" and kind != "blank")
             or (kind != prev_type and kind in {"log", "chat", "import", "list", "table", "json"})
@@ -3308,6 +3314,13 @@ def _counterfactual_overlap_ambiguity(
     return False
 
 
+def _is_collapse_only_block(block) -> bool:
+    lines = [ln for ln in block.get("text", "").splitlines() if ln.strip()]
+    if not lines:
+        return False
+    return all(ln.lstrip().startswith(("[\u00d7", "[last] ")) for ln in lines)
+
+
 def select_adaptive(
     blocks: list[dict[str, Any]],
     *,
@@ -3347,7 +3360,14 @@ def select_adaptive(
         use = safe_use
         kept = set(use) | err_keep
         if not blocks[0].get("trust_risk") or blocks[0].get("pinned"):
-            kept.add(blocks[0]["id"])
+            skip_lead = (
+                _is_collapse_only_block(blocks[0])
+                and not blocks[0].get("entity_hits")
+                and not blocks[0].get("term_hits")
+                and not blocks[0].get("pinned")
+            )
+            if not skip_lead:
+                kept.add(blocks[0]["id"])
         if (
             not _is_sink_noise(blocks[-1]["text"])
             and not blocks[-1].get("trust_risk")
@@ -3367,7 +3387,14 @@ def select_adaptive(
         if len(kept) > max(len(use) * 2, 16) and len(kept) / len(blocks) > 0.6:
             kept = set(use) | err_keep
             if not blocks[0].get("trust_risk") or blocks[0].get("pinned"):
-                kept.add(blocks[0]["id"])
+                skip_lead = (
+                    _is_collapse_only_block(blocks[0])
+                    and not blocks[0].get("entity_hits")
+                    and not blocks[0].get("term_hits")
+                    and not blocks[0].get("pinned")
+                )
+                if not skip_lead:
+                    kept.add(blocks[0]["id"])
         kept = _stitch_neighbors(blocks, kept)
         if _counterfactual_overlap_ambiguity(
             blocks, kept, query=query, link_terms=link_terms_map, semantic_tier=semantic_tier
