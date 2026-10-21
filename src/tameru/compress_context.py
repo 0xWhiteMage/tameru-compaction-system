@@ -2216,7 +2216,10 @@ def _term_test(term: str) -> Callable[[str], bool]:
         def base(lower: str) -> bool:
             return term in lower
     else:
-        search = re.compile(rf"\b{re.escape(term)}\b").search
+        if term.isdigit():
+            search = re.compile(rf"(?<!\d:)\b{re.escape(term)}\b(?!:\d)").search
+        else:
+            search = re.compile(rf"\b{re.escape(term)}\b").search
 
         def base(lower: str) -> bool:
             return search(lower) is not None
