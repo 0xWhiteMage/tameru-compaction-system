@@ -1022,6 +1022,117 @@ def _lint_key(message: str) -> str:
     return f"{sev.group(1)}{_LINT_NORM_RE.sub('#', message)}"
 
 
+_SLOWLOG_QT_RE = re.compile(r"^# Query_time:\s*([\d.]+)\s+Lock_time:\s*[\d.]+\s+Rows_sent:\s*\d+\s+Rows_examined:\s*(\d+)")
+
+
+def _slowlog_median(values):
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _detect_slowlog(text: str) -> bool:
+    count = 0
+    for line in text.splitlines():
+        if len(line) > _LINE_CAP:
+            continue
+        if _SLOWLOG_QT_RE.match(line):
+            count += 1
+            if count >= 5:
+                return True
+    return False
+
+
+def _classify_slowlog(lines):
+    total = len(lines)
+    keep = [False] * total
+    tests = [0] * total
+    suites = [0] * total
+    if total == 0:
+        return keep, tests, suites
+
+    prev_nonblank = [-1] * total
+    last = -1
+    for i, line in enumerate(lines):
+        prev_nonblank[i] = last
+        if line.strip():
+            last = i
+
+    starts = []
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        if line.startswith("# Time:"):
+            starts.append(i)
+        elif line.startswith("# User@Host:"):
+            p = prev_nonblank[i]
+            if p == -1 or not lines[p].startswith("# Time:"):
+                starts.append(i)
+        elif _SLOWLOG_QT_RE.match(line):
+            p = prev_nonblank[i]
+            if p == -1 or (not lines[p].startswith("# User@Host:") and not lines[p].startswith("# Time:")):
+                starts.append(i)
+
+    if not starts:
+        for j, line in enumerate(lines):
+            if line.strip():
+                keep[j] = True
+        return keep, tests, suites
+
+    first = starts[0]
+    for j in range(first):
+        if lines[j].strip():
+            keep[j] = True
+
+    entries = []
+    for n, start in enumerate(starts):
+        end = starts[n + 1] if n + 1 < len(starts) else total
+        qt = None
+        rows = None
+        for j in range(start, end):
+            m = _SLOWLOG_QT_RE.match(lines[j])
+            if m:
+                qt = float(m.group(1))
+                rows = int(m.group(2))
+                break
+        entries.append((start, end, qt, rows))
+
+    qts = [entry[2] for entry in entries if entry[2] is not None]
+    rows_examined = [entry[3] for entry in entries if entry[3] is not None]
+    med_t = _slowlog_median(qts) if qts else 0.0
+    med_r = _slowlog_median(rows_examined) if rows_examined else 0.0
+
+    keep_indices = set()
+    for idx, (start, end, qt, rows) in enumerate(entries):
+        if qt is None or rows is None:
+            keep_indices.add(idx)
+            continue
+        if qt >= max(1.0, 10.0 * med_t) or rows >= max(10000, 10.0 * med_r):
+            keep_indices.add(idx)
+
+    keep_indices.add(0)
+    if qts:
+        max_qt = max(qts)
+        for idx, (start, end, qt, rows) in enumerate(entries):
+            if qt is not None and qt == max_qt:
+                keep_indices.add(idx)
+                break
+    else:
+        keep_indices.add(0)
+
+    for idx in sorted(keep_indices):
+        start, end, _, _ = entries[idx]
+        for j in range(start, end):
+            if lines[j].strip():
+                keep[j] = True
+
+    return keep, tests, suites
+
+
 def _detect_lint(text: str) -> bool:
     nonblank = []
     for line in text.splitlines():
@@ -1077,7 +1188,7 @@ def _classify_lint(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
 
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
-    ``"phpunit"``, ``"dotnet"``, ``"lint"`` or ``"kubectl"`` for recognised output.
+    ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1086,6 +1197,8 @@ def detect_test_runner(text: str) -> str | None:
     if _RUNNER_HINT_RE.search(text) is None:
         if _detect_lint(text):
             return "lint"
+        if _detect_slowlog(text):
+            return "slowlog"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1184,6 +1297,8 @@ def detect_test_runner(text: str) -> str | None:
                 break
     if _detect_lint(text):
         return "lint"
+    if _detect_slowlog(text):
+        return "slowlog"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2179,6 +2294,7 @@ _RUNNERS = {
     "status_table": _classify_status_table,
     "docker_build": _classify_docker_build,
     "lint": _classify_lint,
+    "slowlog": _classify_slowlog,
 }
 
 
@@ -2275,7 +2391,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else None))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else None)))))))
         ),
     )
     if runner == "pytest":
