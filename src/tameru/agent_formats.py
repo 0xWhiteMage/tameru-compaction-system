@@ -961,6 +961,7 @@ _K8S_EVENTS_HDR_RE = re.compile(r"^\s*Type\s+Reason\s+Age\s+From\s+Message\s*$")
 _K8S_KEEP_TOP = frozenset({
     "Name", "Namespace", "Node", "Status", "Reason", "Message", "Controlled By", "Roles", "Type",
     "Priority Class Name", "IP", "Start Time", "Taints", "Unschedulable", "Non-terminated Pods",
+    "Replicas", "Pods Status",
 })
 _K8S_KEEP_CONTAINER = frozenset({
     "Image", "State", "Reason", "Exit Code", "Signal", "Message", "Last State", "Ready", "Restart Count",
