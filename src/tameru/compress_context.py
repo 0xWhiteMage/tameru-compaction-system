@@ -956,6 +956,43 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
             for idx, line in enumerate(kept_lines)
             if _any_test(selector_tests, line.casefold())
         ]
+        # Drop saturated repeated templates only when another strong query hit remains.
+        if candidates:
+            fp_total = {}
+            fp_hit = {}
+            candidate_set = set(candidates)
+            for idx, line in enumerate(kept_lines):
+                fp = fingerprint(line)
+                if fp is None:
+                    continue
+                fp_total[fp] = fp_total.get(fp, 0) + 1
+                if idx in candidate_set:
+                    fp_hit[fp] = fp_hit.get(fp, 0) + 1
+            saturated = {
+                fp
+                for fp, total in fp_total.items()
+                if total >= 3 and fp_hit.get(fp, 0) == total
+            }
+            if saturated:
+                strong_tests = [
+                    _term_test(sel)
+                    for sel in query_selectors
+                    if not sel.startswith("script:") and len(sel) >= 4
+                ]
+                if strong_tests:
+                    candidate_fps = {
+                        idx: fingerprint(kept_lines[idx]) for idx in candidates
+                    }
+                    if any(
+                        candidate_fps[idx] not in saturated
+                        and _any_test(strong_tests, kept_lines[idx].casefold())
+                        for idx in candidates
+                    ):
+                        candidates = [
+                            idx
+                            for idx in candidates
+                            if candidate_fps[idx] not in saturated
+                        ]
         if len(candidates) <= MAX_QUERY_TEMPLATE_MATCHES:
             query_match_source_indices = set(candidates)
         else:
