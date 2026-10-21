@@ -445,6 +445,13 @@ _CL_TRACE_RE = re.compile(
 _CL_LOG_RE = re.compile(
     r"^\[?(20\d\d-\d\d-\d\d|\d\d:\d\d:\d\d|INFO|WARN|WARNING|ERROR|DEBUG|TRACE|ERR|FAIL|FATAL|OK)\]?"
 )
+_CL_LOGFMT_RE = re.compile(
+    r"^(?:ts|time|timestamp|t)=[^\s]+(?:\s+level=[A-Za-z0-9_.]+|\s+.*\slevel=[A-Za-z0-9_.]+)"
+    r"|^level=[A-Za-z0-9_.]+(?:\s+(?:msg=|message=)|\s+.*\s(?:msg=|message=))"
+)
+
+def _cl_logfmt_pairs(t: str) -> int:
+    return len(re.findall(r"(?:^|\s)[A-Za-z_][A-Za-z0-9_.]*=", t))
 _CL_IMPORT_RE = re.compile(r"^(import|from)\s+|^#include\s+|^using\s+")
 _CL_DEFINITION_RE = re.compile(
     r"^(def|class|async\s+def|function|const|let|var|public|private|protected|static|fn|func)\b"
@@ -476,6 +483,8 @@ def classify_line(line: str) -> str:
     if _CL_TRACE_RE.match(t):
         return "trace"
     if _CL_LOG_RE.match(t):
+        return "log"
+    if _CL_LOGFMT_RE.match(t) and _cl_logfmt_pairs(t) >= 3:
         return "log"
     if _CL_IMPORT_RE.match(t):
         return "import"
@@ -5258,6 +5267,54 @@ _ANCHOR_LOG_PREFIX_RE = re.compile(
 _ANCHOR_JVM_LINE_RE = re.compile(r"\((\w[\w$]*\.(?:java|kt|scala|groovy|clj)):\d+\)")
 _ANCHOR_LOGFMT_PAIR_RE = re.compile(r'(\w[\w.]*)=("(?:[^"\\]|\\.)*"|\S+)')
 
+
+def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
+    stripped = line.strip()
+    current = -1
+    for idx, other in enumerate(lines):
+        if other.strip() == stripped:
+            current = idx
+            break
+
+    extras: list[str] = []
+
+    if stripped.startswith("{"):
+        import json as _json
+
+        try:
+            obj = _json.loads(stripped)
+        except ValueError:
+            obj = None
+
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                marker = f'"{key}"'
+                if not any(
+                    marker in lines[idx]
+                    for idx in range(len(lines))
+                    if idx != current and lines[idx].strip()
+                ):
+                    extras.append(f"{key}={value}")
+                if len(extras) >= 4:
+                    break
+            return extras
+
+    pairs = _ANCHOR_LOGFMT_PAIR_RE.findall(stripped)
+    if len(pairs) >= 3:
+        for key, value in pairs:
+            if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+                value = value[1:-1]
+            if not any(
+                f"{key}=" in lines[idx]
+                for idx in range(len(lines))
+                if idx != current and lines[idx].strip()
+            ):
+                extras.append(f"{key}={value}")
+            if len(extras) >= 4:
+                break
+
+    return extras
+
 def _strip_structured_anchor(line):
     if line.lstrip().startswith("{"):
         try:
@@ -5390,8 +5447,8 @@ def _is_weak_failure_line(line: str) -> bool:
 
 _ISO_LEVEL_TOKEN_RE = re.compile(r"\b(?:TRACE|DEBUG|INFO|NOTICE|WARN|WARNING)\b")
 _ISO_WARN_TOKEN_RE = re.compile(r"\b(?:WARN|WARNING)\b")
-_ISO_STRUCT_LEVEL_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*)(?:trace|debug|info|notice|warn|warning)\b")
-_ISO_STRUCT_WARN_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*)warn(?:ing)?\b")
+_ISO_STRUCT_LEVEL_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)(?:trace|debug|info|notice|warn|warning)\b")
+_ISO_STRUCT_WARN_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)warn(?:ing)?\b")
 
 
 def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
@@ -5665,6 +5722,7 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     ``_ANCHOR_LINE_CHARS``; a region is the lines joined with "\n". A neighbour whose masked shape equals the next line further out (a repetitive run such as PASS rows) is context noise, not a frame."""
     lines = _norm_newlines(text).split("\n")
     summary_exemplars: set[str] = set()
+    rare_exemplars: set[str] = set()
     exemplars = set(error_fingerprints(text).values())
     if not exemplars:
         # No error-fingerprint exemplars: fall back to weak failure anchors. Keep the first line
@@ -5683,6 +5741,7 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
     if not exemplars:
         # Last resort: isolated WARN anchors in a strictly leveled log.
         exemplars = set(_isolated_warn_lines(lines, max_regions))
+        rare_exemplars = set(exemplars)
     if not exemplars:
         # Final fallback: rare state-change anchors in otherwise healthy logs.
         state_change = _state_change_lines(lines, max_regions)
@@ -5693,9 +5752,11 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
         # line — the state word in the line would otherwise anchor every
         # per-service "state=degraded" row and defeat the savings gate.
         summary_exemplars = set(state_change) & set(_state_summary_lines(lines, max_regions))
+        rare_exemplars = set(state_change) - summary_exemplars
     if not exemplars:
         # Last resort: the one or two lines that break an otherwise uniform log.
         exemplars = set(_rare_template_lines(lines, max_regions))
+        rare_exemplars = set(exemplars)
     regions: list[str] = []
     seen_rows: set[int] = set()
 
@@ -5727,6 +5788,29 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             # removed (e.g. "health: summary 20/40 degraded"), so the count phrase
             # remains available as the anchor region.
             region = _summary_anchor_region(line, lines)
+            seen_rows.add(i)
+            if region:
+                regions.append(region[:_ANCHOR_LINE_CHARS])
+            continue
+        if line in rare_exemplars:
+            stripped = line.strip()
+            base = _strip_anchor_prefix(stripped)
+            extras = _rare_anchor_extras(stripped, lines)
+            if stripped.startswith("{"):
+                import json as _json
+
+                try:
+                    obj = _json.loads(stripped)
+                except ValueError:
+                    obj = None
+
+                if isinstance(obj, dict) and base == stripped:
+                    level = str(obj.get("level", "")).upper()
+                    region = " ".join([level, *extras]) if level else " ".join(extras)
+                else:
+                    region = " ".join([base, *extras])
+            else:
+                region = " ".join([base, *extras])
             seen_rows.add(i)
             if region:
                 regions.append(region[:_ANCHOR_LINE_CHARS])
