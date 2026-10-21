@@ -996,6 +996,7 @@ _JEST_SUMMARY_RE = re.compile(
     r"^(?:Test Suites|Tests|Snapshots|Time|Ran all test suites|Test Files)\b"
 )
 _JEST_TICK_RE = re.compile(r"^\s*[✓✔√]\s")
+_JEST_SUITE_LINE_RE = re.compile(r"^\s?(PASS|FAIL) {1,2}\S+\.(?:test|spec)\.[cm]?[jt]sx?\b")
 _GO_PKG_RE = re.compile(r"^(?:ok|FAIL|\?)\s+\S+(?:\s|$)")
 _CARGO_OK_RE = re.compile(r"^test \S.* \.\.\. ok$")
 _CARGO_RUNNING_RE = re.compile(r"^running \d+ tests?$")
@@ -1038,7 +1039,7 @@ _RUNNER_HINT_RE = re.compile(
     r"test result: |Test Suites:|--- (?:PASS|FAIL):|=== RUN |^(?:ok|FAIL)\s|==="
     r"|\d (?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?)\b"
     r"|> Task :|Tests run: |\d examples?, |PHPUnit |, Assertions: |Failed:|^Events:"
-    r"|LAST SEEN\s+TYPE\s+REASON|NAME\s+READY\s+STATUS\s+RESTARTS",
+    r"|LAST SEEN\s+TYPE\s+REASON|NAME\s+READY\s+STATUS\s+RESTARTS|^\s?(?:PASS|FAIL) {1,2}\S+\.(?:test|spec)\.",
     re.MULTILINE,
 )
 
@@ -1841,11 +1842,22 @@ def detect_test_runner(text: str) -> str | None:
     first = None
     surefire_run = surefire_running = False
     k8s_events = False
+    jest_badge = 0
+    jest_badge_fail = False
+    jest_block = False
     for ln in text.split("\n"):
         if len(ln) > _LINE_CAP:
             continue
         if first is None and ln.strip():
             first = ln
+        if ln[:6].lstrip().startswith(("PASS", "FAIL")):
+            m = _JEST_SUITE_LINE_RE.match(ln)
+            if m:
+                jest_badge += 1
+                if m.group(1) == "FAIL":
+                    jest_badge_fail = True
+        if not jest_block and "●" in ln and _JEST_BLOCK_RE.match(ln):
+            jest_block = True
         if not gradle_task and ln.startswith("> Task :") and _GRADLE_TASK_RE.match(ln):
             gradle_task = True
         if not gradle_end and (ln[:1] in ("B", "F") or ln[:1].isdigit()) and _GRADLE_END_RE.match(ln):
@@ -1884,6 +1896,8 @@ def detect_test_runner(text: str) -> str | None:
     if running and cargo_result:
         return "cargo"
     if jest_suites and jest_tests:
+        return "jest"
+    if jest_badge >= 3 and jest_badge_fail and jest_block:
         return "jest"
     if go:
         return "go"
@@ -2205,9 +2219,9 @@ def _classify_jest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
         if _JEST_BLOCK_RE.match(ln):
             in_block = True
             keep[i] = True
-        elif ln.startswith(("PASS ", "FAIL ")):
+        elif ln.lstrip(" ")[:5] in ("PASS ", "FAIL ") and len(ln) - len(ln.lstrip(" ")) <= 1:
             in_block = False
-            if ln.startswith("FAIL "):
+            if ln.lstrip(" ").startswith("FAIL "):
                 keep[i] = True
             else:
                 suites[i] = 1
@@ -2216,6 +2230,8 @@ def _classify_jest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
             keep[i] = True
         elif re.match(r"^\s*● Console\b", ln):
             in_block = False
+        elif re.match(r"^\s*› ", ln):
+            keep[i] = True
         elif in_block:
             keep[i] = True
         elif _JEST_TICK_RE.match(ln):
