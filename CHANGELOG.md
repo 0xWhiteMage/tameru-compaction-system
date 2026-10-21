@@ -26,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - No-query anchors for quiet logs: the one or two lines that break an otherwise uniform leveled log (for example a skipped cron job) are kept.
 - Docker build reducer (classic and BuildKit): keeps the failing step, error lines and the final image name/digest; cached and passing steps collapse.
 - Frequent short log lines such as Ansible `ok: [host]` fold into a count (key=value lines are left alone).
+- CSV/TSV with a weak or empty query keeps the header, outlier rows (rare category values, values far above the median), rows matching the query and a count line for the rest; unrelated queries and small tables are left alone.
+- logfmt logs (`ts=... level=info msg=...`) are routed as logs, not plain text.
+- Last-resort no-query anchors in structured logs also keep key=value pairs that appear on no other line (for example a new `error_code=`), up to four.
+- apt/dpkg `E: ...` errors (such as `E: Unable to locate package ...`) are recognised as diagnostics and anchor compression.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
