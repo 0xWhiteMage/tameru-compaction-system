@@ -1685,12 +1685,15 @@ def _classify_kubectl(lines):
             toks = lines[i].split()
             first = toks[0] if toks else ""
             status = toks[1] if len(toks) > 1 else ""
-            if first == "Ready" or status != "False":
-                keep[i] = True
-            elif is_diagnostic_line(lines[i]) and status != "False":
-                keep[i] = True
+            if status in ("True", "False", "Unknown"):
+                if first == "Ready" or status != "False":
+                    keep[i] = True
+                elif is_diagnostic_line(lines[i]) and status != "False":
+                    keep[i] = True
+                else:
+                    keep[i] = False
             else:
-                keep[i] = False
+                keep[i] = is_diagnostic_line(lines[i])
     return keep, tests, suites
 
 
