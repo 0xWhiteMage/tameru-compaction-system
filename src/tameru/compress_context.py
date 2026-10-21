@@ -5434,6 +5434,7 @@ _ANCHOR_ACCESS_LOG_RE = re.compile(
 
 _PHP_LOG_PREFIX_RE = re.compile(r"^\[\d{1,2}-[A-Z][a-z]{2}-\d{4} \d\d:\d\d:\d\d(?: [A-Za-z_/+-]+)?\]\s+(?:PHP\s+)?")
 _NGINX_ERR_PREFIX_RE = re.compile(r"^20\d\d/\d\d/\d\d \d\d:\d\d:\d\d \[([a-z]+)\] \d+#\d+: (?:\*\d+ )?")
+_MYSQL_ERR_PREFIX_RE = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)? \d+ \[(System|Warning|Note|ERROR|Error)\] (?:\[MY-\d+\] )?(?:\[\w+\] )?")
 _APACHE_ERR_PREFIX_RE = re.compile(r"^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d(?:\.\d+)? \d{4}\] \[(?:[\w-]+:)?([a-z]+\d?)\](?: \[pid \d+(?::tid \d+)?\])?(?: \[client [^\]]+\])? ")
 _PHP_BARE_PREFIX_RE = re.compile(r"^PHP\s+(?=(?:Fatal error|Parse error|Warning|Notice|Deprecated|Catchable fatal error):)")
 _PHP_STACK_FRAME_RE = re.compile(r"^#\d+ ")
@@ -5480,6 +5481,11 @@ def _strip_anchor_prefix(line: str) -> str:
         apache_err_remainder = line[apache_err_m.end():]
         if apache_err_remainder.strip():
             line = apache_err_m.group(1) + " " + apache_err_remainder
+    mysql_err_m = _MYSQL_ERR_PREFIX_RE.match(line)
+    if mysql_err_m is not None:
+        mysql_err_remainder = line[mysql_err_m.end():]
+        if mysql_err_remainder.strip():
+            line = mysql_err_m.group(1).upper() + " " + mysql_err_remainder
     stripped = _strip_structured_anchor(line)
     if stripped is not None:
         line = stripped
