@@ -989,15 +989,103 @@ _K8S_GET_PODS_HDR_RE = re.compile(r"^(?:NAMESPACE\s+)?NAME\s+READY\s+STATUS\s+RE
 _K8S_GET_PODS_ROW_RE = re.compile(r"^\S+\s+(?:\S+\s+)?\d+/\d+\s+\S+\s+\d+")
 
 
+_LINT_LINE_RE = re.compile(r"^(?:\./)?[\w.@/\\-]+\.\w{1,6}:\d+:(?:\d+:)?\s+(\S.*)$")
+_LINT_CODE_RE = re.compile(r"^(?:(?:error|warning|note|info):\s+)?([A-Z]{1,4}\d{2,5})\b")
+_LINT_MYPY_CODE_RE = re.compile(r"\[([a-z][a-z0-9-]*)\]\s*$")
+_LINT_SEVERITY_RE = re.compile(r"^(error|warning|note|info):\s+")
+_LINT_NORM_RE = re.compile(r"\d+|'[^']*'|\"[^\"]*\"")
+
+
+def _lint_message(line: str):
+    m = _LINT_LINE_RE.match(line)
+    if not m:
+        return None
+    message = m.group(1)
+    if (
+        _LINT_CODE_RE.match(message)
+        or _LINT_MYPY_CODE_RE.search(message)
+        or _LINT_SEVERITY_RE.match(message)
+    ):
+        return message
+    return None
+
+
+def _lint_key(message: str) -> str:
+    m = _LINT_CODE_RE.match(message)
+    if m:
+        return m.group(1)
+    m = _LINT_MYPY_CODE_RE.search(message)
+    if m:
+        sev = _LINT_SEVERITY_RE.match(message)
+        return f"{sev.group(1)}:{m.group(1)}" if sev else m.group(1)
+    sev = _LINT_SEVERITY_RE.match(message)
+    return f"{sev.group(1)}{_LINT_NORM_RE.sub('#', message)}"
+
+
+def _detect_lint(text: str) -> bool:
+    nonblank = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if len(line) > _LINE_CAP:
+            continue
+        nonblank.append(line)
+    if len(nonblank) < 8:
+        return False
+    messages = []
+    for line in nonblank:
+        message = _lint_message(line)
+        if message is not None:
+            messages.append(message)
+    if len(messages) < 8 or len(messages) * 5 < len(nonblank) * 3:
+        return False
+    counts = {}
+    for message in messages:
+        key = _lint_key(message)
+        counts[key] = counts.get(key, 0) + 1
+    return any(count >= 5 for count in counts.values())
+
+
+def _classify_lint(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [False] * len(lines)
+    tests = [0] * len(lines)
+    suites = [0] * len(lines)
+    keys = [None] * len(lines)
+    counts = {}
+    first = {}
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        message = _lint_message(line)
+        if message is not None:
+            key = _lint_key(message)
+            keys[i] = key
+            counts[key] = counts.get(key, 0) + 1
+            if key not in first:
+                first[key] = i
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        key = keys[i]
+        if key is not None:
+            if counts[key] <= 2 or i == first[key]:
+                keep[i] = True
+        else:
+            keep[i] = True
+    return keep, tests, suites
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
-    ``"phpunit"``, ``"dotnet"`` or ``"kubectl"`` for recognised output.
+    ``"phpunit"``, ``"dotnet"``, ``"lint"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
     line with many ``N passed`` fragments made the old whole-text regex cubic).
     """
     if _RUNNER_HINT_RE.search(text) is None:
+        if _detect_lint(text):
+            return "lint"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1094,6 +1182,8 @@ def detect_test_runner(text: str) -> str | None:
                     return "kubectl_pods"
             else:
                 break
+    if _detect_lint(text):
+        return "lint"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2088,6 +2178,7 @@ _RUNNERS = {
     "kubectl_pods": _classify_kubectl_pods,
     "status_table": _classify_status_table,
     "docker_build": _classify_docker_build,
+    "lint": _classify_lint,
 }
 
 
@@ -2184,7 +2275,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else None)))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else None))))))
         ),
     )
     if runner == "pytest":
