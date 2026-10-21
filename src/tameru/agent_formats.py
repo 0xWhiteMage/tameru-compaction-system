@@ -224,6 +224,7 @@ DIAGNOSTIC_CODE_LINE_RE = re.compile(
     r"|\berror\[E\d{4}\]"
     r"|\b(?:error|warning)\s+(?:TS|CS|MSB|NU)\d{3,5}\b"
     r"|^\s*[ew]:\s+(?:file://)?\S+:\d+:\d+\s"
+    r"|^E: (?:Unable to|Could not|Couldn't|Failed|Package|Version|Sub-process|Unmet|Broken|The repository|Some index files|dpkg|Conflicting|Release file)"
     r"|\bthread '[^'\n]*' panicked at\b"
     r"|\b(?:PHP\s+)?(?:Fatal error|Parse error):"
     r"|^\s*(?:\w+::)*\w*(?:Error|Exception)\s+\("
@@ -270,7 +271,7 @@ _DIAGNOSTIC_LOCALE_RE = re.compile(
 DIAGNOSTIC_LINE_RE = re.compile(DIAGNOSTIC_CODE_LINE_RE.pattern + "|" + _DIAGNOSTIC_LOCALE_RE.pattern)
 # Every DIAGNOSTIC_LINE_RE match contains one of these literals (perf prefilter; keep in sync).
 _DIAGNOSTIC_HINT_RE = re.compile(
-    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED|make|command not found|Permission denied|ERR!|npm error|\*\* \(|Failed|BackOff|ErrImage|OOMKilled|CreateContainer|Unhealthy|Evicted|FAIL|●"
+    r"error|warning|e:|w:|panicked|Fatal|Parse|Error|Exception|SIG|Segmentation|Failure/|FAILED|make|command not found|Permission denied|ERR!|npm error|\*\* \(|Failed|BackOff|ErrImage|OOMKilled|CreateContainer|Unhealthy|Evicted|FAIL|●|E: "
     r"|Failed asserting|but was|xpected:|got:|ctual:|Received:|at |#|:in "
     r"|エラー|错误|錯誤|异常|異常|오류|에러|致命的|FEHLER|ERREUR|ОШИБКА|ERRORE|FOUT|BŁĄD"
 )
