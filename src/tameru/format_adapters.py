@@ -742,6 +742,143 @@ def _adapt_yaml(
     )
 
 
+def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
+    lines = text.splitlines()
+    starts = [0]
+    for idx, line in enumerate(lines):
+        if line.rstrip() == "---" and starts[-1] != idx:
+            starts.append(idx)
+
+    docs = []
+    for i, start in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(lines)
+        nonblank = [
+            line
+            for line in lines[start:end]
+            if line.strip() and line.rstrip() != "---"
+        ]
+        if nonblank:
+            docs.append({"start": start, "end": end, "nonblank": nonblank})
+
+    total_docs = len(docs)
+    if total_docs < 5:
+        return _decline(
+            text,
+            "yaml",
+            "fewer than 5 non-empty documents",
+            total_records=total_docs,
+        )
+    for doc in docs:
+        if len(doc["nonblank"]) > 60:
+            return _decline(
+                text,
+                "yaml",
+                "document has more than 60 non-blank lines",
+                total_records=total_docs,
+            )
+
+    def _template_and_values(nonblank_lines):
+        template = []
+        values = []
+        for line in nonblank_lines:
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip())
+            if ":" in stripped:
+                key, _, rest = stripped.partition(":")
+                template.append((indent, key))
+                values.append(rest.strip())
+            else:
+                template.append((indent, "<item>"))
+                values.append("")
+        return tuple(template), values
+
+    for doc in docs:
+        doc["template"], doc["values"] = _template_and_values(doc["nonblank"])
+
+    groups = {}
+    for idx, doc in enumerate(docs):
+        groups.setdefault(doc["template"], []).append(idx)
+
+    repeated = {
+        template: idxs for template, idxs in groups.items() if len(idxs) >= 4
+    }
+    if not repeated:
+        return _decline(
+            text,
+            "yaml",
+            "no repeated document template",
+            total_records=total_docs,
+        )
+
+    keep = [False] * total_docs
+    for template, idxs in groups.items():
+        if len(idxs) < 4:
+            for idx in idxs:
+                keep[idx] = True
+            continue
+
+        keep[idxs[0]] = True
+        group_size = len(idxs)
+        positions = len(docs[idxs[0]]["template"])
+        dominant = {}
+        for pos in range(positions):
+            counts = {}
+            for idx in idxs:
+                value = docs[idx]["values"][pos]
+                counts[value] = counts.get(value, 0) + 1
+            if len(counts) == group_size:
+                continue
+            best_value = None
+            best_count = 0
+            for value, count in counts.items():
+                if count > best_count:
+                    best_value = value
+                    best_count = count
+            if best_count * 5 >= group_size * 3:
+                dominant[pos] = best_value
+
+        for idx in idxs[1:]:
+            for pos, value in dominant.items():
+                if docs[idx]["values"][pos] != value:
+                    keep[idx] = True
+                    break
+
+    kept_count = sum(keep)
+    if kept_count * 5 >= total_docs * 4:
+        return _decline(
+            text,
+            "yaml",
+            "kept documents are too common",
+            total_records=total_docs,
+        )
+
+    flags = [False] * len(lines)
+    for idx, is_kept in enumerate(keep):
+        if not is_kept:
+            continue
+        for line_idx in range(docs[idx]["start"], docs[idx]["end"]):
+            flags[line_idx] = True
+
+    if gap_marker is None:
+        output = "\n".join(
+            lines[idx] for idx, flag in enumerate(flags) if flag
+        ).strip("\n")
+    else:
+        output = "\n".join(
+            _with_gaps(lines, flags, "\n", gap_marker, len(text))
+        ).strip("\n")
+
+    return FormatResult(
+        format="yaml",
+        applied=True,
+        text=output,
+        total_records=total_docs,
+        kept_records=kept_count,
+        reason="repeated documents folded, outlier documents kept",
+    )
+
 def _adapt_xml(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
@@ -1120,6 +1257,14 @@ def adapt_format(
         if not selectors or not any(_selector_is_distinctive(s) for s in selectors):
             return _adapt_pipe_table_outliers(value, query, limits or FormatLimits(), gap_marker)
         return _decline(value, resolved_format, "no safe extractive adapter")
+    if (
+        resolved_format == "yaml"
+        and not selectors
+        and any(line.rstrip() == "---" for line in value.splitlines())
+    ):
+        result = _adapt_yaml_documents_outliers(value, gap_marker)
+        if result.applied or not selectors:
+            return result
     if not selectors:
         return _decline(value, resolved_format, "query has no distinctive selectors")
     adapter = _ADAPTERS.get(resolved_format)
