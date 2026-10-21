@@ -60,6 +60,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - npm, yarn and composer install output folds per-package lines (deprecation warnings, locking/installing lines) into one marker; errors and problems are kept, and a package named in an error keeps its line.
 - `ps aux` listings keep the header and the processes that stand out (high CPU or memory, zombie or D-state, the top CPU and top memory process); the rest are counted.
 - `docker ps` listings keep the header and every container that is not healthy and running (restarting, exited, unhealthy and so on); running ones are counted.
+- A prose line that is one sentence repeated back to back folds to one copy with a `[×N]` count, in any language or script; short documents made of such paragraphs no longer come back unchanged.
+- `pip freeze` / requirements listings keep only the packages a query names and count the rest; without such a query the listing is returned unchanged.
+- `npm audit` reports fold low-severity advisories into one count; moderate, high and critical advisories and the summary are kept.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -83,6 +86,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - df no longer counts snap loop devices, which are always 100% used, as full-disk outliers, so the real nearly-full disk stands out.
 - jest output without the final "Test Suites:" summary is recognised, and the snapshot summary bullets are kept.
 - go test output folds passing package `ok` lines (and their `# pkg` headers and `[no test files]` lines) when five or more packages pass.
+- Query words with accents or other Latin diacritics (réplica, perché, migração, schlägt, Vietnamese words) are extracted whole instead of being cut into fragments at the accented letter.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
