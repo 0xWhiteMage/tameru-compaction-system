@@ -1701,11 +1701,66 @@ def _classify_rust_build(lines: list[str]) -> tuple[list[bool], list[int], list[
             i += 1
     return keep, [0] * len(lines), [0] * len(lines)
 
+_GIT_STATUS_SECTION_RE = re.compile(r"^(?:Changes to be committed|Changes not staged for commit|Untracked files|Unmerged paths):$")
+_GIT_STATUS_HINT_RE = re.compile(r'^\s+\(use "git ')
+_GIT_STATUS_CONFLICT_RE = re.compile(r"^\t(?:both (?:modified|added|deleted)|deleted by (?:us|them)|added by (?:us|them)):")
+_GIT_STATUS_KEEP_PER_SECTION = 3
+
+
+def _detect_git_status(text: str) -> bool:
+    lines = text.splitlines()
+    non_blank = [line for line in lines if line.strip()]
+    if not any(
+        line.startswith(("On branch ", "HEAD detached "))
+        for line in non_blank[:3]
+    ):
+        return False
+    if not any(_GIT_STATUS_SECTION_RE.match(line) for line in lines):
+        return False
+    if sum(1 for line in lines if line.startswith("\t")) < 10:
+        return False
+    return True
+
+
+def _classify_git_status(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep: list[bool] = []
+    in_section = False
+    unmerged_section = False
+    entry_count = 0
+
+    for line in lines:
+        if _GIT_STATUS_SECTION_RE.match(line):
+            in_section = True
+            unmerged_section = line == "Unmerged paths:"
+            entry_count = 0
+            keep.append(True)
+            continue
+
+        if _GIT_STATUS_HINT_RE.match(line):
+            keep.append(False)
+            continue
+
+        if in_section and line.startswith("\t"):
+            entry_count += 1
+            if (
+                unmerged_section
+                or _GIT_STATUS_CONFLICT_RE.match(line)
+                or entry_count <= _GIT_STATUS_KEEP_PER_SECTION
+            ):
+                keep.append(True)
+            else:
+                keep.append(False)
+            continue
+
+        keep.append(True)
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
 
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -1728,6 +1783,8 @@ def detect_test_runner(text: str) -> str | None:
             return "pip_install"
         if _detect_rust_build(text):
             return "rust_build"
+        if _detect_git_status(text):
+            return "git_status"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -1840,6 +1897,8 @@ def detect_test_runner(text: str) -> str | None:
         return "pip_install"
     if _detect_rust_build(text):
         return "rust_build"
+    if _detect_git_status(text):
+        return "git_status"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -2844,6 +2903,7 @@ _RUNNERS = {
     "ansible": _classify_ansible,
     "pip_install": _classify_pip_install,
     "rust_build": _classify_rust_build,
+    "git_status": _classify_git_status,
 }
 
 
@@ -2953,7 +3013,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else None))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else None)))))))))))))))
         ),
     )
     if runner == "pytest":
