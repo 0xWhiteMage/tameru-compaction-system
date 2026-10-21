@@ -1047,8 +1047,8 @@ _K8S_GET_PODS_HDR_RE = re.compile(r"^(?:NAMESPACE\s+)?NAME\s+READY\s+STATUS\s+RE
 _K8S_GET_PODS_ROW_RE = re.compile(r"^\S+\s+(?:\S+\s+)?\d+/\d+\s+\S+\s+\d+")
 
 
-_LINT_LINE_RE = re.compile(r"^(?:\./)?[\w.@/\\-]+\.\w{1,6}:\d+:(?:\d+:)?\s+(\S.*)$")
-_LINT_CODE_RE = re.compile(r"^(?:(?:error|warning|note|info):\s+)?([A-Z]{1,4}\d{2,5})\b")
+_LINT_LINE_RE = re.compile(r"^(?:\./)?[\w.@/\\-]+\.\w{1,6}(?::\d+:(?:\d+:)?|\(\d+(?:,\d+){0,3}\):)\s+(\S.*)$")
+_LINT_CODE_RE = re.compile(r"^(?:(?:error|warning|note|info):?\s+)?([A-Z]{1,4}\d{2,5})\b")
 _LINT_MYPY_CODE_RE = re.compile(r"\[([a-z][a-z0-9-]*)\]\s*$")
 _LINT_SEVERITY_RE = re.compile(r"^(error|warning|note|info):\s+")
 _LINT_NORM_RE = re.compile(r"\d+|'[^']*'|\"[^\"]*\"")
