@@ -479,6 +479,7 @@ _SYSLOG_PREFIX_RE = re.compile(
 )
 
 
+_KLOG_LINE_RE = re.compile(r"^[IWEF]\d{4} \d\d:\d\d:\d\d\.\d+\s+\d+ [\w.-]+:\d+\] ")
 _REDIS_LINE_RE = re.compile(r"^\d+:[XCSM] \d{1,2} [A-Z][a-z]{2}(?: \d{4})? \d\d:\d\d:\d\d\.\d{3} ([.*#-]) ")
 
 
@@ -497,6 +498,8 @@ def classify_line(line: str) -> str:
     if _SYSLOG_PREFIX_RE.match(t):
         return "log"
     if _REDIS_LINE_RE.match(t):
+        return "log"
+    if _KLOG_LINE_RE.match(t):
         return "log"
     if _CL_LOGFMT_RE.match(t) and _cl_logfmt_pairs(t) >= 3:
         return "log"
