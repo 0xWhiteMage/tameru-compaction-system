@@ -677,6 +677,7 @@ def _adapt_yaml(
     selected: set[int] = set()
     nonblank = [index for index, line in enumerate(lines) if line.strip()]
     matches = [index for index in nonblank if _contains_selector(lines[index], selectors)]
+    has_document_separator = any(line.rstrip() == "---" for line in lines)
     for match in matches:
         match_indent = _indent(lines[match])
         anchor = match
@@ -699,6 +700,20 @@ def _adapt_yaml(
                 anchor = index
                 break
         anchor_indent = _indent(lines[anchor])
+        if anchor_indent == 0 and has_document_separator:
+            doc_start = 0
+            for index in range(match - 1, -1, -1):
+                if lines[index].rstrip() == "---":
+                    doc_start = index + 1
+                    break
+            doc_end = len(lines)
+            for index in range(match + 1, len(lines)):
+                if lines[index].rstrip() == "---":
+                    doc_end = index
+                    break
+            if doc_end - doc_start <= 60:
+                selected.update(range(doc_start, doc_end))
+                continue
         for index in range(anchor):
             if not lines[index].strip():
                 continue
