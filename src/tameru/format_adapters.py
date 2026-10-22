@@ -120,6 +120,10 @@ def _query_selectors(query: str) -> tuple[str, ...]:
     return tuple(strong or selectors)
 
 
+# Prometheus text exposition: '# HELP' / '# TYPE' are metadata, not Markdown headings.
+_PROM_TYPE_LINE_RE = re.compile(r"(?m)^# TYPE [A-Za-z_:][\w:]* (?:counter|gauge|histogram|summary|untyped)\s*$")
+
+
 def _contains_selector(text: str, selectors: tuple[str, ...]) -> bool:
     shadow = matching_shadow(text)
     for selector in selectors:
@@ -334,6 +338,8 @@ def detect_format(text: str) -> str:
         and re.search(r"(?m)^[^\S\n]*[A-Za-z_][\w.-]*\s*=", value)
     ):
         return "ini"
+    if _PROM_TYPE_LINE_RE.search(value) and re.search(r"(?m)^# HELP ", value):
+        return "text"
     if re.search(r"(?m)^#{1,6}\s+|^```|^~~~", value):
         return "markdown"
     yaml_parent = re.search(
