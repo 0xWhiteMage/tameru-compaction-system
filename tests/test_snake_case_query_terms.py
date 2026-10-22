@@ -27,3 +27,15 @@ def test_end_to_end_snake_case_query_term():
     out = compress_context(text, "max connections setting", ccr=False, citations=False).compressed_text
     assert "max_connections | 100" in out
     assert len(out) < 0.6 * len(text)
+
+def test_literal_first_pattern_matches_same_boundaries():
+    import re
+
+    term = "max"
+    pattern = re.compile(rf"{re.escape(term)}(?<![^\W_]{re.escape(term)})(?![^\W_])")
+
+    for text in ("max", "_max_", "a max.", "max_x", "x_max"):
+        assert pattern.search(text) is not None
+
+    for text in ("xmax", "max2", "2max", "ümax", "maxes"):
+        assert pattern.search(text) is None

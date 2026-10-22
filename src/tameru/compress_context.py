@@ -2386,7 +2386,8 @@ def _term_test(term: str) -> Callable[[str], bool]:
             search = re.compile(rf"(?<!\d:)\b{re.escape(term)}\b(?!:\d)").search
         elif term.isalpha():
             # Treat underscore as a boundary for short alphabetic terms
-            search = re.compile(rf"(?<![^\W_]){re.escape(term)}(?![^\W_])").search
+            # literal first so the regex engine can use its fast prefix scan
+            search = re.compile(rf"{re.escape(term)}(?<![^\W_]{re.escape(term)})(?![^\W_])").search
         else:
             search = re.compile(rf"\b{re.escape(term)}\b").search
 
