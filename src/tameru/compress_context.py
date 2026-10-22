@@ -2382,6 +2382,12 @@ def _inflection_stem(term: str) -> str | None:
     return term
 
 
+@functools.lru_cache(maxsize=4096)
+def _compiled_term_pattern(pattern: str) -> re.Pattern[str]:
+    """Compile a term pattern once, independent of the ``re`` module cache."""
+    return re.compile(pattern)
+
+
 def _term_test(term: str) -> Callable[[str], bool]:
     """``lambda lower: _term_in_text(term, lower)`` with the pattern compiled once."""
     if not term:
@@ -2399,13 +2405,13 @@ def _term_test(term: str) -> Callable[[str], bool]:
             return term in lower
     else:
         if term.isdigit():
-            search = re.compile(rf"(?<!\d:)\b{re.escape(term)}\b(?!:\d)").search
+            search = _compiled_term_pattern(rf"(?<!\d:)\b{re.escape(term)}\b(?!:\d)").search
         elif term.isalpha():
             # Treat underscore as a boundary for short alphabetic terms
             # literal first so the regex engine can use its fast prefix scan
-            search = re.compile(rf"{re.escape(term)}(?<![^\W_]{re.escape(term)})(?![^\W_])").search
+            search = _compiled_term_pattern(rf"{re.escape(term)}(?<![^\W_]{re.escape(term)})(?![^\W_])").search
         else:
-            search = re.compile(rf"\b{re.escape(term)}\b").search
+            search = _compiled_term_pattern(rf"\b{re.escape(term)}\b").search
 
         def base(lower: str) -> bool:
             return search(lower) is not None
