@@ -3507,9 +3507,22 @@ def select_adaptive(
     # Rate-distortion insight: lossy schemes compound under repeated
     # compaction; a single high scorer shouldn't create a cascade.
     floor = max(2.2, min(11.5, 0.38 * top))
+    any_hit = any(b["entity_hits"] or b["term_hits"] for b in safe_blocks)
+
+    def _bare_fold(b) -> bool:
+        # A folded repeat line with no query hit is boilerplate, not the answer,
+        # once another block answers the query.
+        return (
+            any_hit
+            and _is_collapse_only_block(b)
+            and not b.get("entity_hits")
+            and not b.get("term_hits")
+            and not b.get("pinned")
+        )
+
     kept = set(important) | err_keep
     for b in safe_blocks:
-        if b["score"] >= floor:
+        if b["score"] >= floor and not _bare_fold(b):
             kept.add(b["id"])
     # Saturation guard (v0.6.0, production QA v3 performance finding): on huge
     # homogeneous dumps every line matches a broad query, so the floor
@@ -3530,11 +3543,13 @@ def select_adaptive(
     if (
         (blocks[0].get("reason") != "stale error" or len(kept) == 0)
         and (not blocks[0].get("trust_risk") or blocks[0].get("pinned"))
+        and not (kept and _bare_fold(blocks[0]))
     ):
         kept.add(blocks[0]["id"])
     if (
         not _is_sink_noise(blocks[-1]["text"])
         and not blocks[-1].get("trust_risk")
+        and not (kept and _bare_fold(blocks[-1]))
     ):
         kept.add(blocks[-1]["id"])
     # Perf (v0.6.0): the graph closure tokenises every block (regex-heavy).
