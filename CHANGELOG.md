@@ -87,6 +87,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `ipconfig /all` folds repeated disconnected adapter sections.
 - Long numbered continuation lists (`systeminfo` hotfixes `[01]: KB...`) keep the first two and last items.
 - `nmap` folds long runs of filtered or closed ports, always keeping open ports.
+- Query- and input-derived regexes use a private compiled-pattern cache, with a guard test against Python `re` cache thrashing.
+- `psql` `pg_settings` listings with a `source` column fold `default` rows, keeping settings changed by configuration, session and so on.
+- macOS unified log (`log show`, default and compact) keeps Error/Fault lines with neighbours and folds routine Default/Info/Debug lines when an error is present.
+- `docker compose ps` output is recognised by the `docker ps` reducer, folding healthy containers and keeping restarting or unhealthy ones.
+- `vmstat` keeps the header, first and last samples, and outlier sample rows (5x above or below a column median), folding only when an outlier exists.
+- `apt list --upgradable` keeps `-security` updates and folds long runs of other upgradable packages.
+- Labelled progress lines such as `Downloading macOS Sonoma 14.7: 33.0%` fold like other progress lines.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
