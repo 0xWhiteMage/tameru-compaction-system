@@ -1868,7 +1868,7 @@ def _classify_ps_aux(lines: list[str]) -> tuple[list[bool], list[int], list[int]
     return keep, [0] * len(lines), [0] * len(lines)
 
 
-_DOCKER_PS_HEADER_RE = re.compile(r"^CONTAINER ID\s+IMAGE\s+COMMAND\s+CREATED\s+STATUS\s+PORTS\s+NAMES\s*$")
+_DOCKER_PS_HEADER_RE = re.compile(r"^(?:CONTAINER ID\s+IMAGE\s+COMMAND\s+CREATED\s+STATUS\s+PORTS\s+NAMES|NAME\s+IMAGE\s+COMMAND\s+SERVICE\s+CREATED\s+STATUS\s+PORTS)\s*$")
 _DOCKER_PS_UP_RE = re.compile(r"\s{2,}Up (?:\d+|About|Less than)[^\n]*?(?=\s{2,}|$)")
 
 
