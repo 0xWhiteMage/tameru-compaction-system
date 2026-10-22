@@ -2053,10 +2053,33 @@ def _classify_top(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_CMAKE_PROBE_OK_RE = re.compile(r"^-- (?:(?:Looking for|Performing Test|Check(?:ing)? (?:for|if|whether|size of)|Detecting) .+ - (?:found|done|Success|works|yes|skipped)|Found [^:\n]+: .+|The (?:C|CXX|Fortran|CUDA) compiler identification is .+)\s*$")
+_CMAKE_SIGNATURE_RE = re.compile(r"^(?:-- Configuring (?:done|incomplete)|-- Generating done|-- Build files have been written to|CMake (?:Error|Warning)\b|-- The (?:C|CXX) compiler identification is )")
+
+
+def _detect_cmake(text: str) -> bool:
+    lines = text.splitlines()
+    return (
+        sum(1 for line in lines if _CMAKE_PROBE_OK_RE.match(line)) >= 8
+        and any(_CMAKE_SIGNATURE_RE.match(line) for line in lines)
+    )
+
+
+_CMAKE_COMPILER_ID_RE = re.compile(r"^-- The (?:C|CXX|Fortran|CUDA) compiler identification is ")
+
+
+def _classify_cmake(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [not _CMAKE_PROBE_OK_RE.match(line) for line in lines]
+    for i, line in enumerate(lines):
+        if _CMAKE_COMPILER_ID_RE.match(line):
+            keep[i] = True
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2095,6 +2118,8 @@ def detect_test_runner(text: str) -> str | None:
             return "playwright"
         if _detect_top(text):
             return "top"
+        if _detect_cmake(text):
+            return "cmake"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2236,6 +2261,8 @@ def detect_test_runner(text: str) -> str | None:
         return "playwright"
     if _detect_top(text):
         return "top"
+    if _detect_cmake(text):
+        return "cmake"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3268,6 +3295,7 @@ _RUNNERS = {
     "npm_audit": _classify_npm_audit,
     "playwright": _classify_playwright,
     "top": _classify_top,
+    "cmake": _classify_cmake,
 }
 
 
@@ -3386,7 +3414,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else None))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else None)))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
