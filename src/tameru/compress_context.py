@@ -2077,7 +2077,19 @@ _FILLER_QUERY_WORDS = frozenset(
         "podsumowanie", "raport", "zusammenfassung", "passiert", "bericht",
         "le", "la", "el", "lo", "il", "de", "du", "di", "o", "a", "e", "y",
         "un", "me", "mi", "se", "ist", "est", "ce", "ne", "es", "isso",
-        "esto", "ça", "qu"
+        "esto", "ça", "qu",
+        # Filler-only summary/report words for more languages (sv, nl, da, no, fi, cs, ro, hu, el, ru, uk, de, fr).
+        "sammanfatta", "sammanfattning", "hände", "hänt",
+        "samenvatting", "samenvatten", "vat", "samen", "gebeurd", "verslag",
+        "opsummer", "opsummering", "oppsummer", "oppsummering", "sammendrag", "skete", "skjedde",
+        "yhteenveto", "tiivistä", "tapahtui", "raportti",
+        "shrnutí", "shrň", "shrnout", "stalo",
+        "rezumat", "rezumă", "rezumați", "rezuma", "întâmplat",
+        "összefoglaló", "összefoglalás", "foglald", "össze",
+        "περίληψη", "σύνοψη",
+        "резюме", "итог", "итоги", "кратко", "отчет", "отчёт", "резюмируй",
+        "підсумок", "підсумуй", "звіт",
+        "zusammenfassen", "fasse", "zusammen", "synthèse"
     }
 )
 
