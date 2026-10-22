@@ -76,6 +76,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Short plain-word query terms match inside snake_case identifiers (`max connections` finds `max_connections`).
 - Summary/report words in Swedish, Dutch, Danish, Norwegian, Finnish, Czech, Romanian, Hungarian, Greek, Russian and Ukrainian count as filler-only queries.
 - Failed webpack/vite/esbuild builds keep only flagged ([big]/warning) asset lines; the remaining assets are counted so the error stands out.
+- Long key/value listings (`sysctl -a`, settings tables such as `pg_settings`) are segmented one record per line, keeping only relevant settings.
+- Progress bars and percent-complete lines (DISM, sfc and similar) fold to the last line of each run.
+- `traceroute`/`tracert` collapse runs of timed-out (`* * *`) hops, keeping the first and last of each run.
+- `openssl s_client` folds certificate bodies when the END line is present and chain key-type lines, keeping verification results.
+- PowerShell dash-underlined tables (`Get-WinEvent`, `Get-EventLog`, `Get-Service`) fold large groups of similar rows, keeping rare rows.
+- Repeated PowerShell error records fold, keeping the first and last of each run.
+- Windows Installer (msiexec) verbose logs fold successful actions, keeping failures and return value 3.
+- `netstat` (including `netstat -ano`) folds large groups of connections with the same protocol and state.
+- `ipconfig /all` folds repeated disconnected adapter sections.
+- Long numbered continuation lists (`systeminfo` hotfixes `[01]: KB...`) keep the first two and last items.
+- `nmap` folds long runs of filtered or closed ports, always keeping open ports.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
