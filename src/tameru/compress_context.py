@@ -2146,13 +2146,29 @@ _HEX_ID_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
 
 def _looks_like_line_records(lines: list[str]) -> bool:
-    """Git oneline / npm verbose: one record per line, not 10-line chunks."""
+    """Git oneline / npm verbose / key/value listings: one record per line.
+
+    Covers sysctl-style and settings-table lines instead of 10-line chunks.
+    """
     sample = [ln for ln in lines[:80] if ln.strip()]
     if len(sample) < 8:
         return False
     git_n = sum(1 for ln in sample if _GIT_ONELINE_RE.match(ln))
     npm_n = sum(1 for ln in sample if _NPM_VERBOSE_RE.match(ln))
-    return git_n >= 6 or npm_n >= 6
+    if git_n >= 6 or npm_n >= 6:
+        return True
+    if len(sample) >= 20:
+        kv_n = sum(
+            1
+            for ln in sample
+            if len(ln) <= 200 and _KV_RECORD_RE.match(ln)
+        )
+        if kv_n * 10 >= len(sample) * 9:
+            return True
+    return False
+
+
+_KV_RECORD_RE = re.compile(r"^[A-Za-z_][\w.\-/]*\s*(?:=|\|)\s*\S")
 
 
 def segment_blocks(lines: list[str]) -> list[dict[str, Any]]:
