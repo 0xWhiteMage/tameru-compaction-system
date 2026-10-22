@@ -2418,7 +2418,7 @@ def _term_test(term: str) -> Callable[[str], bool]:
     stem = _inflection_stem(term)
     if stem is None:
         return base
-    inflect = re.compile(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b").search
+    inflect = _compiled_term_pattern(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b").search
 
     def test(lower: str) -> bool:
         return base(lower) or (stem in lower and inflect(lower) is not None)
@@ -3393,7 +3393,7 @@ def _counterfactual_overlap_ambiguity(
         return False
 
     # Precompile word-boundary patterns for each query content term.
-    content_patterns = [re.compile(r"\b" + re.escape(t) + r"\b") for t in content]
+    content_patterns = [_compiled_term_pattern(r"\b" + re.escape(t) + r"\b") for t in content]
 
     # The dropped chain must be scoring well (near the floor) to count as
     # a "genuinely evicted answer".  Low-scoring dropped blocks are just

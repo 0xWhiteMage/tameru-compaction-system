@@ -21,6 +21,7 @@ from .agent_formats import (
     rejects_table,
 )
 from .contract_gates import GENERIC_WORDS, distinctive_query_terms
+from .regex_cache import cached_compile
 from .unicode_profile import graphemes, matching_shadow, search_units
 
 
@@ -129,7 +130,7 @@ def _contains_selector(text: str, selectors: tuple[str, ...]) -> bool:
     for selector in selectors:
         escaped = re.escape(selector)
         if selector[:1].isascii() and selector[-1:].isascii():
-            pattern = re.compile(rf"(?<![\w]){escaped}(?![\w])", re.IGNORECASE)
+            pattern = cached_compile(rf"(?<![\w]){escaped}(?![\w])", re.IGNORECASE)
             if pattern.search(shadow):
                 return True
         elif selector in shadow:

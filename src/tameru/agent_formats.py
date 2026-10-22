@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass
 from typing import Callable
 
 from .contract_gates import query_has_distinctive_selectors
+from .regex_cache import cached_compile
 from .unicode_profile import matching_shadow
 
 GapMarker = Callable[[int, int], str]
@@ -80,7 +81,7 @@ class _Matcher:
         for selector in selectors:
             if selector[:1].isascii() and selector[-1:].isascii():
                 self._rx.append(
-                    re.compile(rf"(?<![\w]){re.escape(selector)}(?![\w])", re.IGNORECASE)
+                    cached_compile(rf"(?<![\w]){re.escape(selector)}(?![\w])", re.IGNORECASE)
                 )
             else:
                 self._plain.append(selector)
@@ -1798,10 +1799,9 @@ def _classify_package_install(lines: list[str]) -> tuple[list[bool], list[int], 
         match = _PKG_NOISE_RE.match(line)
         if match:
             name = next((group for group in match.groups() if group is not None), "")
-            if name and re.search(
-                rf"(?<![A-Za-z0-9._/-]){re.escape(name)}(?![A-Za-z0-9._-])",
-                error_text,
-            ):
+            if name and cached_compile(
+                rf"(?<![A-Za-z0-9._/-]){re.escape(name)}(?![A-Za-z0-9._-])"
+            ).search(error_text):
                 keep.append(True)
             else:
                 keep.append(False)
