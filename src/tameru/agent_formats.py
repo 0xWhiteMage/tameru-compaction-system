@@ -2796,12 +2796,85 @@ def _classify_pg_settings(lines: list[str]) -> tuple[list[bool], list[int], list
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_MACOS_LOG_RE = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+[+-]\d{4}\s+0x[0-9a-f]+\s+(Default|Info|Debug|Error|Fault|Activity)\s")
+_MACOS_LOG_COMPACT_RE = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+\s+(Df|I|Db|E|Fa|A)\s+\S+\[\d+:[0-9a-f]+\]")
+
+
+def _macos_log_level(line: str) -> str | None:
+    match = _MACOS_LOG_RE.match(line)
+    if match is not None:
+        return match.group(1)
+    match = _MACOS_LOG_COMPACT_RE.match(line)
+    if match is not None:
+        return match.group(1)
+    return None
+
+
+def _detect_macos_log(text: str) -> bool:
+    if "0x" not in text and "[" not in text:
+        return False
+
+    lines = text.splitlines()
+    level_lines = 0
+    year_lines = 0
+    year_level_lines = 0
+    has_error = False
+
+    for line in lines:
+        level = _macos_log_level(line)
+        if level is not None:
+            level_lines += 1
+            if level in ("Error", "Fault", "E", "Fa"):
+                has_error = True
+
+        if len(line) > 4 and line[:4].isdigit() and line[4] == "-":
+            year_lines += 1
+            if level is not None:
+                year_level_lines += 1
+
+    if level_lines < 10 or not has_error:
+        return False
+    if year_lines and year_level_lines * 5 < year_lines * 4:
+        return False
+    return True
+
+
+def _classify_macos_log(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    n = len(lines)
+    keep = [False] * n
+    levels = [_macos_log_level(line) for line in lines]
+    error_levels = ("Error", "Fault", "E", "Fa")
+
+    routine_indices = [
+        i for i, level in enumerate(levels)
+        if level is not None and level not in error_levels
+    ]
+    if routine_indices:
+        keep[routine_indices[0]] = True
+        keep[routine_indices[-1]] = True
+
+    for i, level in enumerate(levels):
+        if level is None:
+            keep[i] = True
+        elif level in error_levels:
+            keep[i] = True
+            if i > 0 and levels[i - 1] is not None and levels[i - 1] not in error_levels:
+                keep[i - 1] = True
+            if i + 1 < n and levels[i + 1] is not None and levels[i + 1] not in error_levels:
+                keep[i + 1] = True
+
+    if sum(not kept for kept in keep) < 5:
+        keep = [True] * n
+
+    return keep, [0] * n, [0] * n
+
+
 
 
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"``, ``"openssl_sclient"``, ``"ps_table"``, ``"ps_error"``, ``"msi_log"``, ``"netstat"``, ``"ipconfig"``, ``"indexed_list"``, ``"nmap"``, ``"pg_settings"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"``, ``"openssl_sclient"``, ``"ps_table"``, ``"ps_error"``, ``"msi_log"``, ``"netstat"``, ``"ipconfig"``, ``"indexed_list"``, ``"nmap"``, ``"pg_settings"``, ``"macos_log"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2876,6 +2949,8 @@ def detect_test_runner(text: str) -> str | None:
             return "nmap"
         if _detect_pg_settings(text):
             return "pg_settings"
+        if _detect_macos_log(text):
+            return "macos_log"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -3053,6 +3128,8 @@ def detect_test_runner(text: str) -> str | None:
         return "nmap"
     if _detect_pg_settings(text):
         return "pg_settings"
+    if _detect_macos_log(text):
+        return "macos_log"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -4103,6 +4180,7 @@ _RUNNERS = {
     "indexed_list": _classify_indexed_list,
     "nmap": _classify_nmap,
     "pg_settings": _classify_pg_settings,
+    "macos_log": _classify_macos_log,
 }
 
 
@@ -4221,7 +4299,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else ("connection rows" if runner == "netstat" else ("disconnected adapter lines" if runner == "ipconfig" else ("numbered list items" if runner == "indexed_list" else ("non-open port lines" if runner == "nmap" else ("default-valued settings" if runner == "pg_settings" else None))))))))))))))))))))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else ("connection rows" if runner == "netstat" else ("disconnected adapter lines" if runner == "ipconfig" else ("numbered list items" if runner == "indexed_list" else ("non-open port lines" if runner == "nmap" else ("default-valued settings" if runner == "pg_settings" else ("routine log lines" if runner == "macos_log" else None)))))))))))))))))))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
