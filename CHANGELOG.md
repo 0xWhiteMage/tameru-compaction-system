@@ -67,6 +67,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Playwright list-reporter output folds passing tests into one count; failing, flaky and skipped tests, the failure details and the summary are kept.
 - `top -b` output keeps the summary header and busy, zombie or uninterruptible process rows; idle rows are counted.
 - CMake configure output folds successful probes into one count; errors, warnings, failed checks and the compiler identification are kept.
+- `npm ls` trees keep the root, every problem line (UNMET, invalid, extraneous, missing) with its parent chain, and npm errors; healthy packages are counted.
+- `curl -v` output folds TLS handshake trace lines and, when there are many, non-essential response headers; the request, status line, key headers (content-type, location, retry-after, auth, rate-limit, error), body and connection lines are kept.
+- `kubectl rollout status` style progress keeps the first and last progress lines and the outcome.
+- `systemd-analyze blame` keeps the ten slowest units.
+- Numeric whitespace tables (iostat-style) fold all-zero rows, keeping the header, one example zero row and every busy row.
+- `ping` keeps the header, the first two, last and slowest replies, timeouts and errors, and the statistics.
+- Short plain-word query terms match inside snake_case identifiers (`max connections` finds `max_connections`).
+- Summary/report words in Swedish, Dutch, Danish, Norwegian, Finnish, Czech, Romanian, Hungarian, Greek, Russian and Ukrainian count as filler-only queries.
+- Failed webpack/vite/esbuild builds keep only flagged ([big]/warning) asset lines; the remaining assets are counted so the error stands out.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
