@@ -2151,10 +2151,51 @@ def _classify_npm_tree(lines: list[str]) -> tuple[list[bool], list[int], list[in
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_CURL_REQUEST_RE = re.compile(r"^> [A-Z]+ \S+ HTTP/[\d.]+\s*$")
+_CURL_STATUS_RE = re.compile(r"^< HTTP/[\d.]+ \d{3}\b")
+_CURL_TRACE_RE = re.compile(r"^(?:[*<>{}](?: |$)|[*<>]$)")
+_CURL_TLS_NOISE_RE = re.compile(r"^\* (?:TLSv1(?:\.\d)?|SSLv3) \((?:IN|OUT)\), (?:TLS (?:handshake|change cipher|header|Unknown)|Unknown)\b|^[{}] \[\d+ bytes data\]")
+_CURL_KEY_HEADER_RE = re.compile(r"^< (?:content-type|content-length|location|retry-after|www-authenticate|[\w-]*(?:error|reason|status|ratelimit|retry|auth)[\w-]*):", re.IGNORECASE)
+
+
+def _detect_curl_verbose(text: str) -> bool:
+    lines = text.splitlines()
+    request_lines = 0
+    status_lines = 0
+    trace_lines = 0
+    for line in lines:
+        if _CURL_REQUEST_RE.match(line):
+            request_lines += 1
+        if _CURL_STATUS_RE.match(line):
+            status_lines += 1
+        if _CURL_TRACE_RE.match(line):
+            trace_lines += 1
+    return request_lines >= 1 and status_lines >= 1 and trace_lines >= 8
+
+
+def _classify_curl_verbose(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    for index, line in enumerate(lines):
+        if _CURL_TLS_NOISE_RE.match(line):
+            keep[index] = False
+
+    response_headers = [
+        index
+        for index, line in enumerate(lines)
+        if line.startswith("< ") and not _CURL_STATUS_RE.match(line)
+    ]
+    if len(response_headers) > 6:
+        for index in response_headers:
+            if not _CURL_KEY_HEADER_RE.match(lines[index]):
+                keep[index] = False
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2197,6 +2238,8 @@ def detect_test_runner(text: str) -> str | None:
             return "cmake"
         if _detect_npm_tree(text):
             return "npm_tree"
+        if _detect_curl_verbose(text):
+            return "curl_verbose"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2342,6 +2385,8 @@ def detect_test_runner(text: str) -> str | None:
         return "cmake"
     if _detect_npm_tree(text):
         return "npm_tree"
+    if _detect_curl_verbose(text):
+        return "curl_verbose"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3376,6 +3421,7 @@ _RUNNERS = {
     "top": _classify_top,
     "cmake": _classify_cmake,
     "npm_tree": _classify_npm_tree,
+    "curl_verbose": _classify_curl_verbose,
 }
 
 
@@ -3494,7 +3540,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else None))))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else None)))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
