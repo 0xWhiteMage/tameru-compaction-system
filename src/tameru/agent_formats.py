@@ -2243,23 +2243,11 @@ def _systemd_duration_seconds(spec: str) -> float:
     return total
 
 
-_SYSTEMD_UNIT_SUFFIXES = (
-    ".service",
-    ".mount",
-    ".socket",
-    ".target",
-    ".device",
-    ".timer",
-    ".slice",
-    ".swap",
-    ".path",
-    ".scope",
-    ".automount",
-)
+_SYSTEMD_UNIT_HINT_RE = re.compile(r"\.(?:service|mount|socket|target|device|timer|slice|swap|path|scope|automount)\b")
 
 
 def _detect_systemd_blame(text: str) -> bool:
-    if not any(s in text for s in _SYSTEMD_UNIT_SUFFIXES):
+    if _SYSTEMD_UNIT_HINT_RE.search(text) is None:
         return False
     non_empty_lines = [line for line in text.splitlines() if line.strip()]
     if not non_empty_lines:
