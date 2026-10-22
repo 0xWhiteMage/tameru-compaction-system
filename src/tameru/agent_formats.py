@@ -2321,10 +2321,43 @@ def _classify_zero_rows(lines: list[str]) -> tuple[list[bool], list[int], list[i
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_PING_REPLY_RE = re.compile(r"^\d+ bytes from .*\bicmp_seq=\d+.*\btime[=<]([\d.]+) ?ms")
+_PING_HEADER_RE = re.compile(r"^PING \S+")
+
+
+def _detect_ping(text: str) -> bool:
+    lines = text.splitlines()
+    if not any(_PING_HEADER_RE.match(line) for line in lines):
+        return False
+    return sum(1 for line in lines if _PING_REPLY_RE.match(line)) >= 8
+
+
+def _classify_ping(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    reply_indices = [index for index, line in enumerate(lines) if _PING_REPLY_RE.match(line)]
+    if not reply_indices:
+        return keep, [0] * len(lines), [0] * len(lines)
+
+    keep_indices = set(reply_indices[:2])
+    keep_indices.add(reply_indices[-1])
+
+    def _time_ms(index: int) -> float:
+        match = _PING_REPLY_RE.match(lines[index])
+        return float(match.group(1)) if match else -1.0
+
+    keep_indices.add(max(reply_indices, key=_time_ms))
+
+    for index in reply_indices:
+        if index not in keep_indices:
+            keep[index] = False
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2375,6 +2408,8 @@ def detect_test_runner(text: str) -> str | None:
             return "systemd_blame"
         if _detect_zero_rows(text):
             return "zero_rows"
+        if _detect_ping(text):
+            return "ping"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2528,6 +2563,8 @@ def detect_test_runner(text: str) -> str | None:
         return "systemd_blame"
     if _detect_zero_rows(text):
         return "zero_rows"
+    if _detect_ping(text):
+        return "ping"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3566,6 +3603,7 @@ _RUNNERS = {
     "rollout_wait": _classify_rollout_wait,
     "systemd_blame": _classify_systemd_blame,
     "zero_rows": _classify_zero_rows,
+    "ping": _classify_ping,
 }
 
 
@@ -3684,7 +3722,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else None))))))))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else None)))))))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
