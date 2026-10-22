@@ -2076,10 +2076,85 @@ def _classify_cmake(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_NPM_TREE_LINE_RE = re.compile(r"^[│|\s]*(?:[├└]─[─┬]|[+\`]-[-+]) ")
+_NPM_TREE_ROOT_RE = re.compile(r"^\S+@\S+(?: \S.*)?$")
+_NPM_TREE_PROBLEM_RE = re.compile(r"UNMET (?:OPTIONAL |PEER )?DEPENDENCY|\binvalid\b|\bextraneous\b|\bmissing\b|npm (?:ERR!|error)")
+
+
+def _detect_npm_tree(text: str) -> bool:
+    lines = text.splitlines()
+    root_index = None
+    for i, line in enumerate(lines):
+        if line.strip():
+            root_index = i
+            break
+    if root_index is None:
+        return False
+
+    root = lines[root_index]
+    if not _NPM_TREE_ROOT_RE.match(root) or _NPM_TREE_LINE_RE.match(root):
+        return False
+
+    after = lines[root_index + 1 :]
+    non_empty_after = [line for line in after if line.strip()]
+    tree_after = [line for line in after if _NPM_TREE_LINE_RE.match(line)]
+
+    if len(tree_after) < 8:
+        return False
+    if not non_empty_after:
+        return False
+    return len(tree_after) * 5 >= len(non_empty_after) * 3
+
+
+def _classify_npm_tree(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    def _prefix(line: str) -> str:
+        for i, ch in enumerate(line):
+            if ch in "├└+`":
+                return line[:i]
+        return line
+
+    keep = [not _NPM_TREE_LINE_RE.match(line) for line in lines]
+    first_tree = None
+    problem_indices = []
+
+    for i, line in enumerate(lines):
+        if _NPM_TREE_LINE_RE.match(line):
+            if first_tree is None:
+                first_tree = i
+            if _NPM_TREE_PROBLEM_RE.search(line):
+                problem_indices.append(i)
+
+    if first_tree is not None:
+        keep[first_tree] = True
+
+    for problem in problem_indices:
+        keep[problem] = True
+        current = problem
+        current_prefix_len = len(_prefix(lines[current]))
+
+        while current_prefix_len > 0:
+            parent = None
+            for j in range(current - 1, -1, -1):
+                if _NPM_TREE_LINE_RE.match(lines[j]):
+                    parent_prefix_len = len(_prefix(lines[j]))
+                    if parent_prefix_len < current_prefix_len:
+                        parent = j
+                        break
+
+            if parent is None:
+                break
+
+            keep[parent] = True
+            current = parent
+            current_prefix_len = len(_prefix(lines[current]))
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2120,6 +2195,8 @@ def detect_test_runner(text: str) -> str | None:
             return "top"
         if _detect_cmake(text):
             return "cmake"
+        if _detect_npm_tree(text):
+            return "npm_tree"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2263,6 +2340,8 @@ def detect_test_runner(text: str) -> str | None:
         return "top"
     if _detect_cmake(text):
         return "cmake"
+    if _detect_npm_tree(text):
+        return "npm_tree"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3296,6 +3375,7 @@ _RUNNERS = {
     "playwright": _classify_playwright,
     "top": _classify_top,
     "cmake": _classify_cmake,
+    "npm_tree": _classify_npm_tree,
 }
 
 
@@ -3414,7 +3494,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else None)))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else None))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
