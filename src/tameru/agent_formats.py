@@ -2445,10 +2445,60 @@ def _classify_traceroute(lines: list[str]) -> tuple[list[bool], list[int], list[
     return keep, [0] * n, [0] * n
 
 
+_SCLIENT_PKEY_RE = re.compile(r"^\s+a:PKEY: ")
+
+
+def _detect_openssl_sclient(text: str) -> bool:
+    if "CONNECTED(" not in text:
+        return False
+
+    has_connected = False
+    has_result = False
+    for line in text.splitlines():
+        if line.startswith("CONNECTED("):
+            has_connected = True
+        if "Verify return code:" in line or "Certificate chain" in line:
+            has_result = True
+        if has_connected and has_result:
+            return True
+
+    return False
+
+
+def _classify_openssl_sclient(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    n = len(lines)
+    keep = [True] * n
+    stripped_lines = [line.strip() for line in lines]
+
+    has_end_after = [False] * n
+    seen_end = False
+    for i in range(n - 1, -1, -1):
+        has_end_after[i] = seen_end
+        if stripped_lines[i] == "-----END CERTIFICATE-----":
+            seen_end = True
+
+    in_certificate = False
+    for i, line in enumerate(lines):
+        stripped = stripped_lines[i]
+        if stripped == "-----BEGIN CERTIFICATE-----":
+            in_certificate = has_end_after[i]
+            continue
+        if stripped == "-----END CERTIFICATE-----":
+            in_certificate = False
+            continue
+
+        if in_certificate:
+            keep[i] = False
+        elif _SCLIENT_PKEY_RE.match(line):
+            keep[i] = False
+
+    return keep, [0] * n, [0] * n
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"``, ``"openssl_sclient"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2505,6 +2555,8 @@ def detect_test_runner(text: str) -> str | None:
             return "progress"
         if _detect_traceroute(text):
             return "traceroute"
+        if _detect_openssl_sclient(text):
+            return "openssl_sclient"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2664,6 +2716,8 @@ def detect_test_runner(text: str) -> str | None:
         return "progress"
     if _detect_traceroute(text):
         return "traceroute"
+    if _detect_openssl_sclient(text):
+        return "openssl_sclient"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3705,6 +3759,7 @@ _RUNNERS = {
     "ping": _classify_ping,
     "progress": _classify_progress,
     "traceroute": _classify_traceroute,
+    "openssl_sclient": _classify_openssl_sclient,
 }
 
 
@@ -3823,7 +3878,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else None)))))))))))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else None))))))))))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
