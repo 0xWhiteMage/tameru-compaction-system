@@ -1487,24 +1487,33 @@ def _detect_bundle_assets(text: str) -> bool:
     return non_blank > 0 and asset_lines >= 8 and asset_lines * 2 >= non_blank
 
 
+_BUNDLE_BUILD_ERROR_RE = re.compile(r"^(?:ERROR in |\s*✘ \[ERROR\]|error during build|Module not found: )|\bcompiled with \d+ errors?\b|\bBuild failed with \d+ errors?\b")
+
+
 def _classify_bundle_assets(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     keep = [False] * len(lines)
     asset_positions: list[int] = []
     asset_sizes: list[float] = []
+    build_error = False
     for index, line in enumerate(lines):
         size = _bundle_asset_size(line)
         if size is None:
             keep[index] = True
+            if _BUNDLE_BUILD_ERROR_RE.search(line):
+                build_error = True
         else:
             asset_positions.append(index)
             asset_sizes.append(size)
     if asset_positions:
-        keep_positions = set(asset_positions[:2])
-        largest_positions = sorted(
-            range(len(asset_positions)),
-            key=lambda position: (-asset_sizes[position], asset_positions[position]),
-        )[:3]
-        keep_positions.update(asset_positions[position] for position in largest_positions)
+        if build_error:
+            keep_positions = set()
+        else:
+            keep_positions = set(asset_positions[:2])
+            largest_positions = sorted(
+                range(len(asset_positions)),
+                key=lambda position: (-asset_sizes[position], asset_positions[position]),
+            )[:3]
+            keep_positions.update(asset_positions[position] for position in largest_positions)
         flagged_positions = [
             position
             for position, index in enumerate(asset_positions)
