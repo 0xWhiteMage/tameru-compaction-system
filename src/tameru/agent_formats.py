@@ -2734,12 +2734,74 @@ def _classify_nmap(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     return keep, [0] * n, [0] * n
 
 
+_PSQL_RULE_RE = re.compile(r"^-+(?:\+-+)+\s*$")
+
+
+def _pg_settings_layout(lines: list[str]) -> tuple[int, int] | None:
+    for index in range(min(5, len(lines) - 1)):
+        line = lines[index]
+        if "|" not in line:
+            continue
+        cells = [cell.strip().lower() for cell in line.split("|")]
+        source_positions = [position for position, cell in enumerate(cells) if cell == "source"]
+        if len(source_positions) != 1:
+            continue
+        if _PSQL_RULE_RE.match(lines[index + 1]):
+            return index, source_positions[0]
+    return None
+
+
+def _detect_pg_settings(text: str) -> bool:
+    if "source" not in text or "| default" not in text:
+        return False
+    lines = text.splitlines()
+    layout = _pg_settings_layout(lines)
+    if layout is None:
+        return False
+    header_index, source_column = layout
+    header = lines[header_index]
+    data_rows = [
+        line
+        for line in lines[header_index + 2 :]
+        if "|" in line and line.count("|") == header.count("|")
+    ]
+    if len(data_rows) < 20:
+        return False
+    default_rows = 0
+    for line in data_rows:
+        cells = line.split("|")
+        if len(cells) > source_column and cells[source_column].strip() == "default":
+            default_rows += 1
+    return default_rows * 5 >= len(data_rows) * 3
+
+
+def _classify_pg_settings(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    layout = _pg_settings_layout(lines)
+    if layout is None:
+        return keep, [0] * len(lines), [0] * len(lines)
+    header_index, source_column = layout
+    header = lines[header_index]
+    dropped = 0
+    for index in range(header_index + 2, len(lines)):
+        line = lines[index]
+        if "|" not in line or line.count("|") != header.count("|"):
+            continue
+        cells = line.split("|")
+        if len(cells) > source_column and cells[source_column].strip() == "default":
+            keep[index] = False
+            dropped += 1
+    if dropped < 10:
+        return [True] * len(lines), [0] * len(lines), [0] * len(lines)
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 
 
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"``, ``"openssl_sclient"``, ``"ps_table"``, ``"ps_error"``, ``"msi_log"``, ``"netstat"``, ``"ipconfig"``, ``"indexed_list"``, ``"nmap"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"``, ``"openssl_sclient"``, ``"ps_table"``, ``"ps_error"``, ``"msi_log"``, ``"netstat"``, ``"ipconfig"``, ``"indexed_list"``, ``"nmap"``, ``"pg_settings"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2812,6 +2874,8 @@ def detect_test_runner(text: str) -> str | None:
             return "indexed_list"
         if _detect_nmap(text):
             return "nmap"
+        if _detect_pg_settings(text):
+            return "pg_settings"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2987,6 +3051,8 @@ def detect_test_runner(text: str) -> str | None:
         return "indexed_list"
     if _detect_nmap(text):
         return "nmap"
+    if _detect_pg_settings(text):
+        return "pg_settings"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -4036,6 +4102,7 @@ _RUNNERS = {
     "ipconfig": _classify_ipconfig,
     "indexed_list": _classify_indexed_list,
     "nmap": _classify_nmap,
+    "pg_settings": _classify_pg_settings,
 }
 
 
@@ -4154,7 +4221,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else ("connection rows" if runner == "netstat" else ("disconnected adapter lines" if runner == "ipconfig" else ("numbered list items" if runner == "indexed_list" else ("non-open port lines" if runner == "nmap" else None)))))))))))))))))))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else ("connection rows" if runner == "netstat" else ("disconnected adapter lines" if runner == "ipconfig" else ("numbered list items" if runner == "indexed_list" else ("non-open port lines" if runner == "nmap" else ("default-valued settings" if runner == "pg_settings" else None))))))))))))))))))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
