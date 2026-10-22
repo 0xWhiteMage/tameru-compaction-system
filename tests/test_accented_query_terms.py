@@ -8,9 +8,9 @@ def test_spanish_accented_term_is_whole():
 
 
 def test_italian_accented_term_is_whole():
-    query = "perché è stato ritirato il rilascio?"
-    assert "perché" in _extract_terms(query)
-    assert "perch" not in _extract_terms(query)
+    query = "la funzionalità è stata ritirata?"
+    assert "funzionalità" in _extract_terms(query)
+    assert "funzionalit" not in _extract_terms(query)
 
 
 def test_portuguese_accented_term_is_whole():

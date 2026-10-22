@@ -285,6 +285,16 @@ _STOP = {
     "they", "them", "their", "our", "your", "please", "tell", "give", "show",
     "explain", "summarize", "summary", "function", "return", "class", "def",
     "import", "hmm",
+} | {
+    # es / pt / fr / it / de / id / ms / tr / pl question and function words
+    "qué", "que", "cuál", "cuándo", "dónde", "cómo", "por", "porqué", "el",
+    "los", "las", "una", "del", "con", "hubo", "qual", "quando", "onde",
+    "porque", "como", "uma", "com", "foi", "les", "une", "des", "quoi",
+    "quand", "où", "pourquoi", "comment", "che", "cosa", "dove", "perché",
+    "gli", "der", "das", "was", "wann", "warum", "wie", "und", "apa",
+    "kapan", "bila", "mengapa", "kenapa", "bagaimana", "yang", "ini", "itu",
+    "dengan", "untuk", "pada", "neden", "nasıl", "kiedy", "gdzie",
+    "dlaczego", "jak"
 }
 _KANA_STOP = frozenset("のはがをにでともへやかなねよわさぞぜしてただす")
 
@@ -2024,7 +2034,24 @@ _WEAK_NEXT_CHAT = frozenset(
 # agent rather than a question about the text ("fix it", "ok thanks", "LGTM").
 # Such a query is treated as an EMPTY query on every path (see
 # _is_filler_query) — adapters, destructive preprocess, selection, fail-open.
-_FILLER_QUERY_WORDS = frozenset(_WEAK_NEXT_CHAT | _STOP | {"fix", "fixes", "do", "so", "now", "then"})
+_FILLER_QUERY_WORDS = frozenset(
+    _WEAK_NEXT_CHAT
+    | _STOP
+    | {"fix", "fixes", "do", "so", "now", "then"}
+    | {
+        # Filler-only: these words only make a query filler when every query word is filler; not stop words because report/resume/happened are real terms in longer queries.
+        "happened", "happen", "overview", "tldr", "report", "resume",
+        "resumen", "resumir", "résume", "résumé", "résumer", "rapport",
+        "informe", "pasó", "ocurrió", "sucedió", "resumo", "resuma",
+        "aconteceu", "ocorreu", "relatório", "riassumi", "riassunto",
+        "successo", "rapporto", "ringkasan", "rangkuman", "ringkaskan",
+        "terjadi", "laporan", "özetle", "özet", "oldu", "rapor", "podsumuj",
+        "podsumowanie", "raport", "zusammenfassung", "passiert", "bericht",
+        "le", "la", "el", "lo", "il", "de", "du", "di", "o", "a", "e", "y",
+        "un", "me", "mi", "se", "ist", "est", "ce", "ne", "es", "isso",
+        "esto", "ça", "qu"
+    }
+)
 
 
 def _is_filler_query(query: str) -> bool:
