@@ -1866,6 +1866,34 @@ def _fold_repeated_sentences(lines: list[str]) -> list[str]:
     return folded
 
 
+_SENTENCE_BREAK_RE = re.compile(
+    r"(?<=[^\W\d_][.!?\u2026])[\"'\u201d\u2019)\]]*\s+(?=\S)"
+    r"|(?<=[\u3002\uff01\uff1f])\s*(?=\S)"
+    r"|(?<=[\u0964\u0965\u061f\u06d4])\s+(?=\S)"
+    r"|(?<=[\u0e01-\u0e4e])\s+(?=[\u0e01-\u0e4e])"
+)
+
+
+def _split_prose_sentences(lines: list[str]) -> list[str]:
+    """Put each sentence of a long multi-sentence prose line on its own line, separated by blank lines, so each sentence is its own block for the prose brief. Lossless apart from the whitespace between sentences."""
+    out = None
+    for index, line in enumerate(lines):
+        if len(line) >= 120:
+            parts = [part for part in _SENTENCE_BREAK_RE.split(line.strip()) if part]
+            if len(parts) >= 3:
+                if out is None:
+                    out = lines[:index]
+                indent = line[: len(line) - len(line.lstrip())]
+                for part_index, part in enumerate(parts):
+                    if part_index:
+                        out.append("")
+                    out.append(indent + part)
+                continue
+        if out is not None:
+            out.append(line)
+    return lines if out is None else out
+
+
 def _preprocess_scan(
     text: str, query: str, content_hint: str | None = None
 ) -> tuple[list[str], str]:
@@ -3654,7 +3682,7 @@ def select_adaptive(
 _PROSE_DATA_RE = re.compile(
     r"\d[\d,.]*\s*(?:%|％|万|萬|億|亿|元|円|원|€|\$|£|¥|[kKmM]\b|GB|MB|ms\b)"
     r"|[$€£¥]\s*\d"
-    r"|\b[A-Za-z]{1,8}[-_]\d{2,}\b"
+    r"|\b(?!ke-)[A-Za-z]{1,8}[-_]\d{2,}\b"  # not Indonesian/Malay ordinals (minggu ke-12)
     r"|\d{4,}"
     r"|\d+\.\d+"
     r"|\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b"
@@ -6862,6 +6890,20 @@ def compress_context(
                 lines = _compact_progress_lines(summarized.split("\n"))
         elif content_type == "text":
             lines = _fold_repeated_sentences(lines)
+            # Split long multi-sentence prose lines into sentence blocks so the
+            # no-query prose brief can reach the minimum block count.
+            if (
+                prose_brief
+                and not (query or "").strip()
+                and not code_hint
+                and len(_segment_blocks_memo(lines)) < _PROSE_MIN_BLOCKS
+            ):
+                split = _split_prose_sentences(lines)
+                if (
+                    split is not lines
+                    and len(_segment_blocks_memo(split)) >= _PROSE_MIN_BLOCKS
+                ):
+                    lines = split
         recall_base = text
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
