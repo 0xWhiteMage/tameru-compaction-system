@@ -2091,6 +2091,8 @@ _NPM_TREE_PROBLEM_RE = re.compile(r"UNMET (?:OPTIONAL |PEER )?DEPENDENCY|\binval
 
 
 def _detect_npm_tree(text: str) -> bool:
+    if "@" not in text or not ("├" in text or "└" in text or "+-" in text or "`-" in text):
+        return False
     lines = text.splitlines()
     root_index = None
     for i, line in enumerate(lines):
@@ -2168,6 +2170,8 @@ _CURL_KEY_HEADER_RE = re.compile(r"^< (?:content-type|content-length|location|re
 
 
 def _detect_curl_verbose(text: str) -> bool:
+    if "> " not in text or "< HTTP/" not in text:
+        return False
     lines = text.splitlines()
     request_lines = 0
     status_lines = 0
@@ -2205,6 +2209,8 @@ _ROLLOUT_WAIT_RE = re.compile(r'^Waiting for (?:deployment|daemon set|statefulse
 
 
 def _detect_rollout_wait(text: str) -> bool:
+    if "Waiting for " not in text:
+        return False
     return sum(1 for line in text.splitlines() if _ROLLOUT_WAIT_RE.match(line)) >= 6
 
 
@@ -2237,7 +2243,24 @@ def _systemd_duration_seconds(spec: str) -> float:
     return total
 
 
+_SYSTEMD_UNIT_SUFFIXES = (
+    ".service",
+    ".mount",
+    ".socket",
+    ".target",
+    ".device",
+    ".timer",
+    ".slice",
+    ".swap",
+    ".path",
+    ".scope",
+    ".automount",
+)
+
+
 def _detect_systemd_blame(text: str) -> bool:
+    if not any(s in text for s in _SYSTEMD_UNIT_SUFFIXES):
+        return False
     non_empty_lines = [line for line in text.splitlines() if line.strip()]
     if not non_empty_lines:
         return False
@@ -2279,7 +2302,14 @@ def _numeric_row(line: str, width: int) -> bool:
     )
 
 
+_ZERO_ROW_HINT_RE = re.compile(r"(?m)^[^\S\n]*\S+(?:[^\S\n]+0+(?:\.0+)?%?){3,}[^\S\n]*$")
+
+
 def _detect_zero_rows(text: str) -> bool:
+    if "0" not in text:
+        return False
+    if _ZERO_ROW_HINT_RE.search(text) is None:
+        return False
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 2:
         return False
@@ -2326,6 +2356,8 @@ _PING_HEADER_RE = re.compile(r"^PING \S+")
 
 
 def _detect_ping(text: str) -> bool:
+    if "PING " not in text or "icmp_seq=" not in text:
+        return False
     lines = text.splitlines()
     if not any(_PING_HEADER_RE.match(line) for line in lines):
         return False
