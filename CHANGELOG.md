@@ -63,6 +63,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A prose line that is one sentence repeated back to back folds to one copy with a `[×N]` count, in any language or script; short documents made of such paragraphs no longer come back unchanged.
 - `pip freeze` / requirements listings keep only the packages a query names and count the rest; without such a query the listing is returned unchanged.
 - `npm audit` reports fold low-severity advisories into one count; moderate, high and critical advisories and the summary are kept.
+- With `prose_brief`, long prose is split into sentences for Latin scripts, CJK, Devanagari, Arabic and Thai (a space between Thai words ends a sentence), so no-query briefs can drop templated repeats; fully distinct prose comes back unchanged.
+- Playwright list-reporter output folds passing tests into one count; failing, flaky and skipped tests, the failure details and the summary are kept.
+- `top -b` output keeps the summary header and busy, zombie or uninterruptible process rows; idle rows are counted.
+- CMake configure output folds successful probes into one count; errors, warnings, failed checks and the compiler identification are kept.
 
 ### Changed
 - Anchors drop log prefixes; logfmt/JSON logs keep level and message fields, and web access-log lines reduce to `METHOD path status`.
@@ -87,6 +91,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - jest output without the final "Test Suites:" summary is recognised, and the snapshot summary bullets are kept.
 - go test output folds passing package `ok` lines (and their `# pkg` headers and `[no test files]` lines) when five or more packages pass.
 - Query words with accents or other Latin diacritics (réplica, perché, migração, schlägt, Vietnamese words) are extracted whole instead of being cut into fragments at the accented letter.
+- Question and function words in Spanish, Portuguese, French, Italian, German, Indonesian, Malay, Turkish and Polish no longer count as query terms, and generic asks such as "¿qué pasó?", "o que aconteceu?", "résume le rapport" or "ringkasan" are treated like "summarize this".
+- When one block answers the query, folded `[×N]` repeat blocks with no query word are no longer kept just for their position or prior score.
+- A query word right after a negation ("why did nginx not start") only matches lines that show a failure, so "process started" lines no longer count as hits.
 
 ### Fixed
 - Lines with a bare ratio such as `20/40 degraded` or `batch 7/60 failed` were dropped as progress bars; they are now kept unless they look like progress (download/step words or a bare counter).
@@ -95,6 +102,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A query matching a top-level key in multi-document YAML (such as `kind: Secret`) kept only that line; it now keeps the whole document.
 - A short numeric query term such as an error code could match inside clock times (`12:03:45`); numbers next to a colon-digit pair no longer match.
 - Output could be a few characters longer than the input when no tokens were saved; it now returns the input unchanged.
+- Prometheus `/metrics` output is no longer read as Markdown (each `# HELP` / `# TYPE` line a heading), so the sample line with the value the query asked for is not dropped.
+- Indonesian/Malay ordinals such as "minggu ke-12" are no longer taken for identifiers, so a prose brief no longer keeps every templated sentence.
 
 ---
 
