@@ -1970,10 +1970,29 @@ def _classify_npm_audit(lines: list[str]) -> tuple[list[bool], list[int], list[i
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_PLAYWRIGHT_RUNNING_RE = re.compile(r"^Running \d+ tests? using \d+ workers?\b")
+_PLAYWRIGHT_PASS_RE = re.compile(r"^\s*(?:\u2713|\u2714|ok)\s+\d+\s+(?:\[[^\]]+\]\s+\u203a\s+)?\S+:\d+:\d+\s+\u203a")
+
+
+def _detect_playwright(text: str) -> bool:
+    non_blank = [line for line in text.splitlines() if line.strip()]
+    if not any(_PLAYWRIGHT_RUNNING_RE.match(line.strip()) for line in non_blank[:20]):
+        return False
+    return sum(1 for line in text.splitlines() if _PLAYWRIGHT_PASS_RE.match(line)) >= 3
+
+
+def _classify_playwright(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    for i, line in enumerate(lines):
+        if _PLAYWRIGHT_PASS_RE.match(line) and "(retry #" not in line:
+            keep[i] = False
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2008,6 +2027,8 @@ def detect_test_runner(text: str) -> str | None:
             return "requirements"
         if _detect_npm_audit(text):
             return "npm_audit"
+        if _detect_playwright(text):
+            return "playwright"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2145,6 +2166,8 @@ def detect_test_runner(text: str) -> str | None:
         return "requirements"
     if _detect_npm_audit(text):
         return "npm_audit"
+    if _detect_playwright(text):
+        return "playwright"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3175,6 +3198,7 @@ _RUNNERS = {
     "docker_ps": _classify_docker_ps,
     "requirements": _classify_requirements,
     "npm_audit": _classify_npm_audit,
+    "playwright": _classify_playwright,
 }
 
 
@@ -3293,7 +3317,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else None))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else None)))))))))))))))))))))
         ),
     )
     if runner == "pytest":
