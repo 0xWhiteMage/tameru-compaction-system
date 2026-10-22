@@ -1989,10 +1989,74 @@ def _classify_playwright(lines: list[str]) -> tuple[list[bool], list[int], list[
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_TOP_SUMMARY_RE = re.compile(r"^top - \d{1,2}:\d{2}:\d{2} up ")
+_TOP_HEADER_RE = re.compile(r"^\s*PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+%MEM\s+TIME\+\s+COMMAND\s*$")
+
+
+def _detect_top(text: str) -> bool:
+    lines = text.splitlines()
+    first = next((line for line in lines if line.strip()), None)
+    if first is None or not _TOP_SUMMARY_RE.match(first):
+        return False
+    header_idx = next((i for i, line in enumerate(lines) if _TOP_HEADER_RE.match(line)), None)
+    if header_idx is None:
+        return False
+    return sum(1 for line in lines[header_idx + 1:] if line.strip()) >= 10
+
+
+def _classify_top(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    in_rows = False
+    current_rows: list[tuple[int, float, float, str]] = []
+
+    def _finalize(rows: list[tuple[int, float, float, str]]) -> None:
+        if not rows:
+            return
+        max_cpu = max(cpu for _, cpu, _, _ in rows)
+        max_mem = max(mem for _, _, mem, _ in rows)
+        max_cpu_idx = next(idx for idx, cpu, _, _ in rows if cpu == max_cpu)
+        max_mem_idx = next(idx for idx, _, mem, _ in rows if mem == max_mem)
+        for idx, cpu, mem, state in rows:
+            if (
+                cpu >= _PS_CPU_HIGH
+                or mem >= _PS_MEM_HIGH
+                or state.startswith(("Z", "D"))
+                or idx == max_cpu_idx
+                or idx == max_mem_idx
+            ):
+                keep[idx] = True
+            else:
+                keep[idx] = False
+
+    for i, line in enumerate(lines):
+        if _TOP_HEADER_RE.match(line):
+            _finalize(current_rows)
+            current_rows = []
+            in_rows = True
+            continue
+        if _TOP_SUMMARY_RE.match(line):
+            _finalize(current_rows)
+            current_rows = []
+            in_rows = False
+            continue
+        if in_rows and line.strip():
+            parts = line.split(None, 11)
+            if len(parts) == 12:
+                try:
+                    cpu = float(parts[8])
+                    mem = float(parts[9])
+                except ValueError:
+                    continue
+                current_rows.append((i, cpu, mem, parts[7]))
+
+    _finalize(current_rows)
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2029,6 +2093,8 @@ def detect_test_runner(text: str) -> str | None:
             return "npm_audit"
         if _detect_playwright(text):
             return "playwright"
+        if _detect_top(text):
+            return "top"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2168,6 +2234,8 @@ def detect_test_runner(text: str) -> str | None:
         return "npm_audit"
     if _detect_playwright(text):
         return "playwright"
+    if _detect_top(text):
+        return "top"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3199,6 +3267,7 @@ _RUNNERS = {
     "requirements": _classify_requirements,
     "npm_audit": _classify_npm_audit,
     "playwright": _classify_playwright,
+    "top": _classify_top,
 }
 
 
@@ -3317,7 +3386,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else None)))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else None))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
