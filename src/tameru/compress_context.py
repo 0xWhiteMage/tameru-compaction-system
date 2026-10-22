@@ -2408,6 +2408,11 @@ def _dup_fp(text: str) -> str:
     return " ".join(parts)[:240]
 
 
+# A query term directly after a negator only counts when the block also shows failure/negation.
+# This prevents "not start" from matching boilerplate lines that say a process started.
+_NEGATED_TERM_RE = re.compile(r"\b(?:not|never|no|cannot|can't|won't|didn't|doesn't|don't|isn't|wasn't|couldn't|wouldn't|failed to|fails to|unable to)\s+([a-z][a-z0-9_]*)")
+_FAILURE_EVIDENCE_RE = re.compile(r"fail|error|err\b|fatal|emerg|crit|panic|unable|cannot|can't|couldn't|refused|denied|timed? ?out|abort|killed|\bnot\b|exit(?:ed)? (?:code|status) [1-9]")
+
 def score_blocks(
     blocks: list[dict[str, Any]],
     query: str,
@@ -2420,6 +2425,14 @@ def score_blocks(
     # ``re`` keeps only 512, so a long query (thousands of terms) recompiled
     # every pattern for every block (~80k compiles for a 30 KB query).
     term_tests = [(t, _term_test(t)) for t in terms]
+    negated = {m.group(1) for m in _NEGATED_TERM_RE.finditer((query or "").lower())}
+    if negated:
+        term_tests = [
+            (t, lambda lower, _test=test: _test(lower) and _FAILURE_EVIDENCE_RE.search(lower) is not None)
+            if t in negated
+            else (t, test)
+            for t, test in term_tests
+        ]
     n = max(1, len(blocks))
     entity_df: dict[str, int] = {}
     term_df: dict[str, int] = {}
