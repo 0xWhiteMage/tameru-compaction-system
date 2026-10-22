@@ -2601,12 +2601,49 @@ def _classify_msi_log(lines: list[str]) -> tuple[list[bool], list[int], list[int
     return keep, [0] * n, [0] * n
 
 
+_NETSTAT_HEADER_RE = re.compile(r"^\s*Proto\s+(?:Recv-Q\s+Send-Q\s+)?Local Address\s+Foreign Address\b")
+_NETSTAT_ROW_RE = re.compile(r"^\s*(tcp6?|udp6?|TCP|UDP)\s+\S")
+_NETSTAT_STATE_RE = re.compile(r"\b(ESTABLISHED|LISTENING|LISTEN|TIME_WAIT|CLOSE_WAIT|SYN_SENT|SYN_RECV|SYN_RECEIVED|FIN_WAIT_?[12]|LAST_ACK|CLOSING|CLOSED)\b")
+
+
+def _detect_netstat(text: str) -> bool:
+    if "Local Address" not in text:
+        return False
+    header_seen = False
+    row_count = 0
+    for line in text.splitlines():
+        if not header_seen and _NETSTAT_HEADER_RE.match(line):
+            header_seen = True
+        if _NETSTAT_ROW_RE.match(line):
+            row_count += 1
+    return header_seen and row_count >= 10
+
+
+def _classify_netstat(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    n = len(lines)
+    keep = [True] * n
+    groups: dict[tuple[str, str], list[int]] = {}
+    for i, line in enumerate(lines):
+        match = _NETSTAT_ROW_RE.match(line)
+        if match is None:
+            continue
+        proto = match.group(1).lower()
+        state_match = _NETSTAT_STATE_RE.search(line)
+        state = state_match.group(1) if state_match else ""
+        groups.setdefault((proto, state), []).append(i)
+    for indices in groups.values():
+        if len(indices) >= 5:
+            for index in indices[1:-1]:
+                keep[index] = False
+    return keep, [0] * n, [0] * n
+
+
 
 
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"``, ``"openssl_sclient"``, ``"ps_table"``, ``"ps_error"``, ``"msi_log"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"``, ``"ping"``, ``"progress"``, ``"traceroute"``, ``"openssl_sclient"``, ``"ps_table"``, ``"ps_error"``, ``"msi_log"``, ``"netstat"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2671,6 +2708,8 @@ def detect_test_runner(text: str) -> str | None:
             return "ps_error"
         if _detect_msi_log(text):
             return "msi_log"
+        if _detect_netstat(text):
+            return "netstat"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2838,6 +2877,8 @@ def detect_test_runner(text: str) -> str | None:
         return "ps_error"
     if _detect_msi_log(text):
         return "msi_log"
+    if _detect_netstat(text):
+        return "netstat"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3883,6 +3924,7 @@ _RUNNERS = {
     "ps_table": _classify_ps_table,
     "ps_error": _classify_ps_error,
     "msi_log": _classify_msi_log,
+    "netstat": _classify_netstat,
 }
 
 
@@ -4001,7 +4043,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else None)))))))))))))))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else ("connection rows" if runner == "netstat" else None))))))))))))))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
