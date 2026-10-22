@@ -2375,7 +2375,7 @@ def _classify_ping(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     return keep, [0] * len(lines), [0] * len(lines)
 
 
-_PROGRESS_LINE_RE = re.compile(r"^\s*(?:\[[=#>\-.*\s]*\d{1,3}(?:\.\d+)?%[=#>\-.*\s]*\]|(?:Verification|Progress:?|Scanning|Processing)?\s*\d{1,3}(?:\.\d+)?%\s*(?:complete|completed|done)?\.?)\s*$", re.IGNORECASE)
+_PROGRESS_LINE_RE = re.compile(r"^\s*(?:\[[=#>\-.*\s]*\d{1,3}(?:\.\d+)?%[=#>\-.*\s]*\]|(?:Verification|Progress:?|Scanning|Processing)?\s*\d{1,3}(?:\.\d+)?%\s*(?:complete|completed|done)?\.?|(?:Downloading|Installing|Preparing|Extracting|Verifying|Uploading)\b[^%\n]{0,80}?:\s*\d{1,3}(?:\.\d+)?%)\s*$", re.IGNORECASE)
 
 
 def _detect_progress(text: str) -> bool:
