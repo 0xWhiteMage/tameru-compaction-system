@@ -2261,10 +2261,70 @@ def _classify_systemd_blame(lines: list[str]) -> tuple[list[bool], list[int], li
     return keep, [0] * len(lines), [0] * len(lines)
 
 
+_ZERO_CELL_RE = re.compile(r"^0+(?:\.0+)?%?$")
+_NUMERIC_CELL_RE = re.compile(r"^-?\d+(?:\.\d+)?%?$")
+
+
+def _zero_row(line: str, width: int) -> bool:
+    cells = line.split()
+    return len(cells) == width and width >= 4 and all(
+        _ZERO_CELL_RE.match(cell) for cell in cells[1:]
+    )
+
+
+def _numeric_row(line: str, width: int) -> bool:
+    cells = line.split()
+    return len(cells) == width and width >= 4 and all(
+        _NUMERIC_CELL_RE.match(cell) for cell in cells[1:]
+    )
+
+
+def _detect_zero_rows(text: str) -> bool:
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return False
+
+    header = lines[0]
+    width = len(header.split())
+    if width < 4:
+        return False
+    if any(_NUMERIC_CELL_RE.match(cell) for cell in header.split()):
+        return False
+
+    zero_rows = 0
+    data_rows = 0
+    for line in lines[1:]:
+        data_rows += 1
+        if not _numeric_row(line, width):
+            return False
+        if _zero_row(line, width):
+            zero_rows += 1
+
+    if zero_rows < 8:
+        return False
+    if data_rows == 0:
+        return False
+    return zero_rows * 2 >= data_rows
+
+
+def _classify_zero_rows(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
+    keep = [True] * len(lines)
+    non_empty = [index for index, line in enumerate(lines) if line.strip()]
+    if not non_empty:
+        return keep, [0] * len(lines), [0] * len(lines)
+
+    width = len(lines[non_empty[0]].split())
+    zero_indices = [index for index in non_empty if _zero_row(lines[index], width)]
+    for index in zero_indices[1:]:
+        keep[index] = False
+
+    return keep, [0] * len(lines), [0] * len(lines)
+
+
 def detect_test_runner(text: str) -> str | None:
     """``"cargo"``, ``"go"``, ``"jest"``, ``"pytest"``, ``"gradle"``, ``"rspec"``,
     ``"phpunit"``, ``"dotnet"``, ``"lint"``, ``"slowlog"``, ``"env_dump"``,
-    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"`` or ``"kubectl"`` for recognised output.
+    ``"terraform_plan"``, ``"bundle_assets"``, ``"ansible"``, ``"pip_install"``, ``"rust_build"``, ``"git_status"``, ``"package_install"``, ``"ps_aux"``, ``"docker_ps"``, ``"requirements"``, ``"npm_audit"``, ``"playwright"``, ``"top"``, ``"cmake"``, ``"npm_tree"``, ``"curl_verbose"``, ``"rollout_wait"``, ``"systemd_blame"``, ``"zero_rows"`` or ``"kubectl"`` for recognised output.
 
     Vitest-style ``Tests  N passed`` output is left to the legacy path.
     One pass over the lines, each capped at ``_LINE_CAP`` characters (a long
@@ -2313,6 +2373,8 @@ def detect_test_runner(text: str) -> str | None:
             return "rollout_wait"
         if _detect_systemd_blame(text):
             return "systemd_blame"
+        if _detect_zero_rows(text):
+            return "zero_rows"
         if _detect_git_log(text):
             return "git_log"
         if _detect_docker_build(text):
@@ -2464,6 +2526,8 @@ def detect_test_runner(text: str) -> str | None:
         return "rollout_wait"
     if _detect_systemd_blame(text):
         return "systemd_blame"
+    if _detect_zero_rows(text):
+        return "zero_rows"
     if _detect_git_log(text):
         return "git_log"
     if _detect_docker_build(text):
@@ -3501,6 +3565,7 @@ _RUNNERS = {
     "curl_verbose": _classify_curl_verbose,
     "rollout_wait": _classify_rollout_wait,
     "systemd_blame": _classify_systemd_blame,
+    "zero_rows": _classify_zero_rows,
 }
 
 
@@ -3619,7 +3684,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else None)))))))))))))))))))))))))))
+                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else None))))))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":
