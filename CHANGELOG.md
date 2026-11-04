@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.6.0] - 2026-11-04
 
+Summary by area (details below):
+
+- **Reducers:** Linux, macOS and Windows tool output (syslog/journal, macOS unified log, ps/top/vmstat/df, ping/traceroute/netstat/nmap, PowerShell, msiexec, ipconfig, systeminfo), containers and Kubernetes, builds and package managers, service logs, test runners, lint and type checkers, key/value settings listings and progress output.
+- **Generic and empty queries:** error, failure, warning, state-change and rare-line anchors; summaries of large JSON arrays, JSON Lines, CSV/TSV and Markdown tables.
+- **Languages:** accented query words kept whole, question words and generic asks in 20 languages besides English treated as filler, sentence splitting for Latin scripts, CJK, Thai, Devanagari and Arabic in `prose_brief`, repeated-sentence folding in any script.
+- **Performance:** a private compiled-pattern cache for query- and input-derived regexes; no-side-effect calls reuse the best trial compression.
+- **Fixes:** progress-bar false positives, numeric terms in clock times, output longer than input, Prometheus metrics, YAML document matches.
+
 ### Added
 - Error-anchored compression now covers generic queries that match little or nearly everything, and small erroring logs where the anchored result is smaller and keeps every error fingerprint and nearby context.
 - Structured log levels (`level=error`, JSON `"level": "error"`) count as error lines.

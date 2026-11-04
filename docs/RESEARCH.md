@@ -2,7 +2,7 @@
 
 Continuously-updated study notes. Sources are grouped by kind; each entry lists
 what it does and what maps onto Tameru's deterministic, extractive, local-first
-design. The current measured comparisons were recorded on Tameru **v1.4.1** (v1.5.0 reproduces Tameru's outputs on them); see
+design. The current measured comparisons were recorded on Tameru **v1.4.1** (v1.6.0 keeps Tameru's retention on them, with three outputs changed); see
 [results and methodology](../benchmarks/COMPARISON.md). Research origins and
 historical implementation versions below are not additional benchmark scores.
 

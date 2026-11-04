@@ -11,7 +11,7 @@ Freshly measured on **2026-10-12**, using **Tameru v1.4.1** and the same **16 ta
 | LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8,091.08 ms | Yes |
 | LCC → JEV — unmeasured | — | — | — | — | — | — |
 
-**Status on v1.5.0.** This record was measured on Tameru v1.4.1 and is the only measurement of the competitor methods. Tameru v1.5.0 reproduces the Tameru column's outputs exactly (`python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json`: same corpus hash, same output hashes, savings and retention on all 16 cases). Timings are not restated for v1.5.0, and no competitor was re-run.
+**Status on v1.6.0.** This record was measured on Tameru v1.4.1 and is the only measurement of the competitor methods. On Tameru v1.6.0, `python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json` finds the same corpus hash and the same retention on all 16 cases (25/25 required strings, 0 forbidden leaks, 16/16 clean); 13 outputs are identical and three change with new reducers (`jp_musubi` 35.3% → 27.3% saved, `travis_yaml` 64.1% → 76.8%, `pytest_captured_blank_lines` 81.1% → 84.6%), for a mean saving of 82.4%. Timings are not restated for v1.6.0, and no competitor was re-run.
 
 All numeric cells are new measurements from this run. The earlier v1.2.0 holdout and v1.3.0 comparison have been retired from active documentation; their original records remain in Git history. No older score is relabelled as v1.4.1.
 
