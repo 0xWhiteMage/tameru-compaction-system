@@ -2,10 +2,10 @@
 
 <p align="center">
   <img src="assets/header.png" alt="The White Mage — Tameru Compaction System" width="100%"><br><br>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.5.0-blue.svg" alt="Version 1.5.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.6.0-blue.svg" alt="Version 1.6.0"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-1319%20passed-success.svg" alt="1319 tests passed"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-1939%20passed-success.svg" alt="1939 tests passed"></a>
   <a href="benchmarks/production-qa-v3-results.json"><img src="https://img.shields.io/badge/release_QA-15%2F15-brightgreen.svg" alt="15 of 15 release QA cases passed"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
 </p>
@@ -22,11 +22,11 @@ The default engine runs locally with **no LLM call, no GPU and no runtime depend
 |:---:|:---:|:---:|:---:|
 | **81.9%** | **25/25** | **0** | **12.83 ms** |
 
-Recorded on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-12**, on Tameru v1.4.1. Tameru v1.5.0 returns byte-identical output on all 16 cases, so these scores are v1.5.0's; only speed changed. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
+Recorded on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-12**, on Tameru v1.4.1. Tameru v1.6.0 returns identical output on 13 of the 16 cases and keeps the same evidence on all of them (25/25 required, 0 forbidden, 16/16 clean); its mean saving is 82.4%, and its timing is not restated. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
 
 <!-- tameru:headline:end -->
 
-[Performance](#comparison-with-other-approaches) · [See it work](#see-it-work) · [Quickstart](#quickstart) · [Hermes](#hermes) · [What's in 1.5.0](#whats-in-150) · [Documentation](#documentation)
+[Performance](#comparison-with-other-approaches) · [See it work](#see-it-work) · [Quickstart](#quickstart) · [Hermes](#hermes) · [What's in 1.6.0](#whats-in-160) · [Documentation](#documentation)
 
 ## Comparison with other approaches
 
@@ -47,7 +47,7 @@ Recorded on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-
 
 **A clean case keeps every required string and excludes every planted forbidden string.** Savings are the arithmetic mean per case; wall time is the median of per-case medians. Headroom's row measures the **TextCrusher component**. JEV was unmeasured because its API credential was unavailable.
 
-**Version note.** Every row, including Tameru's, was measured together on v1.4.1, so the timings are comparable with one another. Tameru v1.5.0 passes `python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json`: the same corpus, with identical output hashes, savings and retention on all 16 cases. The competitors were not re-run, and Tameru's timing is not restated for v1.5.0, so the table never mixes runs from different machines.
+**Version note.** Every row, including Tameru's, was measured together on v1.4.1, so the timings are comparable with one another. On Tameru v1.6.0, `python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json` re-runs the same corpus: 13 of 16 outputs are identical, and three change with new reducers (Japanese document 35.3% → 27.3% saved, Travis YAML 64.1% → 76.8%, captured pytest 81.1% → 84.6%), with retention unchanged on all 16. The competitors were not re-run, and Tameru's timing is not restated for v1.6.0, so the table never mixes runs from different machines.
 
 [Complete comparison and per-task results →](benchmarks/COMPARISON.md) · [Raw measurements →](benchmarks/comparison-v1.4.1.json)
 
@@ -60,7 +60,7 @@ Recorded on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-
 
 **Methods.** Tameru uses default extraction with `ccr=False`, `citations=True`. LCC 1.0.0 uses one scoring worker and no marker; Headroom 0.40.0 uses Rust TextCrusher at defaults, without the full router or recovery store. TF-IDF is a simple paragraph-retrieval baseline. Laya 0.4.4 runs its pinned multilingual model on CPU. LCC's protected no-ops are valid policy outcomes; model fallbacks receive no score.
 
-**Timing.** One untimed warmup and 3 timed complete calls per case. Parsing, scoring and rendering are inside the timer; imports and model loading are outside it. All 5 scored methods produced identical output across the warmup and timed repeats. Hardware and scheduling affect latency. Tameru v1.5.0 remembers analyses of repeated identical text, so this repeat-timing protocol flatters it; its first-call (cold) speed-up is in [What's in 1.5.0](#whats-in-150).
+**Timing.** One untimed warmup and 3 timed complete calls per case. Parsing, scoring and rendering are inside the timer; imports and model loading are outside it. All 5 scored methods produced identical output across the warmup and timed repeats. Hardware and scheduling affect latency. Since v1.5.0 Tameru remembers analyses of repeated identical text, so this repeat-timing protocol flatters it; its first-call (cold) speed-up is in the [v1.5.0 release notes](docs/releases/v1.5.0.md#performance).
 
 **Runtime and provenance.** Python 3.12.14 on INTEL(R) XEON(R) PLATINUM 8573C, with CPU-quota and thread settings in the JSON. Source/model pins, input/output hashes, package versions and individual timing samples are recorded in the raw JSON. The resumed Laya measurements retain the same corpus and settings; execution segments record the protected-no-op classification correction.
 
@@ -131,17 +131,20 @@ This is an excerpt of the input structure; the Python example below constructs a
 | Numbered source reads | `cat -n` and common `read_file` gutters; code stays recognisable |
 | Unified diffs and grep/rg | Hunk or file grouping, query matches, headers and saturated-query selection |
 | Pytest (incl. quiet mode), Jest, Go, Cargo, Gradle, RSpec, PHPUnit, dotnet test, Maven Surefire | Failure evidence and summaries, with conservative handling of unknown surrounding lines |
-| kubectl output | `describe` and `get events` reducers; events collapsed and only abnormal node Conditions kept |
-| JSON/NDJSON and CSV/TSV | Query-aware records, quote-aware framing, headers and JSON briefs for large object arrays |
-| Markdown | Heading ancestry and fenced-code protection |
+| kubectl output | `describe`, `get events`, `get pods`, `top` and `rollout status` reducers; events collapsed and only abnormal node Conditions kept |
+| Linux, macOS and Windows tool output | syslog/journal/dmesg, macOS unified log, `ps aux`, `top`, `vmstat`, `df`, `ping`, `traceroute`, `netstat`, `nmap`, `ipconfig /all`, `systeminfo`, PowerShell tables and error records, msiexec logs and `sysctl`/`pg_settings` listings: normal rows fold, outliers and failures stay |
+| Build, package and container tools | Docker build, `docker ps`/`docker compose ps`, Terraform plans, Ansible, CMake, cargo, bundlers, pip/npm/yarn/composer installs, `npm ls`, `npm audit`, `pip freeze`, `apt`, lint and type checkers |
+| Service logs | nginx, Apache, Redis, PHP, MySQL slow query, HAProxy, klog, web access logs and logfmt |
+| JSON/NDJSON and CSV/TSV | Query-aware records, quote-aware framing, headers, and summaries (one example, unusual and matching records, a count) for large arrays, JSON Lines and tables |
+| Markdown | Heading ancestry, fenced-code protection and outlier rows for large pipe tables |
 | YAML, XML/HTML, SQL, INI/TOML-style sections | Conservative format-specific selection; ambiguous shapes can decline specialised reduction |
 | Text extracted from OCR or vertical layouts | Matching in logical source order; text extraction happens upstream |
 
-Script-aware matching has regression coverage across **20 script/language families**, including Japanese, Chinese and Arabic release cases. Matching uses a normalised shadow while extracts retain the source text. Coverage varies by language and task; Tameru accepts text and relies on upstream tools for OCR.
+Script-aware matching has regression coverage across **20 script/language families**, including Japanese, Chinese and Arabic release cases. Matching uses a normalised shadow while extracts retain the source text. Accented query words stay whole, question words and generic asks (“¿qué pasó?”, “résume le rapport”, “ringkasan”) count as filler in 20 languages besides English, and the opt-in no-query `prose_brief` splits sentences in Latin scripts, CJK, Thai, Devanagari and Arabic so templated repeats can fold. Coverage varies by language and task; Tameru accepts text and relies on upstream tools for OCR.
 
 ## Measured results
 
-The separate **15-case release QA battery passes every case** on v1.5.0. All required answer strings survive, and no planted forbidden strings leak. These figures use **estimated tokens**, whereas the comparison above measures **characters**.
+The separate **15-case release QA battery passes every case** on v1.6.0. All required answer strings survive, and no planted forbidden strings leak. These figures use **estimated tokens**, whereas the comparison above measures **characters**.
 
 | Workload | Evidence checked | Estimated token savings |
 |---|---|---:|
@@ -153,19 +156,19 @@ The separate **15-case release QA battery passes every case** on v1.5.0. All req
 | Negation and override | “Not enabled”; obsolete enabled state excluded | **92.5%** |
 | Ambiguous configuration | Required value retained without an explicit supersession marker | **88.4%** |
 | Excluded sample | Operational host; excluded example absent | **87.3%** |
-| YAML configuration | Distro and language; excluded dependency absent | **64.7%** |
+| YAML configuration | Distro and language; excluded dependency absent | **76.0%** |
 | **Agent tool outputs** | | |
 | Git history | Required commit hash | **94.0%** |
 | npm log | Requested Playwright version | **31.0%** |
 | **Multilingual text** | | |
-| Japanese document | Required layer count | **57.5%** |
+| Japanese document | Required layer count | **46.8%** |
 | Chinese needle case | Required backup host | **90.9%** |
 | Arabic needle case | Required backup host | **88.6%** |
 | **Robustness** | | |
-| Large synthetic document | Savings, repeatability and timing; no answer-string check | **99.5%** |
+| Large synthetic document | Savings, repeatability and timing; no answer-string check | **99.9%** |
 | Empty query | Original input returned | **0.0%** |
 
-The 4,000-record synthetic document completed in **100.4 ms CPU time**, within its 1,200 ms gate on the recorded runner. Its maximum saving is specific to that input. Token counts use Tameru's estimator; savings with a model's own tokenizer will vary. [Full release results →](benchmarks/production-qa-v3-results.json)
+The 4,000-record synthetic document completed in **113.9 ms CPU time**, within its 1,200 ms gate on the recorded runner. Its maximum saving is specific to that input. Token counts use Tameru's estimator; savings with a model's own tokenizer will vary. [Full release results →](benchmarks/production-qa-v3-results.json)
 
 ### Choose a context budget
 
@@ -173,23 +176,23 @@ Use `mode="fixed"` and `budget_ratio` to request a smaller extract. Lower ratios
 
 | `budget_ratio` | Mean character savings | Clean release cases |
 |---:|---:|---:|
-| 0.1 | **77.3%** | 15/15 |
-| 0.2 | **68.4%** | 15/15 |
-| 0.3 | **61.2%** | 15/15 |
-| 0.5 | **41.5%** | 15/15 |
-| 0.7 | **24.9%** | 15/15 |
+| 0.1 | **77.8%** | 15/15 |
+| 0.2 | **69.9%** | 15/15 |
+| 0.3 | **61.9%** | 15/15 |
+| 0.5 | **41.7%** | 15/15 |
+| 0.7 | **24.8%** | 15/15 |
 
 Every operating point retained all required strings with no forbidden leaks in this corpus. Validate the evidence your own tasks need before choosing a ratio. [Replay the sweep →](benchmarks/threshold_sweep.py)
 
 ## Quickstart
 
-Requires **Python 3.10+**. Install the verified **v1.5.0 source**:
+Requires **Python 3.10+**. Install the verified **v1.6.0 source**:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@933aa33f6456c16db1b623e26ecc73c9b9be95d7"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@386a70c1aad7ac300ae661627093a7f992552e30"
 ```
 
-The command pins an immutable source commit. Package metadata is v1.5.0; the GitHub tag and Release are still pending publication.
+The command pins an immutable source commit. Package metadata is v1.6.0; the GitHub tag and Release are still pending publication.
 
 ### Python
 
@@ -242,16 +245,17 @@ The plugin provides the Hermes integration and retrieval path. It vendors the en
 
 For another agent framework, start with the Python API, CLI or generic transcript adapter. The [integration guide](docs/INTEGRATION.md) covers message lists, task-derived queries and keeping vendored copies current.
 
-## What's in 1.5.0
+## What's in 1.6.0
 
 | Area | What users gain |
 |---|---|
-| **Safer to serve** | Hosts that compact untrusted output are hardened: blank-line runs, long single-word queries and very large queries no longer take quadratic time (a 20,000-newline input fell from over 20 s to milliseconds), lone surrogates in a query no longer crash, and the receipt no longer duplicates the input. |
-| **Wider secrets screen** | The recovery-cache credential screen recognises **70 of 80** sample credential shapes, up from 29, while ordinary code and placeholders stay unflagged. It still gates persistence only; it does not redact output. |
-| **About 4.6x faster per tool result** | Same-text analysis is remembered and impossible regexes are skipped. The row sequence a host runs for one 650 KB log fell from 4.05 s to 0.61 s, and a single 50 KB log from 443 ms to 66 ms. Outputs are unchanged. |
-| **Plain-word diff and grep questions** | “Where was `frobnicate` changed?” now keeps whole hunks, file headers and `@@` lines, and “where is `frobnicate` defined?” over an all-matching `rg` result keeps the definition. |
+| **More tool outputs reduced** | New reducers for Linux, macOS and Windows tools, containers, builds, package managers, service logs and test runners keep the failures and outliers and fold the routine rows (see [Formats and languages](#formats-and-languages)). |
+| **Generic and empty queries** | “What happened?” or no query at all now anchors on errors, failure lines, rare warnings, state changes and odd lines in uniform logs, and summarises large JSON arrays, JSON Lines, CSV/TSV and Markdown tables to an example, the outliers and a count. |
+| **Multi-language queries and prose** | Accented query words stay whole; question words and generic asks in 20 languages besides English no longer count as query terms; `prose_brief` splits sentences in CJK, Thai, Devanagari and Arabic as well as Latin scripts, and back-to-back repeated sentences fold in any script. |
+| **Regex cache** | Query- and input-derived patterns use a private compiled-pattern cache, so long runs no longer thrash Python's `re` cache (recompiles per replay loop fell from 156 to 3 in our profile). |
+| **Secrets handling unchanged** | Env/config dump folding never keeps a secret-looking line on its own or moves it; the recovery-cache credential screen is unchanged. |
 
-Compaction results are unchanged: the comparison corpus, the 15-case QA battery and every budget ratio score as before. See the [v1.5.0 release notes](docs/releases/v1.5.0.md) and the [changelog](CHANGELOG.md) for details, verification and history.
+On the comparison corpus 13 of 16 outputs are unchanged and retention is identical; the 15-case QA battery and every budget ratio stay clean. See the [v1.6.0 release notes](docs/releases/v1.6.0.md) and the [changelog](CHANGELOG.md) for details, verification and history.
 
 ## Recovery and limits
 
@@ -279,7 +283,7 @@ python benchmarks/run_battery.py
 python benchmarks/threshold_sweep.py
 ```
 
-v1.5.0 verification: **1,319 tests passed / 3 skipped** (1,259 passed with `-m 'not perf'`, which omits the 60 timing-scaling tests), **15/15 release QA cases**, and the Tameru comparison outputs identical to the recorded run. Timing tests depend on hardware. The battery rewrites its JSON with your local timings.
+v1.6.0 verification: **1,939 tests passed / 2 skipped** (1,879 passed with `-m 'not perf'`, which omits the 60 timing-scaling tests), **15/15 release QA cases**, and the Tameru comparison retention identical to the recorded run, with three intended output changes. Timing tests depend on hardware. The battery rewrites its JSON with your local timings.
 
 <details>
 <summary><strong>Replay the external comparisons or regenerate this README's figures</strong></summary>
@@ -292,7 +296,7 @@ To check that the current engine still produces the recorded Tameru results, wit
 python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json
 ```
 
-It exits non-zero if any output hash, saving or retention result differs; timings are not compared. `--render-from` regenerates the README figures, table, chart and detailed comparison from a completed report of the same engine version, so a new full comparison is needed before it can be used on this release.
+It exits non-zero if any output hash, saving or retention result differs; timings are not compared. On v1.6.0 it lists the three intended changes described under the comparison table. `--render-from` regenerates the README figures, table, chart and detailed comparison from a completed report of the same engine version, so a new full comparison is needed before it can be used on this release.
 
 </details>
 
@@ -303,7 +307,7 @@ It exits non-zero if any output hash, saving or retention result differs; timing
 | [Usage and API](docs/USAGE.md) | Set budgets, inspect receipts, configure recovery and use advanced controls |
 | [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework and keep vendored copies current |
 | [Current comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
-| [v1.5.0 notes](docs/releases/v1.5.0.md) | Review the current release's changes and verification |
+| [v1.6.0 notes](docs/releases/v1.6.0.md) | Review the current release's changes and verification |
 | [Architecture](docs/industrial-compaction-v1.2.md) | Understand the format adapters and Unicode design; the document's filename reflects its original design version |
 | [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |
 
