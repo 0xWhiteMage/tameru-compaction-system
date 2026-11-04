@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-04
+
 ### Added
 - Error-anchored compression now covers generic queries that match little or nearly everything, and small erroring logs where the anchored result is smaller and keeps every error fingerprint and nearby context.
 - Structured log levels (`level=error`, JSON `"level": "error"`) count as error lines.
