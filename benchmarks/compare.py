@@ -367,6 +367,7 @@ def render_report(report: dict) -> None:
     measured = [arm for arm in ARMS if report["arms"].get(arm, {}).get("status") == "complete"]
     env = report["environment"]
     packages = env["packages"]
+    resumed = len(report.get("execution_segments", [])) > 1
     jev = report["arms"].get("lcc-jev", {})
     availability_note = ""
     if jev.get("status") != "complete":
@@ -422,13 +423,17 @@ def render_report(report: dict) -> None:
         "LCC's protected no-ops are valid policy outcomes; model fallbacks receive no score.\n\n"
         f"**Timing.** One untimed warmup and {repeats} timed complete calls per case. "
         "Parsing, scoring and rendering are inside the timer; imports and model loading are "
-        "outside it. " + repeat_text + "Hardware and scheduling affect latency.\n\n"
+        "outside it. " + repeat_text + "Hardware and scheduling affect latency. "
+        "Since v1.5.0 Tameru remembers analyses of repeated identical text, so this "
+        "repeat-timing protocol flatters it; its first-call (cold) speed-up is in the "
+        "[v1.5.0 release notes](docs/releases/v1.5.0.md#performance).\n\n"
         f"**Runtime and provenance.** Python {env['python']} on "
         f"{env.get('cpu_model', 'the recorded CPU')}, with CPU-quota and thread settings "
         "in the JSON. Source/model pins, input/output "
-        "hashes, package versions and individual timing samples are recorded in the raw JSON. "
-        "The resumed Laya measurements retain the same corpus and settings; execution segments "
-        "record the protected-no-op classification correction.\n\n"
+        "hashes, package versions and individual timing samples are recorded in the raw JSON."
+        + (" The resumed Laya measurements retain the same corpus and settings; execution segments "
+           "record the protected-no-op classification correction." if resumed else "")
+        + "\n\n"
         "**Interpretation.** This is Tameru's own regression corpus, including adversarial "
         "fixtures. Broader independent and live-agent evaluations are still needed to establish "
         "generality. An unmeasured provider has no score carried forward from an earlier release.\n\n"
@@ -504,10 +509,13 @@ def render_report(report: dict) -> None:
         "Recorded runner hashes identify the code used for those measurements, "
         "rather than necessarily matching the current documentation renderer.\n\n"
         "Protected no-ops with zero scored blocks and zero calls are valid LCC policy "
-        "results. They are flagged as `protected_noop`; they do not represent model inference. "
-        "The run resumed after correcting this classification, with unchanged corpus, "
-        "versions, settings and timing boundaries. Both runner hashes and the measured "
-        "case lists are recorded in `execution_segments`.\n\n"
+        "results. They are flagged as `protected_noop`; they do not represent model inference."
+        + (" The run resumed after correcting this classification, with unchanged corpus, "
+           "versions, settings and timing boundaries. Both runner hashes and the measured "
+           "case lists are recorded in `execution_segments`." if resumed else
+           " The run completed in one execution segment; its runner hash and measured case "
+           "lists are recorded in `execution_segments`.")
+        + "\n\n"
         "## Provider availability\n\n" + (unavailable_text or "Every requested provider completed the common corpus.") + "\n\n"
         "The old BM25/vector-RAG, LLM-summary and LCM table did not include sufficient "
         "implementation pins and replay inputs to reproduce those arms. It has no "
@@ -526,9 +534,12 @@ def render_report(report: dict) -> None:
         f"  python benchmarks/compare.py --laya-revision {report['protocol']['laya']['revision']} \\\n"
         f"  --lcc-source-sha {pins.get('lcc')} \\\n"
         f"  --laya-source-sha {pins.get('laya')}\n"
+        f"python benchmarks/compare.py --verify-against benchmarks/comparison-v{__version__}.json\n"
         f"python benchmarks/compare.py --render-from benchmarks/comparison-v{__version__}.json\n```\n\n"
         "The default command excludes paid JEV calls. Add `--include-jev` only when "
         "you have configured `TYPESAFE_API_KEY` and intend to run that provider. "
+        "`--verify-against` re-runs only the Tameru arm and exits non-zero if any output hash, "
+        "saving or retention result differs from the record (timings excluded). "
         "`--render-from` regenerates this page, the README headline/comparison blocks "
         "and the theme-aware SVG chart from the JSON. It preserves the rest of the README.\n\n"
         "## Limits and interpretation\n\n"
