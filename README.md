@@ -187,10 +187,10 @@ Every operating point retained all required strings with no forbidden leaks in t
 Requires **Python 3.10+**. Install the verified **v1.6.0 source**:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@386a70c1aad7ac300ae661627093a7f992552e30"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.6.0"
 ```
 
-The command pins an immutable source commit. Package metadata is v1.6.0; the GitHub tag and Release are still pending publication.
+The command installs the `v1.6.0` Git tag; its engine code is identical to release commit `386a70c`. No GitHub Release page or PyPI package is published.
 
 ### Python
 
@@ -281,7 +281,7 @@ python benchmarks/run_battery.py
 python benchmarks/threshold_sweep.py
 ```
 
-v1.6.0 verification: **1,939 tests passed / 2 skipped** (1,879 passed with `-m 'not perf'`, which omits the 60 timing-scaling tests), **15/15 release QA cases**, and the Tameru comparison retention identical to the recorded run, with three intended output changes. Timing tests depend on hardware. The battery rewrites its JSON with your local timings.
+v1.6.0 verification: **1,939 tests passed / 2 skipped** (1,879 passed with `-m 'not perf'`, which omits the 60 timing-scaling tests), **15/15 release QA cases**, and a fresh comparison of all five runnable methods on 2026-11-05 that `--verify-against` reproduces with 0 differing fields. Timing tests depend on hardware. The battery rewrites its JSON with your local timings.
 
 <details>
 <summary><strong>Replay the external comparisons or regenerate this README's figures</strong></summary>
@@ -291,10 +291,10 @@ The [comparison report](benchmarks/COMPARISON.md#reproduce) contains the exact s
 To check that the current engine still produces the recorded Tameru results, without the optional competitors or any model:
 
 ```bash
-python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json
+python benchmarks/compare.py --verify-against benchmarks/comparison-v1.6.0.json
 ```
 
-It exits non-zero if any output hash, saving or retention result differs; timings are not compared. On v1.6.0 it lists the three intended changes described under the comparison table. `--render-from` regenerates the README figures, table, chart and detailed comparison from a completed report of the same engine version, so a new full comparison is needed before it can be used on this release.
+It exits non-zero if any output hash, saving or retention result differs; timings are not compared. On v1.6.0 it reports 0 differing fields. Against the older `benchmarks/comparison-v1.4.1.json` it lists the three intended output changes of this release (Japanese document 35.3% → 27.3% saved, Travis YAML 64.1% → 76.8%, captured pytest 81.1% → 84.6%). `--render-from` regenerates the README figures, table, chart and detailed comparison from a completed report of the same engine version; this release's come from `benchmarks/comparison-v1.6.0.json`.
 
 </details>
 

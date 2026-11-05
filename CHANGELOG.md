@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Documentation
+- Fresh v1.6.0 comparison of all five runnable methods (`benchmarks/comparison-v1.6.0.json`, 2026-11-05) rendered into the README and `benchmarks/COMPARISON.md`: Tameru 25/25 required strings, 0 forbidden leaks, 16/16 clean, 82.4% mean saved; competitor outputs are byte-identical to the v1.4.1 record; timings re-measured on a different machine.
+- Install commands pin the published `v1.6.0` tag instead of the release commit, and the docs no longer call the tag pending.
+- The comparison renderer keeps the repeat-timing caveat and the `--verify-against` command, and mentions a resumed run only when the report has more than one execution segment.
+
 ## [1.6.0] - 2026-11-04
 
 Summary by area (details below):
