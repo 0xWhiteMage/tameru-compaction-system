@@ -20,9 +20,9 @@ The default engine runs locally with **no LLM call, no GPU and no runtime depend
 
 | Mean characters saved | Required strings retained | Forbidden strings retained | Median wall time |
 |:---:|:---:|:---:|:---:|
-| **81.9%** | **25/25** | **0** | **12.83 ms** |
+| **82.4%** | **25/25** | **0** | **2.79 ms** |
 
-Recorded on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-12**, on Tameru v1.4.1. Tameru v1.6.0 returns identical output on 13 of the 16 cases and keeps the same evidence on all of them (25/25 required, 0 forbidden, 16/16 clean); its mean saving is 82.4%, and its timing is not restated. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
+Measured on **16 shared task cases**, with 5 runnable methods on CPU, **2026-11-05**. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
 
 <!-- tameru:headline:end -->
 
@@ -32,24 +32,22 @@ Recorded on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-
 
 <!-- tameru:comparison:start -->
 
-**Same input. Same query. Same 16 tasks.** The comparison covers documents, configuration, Git/npm/YAML output, multilingual text and saturated grep, captured pytest and numbered-source cases.
+**Same input. Same query. Same 16 tasks.** The current comparison covers documents, configuration, Git/npm/YAML output, multilingual text and saturated grep, captured pytest and numbered-source cases.
 
-![Comparison of mean character savings and clean cases across measured methods, recorded on Tameru v1.4.1](assets/comparison-v1.4.1.svg)
+![v1.6.0 comparison of mean character savings and clean cases across measured methods](assets/comparison-v1.6.0.svg)
 
 | Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ |
 |---|---:|---:|---:|---:|---:|
-| **Tameru v1.4.1** | 25/25 | 0 | 16/16 | 81.9% | 12.83 ms |
-| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.97 ms |
-| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.51 ms |
-| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.12 ms |
-| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 8,091.08 ms |
+| **Tameru v1.6.0** | 25/25 | 0 | 16/16 | 82.4% | 2.79 ms |
+| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 3.92 ms |
+| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.36 ms |
+| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.09 ms |
+| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 2,839.60 ms |
 | LCC → JEV — unmeasured | — | — | — | — | — |
 
 **A clean case keeps every required string and excludes every planted forbidden string.** Savings are the arithmetic mean per case; wall time is the median of per-case medians. Headroom's row measures the **TextCrusher component**. JEV was unmeasured because its API credential was unavailable.
 
-**Version note.** Every row, including Tameru's, was measured together on v1.4.1, so the timings are comparable with one another. On Tameru v1.6.0, `python benchmarks/compare.py --verify-against benchmarks/comparison-v1.4.1.json` re-runs the same corpus: 13 of 16 outputs are identical, and three change with new reducers (Japanese document 35.3% → 27.3% saved, Travis YAML 64.1% → 76.8%, captured pytest 81.1% → 84.6%), with retention unchanged on all 16. The competitors were not re-run, and Tameru's timing is not restated for v1.6.0, so the table never mixes runs from different machines.
-
-[Complete comparison and per-task results →](benchmarks/COMPARISON.md) · [Raw measurements →](benchmarks/comparison-v1.4.1.json)
+[Complete comparison and per-task results →](benchmarks/COMPARISON.md) · [Raw measurements →](benchmarks/comparison-v1.6.0.json)
 
 <details>
 <summary><strong>Evaluation details: corpus, methods, timing and limits</strong></summary>
@@ -62,7 +60,7 @@ Recorded on **16 shared task cases**, with 5 runnable methods on CPU, **2026-10-
 
 **Timing.** One untimed warmup and 3 timed complete calls per case. Parsing, scoring and rendering are inside the timer; imports and model loading are outside it. All 5 scored methods produced identical output across the warmup and timed repeats. Hardware and scheduling affect latency. Since v1.5.0 Tameru remembers analyses of repeated identical text, so this repeat-timing protocol flatters it; its first-call (cold) speed-up is in the [v1.5.0 release notes](docs/releases/v1.5.0.md#performance).
 
-**Runtime and provenance.** Python 3.12.14 on INTEL(R) XEON(R) PLATINUM 8573C, with CPU-quota and thread settings in the JSON. Source/model pins, input/output hashes, package versions and individual timing samples are recorded in the raw JSON. The resumed Laya measurements retain the same corpus and settings; execution segments record the protected-no-op classification correction.
+**Runtime and provenance.** Python 3.12.16 on Intel(R) Xeon(R) Processor, with CPU-quota and thread settings in the JSON. Source/model pins, input/output hashes, package versions and individual timing samples are recorded in the raw JSON.
 
 **Interpretation.** This is Tameru's own regression corpus, including adversarial fixtures. Broader independent and live-agent evaluations are still needed to establish generality. An unmeasured provider has no score carried forward from an earlier release.
 
