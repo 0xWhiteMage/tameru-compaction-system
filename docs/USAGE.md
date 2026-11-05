@@ -68,6 +68,8 @@ Envelope fields such as exit codes survive rewrapping. `gap_marker` replaces cut
 | `min_savings_ratio` | Decline reductions below the savings floor; default 0.10 |
 | Multiple query strings | Score against the union of current and planned tasks |
 | `derive_query=True` | Infer a bounded lexical objective for empty/generic queries; reports derived terms and raises the risk floor |
+| `anchor_errors=True` | For empty, generic or saturated queries, anchor selection on error and failure lines; receipts mark `query_source="error-anchored"` and the risk floor is medium |
+| `prose_brief=True` | Opt-in (1.6.0) no-query brief for prose in any script: keeps the first and last block, one paragraph per repeat group and repeats that carry data; receipts mark `query_source="prose-brief"`; over 90% kept still fails open |
 | `decision_cache` | Freeze first-sight block decisions; bounded to 4,096 entries; frozen keeps may exceed a later requested ratio |
 | `degraded_view=True` | Opt-in bounded head/tail scoring for certain oversized inputs; preserves safety limits and raises the risk floor |
 | `IndustrialLimits` | Configure character, line, record, field, query and bidi limits |
