@@ -2516,35 +2516,8 @@ def _dup_fp(text: str) -> str:
 _NEGATED_TERM_RE = re.compile(r"\b(?:not|never|no|cannot|can't|won't|didn't|doesn't|don't|isn't|wasn't|couldn't|wouldn't|failed to|fails to|unable to)\s+([a-z][a-z0-9_]*)")
 _FAILURE_EVIDENCE_RE = re.compile(r"fail|error|err\b|fatal|emerg|crit|panic|unable|cannot|can't|couldn't|refused|denied|timed? ?out|abort|killed|\bnot\b|exit(?:ed)? (?:code|status) [1-9]")
 
-def score_blocks(
-    blocks: list[dict[str, Any]],
-    query: str,
-    *,
-    content_type: str | None = None,
-) -> list[dict[str, Any]]:
-    terms = _extract_terms(query)
-    entities = _extract_entities(query)
-    # The word-boundary pattern of each short term is compiled once per call:
-    # ``re`` keeps only 512, so a long query (thousands of terms) recompiled
-    # every pattern for every block (~80k compiles for a 30 KB query).
-    term_tests = [(t, _term_test(t)) for t in terms]
-    negated = {m.group(1) for m in _NEGATED_TERM_RE.finditer((query or "").lower())}
-    if negated:
-        term_tests = [
-            (t, lambda lower, _test=test: _test(lower) and _FAILURE_EVIDENCE_RE.search(lower) is not None)
-            if t in negated
-            else (t, test)
-            for t, test in term_tests
-        ]
-    n = max(1, len(blocks))
-    entity_df: dict[str, int] = {}
-    term_df: dict[str, int] = {}
-    fp_counts: dict[str, int] = {}
-    # Bridge-entity detection: find entities (proper nouns, identifiers) that
-    # appear in multiple blocks. These are the links in a multi-hop chain —
-    # dropping the block that holds a bridge entity severs the chain.
-    # Only boost entities that look like proper nouns or code identifiers,
-    # not common filler words.
+def _bridge_index(blocks: list[dict[str, Any]], n: int) -> tuple[list[list[str]], dict[str, list[int]]]:
+    """Tokenise each block once and index bridge entities by lowercase token (helper of score_blocks)."""
     bridge_entities: dict[str, int] = {}
     # Perf (v0.6.0): lowercase every block text exactly once. The previous
     # code re-lowered all N texts for every candidate of every block
@@ -2622,82 +2595,11 @@ def score_blocks(
     bridge_by_lower: dict[str, list[int]] = {}
     for ent, span in bridge_entities.items():
         bridge_by_lower.setdefault(ent.lower(), []).append(span)
-    for b in blocks:
-        fp = _dup_fp(b["text"])
-        if len(fp) > 20:
-            fp_counts[fp] = fp_counts.get(fp, 0) + 1
-        for e in entities:
-            if _soft_has(b["text"], e):
-                entity_df[e] = entity_df.get(e, 0) + 1
-        lower = b["text"].lower()
-        for t, term_test in term_tests:
-            if term_test(lower):
-                term_df[t] = term_df.get(t, 0) + 1
-    # Pre-compute token document frequency for novelty + fact-density.
-    # A token's DF is the number of blocks it appears in. Low DF (1-2)
-    # means the token is rare and information-dense.
-    tok_df: dict[str, int] = {}
-    # Perf (v0.6.0): reuse the shared per-block token lists (built above for
-    # the bridge-candidate scan) — no third tokenisation pass.
-    block_token_sets: list[set[str]] = []
-    for toks in block_token_lists:
-        seen_in_block: set[str] = set()
-        block_tokens: set[str] = set(toks)
-        for tok in toks:
-            if len(tok) >= 4 and tok not in _STOP and tok not in seen_in_block:
-                seen_in_block.add(tok)
-                tok_df[tok] = tok_df.get(tok, 0) + 1
-        block_token_sets.append(block_tokens)
+    return block_token_lists, bridge_by_lower
 
-    # Log-type detection (Baseline RAG "Log" policy): if > 60% of blocks
-    # look like timestamped log lines, apply log-specific scoring weights.
-    # Error/traceback blocks get a bonus; pure INFO/WARN noise gets penalized.
-    _LOG_LINE_RE = re.compile(
-        r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}"    # timestamp prefix
-        r"|^\[(?:DEBUG|INFO|WARN|ERROR|FATAL)\]"      # bracketed level
-        r"|^(?:DEBUG|INFO|WARN|ERROR|FATAL)\s"       # bare level prefix
-    )
-    log_block_count = sum(
-        1 for b in blocks
-        if any(_LOG_LINE_RE.match(line) for line in b["text"].splitlines()[:3])
-    )
-    is_log_context = log_block_count >= 2 and log_block_count / n > 0.4
-    if is_log_context:
-        _LOG_ERR_RE = re.compile(
-            r"\b(?:ERROR|FATAL|WARN|WARNINGS?)\b|Traceback|Exception",
-            re.IGNORECASE,
-        )
-        _LOG_NOISE_RE = re.compile(
-            r"^\s*(?:INFO|DEBUG)\b", re.MULTILINE,
-        )
-    # Recency + novelty prior (rate-distortion signal): even without query
-    # overlap, recent blocks and blocks holding rare, high-information
-    # identifiers deserve a base floor so a "keep track of every detail"
-    # style query does not evict scattered facts.
-    # Critical-line pre-computation (Baseline RAG-style):
-    # Pre-identify lines that carry operational facts — errors, exceptions,
-    # config assignments, key-value pairs, dates, versions, large numbers.
-    # Blocks containing these lines get a floor boost so they survive
-    # compression even without query overlap.
-    # v1.4.0 (E1): the regex is module-level and compiled with IGNORECASE; the
-    # old call `.search(line, re.IGNORECASE)` passed the flag as `pos=2`, so it
-    # matched case-sensitively and skipped the first two characters of a line.
-    # A bare LEADING timestamp is a log prefix, not a fact: the search starts
-    # after it, so timestamped INFO lines are not all "critical".
-    crit_lines_per_block: list[int] = []
-    for b in blocks:
-        cnt = 0
-        for line in b["text"].splitlines():
-            if _is_critical_line(line):
-                cnt += 1
-        crit_lines_per_block.append(cnt)
 
-    # v1.4.0 (E3): for content routed as a log, the first block carrying each
-    # level-tagged error fingerprint (ERROR/FATAL/CRITICAL/PANIC/FAIL*) is an
-    # "error exemplar". It is exempt from the stale-error penalty/cap, and the
-    # selectors keep it even when the floor-saturated path reduces to
-    # `_important`. Non-log, non-code content uses code-tool diagnostic lines
-    # (``DIAGNOSTIC_CODE_LINE_RE``), capped at ``_DIAG_EXEMPLAR_CAP`` blocks.
+def _error_exemplar_ids(blocks: list[dict[str, Any]], content_type: str | None) -> set[int]:
+    """Ids of the first block carrying each error fingerprint (helper of score_blocks)."""
     error_exemplar_ids: set[int] = set()
     if content_type == "log":
         seen_error_fps: set[str] = set()
@@ -2726,7 +2628,19 @@ def score_blocks(
                     if fp not in seen_diag_fps:
                         seen_diag_fps.add(fp)
                         error_exemplar_ids.add(b["id"])
+    return error_exemplar_ids
 
+
+def _line_ubiquitous_terms(
+    blocks: list[dict[str, Any]],
+    query: str,
+    n: int,
+    is_log_context: bool,
+    term_tests: list[tuple[str, Callable[[str], bool]]],
+    term_df: dict[str, int],
+    entities: list[str],
+) -> set[str]:
+    """Terms present on >80% of lines of a small log context (helper of score_blocks)."""
     line_ubiquitous_terms = set()
     if is_log_context and n < 10 and blocks:
         non_blank_lines = [
@@ -2772,22 +2686,18 @@ def score_blocks(
             )
             if has_selective_signal:
                 line_ubiquitous_terms = raw_line_ubiquitous
+    return line_ubiquitous_terms
 
-    # Weak-query adaptive floor (rate-distortion H(Q) theory):
-    # When the query has low information content, raise the novelty floor
-    # and recency ramp so middle blocks survive. A vague "keep track of
-    # every detail" query has H(Q) ≈ 0 — it tells us nothing about what
-    # to keep, so we should be more conservative about dropping.
-    #
-    # A query is "weak" if NONE of its terms are distinctive identifiers
-    # (digits, separators, uppercase). "database host port" is weak
-    # (all generic words, no identifiers). "REL-2026 user_id 99113" is
-    # strong (has identifiers). This matches the rate-distortion theory:
-    # H(Q) ≈ 0 when the query carries no specific information.
-    #
-    # Guard: only apply the weak-query boost when there are enough
-    # blocks (≥ 6) to make compression meaningful. With ≤ 5 blocks,
-    # the keep_ratio will be ~1.0 and we'd fail-open anyway.
+
+def _weak_boost(
+    blocks: list[dict[str, Any]],
+    query: str,
+    terms: list[str],
+    n: int,
+    term_df: dict[str, int],
+    line_ubiquitous_terms: set[str],
+) -> float:
+    """1.0 when the query carries no distinctive information, else 0.0 (helper of score_blocks)."""
     weak_boost = 0.0
     if len(blocks) >= 6 and terms:
         distinctive = 0
@@ -2806,6 +2716,365 @@ def score_blocks(
         # because they lack digits. Vague next-chat ("keep every detail")
         # still gets the uniqueness floor.
         weak_boost = 0.0 if distinctive > 0 or len(topic) >= 2 else 1.0
+    return weak_boost
+
+
+def _critical_line_counts(blocks: list[dict[str, Any]]) -> list[int]:
+    """Count operational-fact lines per block (helper of score_blocks)."""
+    crit_lines_per_block: list[int] = []
+    for b in blocks:
+        cnt = 0
+        for line in b["text"].splitlines():
+            if _is_critical_line(line):
+                cnt += 1
+        crit_lines_per_block.append(cnt)
+    return crit_lines_per_block
+
+
+def _token_df(block_token_lists: list[list[str]]) -> tuple[dict[str, int], list[set[str]]]:
+    """Per-token block frequency and per-block token sets (helper of score_blocks)."""
+    tok_df: dict[str, int] = {}
+    # Perf (v0.6.0): reuse the shared per-block token lists (built above for
+    # the bridge-candidate scan) — no third tokenisation pass.
+    block_token_sets: list[set[str]] = []
+    for toks in block_token_lists:
+        seen_in_block: set[str] = set()
+        block_tokens: set[str] = set(toks)
+        for tok in toks:
+            if len(tok) >= 4 and tok not in _STOP and tok not in seen_in_block:
+                seen_in_block.add(tok)
+                tok_df[tok] = tok_df.get(tok, 0) + 1
+        block_token_sets.append(block_tokens)
+    return tok_df, block_token_sets
+
+
+def _score_one_block(
+    idx: int,
+    b: dict[str, Any],
+    *,
+    n: int,
+    entities: list[str],
+    entity_df: dict[str, int],
+    term_tests: list[tuple[str, Callable[[str], bool]]],
+    term_df: dict[str, int],
+    ubiquitous_terms: set[str],
+    error_exemplar_ids: set[int],
+    is_log_context: bool,
+    log_err_re: re.Pattern[str] | None,
+    log_noise_re: re.Pattern[str] | None,
+    crit_lines_per_block: list[int],
+    bridge_by_lower: dict[str, list[int]],
+    block_token_sets: list[set[str]],
+    weak_boost: float,
+    tok_df: dict[str, int],
+    fp_counts: dict[str, int],
+) -> dict[str, Any]:
+    """Score one block (the per-block body of score_blocks)."""
+    score = 0.0
+    reason = "context"
+    entity_hits = 0
+    term_hits = 0
+    rare_term_hits = 0
+    for e in entities:
+        if _soft_has(b["text"], e):
+            entity_hits += 1
+            df = entity_df.get(e, 1)
+            score += 1.4 + 4.6 * math.log((n + 1) / (df + 1))
+            reason = "query entity"
+    lower = b["text"].lower()
+    # Classification belongs to the block, never to question wording.
+    # An intentional override must be explicit through pin_patterns.
+    trust_risk = bool(
+        _TRUST_RISK_RE.search(_normalise_instruction_text(b["text"]))
+    )
+    for t, term_test in term_tests:
+        if t in ubiquitous_terms:
+            continue
+        if term_test(lower):
+            term_hits += 1
+            df = term_df.get(t, 1)
+            if df <= max(2, int(0.2 * n)):
+                rare_term_hits += 1
+            score += 0.9 + 3.2 * math.log((n + 1) / (df + 1))
+            if reason == "context":
+                reason = "query term"
+    if b["type"] == "definition":
+        score += 2.0
+    if b["type"] == "trace":
+        score += 2.8
+    if b["type"] == "heading":
+        score += 0.8
+    if b["type"] == "log" and re.search(r"error|fail|exception|timeout|denied|invalid", lower):
+        score += 1.2
+    # Old-error purge (leanctx-inspired): errored dumps with ZERO query
+    # hits deep inside a large document are handled history — the fact of
+    # the error survives via citations; the bulk shouldn't. Only applies
+    # when there are enough blocks that recency is meaningful.
+    error_exemplar = b["id"] in error_exemplar_ids
+    if (
+        n >= 12
+        and idx < n - 6
+        and entity_hits == 0
+        and term_hits == 0
+        and not error_exemplar
+        and (
+            b["type"] == "trace"
+            or (
+                b["type"] == "log"
+                and re.search(r"error|fail|exception|denied", lower)
+            )
+            or "Traceback (most recent call last)" in b["text"]
+        )
+    ):
+        score -= 4.5
+        if reason == "context":
+            reason = "stale error"
+
+    # Log-context policy (Baseline RAG "Log" policy): in log-heavy
+    # contexts, boost error/traceback blocks and penalize pure INFO
+    # noise so the signal stands out from the chatter.
+    if is_log_context:
+        if log_err_re.search(b["text"]):
+            score += 3.0
+            if reason == "context":
+                reason = "log error"
+        else:
+            lines = b["text"].splitlines()
+            noise_lines = sum(
+                1 for block_line in lines if log_noise_re.match(block_line)
+            )
+            if noise_lines >= len(lines) * 0.8 and len(lines) >= 2:
+                score -= 1.5
+                if reason == "context":
+                    reason = "log noise"
+    # Critical-line floor: blocks containing operational facts (errors,
+    # config, key-value pairs, dates, versions) get a floor boost so
+    # they survive even without query overlap. This is the Baseline RAG
+    # "important_kept_pct" signal — their verifier tracks critical lines
+    # and flags risk when they're dropped. We make it a scoring input
+    # instead, so the critical lines are kept in the first place.
+    crit = crit_lines_per_block[idx]
+    if crit > 0:
+        score += min(3.0, 0.8 * crit)
+        if reason == "context":
+            reason = "critical lines"
+    # Bridge-entity boost: blocks that contain cross-block entities (the
+    # links in a multi-hop chain) get a floor boost so the chain doesn't
+    # get severed. The boost scales with how many blocks the entity spans.
+    # Perf (v0.6.0): iterate only over entities present in this block
+    # via the precomputed token set instead of scanning every bridge
+    # entity for every block (O(n·e) substring scans → O(n + e)).
+    bridge_boost = 0.0
+    block_tokens = block_token_sets[idx]
+    if bridge_by_lower:
+        for tok in block_tokens:
+            for span in bridge_by_lower.get(tok, ()):
+                bridge_boost += 1.5 + 0.5 * min(span, 5)
+    if bridge_boost > 0:
+        score += bridge_boost
+        if reason == "context":
+            reason = "bridge entity"
+    # Uniqueness floor (ACON insight): if a block contains a
+    # high-information identifier that appears in NO OTHER block,
+    # it's uniquely valuable. Drop it and the fact is gone forever
+    # (unless CCR is enabled). Give it a floor boost so scattered
+    # facts survive even when the query doesn't mention them.
+    # Only applies when the query is weak (low entropy) — a vague
+    # "keep track of every detail" query deserves a higher keep
+    # threshold. A strong, specific query ("who won the 1998 world
+    # cup") should still evict unrelated blocks even if they're
+    # unique.
+    unique_id_count = 0
+    list_noise = b["type"] == "list" and entity_hits == 0 and term_hits == 0
+    if weak_boost > 0 and not list_noise:
+        # Perf (v0.6.0): reuse the shared token set — no extra regex pass.
+        for tl in block_tokens:
+            if len(tl) < 6 or tl in _STOP:
+                continue
+            if _HEX_ID_RE.match(tl):
+                continue
+            df = tok_df.get(tl, 0)
+            if df == 1:
+                unique_id_count += 1
+        if unique_id_count >= 2:
+            score += min(4.0, 1.5 + 0.8 * unique_id_count)
+            if reason in ("context",):
+                reason = "unique facts"
+    # Recency + novelty prior: recent blocks get a ramp up to ~2.0;
+    # rare high-information identifiers (short tokens, dotted paths,
+    # UPPER_SNAKE, REL-xxx, 8+ hex) give a small floor so scattered
+    # facts survive a vague "keep everything" query.
+    # Weak-query boost: when the query has low information content,
+    # raise both the recency ramp and the novelty floor so middle
+    # blocks survive. This is the rate-distortion H(Q) theory: a
+    # vague query deserves a higher keep threshold.
+    recency_max = 2.0 + weak_boost
+    recency = recency_max * (idx + 1) / n
+    score += recency
+    novelty = 0.0
+    rare_count = 0
+    # Perf (v0.6.0): reuse block_token_sets instead of re-tokenising
+    # and re-lowering every block here (third full token pass removed).
+    for tl in block_token_sets[idx]:
+        if len(tl) < 4 or tl in _STOP:
+            continue
+        if _HEX_ID_RE.match(tl):
+            continue
+        df = tok_df.get(tl, 0)
+        if df <= 2 and not re.match(r"^[a-z]{4}$", tl):
+            novelty += 0.6
+            rare_count += 1
+    # Weak-query boost on novelty floor: raise the cap from 2.4 to
+    # 2.4 + weak_boost (up to 3.4) when the query is vague.
+    score += min(2.4 + weak_boost, novelty)
+    # Fact density: blocks with many distinct rare identifiers are
+    # information-dense. Even without query overlap, a block packed
+    # with rare facts is worth keeping. This rescues scattered facts
+    # in large contexts where the query only mentions a few entities.
+    # Threshold: 5+ rare tokens → +1.0, 10+ → +2.0, 15+ → +3.0 (cap).
+    if rare_count >= 5 and not list_noise:
+        fact_density = min(3.0, 0.2 * rare_count)
+        score += fact_density
+    # Recency / sinks
+    if idx == 0:
+        score += 0.35
+    if idx == n - 1:
+        score += 0.45
+    fp = _dup_fp(b["text"])
+    dup = fp_counts.get(fp, 0)
+    if dup > 1:
+        score -= min(3.0, dup * 0.8)
+    if trust_risk:
+        score -= 50.0
+        reason = "untrusted instruction"
+    # Final stale-error cap: after every boost (recency, novelty,
+    # fact-density), a handled error dump must stay below the adaptive
+    # floor minimum so it drops to citations instead of re-inflating.
+    if reason == "stale error":
+        score = min(score, 1.8)
+    if error_exemplar and reason in ("context", "log error", "critical lines"):
+        reason = "error exemplar"
+    return {
+            **b,
+            "score": max(0.0, score),
+            "reason": reason,
+            "entity_hits": entity_hits,
+            "term_hits": term_hits,
+            "rare_term_hits": rare_term_hits,
+            "trust_risk": trust_risk,
+            "error_exemplar": error_exemplar,
+    }
+
+
+def score_blocks(
+    blocks: list[dict[str, Any]],
+    query: str,
+    *,
+    content_type: str | None = None,
+) -> list[dict[str, Any]]:
+    terms = _extract_terms(query)
+    entities = _extract_entities(query)
+    # The word-boundary pattern of each short term is compiled once per call:
+    # ``re`` keeps only 512, so a long query (thousands of terms) recompiled
+    # every pattern for every block (~80k compiles for a 30 KB query).
+    term_tests = [(t, _term_test(t)) for t in terms]
+    negated = {m.group(1) for m in _NEGATED_TERM_RE.finditer((query or "").lower())}
+    if negated:
+        term_tests = [
+            (t, lambda lower, _test=test: _test(lower) and _FAILURE_EVIDENCE_RE.search(lower) is not None)
+            if t in negated
+            else (t, test)
+            for t, test in term_tests
+        ]
+    n = max(1, len(blocks))
+    entity_df: dict[str, int] = {}
+    term_df: dict[str, int] = {}
+    fp_counts: dict[str, int] = {}
+    # Bridge-entity detection: find entities (proper nouns, identifiers) that
+    # appear in multiple blocks. These are the links in a multi-hop chain —
+    # dropping the block that holds a bridge entity severs the chain.
+    # Only boost entities that look like proper nouns or code identifiers,
+    # not common filler words.
+    block_token_lists, bridge_by_lower = _bridge_index(blocks, n)
+    for b in blocks:
+        fp = _dup_fp(b["text"])
+        if len(fp) > 20:
+            fp_counts[fp] = fp_counts.get(fp, 0) + 1
+        for e in entities:
+            if _soft_has(b["text"], e):
+                entity_df[e] = entity_df.get(e, 0) + 1
+        lower = b["text"].lower()
+        for t, term_test in term_tests:
+            if term_test(lower):
+                term_df[t] = term_df.get(t, 0) + 1
+    # Pre-compute token document frequency for novelty + fact-density.
+    # A token's DF is the number of blocks it appears in. Low DF (1-2)
+    # means the token is rare and information-dense.
+    tok_df, block_token_sets = _token_df(block_token_lists)
+
+    # Log-type detection (Baseline RAG "Log" policy): if > 60% of blocks
+    # look like timestamped log lines, apply log-specific scoring weights.
+    # Error/traceback blocks get a bonus; pure INFO/WARN noise gets penalized.
+    _LOG_LINE_RE = re.compile(
+        r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}"    # timestamp prefix
+        r"|^\[(?:DEBUG|INFO|WARN|ERROR|FATAL)\]"      # bracketed level
+        r"|^(?:DEBUG|INFO|WARN|ERROR|FATAL)\s"       # bare level prefix
+    )
+    log_block_count = sum(
+        1 for b in blocks
+        if any(_LOG_LINE_RE.match(line) for line in b["text"].splitlines()[:3])
+    )
+    is_log_context = log_block_count >= 2 and log_block_count / n > 0.4
+    if is_log_context:
+        _LOG_ERR_RE = re.compile(
+            r"\b(?:ERROR|FATAL|WARN|WARNINGS?)\b|Traceback|Exception",
+            re.IGNORECASE,
+        )
+        _LOG_NOISE_RE = re.compile(
+            r"^\s*(?:INFO|DEBUG)\b", re.MULTILINE,
+        )
+    # Recency + novelty prior (rate-distortion signal): even without query
+    # overlap, recent blocks and blocks holding rare, high-information
+    # identifiers deserve a base floor so a "keep track of every detail"
+    # style query does not evict scattered facts.
+    # Critical-line pre-computation (Baseline RAG-style):
+    # Pre-identify lines that carry operational facts — errors, exceptions,
+    # config assignments, key-value pairs, dates, versions, large numbers.
+    # Blocks containing these lines get a floor boost so they survive
+    # compression even without query overlap.
+    # v1.4.0 (E1): the regex is module-level and compiled with IGNORECASE; the
+    # old call `.search(line, re.IGNORECASE)` passed the flag as `pos=2`, so it
+    # matched case-sensitively and skipped the first two characters of a line.
+    # A bare LEADING timestamp is a log prefix, not a fact: the search starts
+    # after it, so timestamped INFO lines are not all "critical".
+    crit_lines_per_block = _critical_line_counts(blocks)
+
+    # v1.4.0 (E3): for content routed as a log, the first block carrying each
+    # level-tagged error fingerprint (ERROR/FATAL/CRITICAL/PANIC/FAIL*) is an
+    # "error exemplar". It is exempt from the stale-error penalty/cap, and the
+    # selectors keep it even when the floor-saturated path reduces to
+    # `_important`. Non-log, non-code content uses code-tool diagnostic lines
+    # (``DIAGNOSTIC_CODE_LINE_RE``), capped at ``_DIAG_EXEMPLAR_CAP`` blocks.
+    error_exemplar_ids = _error_exemplar_ids(blocks, content_type)
+
+    line_ubiquitous_terms = _line_ubiquitous_terms(blocks, query, n, is_log_context, term_tests, term_df, entities)
+
+    # Weak-query adaptive floor (rate-distortion H(Q) theory):
+    # When the query has low information content, raise the novelty floor
+    # and recency ramp so middle blocks survive. A vague "keep track of
+    # every detail" query has H(Q) ≈ 0 — it tells us nothing about what
+    # to keep, so we should be more conservative about dropping.
+    #
+    # A query is "weak" if NONE of its terms are distinctive identifiers
+    # (digits, separators, uppercase). "database host port" is weak
+    # (all generic words, no identifiers). "REL-2026 user_id 99113" is
+    # strong (has identifiers). This matches the rate-distortion theory:
+    # H(Q) ≈ 0 when the query carries no specific information.
+    #
+    # Guard: only apply the weak-query boost when there are enough
+    # blocks (≥ 6) to make compression meaningful. With ≤ 5 blocks,
+    # the keep_ratio will be ~1.0 and we'd fail-open anyway.
+    weak_boost = _weak_boost(blocks, query, terms, n, term_df, line_ubiquitous_terms)
 
     # IDF floor: a query term in nearly every block carries no signal; it
     # neither scores nor counts as a hit (else every block looks relevant).
@@ -2815,201 +3084,27 @@ def score_blocks(
     }
     scored = []
     for idx, b in enumerate(blocks):
-        score = 0.0
-        reason = "context"
-        entity_hits = 0
-        term_hits = 0
-        rare_term_hits = 0
-        for e in entities:
-            if _soft_has(b["text"], e):
-                entity_hits += 1
-                df = entity_df.get(e, 1)
-                score += 1.4 + 4.6 * math.log((n + 1) / (df + 1))
-                reason = "query entity"
-        lower = b["text"].lower()
-        # Classification belongs to the block, never to question wording.
-        # An intentional override must be explicit through pin_patterns.
-        trust_risk = bool(
-            _TRUST_RISK_RE.search(_normalise_instruction_text(b["text"]))
-        )
-        for t, term_test in term_tests:
-            if t in ubiquitous_terms:
-                continue
-            if term_test(lower):
-                term_hits += 1
-                df = term_df.get(t, 1)
-                if df <= max(2, int(0.2 * n)):
-                    rare_term_hits += 1
-                score += 0.9 + 3.2 * math.log((n + 1) / (df + 1))
-                if reason == "context":
-                    reason = "query term"
-        if b["type"] == "definition":
-            score += 2.0
-        if b["type"] == "trace":
-            score += 2.8
-        if b["type"] == "heading":
-            score += 0.8
-        if b["type"] == "log" and re.search(r"error|fail|exception|timeout|denied|invalid", lower):
-            score += 1.2
-        # Old-error purge (leanctx-inspired): errored dumps with ZERO query
-        # hits deep inside a large document are handled history — the fact of
-        # the error survives via citations; the bulk shouldn't. Only applies
-        # when there are enough blocks that recency is meaningful.
-        error_exemplar = b["id"] in error_exemplar_ids
-        if (
-            n >= 12
-            and idx < n - 6
-            and entity_hits == 0
-            and term_hits == 0
-            and not error_exemplar
-            and (
-                b["type"] == "trace"
-                or (
-                    b["type"] == "log"
-                    and re.search(r"error|fail|exception|denied", lower)
-                )
-                or "Traceback (most recent call last)" in b["text"]
-            )
-        ):
-            score -= 4.5
-            if reason == "context":
-                reason = "stale error"
-
-        # Log-context policy (Baseline RAG "Log" policy): in log-heavy
-        # contexts, boost error/traceback blocks and penalize pure INFO
-        # noise so the signal stands out from the chatter.
-        if is_log_context:
-            if _LOG_ERR_RE.search(b["text"]):
-                score += 3.0
-                if reason == "context":
-                    reason = "log error"
-            else:
-                lines = b["text"].splitlines()
-                noise_lines = sum(
-                    1 for block_line in lines if _LOG_NOISE_RE.match(block_line)
-                )
-                if noise_lines >= len(lines) * 0.8 and len(lines) >= 2:
-                    score -= 1.5
-                    if reason == "context":
-                        reason = "log noise"
-        # Critical-line floor: blocks containing operational facts (errors,
-        # config, key-value pairs, dates, versions) get a floor boost so
-        # they survive even without query overlap. This is the Baseline RAG
-        # "important_kept_pct" signal — their verifier tracks critical lines
-        # and flags risk when they're dropped. We make it a scoring input
-        # instead, so the critical lines are kept in the first place.
-        crit = crit_lines_per_block[idx]
-        if crit > 0:
-            score += min(3.0, 0.8 * crit)
-            if reason == "context":
-                reason = "critical lines"
-        # Bridge-entity boost: blocks that contain cross-block entities (the
-        # links in a multi-hop chain) get a floor boost so the chain doesn't
-        # get severed. The boost scales with how many blocks the entity spans.
-        # Perf (v0.6.0): iterate only over entities present in this block
-        # via the precomputed token set instead of scanning every bridge
-        # entity for every block (O(n·e) substring scans → O(n + e)).
-        bridge_boost = 0.0
-        block_tokens = block_token_sets[idx]
-        if bridge_by_lower:
-            for tok in block_tokens:
-                for span in bridge_by_lower.get(tok, ()):
-                    bridge_boost += 1.5 + 0.5 * min(span, 5)
-        if bridge_boost > 0:
-            score += bridge_boost
-            if reason == "context":
-                reason = "bridge entity"
-        # Uniqueness floor (ACON insight): if a block contains a
-        # high-information identifier that appears in NO OTHER block,
-        # it's uniquely valuable. Drop it and the fact is gone forever
-        # (unless CCR is enabled). Give it a floor boost so scattered
-        # facts survive even when the query doesn't mention them.
-        # Only applies when the query is weak (low entropy) — a vague
-        # "keep track of every detail" query deserves a higher keep
-        # threshold. A strong, specific query ("who won the 1998 world
-        # cup") should still evict unrelated blocks even if they're
-        # unique.
-        unique_id_count = 0
-        list_noise = b["type"] == "list" and entity_hits == 0 and term_hits == 0
-        if weak_boost > 0 and not list_noise:
-            # Perf (v0.6.0): reuse the shared token set — no extra regex pass.
-            for tl in block_tokens:
-                if len(tl) < 6 or tl in _STOP:
-                    continue
-                if _HEX_ID_RE.match(tl):
-                    continue
-                df = tok_df.get(tl, 0)
-                if df == 1:
-                    unique_id_count += 1
-            if unique_id_count >= 2:
-                score += min(4.0, 1.5 + 0.8 * unique_id_count)
-                if reason in ("context",):
-                    reason = "unique facts"
-        # Recency + novelty prior: recent blocks get a ramp up to ~2.0;
-        # rare high-information identifiers (short tokens, dotted paths,
-        # UPPER_SNAKE, REL-xxx, 8+ hex) give a small floor so scattered
-        # facts survive a vague "keep everything" query.
-        # Weak-query boost: when the query has low information content,
-        # raise both the recency ramp and the novelty floor so middle
-        # blocks survive. This is the rate-distortion H(Q) theory: a
-        # vague query deserves a higher keep threshold.
-        recency_max = 2.0 + weak_boost
-        recency = recency_max * (idx + 1) / n
-        score += recency
-        novelty = 0.0
-        rare_count = 0
-        # Perf (v0.6.0): reuse block_token_sets instead of re-tokenising
-        # and re-lowering every block here (third full token pass removed).
-        for tl in block_token_sets[idx]:
-            if len(tl) < 4 or tl in _STOP:
-                continue
-            if _HEX_ID_RE.match(tl):
-                continue
-            df = tok_df.get(tl, 0)
-            if df <= 2 and not re.match(r"^[a-z]{4}$", tl):
-                novelty += 0.6
-                rare_count += 1
-        # Weak-query boost on novelty floor: raise the cap from 2.4 to
-        # 2.4 + weak_boost (up to 3.4) when the query is vague.
-        score += min(2.4 + weak_boost, novelty)
-        # Fact density: blocks with many distinct rare identifiers are
-        # information-dense. Even without query overlap, a block packed
-        # with rare facts is worth keeping. This rescues scattered facts
-        # in large contexts where the query only mentions a few entities.
-        # Threshold: 5+ rare tokens → +1.0, 10+ → +2.0, 15+ → +3.0 (cap).
-        if rare_count >= 5 and not list_noise:
-            fact_density = min(3.0, 0.2 * rare_count)
-            score += fact_density
-        # Recency / sinks
-        if idx == 0:
-            score += 0.35
-        if idx == n - 1:
-            score += 0.45
-        fp = _dup_fp(b["text"])
-        dup = fp_counts.get(fp, 0)
-        if dup > 1:
-            score -= min(3.0, dup * 0.8)
-        if trust_risk:
-            score -= 50.0
-            reason = "untrusted instruction"
-        # Final stale-error cap: after every boost (recency, novelty,
-        # fact-density), a handled error dump must stay below the adaptive
-        # floor minimum so it drops to citations instead of re-inflating.
-        if reason == "stale error":
-            score = min(score, 1.8)
-        if error_exemplar and reason in ("context", "log error", "critical lines"):
-            reason = "error exemplar"
         scored.append(
-            {
-                **b,
-                "score": max(0.0, score),
-                "reason": reason,
-                "entity_hits": entity_hits,
-                "term_hits": term_hits,
-                "rare_term_hits": rare_term_hits,
-                "trust_risk": trust_risk,
-                "error_exemplar": error_exemplar,
-            }
+            _score_one_block(
+                idx,
+                b,
+                n=n,
+                entities=entities,
+                entity_df=entity_df,
+                term_tests=term_tests,
+                term_df=term_df,
+                ubiquitous_terms=ubiquitous_terms,
+                error_exemplar_ids=error_exemplar_ids,
+                is_log_context=is_log_context,
+                log_err_re=_LOG_ERR_RE if is_log_context else None,
+                log_noise_re=_LOG_NOISE_RE if is_log_context else None,
+                crit_lines_per_block=crit_lines_per_block,
+                bridge_by_lower=bridge_by_lower,
+                block_token_sets=block_token_sets,
+                weak_boost=weak_boost,
+                tok_df=tok_df,
+                fp_counts=fp_counts,
+            )
         )
     return scored
 
