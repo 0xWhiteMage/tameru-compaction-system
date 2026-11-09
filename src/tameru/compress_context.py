@@ -6759,6 +6759,1194 @@ def _write_audit_log(
     return 
 
 
+def _finalize_result_text_and_ccr(
+    *,
+    _ccr_defer,
+    cache_prefix,
+    caller_text,
+    ccr,
+    ccr_dir,
+    compressed,
+    fail_open,
+    kept,
+    line_keep,
+    original_text,
+    original_tokens,
+    query_as_given,
+    risk,
+    scored,
+    secret_in_input,
+    trust_filtered,
+):
+    """Wrap the compressed text for the cache prefix, append and store the CCR pointer, and apply the final size guard. Returns ``(result_text, ccr_info, compressed, kept, fail_open, risk, cache_applied, line_keep)``."""
+    result_text = compressed
+    cache_applied = False
+    if cache_prefix and not fail_open:
+        result_text = cache_wrap(compressed, query_as_given or "")
+        cache_applied = True
+
+    ccr_info = None
+    pending_ccr_hash = None
+    candidate_text = result_text
+    if ccr and not fail_open and compressed != original_text and not secret_in_input:
+        pending_ccr_hash = hashlib.sha256(caller_text.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
+        if "[CC-Retrieve:" not in candidate_text:
+            candidate_text = (
+                candidate_text.rstrip()
+                + f"\n[CC-Retrieve: {pending_ccr_hash}]\n"
+            )
+
+    candidate_tokens = estimate_tokens(candidate_text)
+    if not fail_open and candidate_tokens > original_tokens and not trust_filtered:
+        result_text = caller_text
+        compressed = caller_text
+        kept = {b["id"] for b in scored}
+        fail_open = True
+        risk = "high"
+        cache_applied = False
+        line_keep = 1.0
+    else:
+        result_text = candidate_text
+        if pending_ccr_hash is not None:
+            if _ccr_defer:
+                # Probe path: keep the marker; the caller stores once at reuse.
+                ccr_info = {"hash": pending_ccr_hash, "path": None, "deferred": True}
+            else:
+                try:
+                    # Recovery means the caller's exact bytes, not a preprocessed view.
+                    ccr_info = _ccr_store(caller_text, ccr_dir)
+                except OSError:
+                    ccr_info = None
+                if ccr_info is None:
+                    # Store refused (secret screen) or failed — never emit a
+                    # dangling retrieval pointer.
+                    result_text = result_text.replace(
+                        f"\n[CC-Retrieve: {pending_ccr_hash}]\n", ""
+                    )
+    return result_text, ccr_info, compressed, kept, fail_open, risk, cache_applied, line_keep
+
+
+def _collect_reasons(
+    *,
+    adapter_info,
+    ccr,
+    degraded,
+    fail_open,
+    freeze_cache_saturated,
+    industrial,
+    kept,
+    log_error_retention,
+    risk,
+    savings_gate,
+    scored,
+    secret_in_input,
+    source_pin_loss,
+    structural_collapse_only,
+):
+    """Human-readable reasons for the result, and the risk after the degraded-view adjustment. Returns ``(reasons, risk)``."""
+    reasons = sorted({scored[i]["reason"] for i in kept if i < len(scored)})
+    if source_pin_loss:
+        reasons.append("original pinned blocks could not be preserved")
+    if industrial.applied:
+        reasons.append(f"industrial adapter: {industrial.profile.format}")
+    if adapter_info is not None and not fail_open:
+        reasons.append(f"format adapter: {adapter_info['name']}")
+    if freeze_cache_saturated:
+        reasons.append("freeze cache capacity reached")
+    if savings_gate:
+        reasons.append("savings below min_savings_ratio")
+    if structural_collapse_only and not fail_open:
+        reasons.append("structural collapse only (query terms absent)")
+    if log_error_retention and log_error_retention["kept"] < log_error_retention["total"]:
+        reasons.append(
+            f"log error fingerprints lost: {log_error_retention['kept']}"
+            f"/{log_error_retention['total']} kept"
+        )
+    if degraded:
+        reasons.append("degraded scoring view")
+        if risk == "low":
+            risk = "medium"
+    if ccr and secret_in_input:
+        # dsh-jev-pre-compaction lesson: scan for secrets BEFORE archiving.
+        reasons.append("ccr skipped: secret material detected")
+    return reasons, risk
+
+
+def _apply_cost_gates(
+    *,
+    adapter_info,
+    caller_text,
+    compressed,
+    fail_open,
+    kept,
+    min_savings_ratio,
+    original_text,
+    recall,
+    risk,
+    savings_gate,
+    scored,
+    source_pin_texts,
+):
+    """Token counts and the fail-open gates on the result: net-negative size, too little savings, and lost pinned source text. Returns ``(original_tokens, kept_tokens, trust_filtered, compressed, kept, fail_open, risk, savings_gate, source_pin_loss, recall)``."""
+    original_tokens = estimate_tokens(original_text)
+    kept_tokens = estimate_tokens(compressed)
+    trust_filtered = any(
+        b.get("trust_risk") and not b.get("pinned") and b["id"] not in kept
+        for b in scored
+    )
+
+    # Cost gate: if the compressed output is LARGER than the original
+    # (net-negative savings), fail open. This happens when citations and
+    # the CCR marker add more tokens than the dropped blocks saved.
+    #
+    # Provider cache pricing makes this more nuanced: Anthropic charges
+    # 1.25× for cache writes and 0.1× for cache reads. If the context is
+    # already cached (repeated session), the original is cheap to re-send
+    # and the compression overhead may not be worth it. We model this
+    # with a simple heuristic: if the savings are < 10%, the overhead of
+    # citations + CCR marker likely exceeds the cache-read savings.
+    if (
+        not fail_open
+        and (
+            kept_tokens > original_tokens
+            or (kept_tokens >= original_tokens and len(compressed) > len(original_text))
+        )
+        and not trust_filtered
+    ):
+        compressed = original_text
+        kept = {b["id"] for b in scored}
+        fail_open = True
+        risk = "high"
+        kept_tokens = estimate_tokens(compressed)
+    elif not fail_open and original_tokens > 200:
+        # For substantial contexts, check if the savings justify the
+        # compression overhead. If we're saving less than 10%, the
+        # citation/CCR overhead likely exceeds the benefit, especially
+        # when the provider cache makes the original cheap to re-send.
+        if adapter_info is not None:
+            # Estimator undercounts identifier-like dropped lines, so use char savings as a floor.
+            token_savings = 1.0 - kept_tokens / max(1, original_tokens)
+            char_savings = 1.0 - len(compressed) / max(1, len(original_text))
+            savings_ratio = max(token_savings, char_savings)
+        else:
+            savings_ratio = 1.0 - (kept_tokens / max(1, original_tokens))
+        if savings_ratio < min_savings_ratio and not trust_filtered:
+            compressed = original_text
+            kept = {b["id"] for b in scored}
+            fail_open = True
+            risk = "high"
+            savings_gate = True
+            kept_tokens = estimate_tokens(compressed)
+
+    source_pin_loss = not fail_open and any(part not in compressed for part in source_pin_texts)
+    if source_pin_loss:
+        compressed = caller_text
+        kept = {block['id'] for block in scored}
+        fail_open = True
+        risk = 'high'
+        recall = 0.0
+        kept_tokens = estimate_tokens(compressed)
+
+    if fail_open and compressed != caller_text:
+        compressed = caller_text
+        kept_tokens = estimate_tokens(compressed)
+    return original_tokens, kept_tokens, trust_filtered, compressed, kept, fail_open, risk, savings_gate, source_pin_loss, recall
+
+
+def _render_and_check_recall(
+    *,
+    adapter_info,
+    ambiguity_fail_open,
+    caller_text,
+    citations,
+    decision_cache,
+    fail_open,
+    gap_marker,
+    kept,
+    lines,
+    original_text,
+    query,
+    recall_base,
+    _reorder,
+    risk,
+    score_lines,
+    scored,
+):
+    """Render the kept blocks (or restore the original when failing open), then widen the selection once if query entities were lost. Returns ``(compressed, kept, fail_open, risk, recall, structural_collapse_only)``."""
+    collapsed = "\n".join(lines)
+    structural_collapse_only = False
+    if fail_open:
+        annotated_ids = {
+            b["id"] for b in scored if b.get("trust_risk") and not b.get("pinned")
+        }
+        if annotated_ids:
+            # Restore ordinary data when uncertain, but never undo a block
+            # annotation. Explicitly pinned blocks remain eligible.
+            kept = {b["id"] for b in scored if b["id"] not in annotated_ids}
+            compressed = _render(
+                lines, scored, kept, citations=citations, reorder_best=_reorder,
+                gap_marker=gap_marker, total_chars=len(caller_text),
+                content_lines=score_lines,
+            )
+            fail_open = False
+            risk = "high"
+        # Do not undo a useful structured collapse (repeated INFO lines).
+        # Baseline RAG wins on JP/KO heartbeats by keeping the error and
+        # dropping repeats; restoring original bytes here threw that away.
+        elif (
+            not ambiguity_fail_open
+            and collapsed != original_text
+            and len(collapsed) < 0.7 * max(1, len(original_text))
+        ):
+            fail_open = False
+            compressed = collapsed
+            kept = {b["id"] for b in scored}
+            # v1.4.0 (E7): the query never selected anything here; what is
+            # returned is the structural collapse alone (repeat folding,
+            # frame runs), not an answer-driven extract. Say so.
+            structural_collapse_only = True
+        else:
+            compressed = original_text
+            kept = {b["id"] for b in scored}
+    else:
+        compressed = _render(
+            lines, scored, kept, citations=citations, reorder_best=_reorder,
+            gap_marker=gap_marker, total_chars=len(caller_text),
+            content_lines=score_lines,
+        )
+
+    if (adapter_info is not None and not fail_open
+            and all(block["id"] in kept for block in scored)):
+        # Selection is already final: preserve whitespace inside complete records,
+        # including blank diff context lines, instead of manufacturing new gaps.
+        compressed = collapsed
+    recall = _entity_recall(recall_base, compressed, query or "")
+    if recall < 0.66 and not fail_open:
+        # One expansion pass: add any dropped block that still holds a query key.
+        keys = _extract_entities(query or "") + _extract_terms(query or "")
+        for b in scored:
+            if b["id"] in kept or b.get("trust_risk"):
+                continue
+            if any(_soft_has(b["text"], k) for k in keys):
+                kept.add(b["id"])
+        if decision_cache is not None:
+            kept = _enforce_frozen_decisions(scored, kept)
+        compressed = _render(
+            lines, scored, kept, citations=citations, reorder_best=_reorder,
+            gap_marker=gap_marker, total_chars=len(caller_text),
+            content_lines=score_lines,
+        )
+        recall = _entity_recall(recall_base, compressed, query or "")
+        trust_risks = {
+            b["id"]
+            for b in scored
+            if b.get("trust_risk") and not b.get("pinned")
+        }
+        if trust_risks:
+            # Filter the CURRENT selection down by trust risks — do not
+            # rebuild it as "everything except risks". Rebuilding discards
+            # the selector's careful small keep-set and re-inflates the
+            # payload to near-original size (v0.5.19 production QA finding).
+            kept = {bid for bid in kept if bid not in trust_risks}
+            if decision_cache is not None:
+                kept = _enforce_frozen_decisions(scored, kept)
+            compressed = _render(
+                lines, scored, kept, citations=citations, reorder_best=_reorder,
+                gap_marker=gap_marker, total_chars=len(caller_text),
+                content_lines=score_lines,
+            )
+            risk = "high"
+        elif recall < 0.5:
+            compressed = original_text
+            fail_open = True
+            risk = "high"
+            kept = {b["id"] for b in scored}
+    return compressed, kept, fail_open, risk, recall, structural_collapse_only
+
+
+def _apply_query_guards(
+    *,
+    adapter_info,
+    fail_open,
+    no_table,
+    original_text,
+    query,
+    risk,
+    selection,
+):
+    """Fail open when the query is empty or filler, names nothing present in the text, or the text is a CSV without a selector. Returns ``(fail_open, risk)``."""
+    q = query or ""
+    prose_brief_used = selection.get("path") == "prose-brief" and not fail_open
+    # Structural test-runner output is query-independent; skip the empty/filler guard.
+    test_output_adapter = adapter_info is not None and adapter_info.get("name") == "test_output"
+    if not prose_brief_used and not test_output_adapter and (
+        not q.strip()
+        or (not query_has_distinctive_selectors(q) and not _topic_terms(q))
+    ):
+        fail_open = True
+        risk = "high"
+    else:
+        latin_terms = [
+            t
+            for t in distinctive_query_terms(q)
+            if not t.startswith("script:")
+        ]
+        if latin_terms:
+            blob = original_text.casefold()
+            if not any(t in blob for t in latin_terms):
+                fail_open = True
+                risk = "high"
+    if (
+        not query_has_distinctive_selectors(q)
+        and not no_table
+        and _looks_like_csv(original_text)
+    ):
+        fail_open = True
+        risk = "high"
+    return fail_open, risk
+
+
+def _reconcile_selection(
+    *,
+    adapter_info,
+    ambiguity_fail_open,
+    code_hint,
+    decision_cache,
+    fail_open,
+    kept,
+    pin_recent_ids,
+    query,
+    risk,
+    scored,
+):
+    """Re-apply frozen decisions, supersession, error exemplars and pins to the keep-set, let a format adapter keep everything, and honour ambiguity_fail_open. Returns ``(kept, fail_open, risk)``."""
+    if not fail_open:
+        if decision_cache is not None:
+            kept = _enforce_frozen_decisions(scored, kept)
+        # Temporal supersession: a later kept block that explicitly marks an
+        # earlier kept block stale (now/obsolete/override/newer date) prunes
+        # it after cache replay, so a frozen keep cannot revive stale data.
+        # v1.4.0: not for content the caller says is source code. The markers
+        # are prose ("override", "deprecated", " disabled" are ordinary code
+        # words) and two functions share identifiers by construction, so a
+        # comment in a LATER function would evict the very function asked
+        # about — and the hint exists so function bodies survive.
+        if not code_hint:
+            kept = apply_supersession(scored, kept)
+        # v1.4.0 (E3) safety net: neither a frozen drop nor supersession may
+        # evict the one exemplar block of a level-tagged log error.
+        kept |= {
+            b["id"]
+            for b in scored
+            if b.get("error_exemplar") and not b.get("trust_risk")
+        }
+        if pin_recent_ids:
+            # Pins are never touched: a score-999 boost alone cannot reach
+            # kept when a selector path ignores raw scores (needle-only),
+            # and neither freeze nor supersession may evict a pin.
+            kept |= pin_recent_ids
+    if adapter_info is not None and scored and not ambiguity_fail_open:
+        # v1.4.0 (E5): the format adapter already chose what to keep (every
+        # header, whole hunks, grouped matches); block scoring must not drop a
+        # file header or half a hunk. Risk reflects how the adapter chose.
+        kept = {b["id"] for b in scored}
+        fail_open = False
+        risk = "low" if query_has_distinctive_selectors(query or "") else "medium"
+    if ambiguity_fail_open:
+        fail_open = True
+        risk = "high"
+    return kept, fail_open, risk
+
+
+def _select_blocks(
+    *,
+    budget_ratio,
+    caller_text,
+    citations,
+    code_hint,
+    content_type,
+    gap_marker,
+    lines,
+    mode_norm,
+    prose_brief,
+    query,
+    score_lines,
+    scored,
+    semantic_tier,
+):
+    """Run the fixed-ratio or adaptive selector over the scored blocks. Returns ``(kept, fail_open, risk, selection)``; ``selection`` is the selector's own report."""
+    selection: dict[str, Any] = {}
+    if mode_norm == "fixed":
+        ratio = 0.35 if budget_ratio is None else float(budget_ratio)
+        if not (0.0 < ratio <= 1.0):
+            raise ValueError(f"budget_ratio must be in (0, 1], got {ratio!r}")
+        kept, fail_open, risk = select_fixed(scored, ratio, out=selection)
+        if gap_marker is not None and not citations and not fail_open:
+            # Marker text costs tokens too: reserve them out of the budget and
+            # select once more (gap count may shift slightly; one pass is
+            # enough to keep the rendered output near the requested ratio).
+            reserve = _gap_marker_reserve(
+                lines, scored, kept, gap_marker, len(caller_text), content_lines=score_lines
+            )
+            if reserve:
+                kept, fail_open, risk = select_fixed(
+                    scored, ratio, out=selection, reserve_tokens=reserve
+                )
+    else:
+        if (
+            prose_brief
+            and not (query or "").strip()
+            and content_type == "text"
+            and not code_hint
+        ):
+            kept, fail_open, risk = select_prose_brief(scored, out=selection)
+        else:
+            kept, fail_open, risk = select_adaptive(
+                scored,
+                needle_only=query_has_distinctive_selectors(query or ""),
+                query=query or "",
+                semantic_tier=resolve_tier(semantic_tier) if semantic_tier is not None else None,
+                out=selection,
+            )
+        ratio = budget_ratio if budget_ratio is not None else 0.0
+    return kept, fail_open, risk, selection
+
+
+def _apply_pins(
+    *,
+    pin_patterns,
+    pin_recent,
+    scored,
+):
+    """Boost and mark the blocks that pin_patterns or pin_recent protect from dropping (mutates ``scored``). Returns ``pin_recent_ids``."""
+    # v0.10.0 (G2, KVzip sink semantics): pinned blocks are exempt from
+    # dropping in every selector path. Applied by boosting score and marking;
+    # the floor/important/needle paths all respect score, and trust-risk is
+    # bypassed for pins (a caller-pinned line outranks injection heuristics).
+    if pin_patterns:
+        import re as _re
+        _pin_res = [_re.compile(pt) for pt in pin_patterns]
+        for b in scored:
+            if any(rx.search(b["text"]) for rx in _pin_res):
+                b["score"] = max(b["score"], 999.0)
+                b["pinned"] = True
+
+    # JEV-style positional pinning: the opening block and the newest N
+    # blocks are unconditional keeps — the caller's working-context floor.
+    # Same trust semantics as pin_patterns: pins outrank drop and risk paths.
+    pin_recent_ids: set[int] = set()
+    if pin_recent and scored:
+        pin_recent_ids = {scored[0]["id"]}
+        pin_recent_ids.update(b["id"] for b in scored[-pin_recent:])
+        for b in scored:
+            if b["id"] in pin_recent_ids:
+                b["score"] = max(b["score"], 999.0)
+                b["pinned"] = True
+    return pin_recent_ids
+
+
+def _block_limit_fail_open_result(
+    *,
+    blocks,
+    budget_ratio,
+    caller_text,
+    citations,
+    content_hint,
+    industrial,
+    query_as_given,
+    requested_mode,
+    strategy,
+):
+    """The fail-open result for input with more blocks than the limit allows."""
+    tokens = estimate_tokens(caller_text)
+    reason = (
+        f"block limit exceeded: {len(blocks)} > "
+        f"{industrial.limits.max_blocks}"
+    )
+    receipt = {
+        "schema_version": "1",
+        "engine": "tameru",
+        "policy": "local-fail-open",
+        "query_hash": hashlib.sha256(
+            (query_as_given or "").encode("utf-8", errors="surrogatepass")
+        ).hexdigest()[:12],
+        "savings_pct": 0.0,
+        "risk": "high",
+        "content_hint": content_hint,
+        "industrial": industrial.to_dict(),
+    }
+    receipt.update(
+        _receipt_hashes(
+            caller_text,
+            caller_text,
+            industrial,
+            mode=requested_mode,
+            strategy=strategy,
+            budget_ratio=budget_ratio,
+            citations=citations,
+        )
+    )
+    return CompressResult(
+        compressed_text=caller_text,
+        original_tokens=tokens,
+        kept_tokens=tokens,
+        tokens_saved_pct=0.0,
+        policy_name="local-fail-open",
+        mode=requested_mode,
+        keep_ratio=1.0,
+        tokens_saved=0,
+        kept_line_ratio=1.0,
+        compression_risk="high",
+        confidence=0.0,
+        content_type=industrial.profile.format,
+        fail_open=True,
+        reasons=[reason],
+        receipt=receipt,
+    )
+
+
+def _split_into_lines(
+    *,
+    adapter_info,
+    code_hint,
+    industrial,
+    prose_brief,
+    query,
+    route_hint,
+    text,
+):
+    """Split the working text into lines and decide the content type; ``recall_base`` is the text recall is measured against. Returns ``(lines, content_type, recall_base)``."""
+    if adapter_info is not None:
+        # Adapters already choose complete records. Do not crush/fold inside them.
+        lines = text.split("\n")
+        content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
+        recall_base = text
+    elif query_has_distinctive_selectors(query or ""):
+        lines, content_type = preprocess(text, query or "", content_hint=route_hint)
+        if industrial.applied:
+            content_type = industrial.profile.format
+        # Recall must be measured against the text the selector actually saw.
+        recall_base = "\n".join(lines) if content_type == "log" else text
+    else:
+        # Do not fingerprint-collapse logs or crush JSON on a generic query.
+        # (Perf, v1.4.0: preprocess() output was computed and then discarded
+        # on this path — ~0.4 s of log collapsing per 650 KB — so it is not
+        # run at all; the result is identical.)
+        lines = _compact_progress_lines(text.split("\n"))
+        content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
+        if content_type == "json":
+            summarized = preprocess_json(text, query or "")
+            if summarized != text:
+                lines = _compact_progress_lines(summarized.split("\n"))
+        elif content_type == "text":
+            lines = _fold_repeated_sentences(lines)
+            # Split long multi-sentence prose lines into sentence blocks so the
+            # no-query prose brief can reach the minimum block count.
+            if (
+                prose_brief
+                and not (query or "").strip()
+                and not code_hint
+                and len(_segment_blocks_memo(lines)) < _PROSE_MIN_BLOCKS
+            ):
+                split = _split_prose_sentences(lines)
+                if (
+                    split is not lines
+                    and len(_segment_blocks_memo(split)) >= _PROSE_MIN_BLOCKS
+                ):
+                    lines = split
+        recall_base = text
+    return lines, content_type, recall_base
+
+
+def _preprocess_for_selectors(
+    *,
+    adapter_gap,
+    adapter_info,
+    code_hint,
+    no_table,
+    query,
+    text,
+):
+    """Crush embedded JSON, CSV rows and filler comments, but only when the query names something specific. Returns ``(text, adapter_info)``."""
+    # Destructive preprocess (JSON crush / later log collapse) only when
+    # the query names something specific. Generic/empty queries must not
+    # delete array tails or fingerprint-collapse logs before scoring.
+    if query_has_distinctive_selectors(query or "") and not code_hint and not adapter_info:
+        # (content_hint code/numbered_code: source code with commas or JSON
+        # literals is not a table to crush; function bodies must survive.)
+        if route_content_type(_norm_newlines(text).split("\n")) != "json":
+            before_json = text
+            text = _preprocess_json(text, query or "")
+            if text != before_json:
+                adapter_info = {
+                    "name": "embedded_json",
+                    "total_records": None,
+                    "kept_records": None,
+                    "reason": "complete JSON payloads selected; envelope preserved",
+                }
+        if adapter_info is None:
+            if not no_table:
+                text = preprocess_csv(text, query or "", gap_marker=adapter_gap)
+            text = preprocess_filler_comments(text, query or "")
+    return text, adapter_info
+
+
+def _select_format_adapter(
+    *,
+    adapter_gap,
+    caller_text,
+    content_hint,
+    industrial,
+    payload_industrial,
+    query,
+    route_hint,
+    text,
+):
+    """Let the diff, grep, test-runner, YAML-document and agent adapters claim the text. Returns ``(text, adapter_info)``; ``adapter_info`` is None when none did."""
+    adapter_info: dict[str, Any] | None = None
+    report_result = (payload_industrial.format_result if payload_industrial is not None
+                     and payload_industrial.format_result is not None else industrial.format_result)
+    if report_result is not None and report_result.format in REPORT_FORMATS:
+        adapter_info = {
+            "name": report_result.format, "total_records": report_result.total_records,
+            "kept_records": report_result.kept_records,
+            "reason": report_result.reason,
+        }
+    _pre_test_text = text
+    if adapter_info is None:
+        text = preprocess_test_runner(
+            text, query or "", content_hint=content_hint, gap_marker=adapter_gap
+        )
+    if adapter_info is None and (
+        text is not _pre_test_text
+        and content_hint in (None, "test")
+        and len(text) <= _TEST_REDUCTION_FINAL_CHARS
+        and detect_test_runner(_pre_test_text) is not None
+    ):
+        # Same for a reduced test run (v1.4.0): block scoring must not drop
+        # the failing test's name/file line that the reduction kept (jest
+        # "FAIL f.test.js" / "● suite › case" vs "which tests failed?").
+        # Larger reductions still go through scoring and its budget.
+        adapter_info = {
+            "name": "test_output",
+            "total_records": None,
+            "kept_records": None,
+            "reason": "failure blocks and summaries kept",
+        }
+    if (
+        adapter_info is None
+        and industrial.profile.format == "yaml"
+        and route_hint not in _CODE_HINTS
+        and route_hint not in ("log", "json", "text")
+        and any(line.rstrip() == "---" for line in caller_text.splitlines())
+    ):
+        # Whole YAML documents are the selection, including a declined/no-hit
+        # selection: generic block scoring must not detach names from status.
+        format_result = industrial.format_result
+        adapter_info = {
+            "name": "yaml_documents",
+            "total_records": format_result.total_records if format_result else None,
+            "kept_records": format_result.kept_records if format_result and format_result.applied else None,
+            "reason": format_result.reason if format_result else "whole documents preserved",
+        }
+    if (
+        adapter_info is None
+        and route_hint not in _CODE_HINTS
+        and route_hint not in ("log", "json", "text")
+    ):
+        text, adapter_info = apply_agent_adapters(
+            text,
+            query or "",
+            hint=content_hint,
+            gap_marker=adapter_gap,
+            weak_query=not query_has_distinctive_selectors(query or ""),
+        )
+    return text, adapter_info
+
+
+def _summarise_result_or_none(
+    *,
+    budget_ratio,
+    caller_text,
+    ccr,
+    ccr_dir,
+    citations,
+    content_hint,
+    industrial,
+    original_text,
+    query,
+    query_as_given,
+    requested_mode,
+    secret_in_input,
+    source_pin_texts,
+    strategy,
+    summary_allow_remote,
+    summary_endpoint,
+    summary_models,
+    summary_timeout,
+    text,
+    tool_meta_line,
+):
+    """Summarise with the configured LLM. Returns the finished ``CompressResult`` when the summary is valid and shorter, else None so the caller falls back to extraction."""
+    summary = _summarise_with_llm(
+        text,
+        query or "",
+        endpoint=summary_endpoint,
+        model_candidates=summary_models,
+        timeout=summary_timeout,
+        allow_remote=summary_allow_remote,
+    )
+    summary_valid = False
+    summary_recall = 0.0
+    if summary is not None:
+        summary_valid, summary_recall = _summary_preserves_required_facts(
+            text, summary, query or ""
+        )
+    if (
+        summary is not None
+        and summary_valid
+        and estimate_tokens(summary) < estimate_tokens(text)
+        and all(part in tool_meta_line + summary for part in source_pin_texts)
+    ):
+        # LLM summary is shorter than the original — use it.
+        # Store the original in CCR for reversibility.
+        ccr_info = None
+        ccr_marker = ""
+        if ccr:
+            try:
+                ccr_info = _ccr_store(caller_text, ccr_dir)
+            except OSError:
+                ccr_info = None
+            if ccr_info is not None:
+                ccr_marker = f"\n[CC-Retrieve: {ccr_info['hash']}]"
+        result_text = tool_meta_line + summary + ccr_marker
+        original_tokens = estimate_tokens(original_text)
+        kept_tokens = estimate_tokens(result_text)
+        keep_ratio = kept_tokens / max(1, original_tokens)
+        summary_verifier = {
+            "query_fact_recall": round(summary_recall, 3),
+            "structured_ids_grounded": True,
+            "risk": "medium",
+            "score": round(summary_recall, 3),
+        }
+        summary_risk = "medium"
+        return CompressResult(
+            compressed_text=result_text,
+            original_tokens=original_tokens,
+            kept_tokens=kept_tokens,
+            tokens_saved_pct=(1.0 - keep_ratio) * 100.0,
+            policy_name="summarise-llm",
+            mode=requested_mode,
+            keep_ratio=keep_ratio,
+            tokens_saved=original_tokens - kept_tokens,
+            kept_line_ratio=1.0,
+            cache_prefix_applied=False,
+            compression_risk=(
+                summary_risk if summary_risk in {"medium", "high"} else "medium"
+            ),
+            confidence=round(
+                min(summary_recall, float(summary_verifier.get("score", 0.0))),
+                3,
+            ),
+            ccr=ccr_info,
+            content_type="text",
+            fail_open=False,
+            frozen_blocks=0,
+            reasons=(
+                ["llm summary", "query facts verified"]
+                + (["ccr skipped: secret material detected"] if ccr and secret_in_input else [])
+            ),
+            verifier=summary_verifier,
+            receipt={
+                "schema_version": "1",
+                "engine": "tameru",
+                "policy": "summarise-llm",
+                "query_hash": hashlib.sha256(
+                    (query_as_given or "").encode("utf-8", errors="surrogatepass")
+                ).hexdigest()[:12],
+                "savings_pct": round((1.0 - keep_ratio) * 100.0, 2),
+                "risk": summary_risk,
+                "content_hint": content_hint,
+                "industrial": industrial.to_dict(),
+                **_receipt_hashes(
+                    caller_text,
+                    result_text,
+                    industrial,
+                    mode=requested_mode,
+                    strategy=strategy,
+                    budget_ratio=budget_ratio,
+                    citations=citations,
+                ),
+            },
+        )
+    return None
+
+
+def _compress_auto_ladder(
+    *,
+    ambiguity_fail_open,
+    anchor_errors,
+    budget_ratio,
+    cache_prefix,
+    caller_text,
+    ccr,
+    ccr_dir,
+    citations,
+    content_hint,
+    decision_cache,
+    degraded_view,
+    derive_query,
+    gap_marker,
+    limits,
+    log_dir,
+    min_savings_ratio,
+    pin_patterns,
+    pin_recent,
+    query_as_given,
+    recursion_markers,
+    reorder_best,
+    requested_mode,
+    semantic_tier,
+    summary_allow_remote,
+    summary_endpoint,
+    summary_models,
+    summary_timeout,
+):
+    """The 'auto' strategy: extract first, escalate to the LLM summariser only if extraction failed open."""
+    # Progressive ladder (Claude Code tiers / JEV hook fallback):
+    # run the cheap deterministic tier first, then escalate to the
+    # LLM summariser only when extraction fails open (ambiguity,
+    # saturated floors, min_savings undershoot). 'summarise' itself
+    # falls back to 'extract' on any LLM failure, so the worst case
+    # here is one extra deterministic pass.
+    ladder_kwargs = dict(
+        mode=requested_mode,
+        budget_ratio=budget_ratio,
+        ccr=ccr,
+        cache_prefix=cache_prefix,
+        citations=citations,
+        ccr_dir=ccr_dir,
+        decision_cache=decision_cache,
+        ambiguity_fail_open=ambiguity_fail_open,
+        reorder_best=reorder_best,
+        semantic_tier=semantic_tier,
+        log_dir=log_dir,
+        pin_patterns=pin_patterns,
+        pin_recent=pin_recent,
+        min_savings_ratio=min_savings_ratio,
+        degraded_view=degraded_view,
+        limits=limits,
+        derive_query=derive_query,
+        anchor_errors=anchor_errors,
+        gap_marker=gap_marker,
+        recursion_markers=recursion_markers,
+        content_hint=content_hint,
+    )
+    base = compress_context(caller_text, query_as_given, strategy="extract", **ladder_kwargs)
+    if not base.fail_open:
+        return base
+    return compress_context(
+        caller_text,
+        query_as_given,
+        strategy="summarise",
+        summary_endpoint=summary_endpoint,
+        summary_models=summary_models,
+        summary_timeout=summary_timeout,
+        summary_allow_remote=summary_allow_remote,
+        **ladder_kwargs,
+    )
+
+
+def _preflight_fail_open_result(
+    *,
+    budget_ratio,
+    caller_text,
+    citations,
+    content_hint,
+    industrial,
+    query_as_given,
+    requested_mode,
+    strategy,
+):
+    """The fail-open result for input the industrial preflight refused."""
+    tokens = estimate_tokens(caller_text)
+    reason = industrial.reason or "industrial preflight failed open"
+    fail_result = CompressResult(
+        compressed_text=caller_text,
+        original_tokens=tokens,
+        kept_tokens=tokens,
+        tokens_saved_pct=0.0,
+        policy_name="local-fail-open",
+        mode=requested_mode,
+        keep_ratio=1.0,
+        tokens_saved=0,
+        kept_line_ratio=1.0,
+        compression_risk="high",
+        confidence=0.0,
+        content_type=industrial.profile.format,
+        fail_open=True,
+        reasons=[reason],
+        receipt={
+            "schema_version": "1",
+            "engine": "tameru",
+            "policy": "local-fail-open",
+            "query_hash": hashlib.sha256(
+                (query_as_given or "").encode("utf-8", errors="surrogatepass")
+            ).hexdigest()[:12],
+            "savings_pct": 0.0,
+            "risk": "high",
+            "content_hint": content_hint,
+            "industrial": industrial.to_dict(),
+        },
+    )
+    assert fail_result.receipt is not None
+    fail_result.receipt.update(
+        _receipt_hashes(
+            caller_text,
+            caller_text,
+            industrial,
+            mode=requested_mode,
+            strategy=strategy,
+            budget_ratio=budget_ratio,
+            citations=citations,
+        )
+    )
+    return fail_result
+
+
+def _industrial_preflight(
+    *,
+    adapter_gap,
+    caller_text,
+    degraded,
+    degraded_view,
+    industrial_query,
+    limits,
+    no_table,
+    query,
+):
+    """Run the industrial preflight (size and safety limits, format adapters), degrading to a bounded scoring view when allowed, and preflight any wrapped tool payload. Returns ``(industrial, degraded, payload_industrial)``."""
+    industrial = industrial_preprocess(
+        caller_text, industrial_query, limits, gap_marker=adapter_gap,
+        allow_reports=not no_table,
+    )
+    if (
+        industrial.hard_fail_open
+        and degraded_view
+        and industrial.profile.limit_reason.startswith(
+            ("character limit", "line limit")
+        )
+        and len(caller_text)
+        <= industrial.limits.max_input_chars * _DEGRADED_OVERSIZE_FACTOR
+        and industrial.profile.lines
+        <= industrial.limits.max_lines * _DEGRADED_OVERSIZE_FACTOR
+        and len(query or "") <= industrial.limits.max_query_chars
+    ):
+        # JEV-style degrade: keep size limits as a throughput guard, but let
+        # the scorer see a bounded per-block view instead of refusing.
+        # Safety gates preflight skipped (bidi controls, malformed
+        # surrogates, oversize query) are re-verified here and stay hard.
+        controls, overrides, malformed = unicode_safety_counts(caller_text)
+        lim = industrial.limits
+        if (
+            not malformed
+            and controls <= lim.max_bidi_controls
+            and overrides <= lim.max_bidi_overrides
+        ):
+            industrial = replace(
+                industrial,
+                hard_fail_open=False,
+                reason=f"degraded scoring view: {industrial.reason}",
+            )
+            degraded = True
+    payload_industrial = None
+    if not industrial.hard_fail_open:
+        candidate_payload = unwrap_tool_payload(caller_text)
+        if candidate_payload.wrapped:
+            payload_industrial = industrial_preprocess(
+                candidate_payload.inner, industrial_query, industrial.limits,
+                gap_marker=adapter_gap, allow_reports=not no_table, reports_only=True,
+            )
+            if payload_industrial.hard_fail_open:
+                industrial = replace(
+                    industrial, hard_fail_open=True,
+                    reason='tool payload: ' + payload_industrial.reason,
+                    format_result=payload_industrial.format_result,
+                )
+    return industrial, degraded, payload_industrial
+
+
+def _verify_and_adjust_risk(
+    *,
+    anchor_lines,
+    compressed,
+    derived_terms,
+    fail_open,
+    original_tokens,
+    query,
+    recall,
+    risk,
+    route_hint,
+    text,
+):
+    """Run the post-compression verifier (diagnostic only) and fold its risk and score in; a derived or error-anchored objective never rates 'low'. Returns (verifier, risk, recall)."""
+    verifier = None
+    if not fail_open and compressed and original_tokens > 50:
+        if route_hint == "numbered_code":
+            # the gutter ("12: ") is not content: it must not read as key: value
+            verifier = verify_compression(
+                "\n".join(_GUTTER_RE.sub("", ln, count=1) for ln in text.split("\n")),
+                "\n".join(_GUTTER_RE.sub("", ln, count=1) for ln in compressed.split("\n")),
+                query or "",
+            )
+        else:
+            verifier = verify_compression(text, compressed, query or "")
+        risk_order = {"low": 0, "medium": 1, "high": 2}
+        verifier_risk = str(verifier.get("risk", "high"))
+        if risk_order.get(verifier_risk, 2) > risk_order.get(risk, 2):
+            risk = verifier_risk
+        recall = min(recall, float(verifier.get("score", 0.0)))
+    # An inferred objective is advisory context, not caller intent — a
+    # derived query never earns a "low" compression-risk rating.
+    if (derived_terms or anchor_lines) and risk == "low":
+        risk = "medium"
+    return verifier, risk, recall
+
+
+def _log_error_retention(
+    *,
+    compressed,
+    content_type,
+    fail_open,
+    risk,
+    text,
+):
+    """For content routed as a log, count the level-tagged error fingerprints that survive and raise the risk when any are lost. Returns (log_error_retention, risk)."""
+    log_error_retention: dict[str, int] | None = None
+    if content_type == "log" and not fail_open and compressed:
+        want = {
+            fp for fp, ex in error_fingerprints(text).items() if _is_level_error_line(ex)
+        }
+        if want:
+            have = set(error_fingerprints(compressed))
+            log_error_retention = {"total": len(want), "kept": len(want & have)}
+            if log_error_retention["kept"] < log_error_retention["total"]:
+                lost_all = log_error_retention["kept"] == 0
+                risk = "high" if lost_all else (risk if risk == "high" else "medium")
+    return log_error_retention, risk
+
+
+def _kept_line_ratio(
+    *,
+    kept,
+    lines,
+    scored,
+):
+    """The share of lines covered by kept blocks. Returns line_keep."""
+    line_keep = 0
+    if lines:
+        kept_line_idx = set()
+        for b in scored:
+            if b["id"] in kept:
+                for i in range(b["start"], b["end"] + 1):
+                    kept_line_idx.add(i)
+        line_keep = len(kept_line_idx) / max(1, len(lines))
+    return line_keep
+
+
+def _score_with_degraded_view(
+    *,
+    blocks,
+    content_type,
+    degraded,
+    query,
+    score_lines,
+):
+    """Optionally replace each block's scoring text with a bounded head+tail view (output stays byte-exact), then score the blocks. Returns scored."""
+    if degraded:
+        # Score a bounded head+tail view per block. _render emits exact
+        # spans from `lines`, and citation digests use `full_text`, so the
+        # judge sees the shrink while output stays byte-exact.
+        for b in blocks:
+            full = b["text"]
+            if len(full) > _DEGRADED_VIEW_HEAD + _DEGRADED_VIEW_TAIL + 64:
+                b["full_text"] = full
+                omitted = len(full) - _DEGRADED_VIEW_HEAD - _DEGRADED_VIEW_TAIL
+                b["text"] = (
+                    f"{full[:_DEGRADED_VIEW_HEAD]}\n"
+                    f"[… {omitted} chars omitted …]\n"
+                    f"{full[-_DEGRADED_VIEW_TAIL:]}"
+                )
+    scored = _score_blocks_memo(
+        score_lines, blocks, query or "", content_type, degraded=degraded
+    )
+    return scored
+
+
+def _recursion_noop_result(
+    *,
+    caller_text,
+    requested_mode,
+):
+    """The no-op result for input that is already compressed (recursion guard)."""
+    tokens = estimate_tokens(caller_text)
+    return CompressResult(
+        compressed_text=caller_text,
+        original_tokens=tokens,
+        kept_tokens=tokens,
+        tokens_saved_pct=0.0,
+        policy_name="local-noop-recursion",
+        mode=requested_mode,
+        keep_ratio=1.0,
+        tokens_saved=0,
+        kept_line_ratio=1.0,
+        compression_risk="low",
+        confidence=1.0,
+        fail_open=True,
+        reasons=["input already compressed (recursion guard)"],
+    )
+
+
+def _reuse_probe_or_none(
+    *,
+    anchor_lines,
+    cache_prefix,
+    caller_text,
+    ccr,
+    ccr_dir,
+    chosen_probe,
+    decision_cache,
+    log_dir,
+    query_as_given,
+    strategy,
+    summary_endpoint,
+):
+    """Reuse the result of the probe that chose the objective when the call allows it. Returns None when the normal path must run."""
+    probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
+    if (
+        _REUSE_PROBE_RESULT
+        and chosen_probe is not None
+        and (not ccr or probe_ccr)
+        and not cache_prefix
+        and decision_cache is None
+        and log_dir is None
+        and summary_endpoint is None
+    ):
+        reused = _finalize_reused_probe(chosen_probe, query_as_given, anchor_lines)
+        if ccr and isinstance(chosen_probe.ccr, dict) and chosen_probe.ccr.get("deferred"):
+            try:
+                info = _ccr_store(caller_text, ccr_dir)
+            except OSError:
+                info = None
+            if info is not None:
+                return dataclasses.replace(reused, ccr=info)
+            # Store refused/failed — fall through to the normal path, which
+            # retries the store and strips the marker on failure.
+        else:
+            return reused
+    return None
+
+
 def compress_context(
     context: str,
     query: str | Iterable[str],
@@ -6853,52 +8041,22 @@ def compress_context(
     no_table = content_hint in _NO_TABLE_HINTS
     recursion_markers = _marker_tuple(recursion_markers)  # a generator is read once
     query, query_as_given, derived_terms, anchor_lines, chosen_probe = _resolve_objective(
-        ambiguity_fail_open=ambiguity_fail_open,
-        anchor_errors=anchor_errors,
-        budget_ratio=budget_ratio,
-        caller_text=caller_text,
-        ccr=ccr,
-        ccr_dir=ccr_dir,
-        citations=citations,
-        content_hint=content_hint,
-        degraded_view=degraded_view,
-        derive_query=derive_query,
-        gap_marker=gap_marker,
-        inline_short_gaps=inline_short_gaps,
-        limits=limits,
-        min_savings_ratio=min_savings_ratio,
-        mode=mode,
-        pin_patterns=pin_patterns,
-        pin_recent=pin_recent,
-        prose_brief=prose_brief,
-        query=query,
-        recursion_markers=recursion_markers,
-        reorder_best=reorder_best,
-        semantic_tier=semantic_tier,
+        ambiguity_fail_open=ambiguity_fail_open, anchor_errors=anchor_errors,
+        budget_ratio=budget_ratio, caller_text=caller_text, ccr=ccr, ccr_dir=ccr_dir,
+        citations=citations, content_hint=content_hint, degraded_view=degraded_view,
+        derive_query=derive_query, gap_marker=gap_marker, inline_short_gaps=inline_short_gaps,
+        limits=limits, min_savings_ratio=min_savings_ratio, mode=mode, pin_patterns=pin_patterns,
+        pin_recent=pin_recent, prose_brief=prose_brief, query=query,
+        recursion_markers=recursion_markers, reorder_best=reorder_best, semantic_tier=semantic_tier,
         strategy=strategy,
     )
-    probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
-    if (
-        _REUSE_PROBE_RESULT
-        and chosen_probe is not None
-        and (not ccr or probe_ccr)
-        and not cache_prefix
-        and decision_cache is None
-        and log_dir is None
-        and summary_endpoint is None
-    ):
-        reused = _finalize_reused_probe(chosen_probe, query_as_given, anchor_lines)
-        if ccr and isinstance(chosen_probe.ccr, dict) and chosen_probe.ccr.get("deferred"):
-            try:
-                info = _ccr_store(caller_text, ccr_dir)
-            except OSError:
-                info = None
-            if info is not None:
-                return dataclasses.replace(reused, ccr=info)
-            # Store refused/failed — fall through to the normal path, which
-            # retries the store and strips the marker on failure.
-        else:
-            return reused
+    reused_result = _reuse_probe_or_none(
+        anchor_lines=anchor_lines, cache_prefix=cache_prefix, caller_text=caller_text, ccr=ccr,
+        ccr_dir=ccr_dir, chosen_probe=chosen_probe, decision_cache=decision_cache, log_dir=log_dir,
+        query_as_given=query_as_given, strategy=strategy, summary_endpoint=summary_endpoint,
+    )
+    if reused_result is not None:
+        return reused_result
     requested_mode, mode_norm, pin_recent, min_savings_ratio = _normalise_options(
         min_savings_ratio=min_savings_ratio,
         mode=mode,
@@ -6913,21 +8071,9 @@ def compress_context(
         or _DEFAULT_ELISION_LINE.search(caller_text) is not None
         or (_has_anchored_marker(caller_text, recursion_markers))
     ):
-        tokens = estimate_tokens(caller_text)
-        return CompressResult(
-            compressed_text=caller_text,
-            original_tokens=tokens,
-            kept_tokens=tokens,
-            tokens_saved_pct=0.0,
-            policy_name="local-noop-recursion",
-            mode=requested_mode,
-            keep_ratio=1.0,
-            tokens_saved=0,
-            kept_line_ratio=1.0,
-            compression_risk="low",
-            confidence=1.0,
-            fail_open=True,
-            reasons=["input already compressed (recursion guard)"],
+        return _recursion_noop_result(
+            caller_text=caller_text,
+            requested_mode=requested_mode,
         )
     secret_in_input = _contains_secret(caller_text)
     savings_gate = False
@@ -6952,97 +8098,17 @@ def compress_context(
             else (lambda omitted, _total: gap_marker(omitted, len(caller_text)))
         )
     )
-    industrial = industrial_preprocess(
-        caller_text, industrial_query, limits, gap_marker=adapter_gap,
-        allow_reports=not no_table,
+    industrial, degraded, payload_industrial = _industrial_preflight(
+        adapter_gap=adapter_gap, caller_text=caller_text, degraded=degraded,
+        degraded_view=degraded_view, industrial_query=industrial_query, limits=limits,
+        no_table=no_table, query=query,
     )
-    if (
-        industrial.hard_fail_open
-        and degraded_view
-        and industrial.profile.limit_reason.startswith(
-            ("character limit", "line limit")
-        )
-        and len(caller_text)
-        <= industrial.limits.max_input_chars * _DEGRADED_OVERSIZE_FACTOR
-        and industrial.profile.lines
-        <= industrial.limits.max_lines * _DEGRADED_OVERSIZE_FACTOR
-        and len(query or "") <= industrial.limits.max_query_chars
-    ):
-        # JEV-style degrade: keep size limits as a throughput guard, but let
-        # the scorer see a bounded per-block view instead of refusing.
-        # Safety gates preflight skipped (bidi controls, malformed
-        # surrogates, oversize query) are re-verified here and stay hard.
-        controls, overrides, malformed = unicode_safety_counts(caller_text)
-        lim = industrial.limits
-        if (
-            not malformed
-            and controls <= lim.max_bidi_controls
-            and overrides <= lim.max_bidi_overrides
-        ):
-            industrial = replace(
-                industrial,
-                hard_fail_open=False,
-                reason=f"degraded scoring view: {industrial.reason}",
-            )
-            degraded = True
-    payload_industrial = None
-    if not industrial.hard_fail_open:
-        candidate_payload = unwrap_tool_payload(caller_text)
-        if candidate_payload.wrapped:
-            payload_industrial = industrial_preprocess(
-                candidate_payload.inner, industrial_query, industrial.limits,
-                gap_marker=adapter_gap, allow_reports=not no_table, reports_only=True,
-            )
-            if payload_industrial.hard_fail_open:
-                industrial = replace(
-                    industrial, hard_fail_open=True,
-                    reason='tool payload: ' + payload_industrial.reason,
-                    format_result=payload_industrial.format_result,
-                )
     if industrial.hard_fail_open:
-        tokens = estimate_tokens(caller_text)
-        reason = industrial.reason or "industrial preflight failed open"
-        fail_result = CompressResult(
-            compressed_text=caller_text,
-            original_tokens=tokens,
-            kept_tokens=tokens,
-            tokens_saved_pct=0.0,
-            policy_name="local-fail-open",
-            mode=requested_mode,
-            keep_ratio=1.0,
-            tokens_saved=0,
-            kept_line_ratio=1.0,
-            compression_risk="high",
-            confidence=0.0,
-            content_type=industrial.profile.format,
-            fail_open=True,
-            reasons=[reason],
-            receipt={
-                "schema_version": "1",
-                "engine": "tameru",
-                "policy": "local-fail-open",
-                "query_hash": hashlib.sha256(
-                    (query_as_given or "").encode("utf-8", errors="surrogatepass")
-                ).hexdigest()[:12],
-                "savings_pct": 0.0,
-                "risk": "high",
-                "content_hint": content_hint,
-                "industrial": industrial.to_dict(),
-            },
+        return _preflight_fail_open_result(
+            budget_ratio=budget_ratio, caller_text=caller_text, citations=citations,
+            content_hint=content_hint, industrial=industrial, query_as_given=query_as_given,
+            requested_mode=requested_mode, strategy=strategy,
         )
-        assert fail_result.receipt is not None
-        fail_result.receipt.update(
-            _receipt_hashes(
-                caller_text,
-                caller_text,
-                industrial,
-                mode=requested_mode,
-                strategy=strategy,
-                budget_ratio=budget_ratio,
-                citations=citations,
-            )
-        )
-        return fail_result
     source_pin_texts = _source_pin_texts(caller_text, pin_patterns, pin_recent)
     original_text = _norm_newlines(caller_text)
     industrial_text = industrial.text if industrial.applied else caller_text
@@ -7071,90 +8137,25 @@ def compress_context(
     # v1.4.0 (E5): diff and grep/rg output get their own adapters (whole hunks,
     # grouped matches) ahead of generic segmentation. The adapter's output is
     # the selection: scoring below must not undo it (see `adapter_info`).
-    adapter_info: dict[str, Any] | None = None
-    report_result = (payload_industrial.format_result if payload_industrial is not None
-                     and payload_industrial.format_result is not None else industrial.format_result)
-    if report_result is not None and report_result.format in REPORT_FORMATS:
-        adapter_info = {
-            "name": report_result.format, "total_records": report_result.total_records,
-            "kept_records": report_result.kept_records,
-            "reason": report_result.reason,
-        }
-    _pre_test_text = text
-    if adapter_info is None:
-        text = preprocess_test_runner(
-            text, query or "", content_hint=content_hint, gap_marker=adapter_gap
-        )
-    if adapter_info is None and (
-        text is not _pre_test_text
-        and content_hint in (None, "test")
-        and len(text) <= _TEST_REDUCTION_FINAL_CHARS
-        and detect_test_runner(_pre_test_text) is not None
-    ):
-        # Same for a reduced test run (v1.4.0): block scoring must not drop
-        # the failing test's name/file line that the reduction kept (jest
-        # "FAIL f.test.js" / "● suite › case" vs "which tests failed?").
-        # Larger reductions still go through scoring and its budget.
-        adapter_info = {
-            "name": "test_output",
-            "total_records": None,
-            "kept_records": None,
-            "reason": "failure blocks and summaries kept",
-        }
-    if (
-        adapter_info is None
-        and industrial.profile.format == "yaml"
-        and route_hint not in _CODE_HINTS
-        and route_hint not in ("log", "json", "text")
-        and any(line.rstrip() == "---" for line in caller_text.splitlines())
-    ):
-        # Whole YAML documents are the selection, including a declined/no-hit
-        # selection: generic block scoring must not detach names from status.
-        format_result = industrial.format_result
-        adapter_info = {
-            "name": "yaml_documents",
-            "total_records": format_result.total_records if format_result else None,
-            "kept_records": format_result.kept_records if format_result and format_result.applied else None,
-            "reason": format_result.reason if format_result else "whole documents preserved",
-        }
-    if (
-        adapter_info is None
-        and route_hint not in _CODE_HINTS
-        and route_hint not in ("log", "json", "text")
-    ):
-        text, adapter_info = apply_agent_adapters(
-            text,
-            query or "",
-            hint=content_hint,
-            gap_marker=adapter_gap,
-            weak_query=not query_has_distinctive_selectors(query or ""),
-        )
+    text, adapter_info = _select_format_adapter(
+        adapter_gap=adapter_gap, caller_text=caller_text, content_hint=content_hint,
+        industrial=industrial, payload_industrial=payload_industrial, query=query,
+        route_hint=route_hint, text=text,
+    )
     if not text.strip():
         return CompressResult(
             compressed_text="", policy_name="noop", mode=requested_mode
         )
     ambiguity_fail_open = bool(ambiguity_fail_open)
 
-    # Destructive preprocess (JSON crush / later log collapse) only when
-    # the query names something specific. Generic/empty queries must not
-    # delete array tails or fingerprint-collapse logs before scoring.
-    if query_has_distinctive_selectors(query or "") and not code_hint and not adapter_info:
-        # (content_hint code/numbered_code: source code with commas or JSON
-        # literals is not a table to crush; function bodies must survive.)
-        if route_content_type(_norm_newlines(text).split("\n")) != "json":
-            before_json = text
-            text = _preprocess_json(text, query or "")
-            if text != before_json:
-                adapter_info = {
-                    "name": "embedded_json",
-                    "total_records": None,
-                    "kept_records": None,
-                    "reason": "complete JSON payloads selected; envelope preserved",
-                }
-        if adapter_info is None:
-            if not no_table:
-                text = preprocess_csv(text, query or "", gap_marker=adapter_gap)
-            text = preprocess_filler_comments(text, query or "")
+    text, adapter_info = _preprocess_for_selectors(
+        adapter_gap=adapter_gap,
+        adapter_info=adapter_info,
+        code_hint=code_hint,
+        no_table=no_table,
+        query=query,
+        text=text,
+    )
 
     # Strategy ladder:
     #   'clear'     — drops tool-result payloads before scoring (regex-only,
@@ -7171,185 +8172,46 @@ def compress_context(
         )
 
     if strategy_norm == "auto":
-        # Progressive ladder (Claude Code tiers / JEV hook fallback):
-        # run the cheap deterministic tier first, then escalate to the
-        # LLM summariser only when extraction fails open (ambiguity,
-        # saturated floors, min_savings undershoot). 'summarise' itself
-        # falls back to 'extract' on any LLM failure, so the worst case
-        # here is one extra deterministic pass.
-        ladder_kwargs = dict(
-            mode=requested_mode,
-            budget_ratio=budget_ratio,
-            ccr=ccr,
-            cache_prefix=cache_prefix,
-            citations=citations,
-            ccr_dir=ccr_dir,
-            decision_cache=decision_cache,
-            ambiguity_fail_open=ambiguity_fail_open,
-            reorder_best=reorder_best,
-            semantic_tier=semantic_tier,
-            log_dir=log_dir,
-            pin_patterns=pin_patterns,
-            pin_recent=pin_recent,
-            min_savings_ratio=min_savings_ratio,
-            degraded_view=degraded_view,
-            limits=limits,
-            derive_query=derive_query,
-            anchor_errors=anchor_errors,
-            gap_marker=gap_marker,
-            recursion_markers=recursion_markers,
-            content_hint=content_hint,
-        )
-        base = compress_context(caller_text, query_as_given, strategy="extract", **ladder_kwargs)
-        if not base.fail_open:
-            return base
-        return compress_context(
-            caller_text,
-            query_as_given,
-            strategy="summarise",
-            summary_endpoint=summary_endpoint,
-            summary_models=summary_models,
-            summary_timeout=summary_timeout,
-            summary_allow_remote=summary_allow_remote,
-            **ladder_kwargs,
+        return _compress_auto_ladder(
+            ambiguity_fail_open=ambiguity_fail_open, anchor_errors=anchor_errors,
+            budget_ratio=budget_ratio, cache_prefix=cache_prefix, caller_text=caller_text, ccr=ccr,
+            ccr_dir=ccr_dir, citations=citations, content_hint=content_hint,
+            decision_cache=decision_cache, degraded_view=degraded_view, derive_query=derive_query,
+            gap_marker=gap_marker, limits=limits, log_dir=log_dir,
+            min_savings_ratio=min_savings_ratio, pin_patterns=pin_patterns, pin_recent=pin_recent,
+            query_as_given=query_as_given, recursion_markers=recursion_markers,
+            reorder_best=reorder_best, requested_mode=requested_mode, semantic_tier=semantic_tier,
+            summary_allow_remote=summary_allow_remote, summary_endpoint=summary_endpoint,
+            summary_models=summary_models, summary_timeout=summary_timeout,
         )
 
     if strategy_norm == "clear":
         text = _clear_tool_payloads(text)
     elif strategy_norm == "summarise":
-        summary = _summarise_with_llm(
-            text,
-            query or "",
-            endpoint=summary_endpoint,
-            model_candidates=summary_models,
-            timeout=summary_timeout,
-            allow_remote=summary_allow_remote,
+        summary_result = _summarise_result_or_none(
+            budget_ratio=budget_ratio, caller_text=caller_text, ccr=ccr, ccr_dir=ccr_dir,
+            citations=citations, content_hint=content_hint, industrial=industrial,
+            original_text=original_text, query=query, query_as_given=query_as_given,
+            requested_mode=requested_mode, secret_in_input=secret_in_input,
+            source_pin_texts=source_pin_texts, strategy=strategy,
+            summary_allow_remote=summary_allow_remote, summary_endpoint=summary_endpoint,
+            summary_models=summary_models, summary_timeout=summary_timeout, text=text,
+            tool_meta_line=tool_meta_line,
         )
-        summary_valid = False
-        summary_recall = 0.0
-        if summary is not None:
-            summary_valid, summary_recall = _summary_preserves_required_facts(
-                text, summary, query or ""
-            )
-        if (
-            summary is not None
-            and summary_valid
-            and estimate_tokens(summary) < estimate_tokens(text)
-            and all(part in tool_meta_line + summary for part in source_pin_texts)
-        ):
-            # LLM summary is shorter than the original — use it.
-            # Store the original in CCR for reversibility.
-            ccr_info = None
-            ccr_marker = ""
-            if ccr:
-                try:
-                    ccr_info = _ccr_store(caller_text, ccr_dir)
-                except OSError:
-                    ccr_info = None
-                if ccr_info is not None:
-                    ccr_marker = f"\n[CC-Retrieve: {ccr_info['hash']}]"
-            result_text = tool_meta_line + summary + ccr_marker
-            original_tokens = estimate_tokens(original_text)
-            kept_tokens = estimate_tokens(result_text)
-            keep_ratio = kept_tokens / max(1, original_tokens)
-            summary_verifier = {
-                "query_fact_recall": round(summary_recall, 3),
-                "structured_ids_grounded": True,
-                "risk": "medium",
-                "score": round(summary_recall, 3),
-            }
-            summary_risk = "medium"
-            return CompressResult(
-                compressed_text=result_text,
-                original_tokens=original_tokens,
-                kept_tokens=kept_tokens,
-                tokens_saved_pct=(1.0 - keep_ratio) * 100.0,
-                policy_name="summarise-llm",
-                mode=requested_mode,
-                keep_ratio=keep_ratio,
-                tokens_saved=original_tokens - kept_tokens,
-                kept_line_ratio=1.0,
-                cache_prefix_applied=False,
-                compression_risk=(
-                    summary_risk if summary_risk in {"medium", "high"} else "medium"
-                ),
-                confidence=round(
-                    min(summary_recall, float(summary_verifier.get("score", 0.0))),
-                    3,
-                ),
-                ccr=ccr_info,
-                content_type="text",
-                fail_open=False,
-                frozen_blocks=0,
-                reasons=(
-                    ["llm summary", "query facts verified"]
-                    + (["ccr skipped: secret material detected"] if ccr and secret_in_input else [])
-                ),
-                verifier=summary_verifier,
-                receipt={
-                    "schema_version": "1",
-                    "engine": "tameru",
-                    "policy": "summarise-llm",
-                    "query_hash": hashlib.sha256(
-                        (query_as_given or "").encode("utf-8", errors="surrogatepass")
-                    ).hexdigest()[:12],
-                    "savings_pct": round((1.0 - keep_ratio) * 100.0, 2),
-                    "risk": summary_risk,
-                    "content_hint": content_hint,
-                    "industrial": industrial.to_dict(),
-                    **_receipt_hashes(
-                        caller_text,
-                        result_text,
-                        industrial,
-                        mode=requested_mode,
-                        strategy=strategy,
-                        budget_ratio=budget_ratio,
-                        citations=citations,
-                    ),
-                },
-            )
+        if summary_result is not None:
+            return summary_result
         # LLM failed or returned a longer result — fall through to extract.
         strategy_norm = "extract"
 
-    if adapter_info is not None:
-        # Adapters already choose complete records. Do not crush/fold inside them.
-        lines = text.split("\n")
-        content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
-        recall_base = text
-    elif query_has_distinctive_selectors(query or ""):
-        lines, content_type = preprocess(text, query or "", content_hint=route_hint)
-        if industrial.applied:
-            content_type = industrial.profile.format
-        # Recall must be measured against the text the selector actually saw.
-        recall_base = "\n".join(lines) if content_type == "log" else text
-    else:
-        # Do not fingerprint-collapse logs or crush JSON on a generic query.
-        # (Perf, v1.4.0: preprocess() output was computed and then discarded
-        # on this path — ~0.4 s of log collapsing per 650 KB — so it is not
-        # run at all; the result is identical.)
-        lines = _compact_progress_lines(text.split("\n"))
-        content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
-        if content_type == "json":
-            summarized = preprocess_json(text, query or "")
-            if summarized != text:
-                lines = _compact_progress_lines(summarized.split("\n"))
-        elif content_type == "text":
-            lines = _fold_repeated_sentences(lines)
-            # Split long multi-sentence prose lines into sentence blocks so the
-            # no-query prose brief can reach the minimum block count.
-            if (
-                prose_brief
-                and not (query or "").strip()
-                and not code_hint
-                and len(_segment_blocks_memo(lines)) < _PROSE_MIN_BLOCKS
-            ):
-                split = _split_prose_sentences(lines)
-                if (
-                    split is not lines
-                    and len(_segment_blocks_memo(split)) >= _PROSE_MIN_BLOCKS
-                ):
-                    lines = split
-        recall_base = text
+    lines, content_type, recall_base = _split_into_lines(
+        adapter_info=adapter_info,
+        code_hint=code_hint,
+        industrial=industrial,
+        prose_brief=prose_brief,
+        query=query,
+        route_hint=route_hint,
+        text=text,
+    )
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
     score_lines = lines
@@ -7357,92 +8219,24 @@ def compress_context(
         score_lines = [_GUTTER_RE.sub("", ln, count=1) for ln in lines]
     blocks = _segment_blocks_memo(score_lines)
     if len(blocks) > industrial.limits.max_blocks:
-        tokens = estimate_tokens(caller_text)
-        reason = (
-            f"block limit exceeded: {len(blocks)} > "
-            f"{industrial.limits.max_blocks}"
+        return _block_limit_fail_open_result(
+            blocks=blocks, budget_ratio=budget_ratio, caller_text=caller_text, citations=citations,
+            content_hint=content_hint, industrial=industrial, query_as_given=query_as_given,
+            requested_mode=requested_mode, strategy=strategy,
         )
-        receipt = {
-            "schema_version": "1",
-            "engine": "tameru",
-            "policy": "local-fail-open",
-            "query_hash": hashlib.sha256(
-                (query_as_given or "").encode("utf-8", errors="surrogatepass")
-            ).hexdigest()[:12],
-            "savings_pct": 0.0,
-            "risk": "high",
-            "content_hint": content_hint,
-            "industrial": industrial.to_dict(),
-        }
-        receipt.update(
-            _receipt_hashes(
-                caller_text,
-                caller_text,
-                industrial,
-                mode=requested_mode,
-                strategy=strategy,
-                budget_ratio=budget_ratio,
-                citations=citations,
-            )
-        )
-        return CompressResult(
-            compressed_text=caller_text,
-            original_tokens=tokens,
-            kept_tokens=tokens,
-            tokens_saved_pct=0.0,
-            policy_name="local-fail-open",
-            mode=requested_mode,
-            keep_ratio=1.0,
-            tokens_saved=0,
-            kept_line_ratio=1.0,
-            compression_risk="high",
-            confidence=0.0,
-            content_type=industrial.profile.format,
-            fail_open=True,
-            reasons=[reason],
-            receipt=receipt,
-        )
-    if degraded:
-        # Score a bounded head+tail view per block. _render emits exact
-        # spans from `lines`, and citation digests use `full_text`, so the
-        # judge sees the shrink while output stays byte-exact.
-        for b in blocks:
-            full = b["text"]
-            if len(full) > _DEGRADED_VIEW_HEAD + _DEGRADED_VIEW_TAIL + 64:
-                b["full_text"] = full
-                omitted = len(full) - _DEGRADED_VIEW_HEAD - _DEGRADED_VIEW_TAIL
-                b["text"] = (
-                    f"{full[:_DEGRADED_VIEW_HEAD]}\n"
-                    f"[… {omitted} chars omitted …]\n"
-                    f"{full[-_DEGRADED_VIEW_TAIL:]}"
-                )
-    scored = _score_blocks_memo(
-        score_lines, blocks, query or "", content_type, degraded=degraded
+    scored = _score_with_degraded_view(
+        blocks=blocks,
+        content_type=content_type,
+        degraded=degraded,
+        query=query,
+        score_lines=score_lines,
     )
 
-    # v0.10.0 (G2, KVzip sink semantics): pinned blocks are exempt from
-    # dropping in every selector path. Applied by boosting score and marking;
-    # the floor/important/needle paths all respect score, and trust-risk is
-    # bypassed for pins (a caller-pinned line outranks injection heuristics).
-    if pin_patterns:
-        import re as _re
-        _pin_res = [_re.compile(pt) for pt in pin_patterns]
-        for b in scored:
-            if any(rx.search(b["text"]) for rx in _pin_res):
-                b["score"] = max(b["score"], 999.0)
-                b["pinned"] = True
-
-    # JEV-style positional pinning: the opening block and the newest N
-    # blocks are unconditional keeps — the caller's working-context floor.
-    # Same trust semantics as pin_patterns: pins outrank drop and risk paths.
-    pin_recent_ids: set[int] = set()
-    if pin_recent and scored:
-        pin_recent_ids = {scored[0]["id"]}
-        pin_recent_ids.update(b["id"] for b in scored[-pin_recent:])
-        for b in scored:
-            if b["id"] in pin_recent_ids:
-                b["score"] = max(b["score"], 999.0)
-                b["pinned"] = True
+    pin_recent_ids = _apply_pins(
+        pin_patterns=pin_patterns,
+        pin_recent=pin_recent,
+        scored=scored,
+    )
 
     # Freeze-on-first-sight: if a decision_cache is provided and the block
     # fingerprints match prior turns, replay the stored keep/drop decisions
@@ -7453,193 +8247,35 @@ def compress_context(
     if decision_cache is not None:
         scored = _apply_freeze(decision_cache, scored, text, query or "")
     _reorder = bool(reorder_best) and adapter_info is None
-    selection: dict[str, Any] = {}
-    if mode_norm == "fixed":
-        ratio = 0.35 if budget_ratio is None else float(budget_ratio)
-        if not (0.0 < ratio <= 1.0):
-            raise ValueError(f"budget_ratio must be in (0, 1], got {ratio!r}")
-        kept, fail_open, risk = select_fixed(scored, ratio, out=selection)
-        if gap_marker is not None and not citations and not fail_open:
-            # Marker text costs tokens too: reserve them out of the budget and
-            # select once more (gap count may shift slightly; one pass is
-            # enough to keep the rendered output near the requested ratio).
-            reserve = _gap_marker_reserve(
-                lines, scored, kept, gap_marker, len(caller_text), content_lines=score_lines
-            )
-            if reserve:
-                kept, fail_open, risk = select_fixed(
-                    scored, ratio, out=selection, reserve_tokens=reserve
-                )
-    else:
-        if (
-            prose_brief
-            and not (query or "").strip()
-            and content_type == "text"
-            and not code_hint
-        ):
-            kept, fail_open, risk = select_prose_brief(scored, out=selection)
-        else:
-            kept, fail_open, risk = select_adaptive(
-                scored,
-                needle_only=query_has_distinctive_selectors(query or ""),
-                query=query or "",
-                semantic_tier=resolve_tier(semantic_tier) if semantic_tier is not None else None,
-                out=selection,
-            )
-        ratio = budget_ratio if budget_ratio is not None else 0.0
-    if not fail_open:
-        if decision_cache is not None:
-            kept = _enforce_frozen_decisions(scored, kept)
-        # Temporal supersession: a later kept block that explicitly marks an
-        # earlier kept block stale (now/obsolete/override/newer date) prunes
-        # it after cache replay, so a frozen keep cannot revive stale data.
-        # v1.4.0: not for content the caller says is source code. The markers
-        # are prose ("override", "deprecated", " disabled" are ordinary code
-        # words) and two functions share identifiers by construction, so a
-        # comment in a LATER function would evict the very function asked
-        # about — and the hint exists so function bodies survive.
-        if not code_hint:
-            kept = apply_supersession(scored, kept)
-        # v1.4.0 (E3) safety net: neither a frozen drop nor supersession may
-        # evict the one exemplar block of a level-tagged log error.
-        kept |= {
-            b["id"]
-            for b in scored
-            if b.get("error_exemplar") and not b.get("trust_risk")
-        }
-        if pin_recent_ids:
-            # Pins are never touched: a score-999 boost alone cannot reach
-            # kept when a selector path ignores raw scores (needle-only),
-            # and neither freeze nor supersession may evict a pin.
-            kept |= pin_recent_ids
-    if adapter_info is not None and scored and not ambiguity_fail_open:
-        # v1.4.0 (E5): the format adapter already chose what to keep (every
-        # header, whole hunks, grouped matches); block scoring must not drop a
-        # file header or half a hunk. Risk reflects how the adapter chose.
-        kept = {b["id"] for b in scored}
-        fail_open = False
-        risk = "low" if query_has_distinctive_selectors(query or "") else "medium"
-    if ambiguity_fail_open:
-        fail_open = True
-        risk = "high"
+    kept, fail_open, risk, selection = _select_blocks(
+        budget_ratio=budget_ratio, caller_text=caller_text, citations=citations,
+        code_hint=code_hint, content_type=content_type, gap_marker=gap_marker, lines=lines,
+        mode_norm=mode_norm, prose_brief=prose_brief, query=query, score_lines=score_lines,
+        scored=scored, semantic_tier=semantic_tier,
+    )
+    kept, fail_open, risk = _reconcile_selection(
+        adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, code_hint=code_hint,
+        decision_cache=decision_cache, fail_open=fail_open, kept=kept,
+        pin_recent_ids=pin_recent_ids, query=query, risk=risk, scored=scored,
+    )
 
-    q = query or ""
-    prose_brief_used = selection.get("path") == "prose-brief" and not fail_open
-    # Structural test-runner output is query-independent; skip the empty/filler guard.
-    test_output_adapter = adapter_info is not None and adapter_info.get("name") == "test_output"
-    if not prose_brief_used and not test_output_adapter and (
-        not q.strip()
-        or (not query_has_distinctive_selectors(q) and not _topic_terms(q))
-    ):
-        fail_open = True
-        risk = "high"
-    else:
-        latin_terms = [
-            t
-            for t in distinctive_query_terms(q)
-            if not t.startswith("script:")
-        ]
-        if latin_terms:
-            blob = original_text.casefold()
-            if not any(t in blob for t in latin_terms):
-                fail_open = True
-                risk = "high"
-    if (
-        not query_has_distinctive_selectors(q)
-        and not no_table
-        and _looks_like_csv(original_text)
-    ):
-        fail_open = True
-        risk = "high"
+    fail_open, risk = _apply_query_guards(
+        adapter_info=adapter_info,
+        fail_open=fail_open,
+        no_table=no_table,
+        original_text=original_text,
+        query=query,
+        risk=risk,
+        selection=selection,
+    )
 
-    collapsed = "\n".join(lines)
-    structural_collapse_only = False
-    if fail_open:
-        annotated_ids = {
-            b["id"] for b in scored if b.get("trust_risk") and not b.get("pinned")
-        }
-        if annotated_ids:
-            # Restore ordinary data when uncertain, but never undo a block
-            # annotation. Explicitly pinned blocks remain eligible.
-            kept = {b["id"] for b in scored if b["id"] not in annotated_ids}
-            compressed = _render(
-                lines, scored, kept, citations=citations, reorder_best=_reorder,
-                gap_marker=gap_marker, total_chars=len(caller_text),
-                content_lines=score_lines,
-            )
-            fail_open = False
-            risk = "high"
-        # Do not undo a useful structured collapse (repeated INFO lines).
-        # Baseline RAG wins on JP/KO heartbeats by keeping the error and
-        # dropping repeats; restoring original bytes here threw that away.
-        elif (
-            not ambiguity_fail_open
-            and collapsed != original_text
-            and len(collapsed) < 0.7 * max(1, len(original_text))
-        ):
-            fail_open = False
-            compressed = collapsed
-            kept = {b["id"] for b in scored}
-            # v1.4.0 (E7): the query never selected anything here; what is
-            # returned is the structural collapse alone (repeat folding,
-            # frame runs), not an answer-driven extract. Say so.
-            structural_collapse_only = True
-        else:
-            compressed = original_text
-            kept = {b["id"] for b in scored}
-    else:
-        compressed = _render(
-            lines, scored, kept, citations=citations, reorder_best=_reorder,
-            gap_marker=gap_marker, total_chars=len(caller_text),
-            content_lines=score_lines,
-        )
-
-    if (adapter_info is not None and not fail_open
-            and all(block["id"] in kept for block in scored)):
-        # Selection is already final: preserve whitespace inside complete records,
-        # including blank diff context lines, instead of manufacturing new gaps.
-        compressed = collapsed
-    recall = _entity_recall(recall_base, compressed, query or "")
-    if recall < 0.66 and not fail_open:
-        # One expansion pass: add any dropped block that still holds a query key.
-        keys = _extract_entities(query or "") + _extract_terms(query or "")
-        for b in scored:
-            if b["id"] in kept or b.get("trust_risk"):
-                continue
-            if any(_soft_has(b["text"], k) for k in keys):
-                kept.add(b["id"])
-        if decision_cache is not None:
-            kept = _enforce_frozen_decisions(scored, kept)
-        compressed = _render(
-            lines, scored, kept, citations=citations, reorder_best=_reorder,
-            gap_marker=gap_marker, total_chars=len(caller_text),
-            content_lines=score_lines,
-        )
-        recall = _entity_recall(recall_base, compressed, query or "")
-        trust_risks = {
-            b["id"]
-            for b in scored
-            if b.get("trust_risk") and not b.get("pinned")
-        }
-        if trust_risks:
-            # Filter the CURRENT selection down by trust risks — do not
-            # rebuild it as "everything except risks". Rebuilding discards
-            # the selector's careful small keep-set and re-inflates the
-            # payload to near-original size (v0.5.19 production QA finding).
-            kept = {bid for bid in kept if bid not in trust_risks}
-            if decision_cache is not None:
-                kept = _enforce_frozen_decisions(scored, kept)
-            compressed = _render(
-                lines, scored, kept, citations=citations, reorder_best=_reorder,
-                gap_marker=gap_marker, total_chars=len(caller_text),
-                content_lines=score_lines,
-            )
-            risk = "high"
-        elif recall < 0.5:
-            compressed = original_text
-            fail_open = True
-            risk = "high"
-            kept = {b["id"] for b in scored}
+    compressed, kept, fail_open, risk, recall, structural_collapse_only = _render_and_check_recall(
+        adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, caller_text=caller_text,
+        citations=citations, decision_cache=decision_cache, fail_open=fail_open,
+        gap_marker=gap_marker, kept=kept, lines=lines, original_text=original_text, query=query,
+        recall_base=recall_base, _reorder=_reorder, risk=risk, score_lines=score_lines,
+        scored=scored,
+    )
 
     if fail_open:
         risk = "high"
@@ -7649,17 +8285,13 @@ def compress_context(
     # error fingerprints survive. The engine keeps one exemplar per
     # fingerprint, so a loss means something upstream broke the invariant:
     # say so in the risk instead of leaving the verifier blind to it.
-    log_error_retention: dict[str, int] | None = None
-    if content_type == "log" and not fail_open and compressed:
-        want = {
-            fp for fp, ex in error_fingerprints(text).items() if _is_level_error_line(ex)
-        }
-        if want:
-            have = set(error_fingerprints(compressed))
-            log_error_retention = {"total": len(want), "kept": len(want & have)}
-            if log_error_retention["kept"] < log_error_retention["total"]:
-                lost_all = log_error_retention["kept"] == 0
-                risk = "high" if lost_all else (risk if risk == "high" else "medium")
+    log_error_retention, risk = _log_error_retention(
+        compressed=compressed,
+        content_type=content_type,
+        fail_open=fail_open,
+        risk=risk,
+        text=text,
+    )
 
     # v1.4.0 (G9): a Hermes tool wrapper ({"output": ..., "exit_code": 1, ...})
     # was reduced to its inner text above; re-emit its scalar metadata as one
@@ -7669,152 +8301,37 @@ def compress_context(
     if tool_meta_line and not fail_open:
         compressed = tool_meta_line + compressed
 
-    original_tokens = estimate_tokens(original_text)
-    kept_tokens = estimate_tokens(compressed)
-    trust_filtered = any(
-        b.get("trust_risk") and not b.get("pinned") and b["id"] not in kept
-        for b in scored
+    original_tokens, kept_tokens, trust_filtered, compressed, kept, fail_open, risk, savings_gate, source_pin_loss, recall = _apply_cost_gates(
+        adapter_info=adapter_info, caller_text=caller_text, compressed=compressed,
+        fail_open=fail_open, kept=kept, min_savings_ratio=min_savings_ratio,
+        original_text=original_text, recall=recall, risk=risk, savings_gate=savings_gate,
+        scored=scored, source_pin_texts=source_pin_texts,
     )
-
-    # Cost gate: if the compressed output is LARGER than the original
-    # (net-negative savings), fail open. This happens when citations and
-    # the CCR marker add more tokens than the dropped blocks saved.
-    #
-    # Provider cache pricing makes this more nuanced: Anthropic charges
-    # 1.25× for cache writes and 0.1× for cache reads. If the context is
-    # already cached (repeated session), the original is cheap to re-send
-    # and the compression overhead may not be worth it. We model this
-    # with a simple heuristic: if the savings are < 10%, the overhead of
-    # citations + CCR marker likely exceeds the cache-read savings.
-    if (
-        not fail_open
-        and (
-            kept_tokens > original_tokens
-            or (kept_tokens >= original_tokens and len(compressed) > len(original_text))
-        )
-        and not trust_filtered
-    ):
-        compressed = original_text
-        kept = {b["id"] for b in scored}
-        fail_open = True
-        risk = "high"
-        kept_tokens = estimate_tokens(compressed)
-    elif not fail_open and original_tokens > 200:
-        # For substantial contexts, check if the savings justify the
-        # compression overhead. If we're saving less than 10%, the
-        # citation/CCR overhead likely exceeds the benefit, especially
-        # when the provider cache makes the original cheap to re-send.
-        if adapter_info is not None:
-            # Estimator undercounts identifier-like dropped lines, so use char savings as a floor.
-            token_savings = 1.0 - kept_tokens / max(1, original_tokens)
-            char_savings = 1.0 - len(compressed) / max(1, len(original_text))
-            savings_ratio = max(token_savings, char_savings)
-        else:
-            savings_ratio = 1.0 - (kept_tokens / max(1, original_tokens))
-        if savings_ratio < min_savings_ratio and not trust_filtered:
-            compressed = original_text
-            kept = {b["id"] for b in scored}
-            fail_open = True
-            risk = "high"
-            savings_gate = True
-            kept_tokens = estimate_tokens(compressed)
-
-    source_pin_loss = not fail_open and any(part not in compressed for part in source_pin_texts)
-    if source_pin_loss:
-        compressed = caller_text
-        kept = {block['id'] for block in scored}
-        fail_open = True
-        risk = 'high'
-        recall = 0.0
-        kept_tokens = estimate_tokens(compressed)
-
-    if fail_open and compressed != caller_text:
-        compressed = caller_text
-        kept_tokens = estimate_tokens(compressed)
 
     freeze_cache_saturated = False
     if decision_cache is not None and not fail_open:
         freeze_cache_saturated = _record_freeze_decisions(decision_cache, scored, kept)
 
     keep_ratio = kept_tokens / max(1, original_tokens)
-    line_keep = 0
-    if lines:
-        kept_line_idx = set()
-        for b in scored:
-            if b["id"] in kept:
-                for i in range(b["start"], b["end"] + 1):
-                    kept_line_idx.add(i)
-        line_keep = len(kept_line_idx) / max(1, len(lines))
+    line_keep = _kept_line_ratio(
+        kept=kept,
+        lines=lines,
+        scored=scored,
+    )
 
-    reasons = sorted({scored[i]["reason"] for i in kept if i < len(scored)})
-    if source_pin_loss:
-        reasons.append("original pinned blocks could not be preserved")
-    if industrial.applied:
-        reasons.append(f"industrial adapter: {industrial.profile.format}")
-    if adapter_info is not None and not fail_open:
-        reasons.append(f"format adapter: {adapter_info['name']}")
-    if freeze_cache_saturated:
-        reasons.append("freeze cache capacity reached")
-    if savings_gate:
-        reasons.append("savings below min_savings_ratio")
-    if structural_collapse_only and not fail_open:
-        reasons.append("structural collapse only (query terms absent)")
-    if log_error_retention and log_error_retention["kept"] < log_error_retention["total"]:
-        reasons.append(
-            f"log error fingerprints lost: {log_error_retention['kept']}"
-            f"/{log_error_retention['total']} kept"
-        )
-    if degraded:
-        reasons.append("degraded scoring view")
-        if risk == "low":
-            risk = "medium"
-    if ccr and secret_in_input:
-        # dsh-jev-pre-compaction lesson: scan for secrets BEFORE archiving.
-        reasons.append("ccr skipped: secret material detected")
-    result_text = compressed
-    cache_applied = False
-    if cache_prefix and not fail_open:
-        result_text = cache_wrap(compressed, query_as_given or "")
-        cache_applied = True
-
-    ccr_info = None
-    pending_ccr_hash = None
-    candidate_text = result_text
-    if ccr and not fail_open and compressed != original_text and not secret_in_input:
-        pending_ccr_hash = hashlib.sha256(caller_text.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
-        if "[CC-Retrieve:" not in candidate_text:
-            candidate_text = (
-                candidate_text.rstrip()
-                + f"\n[CC-Retrieve: {pending_ccr_hash}]\n"
-            )
-
-    candidate_tokens = estimate_tokens(candidate_text)
-    if not fail_open and candidate_tokens > original_tokens and not trust_filtered:
-        result_text = caller_text
-        compressed = caller_text
-        kept = {b["id"] for b in scored}
-        fail_open = True
-        risk = "high"
-        cache_applied = False
-        line_keep = 1.0
-    else:
-        result_text = candidate_text
-        if pending_ccr_hash is not None:
-            if _ccr_defer:
-                # Probe path: keep the marker; the caller stores once at reuse.
-                ccr_info = {"hash": pending_ccr_hash, "path": None, "deferred": True}
-            else:
-                try:
-                    # Recovery means the caller's exact bytes, not a preprocessed view.
-                    ccr_info = _ccr_store(caller_text, ccr_dir)
-                except OSError:
-                    ccr_info = None
-                if ccr_info is None:
-                    # Store refused (secret screen) or failed — never emit a
-                    # dangling retrieval pointer.
-                    result_text = result_text.replace(
-                        f"\n[CC-Retrieve: {pending_ccr_hash}]\n", ""
-                    )
+    reasons, risk = _collect_reasons(
+        adapter_info=adapter_info, ccr=ccr, degraded=degraded, fail_open=fail_open,
+        freeze_cache_saturated=freeze_cache_saturated, industrial=industrial, kept=kept,
+        log_error_retention=log_error_retention, risk=risk, savings_gate=savings_gate,
+        scored=scored, secret_in_input=secret_in_input, source_pin_loss=source_pin_loss,
+        structural_collapse_only=structural_collapse_only,
+    )
+    result_text, ccr_info, compressed, kept, fail_open, risk, cache_applied, line_keep = _finalize_result_text_and_ccr(
+        _ccr_defer=_ccr_defer, cache_prefix=cache_prefix, caller_text=caller_text, ccr=ccr,
+        ccr_dir=ccr_dir, compressed=compressed, fail_open=fail_open, kept=kept, line_keep=line_keep,
+        original_text=original_text, original_tokens=original_tokens, query_as_given=query_as_given,
+        risk=risk, scored=scored, secret_in_input=secret_in_input, trust_filtered=trust_filtered,
+    )
 
     kept_tokens = estimate_tokens(result_text)
     keep_ratio = kept_tokens / max(1, original_tokens)
@@ -7827,26 +8344,11 @@ def compress_context(
     # recall. This is diagnostic — it does NOT modify the compressed output.
     # Callers can inspect the verifier to decide whether to re-compress with
     # a different strategy or expand dropped blocks.
-    verifier = None
-    if not fail_open and compressed and original_tokens > 50:
-        if route_hint == "numbered_code":
-            # the gutter ("12: ") is not content: it must not read as key: value
-            verifier = verify_compression(
-                "\n".join(_GUTTER_RE.sub("", ln, count=1) for ln in text.split("\n")),
-                "\n".join(_GUTTER_RE.sub("", ln, count=1) for ln in compressed.split("\n")),
-                query or "",
-            )
-        else:
-            verifier = verify_compression(text, compressed, query or "")
-        risk_order = {"low": 0, "medium": 1, "high": 2}
-        verifier_risk = str(verifier.get("risk", "high"))
-        if risk_order.get(verifier_risk, 2) > risk_order.get(risk, 2):
-            risk = verifier_risk
-        recall = min(recall, float(verifier.get("score", 0.0)))
-    # An inferred objective is advisory context, not caller intent — a
-    # derived query never earns a "low" compression-risk rating.
-    if (derived_terms or anchor_lines) and risk == "low":
-        risk = "medium"
+    verifier, risk, recall = _verify_and_adjust_risk(
+        anchor_lines=anchor_lines, compressed=compressed, derived_terms=derived_terms,
+        fail_open=fail_open, original_tokens=original_tokens, query=query, recall=recall, risk=risk,
+        route_hint=route_hint, text=text,
+    )
     __cr = CompressResult(
         compressed_text=result_text,
         original_tokens=original_tokens,
@@ -7869,42 +8371,19 @@ def compress_context(
     )
 
     receipt, query_hash = _build_receipt(
-        adapter_info=adapter_info,
-        anchor_lines=anchor_lines,
-        budget_ratio=budget_ratio,
-        caller_text=caller_text,
-        citations=citations,
-        content_hint=content_hint,
-        degraded=degraded,
-        derived_terms=derived_terms,
-        fail_open=fail_open,
-        industrial=industrial,
-        kept=kept,
-        log_error_retention=log_error_retention,
-        policy=policy,
-        query_as_given=query_as_given,
-        requested_mode=requested_mode,
-        result_text=result_text,
-        risk=risk,
-        savings=savings,
-        scored=scored,
-        selection=selection,
-        strategy=strategy,
-        structural_collapse_only=structural_collapse_only,
-        verifier=verifier,
+        adapter_info=adapter_info, anchor_lines=anchor_lines, budget_ratio=budget_ratio,
+        caller_text=caller_text, citations=citations, content_hint=content_hint, degraded=degraded,
+        derived_terms=derived_terms, fail_open=fail_open, industrial=industrial, kept=kept,
+        log_error_retention=log_error_retention, policy=policy, query_as_given=query_as_given,
+        requested_mode=requested_mode, result_text=result_text, risk=risk, savings=savings,
+        scored=scored, selection=selection, strategy=strategy,
+        structural_collapse_only=structural_collapse_only, verifier=verifier,
     )
     __cr.receipt = receipt
 
     _write_audit_log(
-        fail_open=fail_open,
-        industrial=industrial,
-        kept=kept,
-        log_dir=log_dir,
-        policy=policy,
-        query_hash=query_hash,
-        risk=risk,
-        savings=savings,
-        scored=scored,
+        fail_open=fail_open, industrial=industrial, kept=kept, log_dir=log_dir, policy=policy,
+        query_hash=query_hash, risk=risk, savings=savings, scored=scored,
     )
 
     return __cr
