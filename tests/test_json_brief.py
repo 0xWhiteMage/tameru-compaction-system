@@ -112,3 +112,14 @@ def test_brief_never_materialises_surrogates_or_bidi_controls():
     out = json_brief(astral, budget_chars=600)
     assert out is not None and out.isascii()
     assert json.loads(out)["_head"][0]["s"] == "\U000e0001"
+
+
+def test_brief_refuses_loss_prone_numbers_and_duplicate_fields():
+    for fields in ('"value":1.234567890123456789', '"value":-0',
+                   '"value":1e400', '"value":1,"value":2'):
+        text = '[' + ','.join('{"id":%d,%s}' % (i, fields) for i in range(30)) + ']'
+        assert json_brief(text, budget_chars=600) is None
+    text = json.dumps([{"id": i, "value": 7.5} for i in range(30)])
+    out = json_brief(text, budget_chars=600)
+    assert out is not None and len(out) < len(text)
+    assert json.loads(out)["_head"][0]["value"] == 7.5

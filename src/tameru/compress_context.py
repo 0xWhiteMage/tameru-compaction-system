@@ -45,6 +45,7 @@ from .contract_gates import (
 from .folding import fold_lossless, json_brief, mask_template
 from .format_adapters import FILLER_WORDS
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
+from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
 from .supersession import apply_supersession
 from .unicode_profile import (
     script_of,
@@ -70,7 +71,7 @@ except Exception:
     DEFAULT_CCR_DIR = Path(tempfile.gettempdir()) / ".tameru" / "cache" / "context-compress-ccr"
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
-ENGINE_VERSION = "1.6.0"
+ENGINE_VERSION = "1.9.0"
 CCR_TTL_SECONDS = 6 * 60 * 60
 CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
 FREEZE_MAX_DECISIONS = 4096
@@ -136,7 +137,13 @@ _SECRETS_RE = re.compile(
 )
 
 # Recursion guard markers: output Tameru itself produced.
-_RECURSION_MARKERS = ("<compressed_context", "[CC-Retrieve:")
+_RECURSION_MARKERS = ("<compressed_context", "[CC-Retrieve:", "[tameru:report ")
+
+# Already-elided standalone marker lines ([…] or the counted omitted form): a
+# conservative no-op check so previously compressed text short-circuits instead
+# of being reprocessed. This does NOT prove the marker was authored by Tameru;
+# inline mentions inside normal lines deliberately do not match.
+_DEFAULT_ELISION_LINE = re.compile(r'^[ \t]*\[…(?: [0-9]{1,12} [^\]\r\n]{1,120} omitted …)?\][ \t]*\r?$', re.MULTILINE)
 
 
 # Perf (v1.5.0): the pure text-level analyses below are memoized for texts of
@@ -169,11 +176,13 @@ _MEMO_ENTRIES = 6
 _SECRET_KEYWORD = (
     r"(?:[A-Za-z0-9_]{1,64}[_-])?(?:password|passwd|secret|api[_-]?key|access[_-]?token"
     r"|auth[_-]?token|secret[_-]?(?:access[_-]?)?key|client[_-]?secret"
-    r"|(?:session|refresh|bearer|id|security)[_-]?token|private[_-]?key|signing[_-]?key)"
+    r"|(?:session|refresh|bearer|id|security)[_-]?token|private[_-]?key|signing[_-]?key"
+    r"|db[_-]?pass|mysql[_-]?pwd|pgpassword|rediscli[_-]?auth)"
 )
 _SECRET_NEW_KEYWORD = (
     r"(?:[A-Za-z0-9_]{1,64}[_-])?(?:secret[_-]?(?:access[_-]?)?key|client[_-]?secret"
-    r"|(?:session|refresh|bearer|id|security)[_-]?token|private[_-]?key|signing[_-]?key)"
+    r"|(?:session|refresh|bearer|id|security)[_-]?token|private[_-]?key|signing[_-]?key"
+    r"|db[_-]?pass|mysql[_-]?pwd|pgpassword|rediscli[_-]?auth)"
 )
 _SECRET_NOT_CODE = (
     r"(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*(?![^\s,;)\]}]))"
@@ -220,6 +229,14 @@ _SECRETS_EXTRA_RE = re.compile(
     # variables, not code
     r"|\b(?:[A-Z][A-Z0-9_]{0,60}_)?(?:TOKEN|ACCESS_KEY)\s*[:=]\s*[\"']?" + _SECRET_NOT_CODE
     + r"(?=[A-Za-z0-9_./+=-]*\d)[A-Za-z0-9_./+=-]{19,}[A-Za-z0-9_/+=](?![^\s\"'])"
+    # Short literal credentials with both digits and punctuation; code references stay excluded.
+    r"|(?i:\b" + _SECRET_KEYWORD + r"[\"']?\s*[:=]\s*[\"']?" + _SECRET_NOT_CODE
+    + r"(?=[^\s\"']{0,15}\d)(?=[^\s\"']{0,15}[!@#%&*+=?/~])"
+    r"[A-Za-z0-9!@#%&*+=?/~._-]{4,15}(?=[\"'\s,;}\]]|$))"
+    # A complete .pgpass record: host:port:database:user:password. Escaped colons are field data.
+    r"|(?m:^[ \t]*(?:\\[^\r\n]|[^:\\\s#]){1,256}:(?:\*|[0-9]{1,5}):"
+    r"(?:\\[^\r\n]|[^:\\\s]){1,256}:(?:\\[^\r\n]|[^:\\\s]){1,256}:"
+    r"(?:\\[^\r\n]|[^:\\\r\n]){1,1024}\r?$)"
 )
 
 # Every alternative of ``_SECRETS_RE`` / ``_SECRETS_EXTRA_RE`` contains one of
@@ -236,12 +253,14 @@ _SECRET_LITERALS = (
     "xox", "sk-", "eyJ", "AIza", "_live_",
     "ASIA", "ya29.", "1//0", "hf_", "npm_", "pypi-AgE", "SG.", "glpat-", "dckr_pat_",
     "xapp-", "hooks.slack.com", "/api/webhooks/", "_test_", "whsec_", "dop_v1_", "shp",
-    "sq0", "SK", ":AA", "Key=", "sig=", "://", "sshpass", "curl", "TOKEN", "ACCESS_KEY", "key-",
+    "sq0", "SK", ":AA", "Key=", "sig=", "://", "sshpass", "curl", "TOKEN", "ACCESS_KEY", "key-", ":",
 )
 _SECRET_FOLDED_LITERALS = (
     "password", "passwd", "secret", "api_key", "api-key", "apikey", "access_token",
     "access-token", "accesstoken", "auth_token", "auth-token", "authtoken", "bearer",
     "token", "private", "signing", "basic",
+    "dbpass", "db_pass", "db-pass", "mysqlpwd", "mysql_pwd", "mysql-pwd",
+    "pgpassword", "rediscliauth", "rediscli_auth", "rediscli-auth",
 )
 
 
@@ -1340,7 +1359,8 @@ def _summarize_json_arrays(value: Any, query: str) -> tuple[Any, bool]:
                     else:
                         summary = "no dominant values"
                     new_items.append(
-                        f"... {omitted} similar items omitted (keys: {', '.join(common_ordered)}; {summary})"
+                        f"... {omitted} similar items omitted (keys: {', '.join(common_ordered)}; "
+                        f"original array: {summary})"
                     )
                     return new_items
             return items
@@ -1356,7 +1376,7 @@ def _summarize_ndjson(stripped: str, query: str) -> str | None:
     parsed = []
     for line in lines:
         try:
-            obj = json.loads(line)
+            obj = loads_for_rewrite(line)
         except (ValueError, RecursionError):
             return None
         if not isinstance(obj, dict):
@@ -1397,7 +1417,7 @@ def preprocess_json(text: str, query: str) -> str:
     stripped = text.strip()
     if not query_has_distinctive_selectors(query):
         try:
-            parsed = json.loads(stripped)
+            parsed = loads_for_rewrite(stripped)
         except (ValueError, RecursionError):
             ndjson = _summarize_ndjson(stripped, query)
             if ndjson is not None:
@@ -1417,7 +1437,7 @@ def preprocess_json(text: str, query: str) -> str:
         return text
     needles = _json_query_needles(query)
     try:
-        parsed = json.loads(stripped)
+        parsed = loads_for_rewrite(stripped)
     except (ValueError, RecursionError):  # JSONDecodeError + the 4300-digit int limit
         return text
     try:
@@ -1669,6 +1689,8 @@ def unwrap_tool_payload(text: str) -> ToolPayload:
     Detection mirrors :func:`unwrap_hermes_tool`: a JSON object with a string
     ``content`` or ``output`` longer than 200 chars (``content`` first).
     Anything else comes back as ``ToolPayload(text, None, {}, False)``.
+    A recognized report document (SARIF, notebook, GraphQL) is NOT a tool
+    envelope even when it carries a long ``content``/``output`` property.
     """
     unwrapped = ToolPayload(inner=text, field=None, meta={}, wrapped=False)
     if not isinstance(text, str):
@@ -1677,10 +1699,10 @@ def unwrap_tool_payload(text: str) -> ToolPayload:
     if not stripped.startswith("{"):
         return unwrapped
     try:
-        parsed = json.loads(stripped)
+        parsed = loads_for_rewrite(stripped)
     except (ValueError, RecursionError):  # JSONDecodeError + the 4300-digit int limit
         return unwrapped
-    if not isinstance(parsed, dict):
+    if not isinstance(parsed, dict) or report_format(parsed) is not None:
         return unwrapped
     for key in ("content", "output"):
         val = parsed.get(key)
@@ -2284,6 +2306,21 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
 @functools.lru_cache(maxsize=_MEMO_ENTRIES)
 def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]:
     return tuple(segment_blocks(list(lines)))
+
+
+def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> list[str]:
+    """Texts of the original blocks a caller pinned: the caller's floor, which no
+    later reduction or summary may drop."""
+    if not patterns and not recent:
+        return []
+    blocks = _segment_blocks_memo(text.split('\n'))
+    expressions = [re.compile(pattern) for pattern in patterns or ()]
+    pinned = {block['id'] for block in blocks
+              if any(expr.search(block['text']) for expr in expressions)}
+    if recent and blocks:
+        pinned.add(blocks[0]['id'])
+        pinned.update(block['id'] for block in blocks[-recent:])
+    return [block['text'] for block in blocks if block['id'] in pinned]
 
 
 def _segment_blocks_memo(lines: list[str]) -> list[dict[str, Any]]:
@@ -5016,22 +5053,22 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
     result is not actually shorter.
     """
     try:
-        data = json.loads(payload)
+        data = loads_for_rewrite(payload)
     except (ValueError, RecursionError):  # JSONDecodeError + the 4300-digit int limit
         return None
 
     # Find arrays to crush: top-level list, or dicts with list values
     # whose items are dicts (the "catalog" pattern).
-    arrays_to_crush: list[tuple] = []  # (path, list_obj)
+    arrays_to_crush: list[tuple[tuple[str, ...], list]] = []
 
-    def _find_arrays(obj, path=""):
+    def _find_arrays(obj, path=()):
         if isinstance(obj, list) and len(obj) > max_keep:
             # Check if items are dicts (the pattern we want to crush)
             if obj and isinstance(obj[0], dict):
                 arrays_to_crush.append((path, obj))
         elif isinstance(obj, dict):
-            for k, v in obj.items():
-                _find_arrays(v, f"{path}.{k}" if path else k)
+            for key, value in obj.items():
+                _find_arrays(value, (*path, key))
 
     _find_arrays(data)
     if not arrays_to_crush:
@@ -5067,11 +5104,10 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
 
         # Walk back to the array location and replace it
         if path:
-            parts = path.split(".")
             target = data
-            for p in parts[:-1]:
-                target = target[p]
-            target[parts[-1]] = new_arr
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = new_arr
         else:
             data = new_arr
 
@@ -5592,10 +5628,8 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
     extras: list[str] = []
 
     if stripped.startswith("{"):
-        import json as _json
-
         try:
-            obj = _json.loads(stripped)
+            obj = loads_for_rewrite(stripped)
         except ValueError:
             obj = None
 
@@ -5631,7 +5665,7 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
 def _strip_structured_anchor(line):
     if line.lstrip().startswith("{"):
         try:
-            record = json.loads(line)
+            record = loads_for_rewrite(line)
         except ValueError:
             record = None
         if isinstance(record, dict):
@@ -6199,10 +6233,8 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             base = _strip_anchor_prefix(stripped)
             extras = _rare_anchor_extras(stripped, lines)
             if stripped.startswith("{"):
-                import json as _json
-
                 try:
-                    obj = _json.loads(stripped)
+                    obj = loads_for_rewrite(stripped)
                 except ValueError:
                     obj = None
 
@@ -6270,99 +6302,37 @@ _ANCHOR_LINE_CHARS = 200
 _ANCHOR_RETRY_MAX_CHARS = 20000
 
 
-def compress_context(
-    context: str,
-    query: str | Iterable[str],
+def _resolve_objective(
     *,
-    mode: str = "adaptive",
-    budget_ratio: Optional[float] = None,
-    ccr: bool = True,
-    cache_prefix: bool = False,
-    citations: bool = True,
-    ccr_dir: str | Path = DEFAULT_CCR_DIR,
-    decision_cache: Optional[dict] = None,
-    strategy: str = "extract",
-    ambiguity_fail_open: bool = False,
-    reorder_best: bool = False,
-    semantic_tier: Any = None,
-    log_dir: str | Path | None = None,
-    pin_patterns: Optional[list[str]] = None,
-    pin_recent: int = 0,
-    min_savings_ratio: float = 0.10,
-    degraded_view: bool = False,
-    summary_endpoint: str | None = None,
-    summary_models: Iterable[str] | str | None = None,
-    summary_timeout: float | None = None,
-    summary_allow_remote: bool | None = None,
-    limits: IndustrialLimits | None = None,
-    derive_query: bool = False,
-    anchor_errors: bool = False,
-    prose_brief: bool = False,
-    gap_marker: Callable[[int, int], str] | None = None,
-    recursion_markers: Iterable[str] = (),
-    content_hint: str | None = None,
-    inline_short_gaps: bool = False,
-    _ccr_defer: bool = False,
-) -> CompressResult:
-    """Query-aware extractive compression of ``context``.
+    ambiguity_fail_open,
+    anchor_errors,
+    budget_ratio,
+    caller_text,
+    ccr,
+    ccr_dir,
+    citations,
+    content_hint,
+    degraded_view,
+    derive_query,
+    gap_marker,
+    inline_short_gaps,
+    limits,
+    min_savings_ratio,
+    mode,
+    pin_patterns,
+    pin_recent,
+    prose_brief,
+    query,
+    recursion_markers,
+    reorder_best,
+    semantic_tier,
+    strategy,
+):
+    """Settle what the compression is steered by: the caller's words, a derived objective, or the regions around the errors.
 
-    New in 1.4.0 (all optional, defaults keep 1.3.x behaviour):
-    ``prose_brief`` (1.6.0, opt-in)
-        With no usable query (empty or filler, no derived or error-anchored objective) on content routed
-        as ``text``, keep a structure-preserving extractive brief instead of failing open: the first and
-        last block, the first paragraph of every repeat group (exact repeats modulo digits, case and whitespace — script-agnostic, so CJK needs no word segmentation; a paragraph differing by any word is never collapsed) and any repeat that carries data
-        (amounts, percentages, ids, long numbers, decimals, dates). Risk is at least ``medium``;
-        receipts mark ``query_source="prose-brief"``. Over 90% kept still fails open.
-
-    ``gap_marker(omitted_chars, total_chars) -> str``
-        Replaces every gap marker the renderer emits when ``citations=False``
-        — including a leading gap (kept text starts after line 0) and a
-        trailing gap — with the caller's own marker text. ``omitted_chars`` is
-        the length of the dropped span (its lines joined with ``"\\n"``),
-        ``total_chars`` the length of ``context``. Adjacent dropped blocks
-        yield exactly one marker. ``None`` keeps the historical ``[…]``.
-    ``recursion_markers``
-        Extra strings that mark input as already compressed: if any line of
-        the input starts with one (after ``lstrip``) the call is a no-op with
-        ``policy_name="local-noop-recursion"``. Matching is explicit and
-        anchored; nothing is guessed (a host's own marker text only counts if
-        the caller passes it).
-    ``content_hint``
-        One of ``None, "code", "numbered_code", "log", "json", "text",
-        "diff", "grep", "test"`` (anything else raises ``ValueError``).
-        ``"code"``/``"numbered_code"`` skip the CSV/TSV/YAML paths and route
-        as code so function bodies survive (``"log"`` skips them too: a log is
-        never a table); ``"numbered_code"`` additionally
-        means each line carries a ``N\\t`` or ``N|`` gutter, which stays in the
-        output and is ignored for scoring. ``"log"``/``"json"``/``"text"``
-        force that routing. ``"diff"``/``"grep"``/``"test"`` are recorded in
-        the receipt and otherwise behave like ``None``. The hint is always
-        recorded in ``receipt["content_hint"]``.
-
-    ``inline_short_gaps`` (1.4.1)
-        With ``gap_marker`` set, a dropped span whose marker would not be
-        shorter than the span itself is kept verbatim instead. Off by
-        default: 1.4.0 output is unchanged byte for byte.
-    """
-    caller_text = str(context or "")
-    if not isinstance(query, str):
-        # PAACE-style plan awareness: a sequence of upcoming-task strings is
-        # scored as a union — a term from any planned step counts.
-        query = " ".join(str(part) for part in (query or []) if part)
-    if content_hint is not None and (
-        not isinstance(content_hint, str) or content_hint not in _CONTENT_HINTS
-    ):
-        raise ValueError(
-            f"unknown content_hint {content_hint!r} "
-            f"(expected None or one of {', '.join(sorted(_CONTENT_HINTS))})"
-        )
-    if gap_marker is not None and not callable(gap_marker):
-        raise TypeError("gap_marker must be callable as gap_marker(omitted_chars, total_chars)")
-    if inline_short_gaps and gap_marker is not None and not _inlines_short(gap_marker):
-        gap_marker = InliningGapMarker(gap_marker)
-    code_hint = content_hint in _CODE_HINTS
-    no_table = content_hint in _NO_TABLE_HINTS
-    recursion_markers = _marker_tuple(recursion_markers)  # a generator is read once
+    Returns ``(query, query_as_given, derived_terms, anchor_lines, chosen_probe)``. ``chosen_probe`` is the result of a
+    side-effect-free trial run when the error-anchored objective had to be compared with the plain one (the caller may reuse
+    it); otherwise None."""
     # v1.4.0 (E6): a reply made only of conversational filler ("continue",
     # "thanks", "go ahead", "fix it", "OK") is an EMPTY query on every path.
     # The receipt/cache wrapper still show the caller's words.
@@ -6519,6 +6489,299 @@ def compress_context(
             anchor_lines = _anchor_regions(caller_text, _ANCHOR_MAX_LINES)
             if anchor_lines:
                 query = "\n".join(anchor_lines)
+    return query, query_as_given, derived_terms, anchor_lines, chosen_probe
+
+
+def _normalise_options(
+    *,
+    min_savings_ratio,
+    mode,
+    pin_recent,
+):
+    """Check and normalise the mode and the savings threshold. Raises ValueError for a mode or ratio the engine does not know.
+
+    Returns ``(requested_mode, mode_norm, pin_recent, min_savings_ratio)``."""
+    requested_mode = (mode or "adaptive").strip().lower()
+    if requested_mode not in {"adaptive", "fixed", "compiler", "precision"}:
+        raise ValueError(
+            f"unknown mode {mode!r} (expected adaptive/fixed/compiler/precision)"
+        )
+    mode_norm = (
+        "adaptive" if requested_mode in {"compiler", "precision"} else requested_mode
+    )
+    pin_recent = max(0, int(pin_recent or 0))
+    if min_savings_ratio is None:
+        min_savings_ratio = 0.10
+    min_savings_ratio = float(min_savings_ratio)
+    if not 0.0 <= min_savings_ratio < 1.0:
+        raise ValueError(
+            f"min_savings_ratio must be in [0, 1), got {min_savings_ratio!r}"
+        )
+    return requested_mode, mode_norm, pin_recent, min_savings_ratio
+
+
+def _build_receipt(
+    *,
+    adapter_info,
+    anchor_lines,
+    budget_ratio,
+    caller_text,
+    citations,
+    content_hint,
+    degraded,
+    derived_terms,
+    fail_open,
+    industrial,
+    kept,
+    log_error_retention,
+    policy,
+    query_as_given,
+    requested_mode,
+    result_text,
+    risk,
+    savings,
+    scored,
+    selection,
+    strategy,
+    structural_collapse_only,
+    verifier,
+):
+    """The receipt that travels with a result: what ran, on what, and how the result was judged. Returns ``(receipt, query_hash)``."""
+    # v0.10.0 (G5 memorix receipt): machine-readable provenance.
+    query_hash = hashlib.sha256((query_as_given or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
+    receipt = {
+        "schema_version": "1",
+        "engine": "tameru",
+        "policy": policy,
+        "kept_ids": _bounded_id_manifest(
+            (i for i in kept if i < len(scored)),
+            industrial.limits.max_receipt_ids,
+        ),
+        "dropped_ids": _bounded_id_manifest(
+            (b["id"] for b in scored if b["id"] not in kept),
+            industrial.limits.max_receipt_ids,
+        ),
+        "query_hash": query_hash,
+        "savings_pct": savings,
+        "risk": risk,
+        "verifier": verifier,
+        "degraded_view": degraded,
+        # dsh-jev-prune lesson: never degrade silently — report which
+        # selector path decided the keep-set.
+        "selection": selection.get("path"),
+        # lcc sufficiency lesson: blocks restored because a kept block's
+        # rare terms were qualified or defined there.
+        "sufficiency_restored": selection.get("sufficiency_restored") or [],
+        # TPC lesson: callers must see when the objective was inferred,
+        # not supplied — a derived query is advisory context, not intent.
+        "query_source": "derived" if derived_terms else (
+            "error-anchored" if anchor_lines else (
+                "prose-brief" if selection.get("path") == "prose-brief" else "caller"
+            )
+        ),
+        "derived_terms": derived_terms,
+        "anchor_lines": anchor_lines,
+        # v1.4.0: E7 — the keep-set came from structural collapse alone.
+        "structural_collapse_only": bool(structural_collapse_only and not fail_open),
+        # v1.4.0: E8 — the caller's routing hint, always recorded.
+        "content_hint": content_hint,
+        # v1.4.0: E5 — which diff/grep adapter shaped the text (None: none did).
+        "adapter": adapter_info,
+        # v1.4.0: E3 — level-tagged error fingerprints kept/total (logs only).
+        "log_error_fingerprints": log_error_retention,
+        "industrial": industrial.to_dict(),
+    }
+    receipt.update(
+        _receipt_hashes(
+            caller_text,
+            result_text,
+            industrial,
+            mode=requested_mode,
+            strategy=strategy,
+            budget_ratio=budget_ratio,
+            citations=citations,
+        )
+    )
+    return receipt, query_hash
+
+
+def _write_audit_log(
+    *,
+    fail_open,
+    industrial,
+    kept,
+    log_dir,
+    policy,
+    query_hash,
+    risk,
+    savings,
+    scored,
+):
+    """Append one line about this call to the audit log when a log directory was given. A file error is ignored."""
+    # v0.10.0 (G1 memorix checkpoints): append-only audit log, opt-in.
+    if log_dir:
+        try:
+            log_path = Path(log_dir)
+            log_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                log_path.chmod(0o700)
+            except OSError:
+                pass
+            top_dropped = sorted(
+                (
+                    {"id": b["id"], "score": round(float(b.get("score", 0.0)), 2)}
+                    for b in scored
+                    if b["id"] not in kept
+                ),
+                key=lambda d: -d["score"],
+            )[:5]
+            entry = {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "query_hash": query_hash,
+                "policy": policy,
+                "kept": len(kept),
+                "total": len(scored),
+                "savings_pct": savings,
+                "risk": risk,
+                "fail_open": fail_open,
+                "top_dropped": top_dropped,
+                "industrial_format": industrial.profile.format,
+                "industrial_applied": industrial.applied,
+                "direction": industrial.profile.direction,
+                "scripts": industrial.profile.scripts,
+                "input_chars": industrial.profile.characters,
+                "input_lines": industrial.profile.lines,
+                "profile_truncated": industrial.profile.profile_truncated,
+            }
+            log_file = log_path / "compactions.jsonl"
+            fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError:
+            pass  # logging must never break compression
+    return 
+
+
+def compress_context(
+    context: str,
+    query: str | Iterable[str],
+    *,
+    mode: str = "adaptive",
+    budget_ratio: Optional[float] = None,
+    ccr: bool = True,
+    cache_prefix: bool = False,
+    citations: bool = True,
+    ccr_dir: str | Path = DEFAULT_CCR_DIR,
+    decision_cache: Optional[dict] = None,
+    strategy: str = "extract",
+    ambiguity_fail_open: bool = False,
+    reorder_best: bool = False,
+    semantic_tier: Any = None,
+    log_dir: str | Path | None = None,
+    pin_patterns: Optional[list[str]] = None,
+    pin_recent: int = 0,
+    min_savings_ratio: float = 0.10,
+    degraded_view: bool = False,
+    summary_endpoint: str | None = None,
+    summary_models: Iterable[str] | str | None = None,
+    summary_timeout: float | None = None,
+    summary_allow_remote: bool | None = None,
+    limits: IndustrialLimits | None = None,
+    derive_query: bool = False,
+    anchor_errors: bool = False,
+    prose_brief: bool = False,
+    gap_marker: Callable[[int, int], str] | None = None,
+    recursion_markers: Iterable[str] = (),
+    content_hint: str | None = None,
+    inline_short_gaps: bool = False,
+    _ccr_defer: bool = False,
+) -> CompressResult:
+    """Query-aware extractive compression of ``context``.
+
+    New in 1.4.0 (all optional, defaults keep 1.3.x behaviour):
+    ``prose_brief`` (1.6.0, opt-in)
+        With no usable query (empty or filler, no derived or error-anchored objective) on content routed
+        as ``text``, keep a structure-preserving extractive brief instead of failing open: the first and
+        last block, the first paragraph of every repeat group (exact repeats modulo digits, case and whitespace — script-agnostic, so CJK needs no word segmentation; a paragraph differing by any word is never collapsed) and any repeat that carries data
+        (amounts, percentages, ids, long numbers, decimals, dates). Risk is at least ``medium``;
+        receipts mark ``query_source="prose-brief"``. Over 90% kept still fails open.
+
+    ``gap_marker(omitted_chars, total_chars) -> str``
+        Replaces every gap marker the renderer emits when ``citations=False``
+        — including a leading gap (kept text starts after line 0) and a
+        trailing gap — with the caller's own marker text. ``omitted_chars`` is
+        the length of the dropped span (its lines joined with ``"\\n"``),
+        ``total_chars`` the length of ``context``. Adjacent dropped blocks
+        yield exactly one marker. ``None`` keeps the historical ``[…]``.
+    ``recursion_markers``
+        Extra strings that mark input as already compressed: if any line of
+        the input starts with one (after ``lstrip``) the call is a no-op with
+        ``policy_name="local-noop-recursion"``. Matching is explicit and
+        anchored; nothing is guessed (a host's own marker text only counts if
+        the caller passes it).
+    ``content_hint``
+        One of ``None, "code", "numbered_code", "log", "json", "text",
+        "diff", "grep", "test"`` (anything else raises ``ValueError``).
+        ``"code"``/``"numbered_code"`` skip the CSV/TSV/YAML paths and route
+        as code so function bodies survive (``"log"`` skips them too: a log is
+        never a table); ``"numbered_code"`` additionally
+        means each line carries a ``N\\t`` or ``N|`` gutter, which stays in the
+        output and is ignored for scoring. ``"log"``/``"json"``/``"text"``
+        force that routing. ``"diff"``/``"grep"``/``"test"`` are recorded in
+        the receipt and otherwise behave like ``None``. The hint is always
+        recorded in ``receipt["content_hint"]``.
+
+    ``inline_short_gaps`` (1.4.1)
+        With ``gap_marker`` set, a dropped span whose marker would not be
+        shorter than the span itself is kept verbatim instead. Off by
+        default: 1.4.0 output is unchanged byte for byte.
+    """
+    caller_text = str(context or "")
+    if not isinstance(query, str):
+        # PAACE-style plan awareness: a sequence of upcoming-task strings is
+        # scored as a union — a term from any planned step counts.
+        query = " ".join(str(part) for part in (query or []) if part)
+    if content_hint is not None and (
+        not isinstance(content_hint, str) or content_hint not in _CONTENT_HINTS
+    ):
+        raise ValueError(
+            f"unknown content_hint {content_hint!r} "
+            f"(expected None or one of {', '.join(sorted(_CONTENT_HINTS))})"
+        )
+    if gap_marker is not None and not callable(gap_marker):
+        raise TypeError("gap_marker must be callable as gap_marker(omitted_chars, total_chars)")
+    if inline_short_gaps and gap_marker is not None and not _inlines_short(gap_marker):
+        gap_marker = InliningGapMarker(gap_marker)
+    code_hint = content_hint in _CODE_HINTS
+    no_table = content_hint in _NO_TABLE_HINTS
+    recursion_markers = _marker_tuple(recursion_markers)  # a generator is read once
+    query, query_as_given, derived_terms, anchor_lines, chosen_probe = _resolve_objective(
+        ambiguity_fail_open=ambiguity_fail_open,
+        anchor_errors=anchor_errors,
+        budget_ratio=budget_ratio,
+        caller_text=caller_text,
+        ccr=ccr,
+        ccr_dir=ccr_dir,
+        citations=citations,
+        content_hint=content_hint,
+        degraded_view=degraded_view,
+        derive_query=derive_query,
+        gap_marker=gap_marker,
+        inline_short_gaps=inline_short_gaps,
+        limits=limits,
+        min_savings_ratio=min_savings_ratio,
+        mode=mode,
+        pin_patterns=pin_patterns,
+        pin_recent=pin_recent,
+        prose_brief=prose_brief,
+        query=query,
+        recursion_markers=recursion_markers,
+        reorder_best=reorder_best,
+        semantic_tier=semantic_tier,
+        strategy=strategy,
+    )
     probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
     if (
         _REUSE_PROBE_RESULT
@@ -6541,28 +6804,19 @@ def compress_context(
             # retries the store and strips the marker on failure.
         else:
             return reused
-    requested_mode = (mode or "adaptive").strip().lower()
-    if requested_mode not in {"adaptive", "fixed", "compiler", "precision"}:
-        raise ValueError(
-            f"unknown mode {mode!r} (expected adaptive/fixed/compiler/precision)"
-        )
-    mode_norm = (
-        "adaptive" if requested_mode in {"compiler", "precision"} else requested_mode
+    requested_mode, mode_norm, pin_recent, min_savings_ratio = _normalise_options(
+        min_savings_ratio=min_savings_ratio,
+        mode=mode,
+        pin_recent=pin_recent,
     )
-    pin_recent = max(0, int(pin_recent or 0))
-    if min_savings_ratio is None:
-        min_savings_ratio = 0.10
-    min_savings_ratio = float(min_savings_ratio)
-    if not 0.0 <= min_savings_ratio < 1.0:
-        raise ValueError(
-            f"min_savings_ratio must be in [0, 1), got {min_savings_ratio!r}"
-        )
     # Recursion guard (Claude Code teardown inspired): Tameru output fed
     # back as input would nest wrappers and could drop the CCR pointer
     # that makes earlier drops recoverable. Refuse to compact our own
     # output — the caller already has the compacted form.
-    if any(marker in caller_text for marker in _RECURSION_MARKERS) or (
-        _has_anchored_marker(caller_text, recursion_markers)
+    if (
+        any(marker in caller_text for marker in _RECURSION_MARKERS)
+        or _DEFAULT_ELISION_LINE.search(caller_text) is not None
+        or (_has_anchored_marker(caller_text, recursion_markers))
     ):
         tokens = estimate_tokens(caller_text)
         return CompressResult(
@@ -6604,7 +6858,8 @@ def compress_context(
         )
     )
     industrial = industrial_preprocess(
-        caller_text, industrial_query, limits, gap_marker=adapter_gap
+        caller_text, industrial_query, limits, gap_marker=adapter_gap,
+        allow_reports=not no_table,
     )
     if (
         industrial.hard_fail_open
@@ -6635,6 +6890,20 @@ def compress_context(
                 reason=f"degraded scoring view: {industrial.reason}",
             )
             degraded = True
+    payload_industrial = None
+    if not industrial.hard_fail_open:
+        candidate_payload = unwrap_tool_payload(caller_text)
+        if candidate_payload.wrapped:
+            payload_industrial = industrial_preprocess(
+                candidate_payload.inner, industrial_query, industrial.limits,
+                gap_marker=adapter_gap, allow_reports=not no_table, reports_only=True,
+            )
+            if payload_industrial.hard_fail_open:
+                industrial = replace(
+                    industrial, hard_fail_open=True,
+                    reason='tool payload: ' + payload_industrial.reason,
+                    format_result=payload_industrial.format_result,
+                )
     if industrial.hard_fail_open:
         tokens = estimate_tokens(caller_text)
         reason = industrial.reason or "industrial preflight failed open"
@@ -6679,6 +6948,7 @@ def compress_context(
             )
         )
         return fail_result
+    source_pin_texts = _source_pin_texts(caller_text, pin_patterns, pin_recent)
     original_text = _norm_newlines(caller_text)
     industrial_text = industrial.text if industrial.applied else caller_text
     text = strip_ansi(_norm_newlines(industrial_text))
@@ -6686,6 +6956,8 @@ def compress_context(
     # total_lines, ...) so it can be re-emitted ahead of the compressed body.
     tool_payload = unwrap_tool_payload(text)
     text = tool_payload.inner
+    if payload_industrial is not None and payload_industrial.applied:
+        text = payload_industrial.text
     tool_meta_line = ""
     if tool_payload.wrapped and tool_payload.meta:
         tool_meta_line = _compact_json(tool_payload.meta) + "\n"
@@ -6701,15 +6973,24 @@ def compress_context(
         route_hint = "numbered_code"
         code_hint = True
         no_table = True
-    _pre_test_text = text
-    text = preprocess_test_runner(
-        text, query or "", content_hint=content_hint, gap_marker=adapter_gap
-    )
     # v1.4.0 (E5): diff and grep/rg output get their own adapters (whole hunks,
     # grouped matches) ahead of generic segmentation. The adapter's output is
     # the selection: scoring below must not undo it (see `adapter_info`).
     adapter_info: dict[str, Any] | None = None
-    if (
+    report_result = (payload_industrial.format_result if payload_industrial is not None
+                     and payload_industrial.format_result is not None else industrial.format_result)
+    if report_result is not None and report_result.format in REPORT_FORMATS:
+        adapter_info = {
+            "name": report_result.format, "total_records": report_result.total_records,
+            "kept_records": report_result.kept_records,
+            "reason": report_result.reason,
+        }
+    _pre_test_text = text
+    if adapter_info is None:
+        text = preprocess_test_runner(
+            text, query or "", content_hint=content_hint, gap_marker=adapter_gap
+        )
+    if adapter_info is None and (
         text is not _pre_test_text
         and content_hint in (None, "test")
         and len(text) <= _TEST_REDUCTION_FINAL_CHARS
@@ -6724,6 +7005,22 @@ def compress_context(
             "total_records": None,
             "kept_records": None,
             "reason": "failure blocks and summaries kept",
+        }
+    if (
+        adapter_info is None
+        and industrial.profile.format == "yaml"
+        and route_hint not in _CODE_HINTS
+        and route_hint not in ("log", "json", "text")
+        and any(line.rstrip() == "---" for line in caller_text.splitlines())
+    ):
+        # Whole YAML documents are the selection, including a declined/no-hit
+        # selection: generic block scoring must not detach names from status.
+        format_result = industrial.format_result
+        adapter_info = {
+            "name": "yaml_documents",
+            "total_records": format_result.total_records if format_result else None,
+            "kept_records": format_result.kept_records if format_result and format_result.applied else None,
+            "reason": format_result.reason if format_result else "whole documents preserved",
         }
     if (
         adapter_info is None
@@ -6750,10 +7047,19 @@ def compress_context(
         # (content_hint code/numbered_code: source code with commas or JSON
         # literals is not a table to crush; function bodies must survive.)
         if route_content_type(_norm_newlines(text).split("\n")) != "json":
+            before_json = text
             text = _preprocess_json(text, query or "")
-        if not no_table:
-            text = preprocess_csv(text, query or "", gap_marker=adapter_gap)
-        text = preprocess_filler_comments(text, query or "")
+            if text != before_json:
+                adapter_info = {
+                    "name": "embedded_json",
+                    "total_records": None,
+                    "kept_records": None,
+                    "reason": "complete JSON payloads selected; envelope preserved",
+                }
+        if adapter_info is None:
+            if not no_table:
+                text = preprocess_csv(text, query or "", gap_marker=adapter_gap)
+            text = preprocess_filler_comments(text, query or "")
 
     # Strategy ladder:
     #   'clear'     — drops tool-result payloads before scoring (regex-only,
@@ -6834,6 +7140,7 @@ def compress_context(
             summary is not None
             and summary_valid
             and estimate_tokens(summary) < estimate_tokens(text)
+            and all(part in tool_meta_line + summary for part in source_pin_texts)
         ):
             # LLM summary is shorter than the original — use it.
             # Store the original in CCR for reversibility.
@@ -6909,7 +7216,12 @@ def compress_context(
         # LLM failed or returned a longer result — fall through to extract.
         strategy_norm = "extract"
 
-    if query_has_distinctive_selectors(query or "") and not adapter_info:
+    if adapter_info is not None:
+        # Adapters already choose complete records. Do not crush/fold inside them.
+        lines = text.split("\n")
+        content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
+        recall_base = text
+    elif query_has_distinctive_selectors(query or ""):
         lines, content_type = preprocess(text, query or "", content_hint=route_hint)
         if industrial.applied:
             content_type = industrial.profile.format
@@ -7045,7 +7357,7 @@ def compress_context(
         decision_cache = None
     if decision_cache is not None:
         scored = _apply_freeze(decision_cache, scored, text, query or "")
-    _reorder = bool(reorder_best)
+    _reorder = bool(reorder_best) and adapter_info is None
     selection: dict[str, Any] = {}
     if mode_norm == "fixed":
         ratio = 0.35 if budget_ratio is None else float(budget_ratio)
@@ -7187,6 +7499,11 @@ def compress_context(
             content_lines=score_lines,
         )
 
+    if (adapter_info is not None and not fail_open
+            and all(block["id"] in kept for block in scored)):
+        # Selection is already final: preserve whitespace inside complete records,
+        # including blank diff context lines, instead of manufacturing new gaps.
+        compressed = collapsed
     recall = _entity_recall(recall_base, compressed, query or "")
     if recall < 0.66 and not fail_open:
         # One expansion pass: add any dropped block that still holds a query key.
@@ -7307,6 +7624,15 @@ def compress_context(
             savings_gate = True
             kept_tokens = estimate_tokens(compressed)
 
+    source_pin_loss = not fail_open and any(part not in compressed for part in source_pin_texts)
+    if source_pin_loss:
+        compressed = caller_text
+        kept = {block['id'] for block in scored}
+        fail_open = True
+        risk = 'high'
+        recall = 0.0
+        kept_tokens = estimate_tokens(compressed)
+
     if fail_open and compressed != caller_text:
         compressed = caller_text
         kept_tokens = estimate_tokens(compressed)
@@ -7326,6 +7652,8 @@ def compress_context(
         line_keep = len(kept_line_idx) / max(1, len(lines))
 
     reasons = sorted({scored[i]["reason"] for i in kept if i < len(scored)})
+    if source_pin_loss:
+        reasons.append("original pinned blocks could not be preserved")
     if industrial.applied:
         reasons.append(f"industrial adapter: {industrial.profile.format}")
     if adapter_info is not None and not fail_open:
@@ -7445,106 +7773,44 @@ def compress_context(
         verifier=verifier,
     )
 
-    # v0.10.0 (G5 memorix receipt): machine-readable provenance.
-    query_hash = hashlib.sha256((query_as_given or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
-    receipt = {
-        "schema_version": "1",
-        "engine": "tameru",
-        "policy": policy,
-        "kept_ids": _bounded_id_manifest(
-            (i for i in kept if i < len(scored)),
-            industrial.limits.max_receipt_ids,
-        ),
-        "dropped_ids": _bounded_id_manifest(
-            (b["id"] for b in scored if b["id"] not in kept),
-            industrial.limits.max_receipt_ids,
-        ),
-        "query_hash": query_hash,
-        "savings_pct": savings,
-        "risk": risk,
-        "verifier": verifier,
-        "degraded_view": degraded,
-        # dsh-jev-prune lesson: never degrade silently — report which
-        # selector path decided the keep-set.
-        "selection": selection.get("path"),
-        # lcc sufficiency lesson: blocks restored because a kept block's
-        # rare terms were qualified or defined there.
-        "sufficiency_restored": selection.get("sufficiency_restored") or [],
-        # TPC lesson: callers must see when the objective was inferred,
-        # not supplied — a derived query is advisory context, not intent.
-        "query_source": "derived" if derived_terms else (
-            "error-anchored" if anchor_lines else (
-                "prose-brief" if selection.get("path") == "prose-brief" else "caller"
-            )
-        ),
-        "derived_terms": derived_terms,
-        "anchor_lines": anchor_lines,
-        # v1.4.0: E7 — the keep-set came from structural collapse alone.
-        "structural_collapse_only": bool(structural_collapse_only and not fail_open),
-        # v1.4.0: E8 — the caller's routing hint, always recorded.
-        "content_hint": content_hint,
-        # v1.4.0: E5 — which diff/grep adapter shaped the text (None: none did).
-        "adapter": adapter_info,
-        # v1.4.0: E3 — level-tagged error fingerprints kept/total (logs only).
-        "log_error_fingerprints": log_error_retention,
-        "industrial": industrial.to_dict(),
-    }
-    receipt.update(
-        _receipt_hashes(
-            caller_text,
-            result_text,
-            industrial,
-            mode=requested_mode,
-            strategy=strategy,
-            budget_ratio=budget_ratio,
-            citations=citations,
-        )
+    receipt, query_hash = _build_receipt(
+        adapter_info=adapter_info,
+        anchor_lines=anchor_lines,
+        budget_ratio=budget_ratio,
+        caller_text=caller_text,
+        citations=citations,
+        content_hint=content_hint,
+        degraded=degraded,
+        derived_terms=derived_terms,
+        fail_open=fail_open,
+        industrial=industrial,
+        kept=kept,
+        log_error_retention=log_error_retention,
+        policy=policy,
+        query_as_given=query_as_given,
+        requested_mode=requested_mode,
+        result_text=result_text,
+        risk=risk,
+        savings=savings,
+        scored=scored,
+        selection=selection,
+        strategy=strategy,
+        structural_collapse_only=structural_collapse_only,
+        verifier=verifier,
     )
     __cr.receipt = receipt
 
-    # v0.10.0 (G1 memorix checkpoints): append-only audit log, opt-in.
-    if log_dir:
-        try:
-            log_path = Path(log_dir)
-            log_path.mkdir(parents=True, exist_ok=True, mode=0o700)
-            try:
-                log_path.chmod(0o700)
-            except OSError:
-                pass
-            top_dropped = sorted(
-                (
-                    {"id": b["id"], "score": round(float(b.get("score", 0.0)), 2)}
-                    for b in scored
-                    if b["id"] not in kept
-                ),
-                key=lambda d: -d["score"],
-            )[:5]
-            entry = {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "query_hash": query_hash,
-                "policy": policy,
-                "kept": len(kept),
-                "total": len(scored),
-                "savings_pct": savings,
-                "risk": risk,
-                "fail_open": fail_open,
-                "top_dropped": top_dropped,
-                "industrial_format": industrial.profile.format,
-                "industrial_applied": industrial.applied,
-                "direction": industrial.profile.direction,
-                "scripts": industrial.profile.scripts,
-                "input_chars": industrial.profile.characters,
-                "input_lines": industrial.profile.lines,
-                "profile_truncated": industrial.profile.profile_truncated,
-            }
-            log_file = log_path / "compactions.jsonl"
-            fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-            if hasattr(os, "fchmod"):
-                os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except OSError:
-            pass  # logging must never break compression
+    _write_audit_log(
+        fail_open=fail_open,
+        industrial=industrial,
+        kept=kept,
+        log_dir=log_dir,
+        policy=policy,
+        query_hash=query_hash,
+        risk=risk,
+        savings=savings,
+        scored=scored,
+    )
 
     return __cr
 

@@ -22,6 +22,56 @@ SRC = ROOT / "src"
 
 
 class StructuredInputRuntimeTests(unittest.TestCase):
+    def test_json_rewriting_preserves_exact_numeric_literals(self):
+        from tameru.compress_context import compress_context, preprocess_json
+
+        normal = ['{"id":%d,"status":"ok","measurement":7.5}' % i for i in range(100)]
+        query = "Why did checkout_failed occur?"
+        unsafe = ("1.234567890123456789", "1e400", "-0")
+        for number in (*unsafe, "900719925474099312345678901234567890", "1e+20"):
+            with self.subTest(number=number):
+                failure = '{"id":100,"problem":"checkout_failed","measurement":%s}' % number
+                source = "[" + ",".join([*normal, failure]) + "]"
+                for text in (source, f"TOOL OUTPUT START\n{source}\nTOOL OUTPUT END"):
+                    result = compress_context(text, query, ccr=False, citations=False)
+                    self.assertIn("checkout_failed", result.compressed_text)
+                    self.assertIn(number, result.compressed_text)
+                    self.assertNotIn("Infinity", result.compressed_text)
+                    self.assertNotIn("NaN", result.compressed_text)
+                if number in unsafe:
+                    for objective in (query, ""):
+                        self.assertEqual(preprocess_json(source, objective), source)
+                    ndjson = "\n".join([*normal, failure])
+                    self.assertEqual(preprocess_json(ndjson, ""), ndjson)
+                else:
+                    reduced = preprocess_json(source, query)
+                    self.assertLess(len(reduced), len(source))
+                    self.assertIn(number, reduced)
+
+    def test_loss_prone_envelope_metadata_prevents_unwrapping(self):
+        from tameru.compress_context import rewrap_tool_payload, unwrap_tool_payload
+
+        output = "checkout_failed diagnostic detail\n" * 30
+        source = '{"output":%s,"measurement":1.234567890123456789}' % json.dumps(output)
+        payload = unwrap_tool_payload(source)
+        self.assertFalse(payload.wrapped)
+        self.assertEqual(payload.inner, source)
+        ordinary = unwrap_tool_payload(json.dumps({"output": output, "exit_code": 1}))
+        self.assertTrue(ordinary.wrapped)
+        self.assertEqual(
+            json.loads(rewrap_tool_payload(ordinary, "shorter output")),
+            {"output": "shorter output", "exit_code": 1},
+        )
+
+    def test_rewrite_decoder_refuses_ambiguous_fields_and_nonfinite_numbers(self):
+        from tameru.structured_reports import loads_for_rewrite
+
+        for source in ('{"value":1,"value":2}', '{"value":NaN}', '{"value":Infinity}'):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                loads_for_rewrite(source)
+        strings = {"literal": '{"value":1,"value":2}', "number": "1e400"}
+        self.assertEqual(loads_for_rewrite(json.dumps(strings)), strings)
+
     def test_unmatched_json_openers_complete_within_one_second(self):
         script = textwrap.dedent(
             """
@@ -1130,6 +1180,193 @@ class DiagnosticConsistencyTests(unittest.TestCase):
             order[result.verifier["risk"]],
         )
         self.assertLessEqual(result.confidence, result.verifier["score"])
+
+
+class GauntletFormatFidelityTests(unittest.TestCase):
+    """Round-0 fidelity defects: literal JSON keys, decoded SARIF matching,
+    git-log record expansion, YAML reference fail-open and source pins."""
+
+    def test_dotted_and_empty_json_keys_are_crushed_in_place(self):
+        from tameru.compress_context import compress_context
+        for key in ("service.catalog", "", "service/catalog"):
+            rows = [{"id": f"item-{i}", "count": i} for i in range(60)]
+            source = "Response received\n" + json.dumps({key: rows}) + "\nEnd response"
+            result = compress_context(source, "item-17", ccr=False, citations=False)
+            self.assertIn("item-17", result.compressed_text)
+            self.assertIn(json.dumps(key), result.compressed_text)
+            body = result.compressed_text[result.compressed_text.index("{"):]
+            payload, _end = json.JSONDecoder().raw_decode(body)
+            self.assertTrue(any(item["id"] == "item-17" for item in payload[key]))
+
+    def test_dotted_key_collision_keeps_the_literal_array(self):
+        from tameru.compress_context import compress_context
+        source = json.dumps({
+            "service.catalog": [{"id": f"item-{i}", "count": i} for i in range(60)],
+            "service": {"catalog": [{"id": f"other-{i}", "count": i} for i in range(60)]},
+        })
+        for text in (source, "Response received\n" + source + "\nEnd response"):
+            with self.subTest(wrapped=text != source):
+                result = compress_context(text, "item-17", ccr=False, citations=False)
+                body = result.compressed_text[result.compressed_text.index("{"):]
+                payload, _end = json.JSONDecoder().raw_decode(body)
+                self.assertTrue(
+                    any(item["id"] == "item-17" for item in payload["service.catalog"])
+                )
+                self.assertEqual(
+                    payload["service"]["catalog"],
+                    [{"id": f"other-{i}", "count": i} for i in range(60)],
+                )
+
+    @staticmethod
+    def _sarif(ensure_ascii=True, escaped=False):
+        results = [{"ruleId": f"style.rule{i}", "level": "note",
+                    "message": {"text": f"ordinary style issue {i}"}} for i in range(30)]
+        results[20] = {"ruleId": "style.rule20", "level": "note",
+                       "message": {"text": "café forbidden waiver"}}
+        doc = {"version": "2.1.0", "runs": [
+            {"tool": {"driver": {"name": "scanner"}}, "results": results}]}
+        text = json.dumps(doc, ensure_ascii=ensure_ascii)
+        span = json.dumps(results[20], ensure_ascii=ensure_ascii)
+        if escaped:
+            text = text.replace("forbidden", r"\u0066orbidden")
+            span = span.replace("forbidden", r"\u0066orbidden")
+        return text, span
+
+    def test_sarif_matches_on_decoded_strings_not_the_raw_span(self):
+        from tameru.compress_context import compress_context
+        kept_ids = []
+        for (text, span), query in ((self._sarif(ensure_ascii=False), "café"),
+                                    (self._sarif(ensure_ascii=True), "café"),
+                                    (self._sarif(ensure_ascii=True, escaped=True), "forbidden")):
+            if query == "forbidden":
+                self.assertIn(r"\u0066orbidden", text)
+            result = compress_context(text, query, ccr=False, citations=False)
+            self.assertIn("style.rule20", result.compressed_text)
+            self.assertIn(span, result.compressed_text)
+            again = compress_context(result.compressed_text, query, ccr=False, citations=False)
+            self.assertEqual(again.compressed_text, result.compressed_text)
+            body = result.compressed_text[result.compressed_text.index("{"):]
+            ids = [row["ruleId"] for row in json.loads(body)["runs"][0]["results"]]
+            kept_ids.append(ids)
+        self.assertEqual(kept_ids[0], kept_ids[1])
+
+    def test_git_oneline_note_expands_to_its_owning_record(self):
+        from tameru.compress_context import compress_context
+        lines = []
+        for i in range(30):
+            lines.append(f"{0x1000000 + i:07x} chore: update lib{i}")
+            if i == 20:
+                lines += ["Notes:", "    DEPLOY-184 approved by release manager", ""]
+        source = "\n".join(lines)
+        result = compress_context(source, "DEPLOY-184", ccr=False, citations=False)
+        self.assertIn("1000014 chore: update lib20\nNotes:\n    DEPLOY-184 approved by release manager",
+                      result.compressed_text)
+
+    def test_git_oneline_patch_expands_to_its_owning_record(self):
+        from tameru.compress_context import compress_context
+        from tameru.agent_formats import detect_test_runner
+        lines = []
+        for i in range(100):
+            lines.append(f"{0x1000000 + i:07x} chore: update lib{i}")
+            if i == 20:
+                lines += ["diff --git a/needle.txt b/needle.txt", "--- a/needle.txt",
+                          "+++ b/needle.txt", "@@ -1 +1 @@", "-old", "+new", ""]
+        source = "\n".join(lines)
+        self.assertEqual(detect_test_runner(source), "git_log")
+        result = compress_context(source, "needle.txt", ccr=False, citations=False)
+        record = ("1000014 chore: update lib20\ndiff --git a/needle.txt b/needle.txt\n"
+                  "--- a/needle.txt\n+++ b/needle.txt\n@@ -1 +1 @@\n-old\n+new")
+        self.assertIn(record, result.compressed_text)
+
+    def test_git_sha_in_a_note_does_not_start_a_new_record(self):
+        from tameru.compress_context import compress_context
+        from tameru.agent_formats import detect_test_runner
+        lines = []
+        for i in range(30):
+            lines.append(f"{0x1000000 + i:07x} chore: update lib{i}")
+            if i == 20:
+                lines += ["Notes:", "    deadbee DEPLOY-184 approved by release manager", ""]
+        source = "\n".join(lines)
+        self.assertEqual(detect_test_runner(source), "git_log")
+        result = compress_context(source, "DEPLOY-184", ccr=False, citations=False)
+        self.assertIn("1000014 chore: update lib20\nNotes:\n    deadbee DEPLOY-184 approved by release manager",
+                      result.compressed_text)
+
+    def test_git_graph_prefix_records_expand_atomically(self):
+        from tameru.compress_context import compress_context
+        from tameru.agent_formats import detect_test_runner
+        for prefix in ("* ", "| * "):
+            with self.subTest(prefix=prefix):
+                continuation = prefix.replace("*", "|")
+                note = (f"{continuation}    Notes:\n"
+                        f"{continuation}    deadbee DEPLOY-184 approved by release manager")
+                lines = []
+                for i in range(100):
+                    lines.append(f"{prefix}{0x1000000 + i:07x} chore: update lib{i}")
+                    if i == 20:
+                        lines.extend([note, continuation.rstrip()])
+                source = "\n".join(lines)
+                self.assertEqual(detect_test_runner(source), "git_log")
+                result = compress_context(source, "DEPLOY-184", ccr=False, citations=False)
+                self.assertIn(f"{prefix}1000014 chore: update lib20\n{note}",
+                              result.compressed_text)
+
+    def test_yaml_references_fail_open_with_exact_original(self):
+        from tameru.compress_context import compress_context
+        from tameru.format_adapters import adapt_format
+        source = ("defaults: &defaults\n  retry: 7\n  timeout: 12\nservices:\n"
+                  + "".join(f"  - name: service-{i}\n    <<: *defaults\n    port: {8000 + i}\n"
+                            for i in range(30)))
+        result = compress_context(source, "service-17", ccr=False, citations=False)
+        self.assertTrue(result.fail_open)
+        self.assertEqual(result.compressed_text, source)
+        wrapped_src = json.dumps({"output": source, "exit_code": 0})
+        wrapped = compress_context(wrapped_src, "service-17", ccr=False, citations=False)
+        self.assertTrue(wrapped.fail_open)
+        self.assertEqual(wrapped.compressed_text, wrapped_src)
+        direct = adapt_format(source, "service-17")
+        self.assertEqual(direct.text, source)
+        self.assertFalse(direct.structurally_valid)
+
+    def test_comment_shaped_yaml_with_references_still_fails_open(self):
+        from tameru.compress_context import compress_context
+        from tameru.format_adapters import adapt_format
+        source = ("# Shared defaults\ndefaults: &defaults\n  retry: 7\n  timeout: 12\n"
+                  "# Service instances\nservices:\n"
+                  + "".join(f"  - name: service-{i}\n    <<: *defaults\n    port: {8000 + i}\n"
+                            for i in range(30)))
+        for candidate in (source, json.dumps({"output": source, "exit_code": 0})):
+            result = compress_context(candidate, "service-17", ccr=False, citations=False)
+            self.assertTrue(result.fail_open)
+            self.assertEqual(result.compressed_text, candidate)
+        direct = adapt_format(source, "service-17")
+        self.assertEqual(direct.text, source)
+        self.assertFalse(direct.structurally_valid)
+
+    def test_ordinary_markdown_still_detects_as_markdown(self):
+        from tameru.format_adapters import detect_format
+        self.assertEqual(detect_format("# Heading\n\n**bold** text with no yaml shape"), "markdown")
+
+    def test_explicit_pins_cannot_be_dropped_by_later_paths(self):
+        from tameru.compress_context import compress_context
+        text, _span = self._sarif()
+        for kwargs in ({"pin_patterns": ["style.rule20"]}, {"pin_recent": 1}):
+            result = compress_context(text, "style.rule0", ccr=False, citations=False, **kwargs)
+            self.assertTrue(result.fail_open)
+            self.assertEqual(result.compressed_text, text)
+            self.assertIn("original pinned blocks could not be preserved", result.reasons)
+
+    def test_ordinary_pin_behavior_is_not_blanket_disabled(self):
+        from tameru.compress_context import compress_context
+        parts = [f"Filler paragraph {i} about routine topic {i} with detail." for i in range(30)]
+        parts[15] = ("The quixotic configuration lives at /etc/quixotic.conf "
+                     "with timeout 42 and retries 7.")
+        source = "\n\n".join(parts) + "\n\n" + "-- filler\n" * 5
+        result = compress_context(source, "quixotic configuration", mode="fixed",
+                                  budget_ratio=0.15, pin_recent=1, ccr=False)
+        self.assertFalse(result.fail_open)
+        self.assertIn("-- filler", result.compressed_text)
+        self.assertLess(len(result.compressed_text), len(source))
 
 
 if __name__ == "__main__":

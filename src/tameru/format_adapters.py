@@ -22,6 +22,9 @@ from .agent_formats import (
 )
 from .contract_gates import GENERIC_WORDS, distinctive_query_terms
 from .regex_cache import cached_compile
+from .coverage_reports import select_lcov
+from .junit_reports import select_junit
+from .structured_reports import select_report
 from .unicode_profile import graphemes, matching_shadow, search_units
 
 
@@ -297,7 +300,7 @@ def detect_format(text: str) -> str:
     if stripped.startswith("<") and stripped.rstrip().endswith(">"):
         try:
             ET.fromstring(stripped)
-        except (ET.ParseError, RecursionError):
+        except (ET.ParseError, RecursionError, UnicodeError):
             pass
         else:
             return "xml"
@@ -341,8 +344,7 @@ def detect_format(text: str) -> str:
         return "ini"
     if _PROM_TYPE_LINE_RE.search(value) and re.search(r"(?m)^# HELP ", value):
         return "text"
-    if re.search(r"(?m)^#{1,6}\s+|^```|^~~~", value):
-        return "markdown"
+    markdown = bool(re.search(r"(?m)^#{1,6}\s+|^```|^~~~", value))
     yaml_parent = re.search(
         r"(?m)^[^\s:#][^:\n]{0,120}:\s*$",
         value,
@@ -357,14 +359,25 @@ def detect_format(text: str) -> str:
         and not code_vetoes_yaml(value)
         and not looks_like_diagnostics(value)
         and not looks_like_stack_trace(value)
+        # A heading-shaped YAML comment must not hide anchor/alias dependencies.
+        and (not markdown or yaml_requires_original(value))
     ):
         return "yaml"
+    if markdown:
+        return "markdown"
     if _looks_vertical(value):
         return "vertical"
     return "text"
 
 
 _VERTICAL_MARKUP_RE = re.compile(r"writing-mode\s*:", re.IGNORECASE)
+_YAML_REFERENCE_RE = re.compile(r'(?:^|[\s,:\[{])(?:&|\*)[^\s,\[\]{}]+', re.MULTILINE)
+
+
+def yaml_requires_original(text: str) -> bool:
+    """Conservative anchor/alias guard: YAML references need the original
+    document, so a partial render declines instead of inventing closure."""
+    return bool(_YAML_REFERENCE_RE.search(text))
 
 
 def _adapt_ndjson(
@@ -573,7 +586,7 @@ def _adapt_delimited_outliers(
         result_records = [
             records[0],
             *kept_records,
-            f"... {omitted} of {total} rows omitted (no outliers)",
+            f"... {omitted} of {total} rows omitted",
         ]
     else:
         result_records = [
@@ -674,6 +687,47 @@ def _adapt_markdown(
 
 def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
+
+
+def _adapt_yaml_documents(
+    text: str, selectors: tuple[str, ...], limits: FormatLimits,
+    gap_marker: Callable[[int, int], str] | None = None,
+) -> FormatResult:
+    lines = text.splitlines()
+    if any(line.startswith("%") for line in lines):
+        return _decline(text, "yaml", "document directives require the original stream")
+    starts = [0]
+    starts.extend(i for i, line in enumerate(lines) if i and line.rstrip() == "---")
+    bounds = [(start, starts[i + 1] if i + 1 < len(starts) else len(lines))
+              for i, start in enumerate(starts)]
+    bounds = [(start, end) for start, end in bounds
+              if any(line.strip() and line.rstrip() != "---" for line in lines[start:end])]
+    if len(bounds) > limits.max_records:
+        return _decline(text, "yaml", "document count exceeds format limit", total_records=len(bounds))
+    documents = ["\n".join(lines[start:end]) for start, end in bounds]
+    if any(len(document) > limits.max_record_chars for document in documents):
+        return _decline(text, "yaml", "document size exceeds format limit", total_records=len(bounds))
+    selected: set[int] = set()
+    for selector in selectors:
+        matches = {i for i, document in enumerate(documents)
+                   if _contains_selector(document, (selector,))}
+        if 0 < len(matches) < len(documents):
+            selected.update(matches)
+    if not selected or len(selected) == len(documents):
+        return _decline(text, "yaml", "no selective document match", total_records=len(bounds))
+    flags = [False] * len(lines)
+    for i in selected:
+        start, end = bounds[i]
+        flags[start:end] = [True] * (end - start)
+    output = "\n".join(
+        [line for line, keep in zip(lines, flags) if keep]
+        if gap_marker is None else _with_gaps(lines, flags, "\n", gap_marker, len(text))
+    ).strip("\n")
+    return FormatResult(
+        format="yaml", applied=True, text=output,
+        total_records=len(documents), kept_records=len(selected),
+        reason="matching complete documents",
+    )
 
 
 def _adapt_yaml(
@@ -903,6 +957,9 @@ def _adapt_xml(
     for child in children:
         try:
             ET.fromstring(child)
+        except UnicodeError:
+            return _decline(text, "xml", "malformed Unicode in XML; original preserved",
+                            structurally_valid=False)
         except (ET.ParseError, RecursionError):
             return _decline(text, "xml", "child spans multiple lines", structurally_valid=True)
     flags = [_contains_selector(child, selectors) for child in children]
@@ -1213,6 +1270,47 @@ def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
     )
 
 
+def adapt_report(text: str, query: str, limits: FormatLimits | None = None,
+                 *, gap_marker=None) -> FormatResult | None:
+    """Run only the recognized report selectors; None when text is not a report."""
+    value = str(text or "")
+    selectors = _query_selectors(query)
+    resolved = limits or FormatLimits()
+    stripped = value.lstrip()
+    if stripped.startswith("{"):
+        report = select_report(
+            value, lambda record: _contains_selector(record, selectors),
+            max_records=resolved.max_records,
+            max_record_chars=resolved.max_record_chars,
+            max_fields=resolved.max_fields,
+            gap_marker=gap_marker,
+        )
+    elif stripped.startswith(('<', '\ufeff')):
+        report = select_junit(
+            value, lambda record: _contains_selector(record, selectors),
+            max_records=resolved.max_records,
+            max_record_chars=resolved.max_record_chars,
+            max_fields=resolved.max_fields,
+            gap_marker=gap_marker,
+        )
+    elif stripped.startswith(("TN:", "SF:")):
+        report = select_lcov(
+            value, lambda record: _contains_selector(record, selectors),
+            max_records=resolved.max_records,
+            max_record_chars=resolved.max_record_chars,
+            gap_marker=gap_marker,
+        )
+    else:
+        report = None
+    if report is not None:
+        return FormatResult(
+            format=report.format, applied=report.text != value, text=report.text,
+            total_records=report.total_records, kept_records=report.kept_records,
+            structurally_valid=report.safe, reason=report.reason,
+        )
+    return None
+
+
 def adapt_format(
     text: str,
     query: str,
@@ -1220,16 +1318,22 @@ def adapt_format(
     *,
     format_name: str | None = None,
     gap_marker: _GapMarker = None,
+    allow_reports: bool = True,
 ) -> FormatResult:
-    """Run the extractive adapter for ``format_name`` (detected when omitted).
+    """Run the requested or detected format adapter.
 
-    ``gap_marker(omitted_chars, total_chars)``: when given, every contiguous
-    run of dropped records/sections/lines is replaced by one marker line. With
-    ``None`` the output is byte-identical to earlier releases.
+    Ordinary adapters place ``gap_marker(omitted_chars, total_chars)`` at dropped
+    runs. Whole-report selectors place an aggregate marker before the document
+    so the retained records remain structurally intact.
     """
     value = str(text or "")
     resolved_format = format_name or detect_format(value)
     selectors = _query_selectors(query)
+
+    if allow_reports:
+        report = adapt_report(value, query, limits, gap_marker=gap_marker)
+        if report is not None:
+            return report
 
     if resolved_format in {"csv", "tsv"}:
         if not selectors:
@@ -1264,14 +1368,13 @@ def adapt_format(
         if not selectors or not any(_selector_is_distinctive(s) for s in selectors):
             return _adapt_pipe_table_outliers(value, query, limits or FormatLimits(), gap_marker)
         return _decline(value, resolved_format, "no safe extractive adapter")
-    if (
-        resolved_format == "yaml"
-        and not selectors
-        and any(line.rstrip() == "---" for line in value.splitlines())
-    ):
-        result = _adapt_yaml_documents_outliers(value, gap_marker)
-        if result.applied or not selectors:
-            return result
+    if resolved_format == 'yaml' and yaml_requires_original(value):
+        return _decline(value, 'yaml', 'YAML anchors and aliases require the original document',
+                        structurally_valid=False)
+    if resolved_format == "yaml" and any(line.rstrip() == "---" for line in value.splitlines()):
+        if not selectors:
+            return _adapt_yaml_documents_outliers(value, gap_marker)
+        return _adapt_yaml_documents(value, selectors, limits or FormatLimits(), gap_marker)
     if not selectors:
         return _decline(value, resolved_format, "query has no distinctive selectors")
     adapter = _ADAPTERS.get(resolved_format)

@@ -20,6 +20,8 @@ import re
 from collections import Counter
 from typing import Any
 
+from .structured_reports import loads_for_rewrite
+
 __all__ = ["fold_lossless", "json_brief", "mask_template"]
 
 # --------------------------------------------------------------------------
@@ -434,7 +436,7 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
     if not isinstance(text, str) or text.lstrip()[:1] not in ("{", "["):
         return None
     try:
-        obj = json.loads(text)
+        obj = loads_for_rewrite(text)
     except (ValueError, RecursionError):
         return None
     found = _find_rows(obj)

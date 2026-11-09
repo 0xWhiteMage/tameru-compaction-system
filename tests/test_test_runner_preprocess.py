@@ -219,6 +219,26 @@ def test_cargo_keeps_failure_blocks_failures_list_and_result():
     assert "[… 150 passing tests omitted …]" in out
 
 
+def test_repeating_a_cargo_extract_preserves_its_exact_bytes():
+    query = "why did bad_one fail?"
+    first = compress_context(CARGO, query, ccr=False, citations=False)
+    assert len(first.compressed_text) < len(CARGO)
+    assert "assertion `left == right` failed: numbers differ" in first.compressed_text
+    second = compress_context(first.compressed_text, query, ccr=False, citations=False)
+    assert second.compressed_text == first.compressed_text
+
+
+def test_standalone_elision_is_preserved_but_inline_mentions_are_not_a_guard():
+    for marker in ("[…]", "[… 150 passing tests omitted …]"):
+        source = "A retained line\r\n" + marker + "\r\nERROR checkout_failed\r\n"
+        result = compress_context(source, "checkout_failed", ccr=False, citations=False)
+        assert result.compressed_text == source
+        assert result.policy_name == "local-noop-recursion"
+    source = "The literal […] appears inside this sentence.\nERROR checkout_failed"
+    result = compress_context(source, "checkout_failed", ccr=False, citations=False)
+    assert result.policy_name != "local-noop-recursion"
+
+
 def test_query_naming_a_passing_test_keeps_its_line():
     out = preprocess_test_output(CARGO, "did ok_77 pass?")
     assert "test tests::ok_77 ... ok" in out
@@ -355,3 +375,35 @@ def test_errors_printed_around_a_run_survive():
     out = preprocess_test_output(jest, "")
     assert out is not None and "npm ERR! Test failed." in out
     assert "noisy debug output" not in out and "PASS src/suite_3.test.js" not in out
+
+
+def test_cargo_without_running_banner_keeps_complete_failure_evidence():
+    from tameru.compress_context import compress_context
+    from tameru.format_adapters import detect_format
+
+    source = "\n".join(line for line in CARGO.splitlines()
+                       if not line.startswith("running "))
+    assert detect_test_runner(source) == "cargo"
+    assert detect_format(source) == "test_output"
+    result = compress_context(source, "which test failed", ccr=False, citations=False)
+    assert "thread 'tests::bad_one' panicked at src/lib.rs:5:28:" in result.compressed_text
+    assert "assertion `left == right` failed: numbers differ" in result.compressed_text
+    assert "  left: 1\n right: 2" in result.compressed_text
+    assert "tests::ok_17 ... ok" not in result.compressed_text
+    assert result.receipt["adapter"]["name"] == "test_output"
+
+
+def test_cargo_summary_without_banner_or_test_rows_does_not_claim_the_format():
+    assert detect_test_runner("test result: FAILED. 2 passed; 1 failed; 0 ignored") != "cargo"
+
+
+def test_failure_evidence_is_not_folded_after_runner_selection():
+    from tameru.compress_context import compress_context
+
+    evidence = "F" * 64
+    source = CARGO.replace("  left: 1", evidence + "\n  left: 1")
+    reduced = preprocess_test_output(source, "which test failed")
+    assert evidence in reduced
+    result = compress_context(source, "which test failed", ccr=False, citations=False)
+    assert evidence in result.compressed_text
+    assert "src/lib.rs:5:28" in result.compressed_text

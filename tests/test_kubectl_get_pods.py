@@ -1,4 +1,5 @@
 from tameru.agent_formats import detect_test_runner, _classify_kubectl_pods
+from tameru.agent_formats import preprocess_test_output
 from tameru.compress_context import compress_context
 
 HEADER = "NAME                         READY   STATUS             RESTARTS   AGE"
@@ -73,3 +74,27 @@ def test_not_detected_header_only():
 def test_not_detected_name_age_table():
     text = "NAME   AGE\napi-0-x   3d\napi-1-x   3d"
     assert detect_test_runner(text) is None
+
+
+def test_events_and_trailing_metadata_survive():
+    text = (_sample_text() + "\n\nEvents:\n"
+            "  Warning BackOff payments-6f9-zz Back-off restarting failed container\n"
+            "Namespace: production\n")
+    for out in (preprocess_test_output(text, ""),
+                compress_context(text, "", ccr=False, citations=False).compressed_text):
+        assert "Events:" in out and "Namespace: production" in out
+        assert "Back-off restarting failed container" in out
+        assert len(out) < len(text) / 2
+
+
+def test_malformed_counter_rows_survive_intact():
+    base = _sample_text()
+    for token_row in (
+        "web-9 1/1 Running 0oops 3d",
+        "web-10 1/1 Running " + "9" * 5000 + " 3d",
+        "web-11 " + "9" * 5000 + "/1 Running 0 3d",
+    ):
+        text = base + "\n" + token_row
+        for out in (preprocess_test_output(text, ""),
+                    compress_context(text, "", ccr=False, citations=False).compressed_text):
+            assert token_row in out

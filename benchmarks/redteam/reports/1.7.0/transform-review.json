@@ -1,0 +1,232 @@
+{
+  "run_id": "20261105T143116Z-dfae4558",
+  "capture_sha256": "0acebcba7ee75782bf1c766e8e0dbe9eea5b99e70eca767e1d38ba808bad97d4",
+  "review_script_sha256": "eabdf9ff47dcb5871efcb59564fd6b83418f85a13e64abd27cea9759b2ef3988",
+  "helper_script_sha256": "e6b1d30b0b3b1e2e97c38c6a1155aa64d9813a6b90d98535ded527ee20cf28fd",
+  "scope": "saved fixture outputs only; no compression rerun or general semantic certification",
+  "counts": {
+    "verified_for_frozen_fixture": 19
+  },
+  "results": [
+    {
+      "id": "comp-tsc",
+      "input_sha256": "be43bd81ad48ea3b642cd820be2d6c8bbe942381161eb0b001af2cfbecadba4f",
+      "output_sha256": "79bdeb220f54efea200e65f9f1328ac571bfac0ad786a17546a4602d731b033d",
+      "status": "verified_for_frozen_fixture",
+      "omitted_nonblank_lines": 50,
+      "marker_counts": [
+        50
+      ]
+    },
+    {
+      "id": "run-pytest",
+      "input_sha256": "970de26049694c226f9e7151296d7dc32dc9d5798114a2629cb9e1358bb05da9",
+      "output_sha256": "7464c555e0aa758ffbeac937d19fc0fa596b0dd68e8f518b763652bbe5ba66a9",
+      "status": "verified_for_frozen_fixture",
+      "shown_passing_progress_dots": 450,
+      "note": "banner decoration shortened; original final summary retained independently"
+    },
+    {
+      "id": "run-junit",
+      "input_sha256": "0311b4e041bdab3a2a6d39f9212f5665708fee83713346c996ca50746f7c8bbb",
+      "output_sha256": "563c77b7709274e30b7f8111e50617ad050b0785734a62bf9a03b1839626c4a2",
+      "status": "verified_for_frozen_fixture",
+      "original_cases": 200,
+      "kept_cases": 2,
+      "positions_zero_based": [
+        0,
+        199
+      ],
+      "checked": "verbatim testcase blocks, all failure cases and suite attributes"
+    },
+    {
+      "id": "run-gradle",
+      "input_sha256": "b30d40ae6d51aa4cecb42be7b4d53e2d4286a48f0e7897c49bda38172db572c2",
+      "output_sha256": "49a1b7edd42042ecadb3146c9d69e98bee8778ec8ecd8f3417206bbe737de51e",
+      "status": "verified_for_frozen_fixture",
+      "omitted_nonblank_lines": 51,
+      "marker_counts": [
+        51
+      ]
+    },
+    {
+      "id": "run-phpunit",
+      "input_sha256": "58a5d3da44aec2a0105a9d07037131a6950cad051d700f9a14870d984baa42c5",
+      "output_sha256": "1baae8c7561c3ffd5e11f7c99c7ec5dd489b2e59b6b839ecbb9c5ccc6c12d256",
+      "status": "verified_for_frozen_fixture",
+      "progress_length": 200,
+      "passing": 199,
+      "failure_positions_one_based": [
+        200
+      ]
+    },
+    {
+      "id": "fmt-json-array",
+      "input_sha256": "c8728cd12c90c27efffa94a41d06f2e8db9a408c34dba4d99dd85dafc859749e",
+      "output_sha256": "c08ca55f0ebc5894b8746cd767eba9ceeaf7f54c188cac7b56d375591a09ea1a",
+      "status": "verified_for_frozen_fixture",
+      "original_records": 200,
+      "kept_records": 2,
+      "retained_positions_zero_based": [
+        0,
+        123
+      ],
+      "omitted_records": 198,
+      "modal_count_scope": "entire original array, including retained records",
+      "original_modal_count": 199
+    },
+    {
+      "id": "fmt-json-nested",
+      "input_sha256": "aabfe890794886dc196bbff5ddca687b4b34663da5332e7948cdcda06f6aa253",
+      "output_sha256": "027bdf0173802f089dd431e372490c42c8db02608d399de18934975ebd8987ac",
+      "status": "verified_for_frozen_fixture",
+      "original_records": 80,
+      "kept_records": 2,
+      "retained_positions_zero_based": [
+        0,
+        42
+      ],
+      "omitted_records": 78,
+      "modal_count_scope": "entire original array, including retained records",
+      "original_modal_count": 79
+    },
+    {
+      "id": "fmt-csv",
+      "input_sha256": "af78cdeb63406979d0034eb980c06e16e55e234c3a0e0035f7a127a412ad4e39",
+      "output_sha256": "0649e6b4d295c0d83affb28872ae8b3863881c45535e4e257ab936c01c73fe8f",
+      "status": "verified_for_frozen_fixture",
+      "original_data_rows": 301,
+      "kept_data_rows": 1,
+      "omitted_data_rows": 300,
+      "note": "counts verified; historical 'no outliers' wording is not a data guarantee"
+    },
+    {
+      "id": "fmt-tsv",
+      "input_sha256": "53b7a9aca34b59767f1847317607eb0756edcfa241a5995bdf82ead133517334",
+      "output_sha256": "8c6b3763d3033a22f247d0675f1c44ffd67c968d5241b525fb090436f0d1d8ba",
+      "status": "verified_for_frozen_fixture",
+      "original_data_rows": 301,
+      "kept_data_rows": 1,
+      "omitted_data_rows": 300,
+      "note": "counts verified; historical 'no outliers' wording is not a data guarantee"
+    },
+    {
+      "id": "fmt-md-table",
+      "input_sha256": "f578e5bd4634dc19227b311b7c5062081a17db5440a1ba7f65887530860cff27",
+      "output_sha256": "2ca3c6dff92b34de01858fc4f96580951bc230933eea4136aaedc36f9a480612",
+      "status": "verified_for_frozen_fixture",
+      "original_data_rows": 151,
+      "kept_data_rows": 1,
+      "omitted_data_rows": 150,
+      "note": "counts verified; historical 'no outliers' wording is not a data guarantee"
+    },
+    {
+      "id": "fmt-sarif",
+      "input_sha256": "88b650a7e2115e2cb68bfc54f746b78d0895fddd94abf5a13da78e1e9bf89f76",
+      "output_sha256": "1fee66d5747578621fae48b3a3c5ad0df2dfe333882afd889449aa1ff78a6fae",
+      "status": "verified_for_frozen_fixture",
+      "original_records": 81,
+      "kept_records": 2,
+      "retained_positions_by_run_zero_based": [
+        [
+          0,
+          80
+        ]
+      ],
+      "metadata": "all non-results fields unchanged"
+    },
+    {
+      "id": "fmt-lcov",
+      "input_sha256": "05c8efe09a12caf0add4a00450e3dc88ce21b8d090526617741bc7ac34d24734",
+      "output_sha256": "6431f2f4498b12193b04e772cd41bbbe84c89bed2615f9e374d927a2d2e8660c",
+      "status": "verified_for_frozen_fixture",
+      "original_files": 121,
+      "kept_files": 3,
+      "positions_zero_based": [
+        0,
+        42,
+        120
+      ],
+      "checked": "whole records, inherited test names and every uncovered-line record"
+    },
+    {
+      "id": "fmt-ipynb",
+      "input_sha256": "e694b53b0750a9a0a0739c19a9e5107fb1b4fcc701de82c8ba162b46228a1cd6",
+      "output_sha256": "57e626b657e49d0e5f7a63546166e20de96cff55be62604005911d3d6802568c",
+      "status": "verified_for_frozen_fixture",
+      "original_cells": 41,
+      "kept_cells": 2,
+      "positions_one_based": [
+        1,
+        41
+      ],
+      "checked": "whole cell values, numeric lexemes and non-cell metadata"
+    },
+    {
+      "id": "fmt-gitlog",
+      "input_sha256": "ba85d922fd771a65d3013f1636c96b43aef1d3fb01e349c14fdca237c68e8f59",
+      "output_sha256": "3b5befbc205cfaedb75d7ed44aa18504b44ef4766714559fab11fd48e245dbc0",
+      "status": "verified_for_frozen_fixture",
+      "kept_commits": 2,
+      "positions_zero_based": [
+        0,
+        60
+      ],
+      "omitted_nonblank_lines": 236,
+      "checked": "complete commit blocks, allowing only framing newline differences"
+    },
+    {
+      "id": "fmt-gitblame",
+      "input_sha256": "c4234024e0580b584f8afd69cde2ee0d54967e574beaed719c979436286a03ba",
+      "output_sha256": "14d619c9753938bbf4604cc027beae67aded4bf26fd21c3f862f4fbb29296e41",
+      "status": "verified_for_frozen_fixture",
+      "omitted_nonblank_lines": 149,
+      "marker_counts": [
+        149
+      ]
+    },
+    {
+      "id": "fmt-docker",
+      "input_sha256": "d7ff5a7447eb4b70b051b64f9acef5b103b249576a272ddf07ecec0e5c551d75",
+      "output_sha256": "923f71c498df1d69bf45a93f25917d9fa47dbaa3f4fc19b80c0e903e65622fe8",
+      "status": "verified_for_frozen_fixture",
+      "omitted_nonblank_lines": 239,
+      "marker_counts": [
+        239
+      ]
+    },
+    {
+      "id": "fmt-kubectl",
+      "input_sha256": "479c887e7d38749eaa452157224198f500edf0defd4bae518e88b6db1943658f",
+      "output_sha256": "2277ede3558dcbb24ca2deccbcbe2ce62d1701e907a93e2d53ad1f76bc89d175",
+      "status": "verified_for_frozen_fixture",
+      "original_pod_rows": 101,
+      "kept_pod_rows": 3,
+      "omitted_pod_rows": 98,
+      "positions_zero_based": [
+        0,
+        99,
+        100
+      ],
+      "checked": "pod row counts and all non-pod headings/event lines"
+    },
+    {
+      "id": "fmt-terraform",
+      "input_sha256": "172013e4bb51a82be7d01f48edd3dace376ad20a9712f4aaf893cd1f5df71516",
+      "output_sha256": "1f8338d0657fcdb2e52ec3f90711c370f46ba7662aecb90f2887caba7fe7c1d0",
+      "status": "verified_for_frozen_fixture",
+      "omitted_nonblank_lines": 236,
+      "marker_counts": [
+        236
+      ]
+    },
+    {
+      "id": "redos-urlish",
+      "input_sha256": "21002d2aac7bc2702042a85a5c579f85314bc76036416b811327223fed957d58",
+      "output_sha256": "05a86966611de65b9bec37a84d434f1e39c5d1f4c834a4a12bbaaaeaf5d817f2",
+      "status": "verified_for_frozen_fixture",
+      "repetitions": 300,
+      "unit": "whitespace-separated token, not source line"
+    }
+  ]
+}

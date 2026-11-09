@@ -258,3 +258,63 @@ def test_a_huge_integer_is_not_json_and_never_crashes():
     ):
         result = compress_context(text, "why is it failing?", ccr=False, citations=False)
         assert result.compressed_text
+
+
+def _lcov_target():
+    lines = ["TN:", "SF:src/checkout.py"]
+    lines += ["DA:%d,%d" % (i, 0 if i in (77, 78) else 1) for i in range(1, 101)]
+    lines += ["LF:100", "LH:98", "end_of_record"]
+    return "\n".join(lines) + "\n"
+
+
+def _lcov_quiet(index=0):
+    return "SF:src/quiet%d.py\nDA:1,1\nDA:2,1\nLF:2\nLH:2\nend_of_record\n" % index
+
+
+@pytest.mark.parametrize("field", ["output", "content"])
+def test_wrapped_lcov_keeps_complete_uncovered_record(field):
+    minimal_envelope = json.dumps({field: _lcov_target(), 'exit_code': 1})
+    minimal = compress_context(minimal_envelope, 'uncovered checkout lines', ccr=False, citations=False)
+    assert (minimal.compressed_text == minimal_envelope
+            or _lcov_target().rstrip('\n') in minimal.compressed_text)
+    inner = "".join(_lcov_quiet(i) for i in range(20)) + _lcov_target()
+    envelope = json.dumps({field: inner, "exit_code": 1, "error": "coverage incomplete"})
+    result = compress_context(envelope, "uncovered checkout lines", ccr=False, citations=False)
+    assert not result.fail_open
+    assert "DA:77,0" in result.compressed_text and "DA:78,0" in result.compressed_text
+    assert _lcov_target().rstrip("\n") in result.compressed_text
+    meta = json.loads(result.compressed_text.split("\n", 1)[0])
+    assert meta["exit_code"] == 1 and meta["error"] == "coverage incomplete"
+
+
+@pytest.mark.parametrize("field", ["output", "content"])
+def test_wrapped_lcov_refusals_preserve_the_envelope(field):
+    inner = "".join(_lcov_quiet(i) for i in range(20)) + _lcov_target()
+    truncated = inner.rsplit("end_of_record", 1)[0]
+    from tameru.industrial import IndustrialLimits
+    for candidate, kwargs in (
+        (json.dumps({field: truncated, "exit_code": 1}), {}),
+        (json.dumps({field: inner, "exit_code": 1}), {"limits": IndustrialLimits(max_lines=80)}),
+    ):
+        result = compress_context(candidate, "uncovered checkout lines", ccr=False,
+                                  citations=False, **kwargs)
+        assert result.compressed_text == candidate
+
+
+_REPORT_SHAPES = [
+    {"version": "2.1.0", "runs": []},
+    {"nbformat": 4, "cells": []},
+    {"data": None, "errors": [{"message": "upstream failed", "path": ["coverage"]}]},
+    {"data": {"answer": 42}, "errors": []},
+]
+
+
+@pytest.mark.parametrize("shape", _REPORT_SHAPES, ids=["sarif", "notebook", "graphql", "graphql-empty"])
+@pytest.mark.parametrize("field", ["output", "content"])
+def test_known_report_objects_are_not_tool_envelopes(shape, field):
+    document = dict(shape)
+    document[field] = "body " * 100
+    text = json.dumps(document)
+    payload = unwrap_tool_payload(text)
+    assert not payload.wrapped and payload.inner == text
+    assert unwrap_hermes_tool(text) == text

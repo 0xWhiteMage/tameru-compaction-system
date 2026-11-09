@@ -9,6 +9,7 @@ from tameru.unicode_profile import (
     graphemes,
     matching_shadow,
     profile_text,
+    script_of,
     search_units,
     token_units,
 )
@@ -108,6 +109,37 @@ class EngineUnicodeIntegrationTests(unittest.TestCase):
         self.assertFalse(result.fail_open)
         self.assertIn("kh-prod-9", result.compressed_text)
 
+    def test_extended_script_families(self):
+        for text, expected in (
+            ("𠮷", "han"), ("豈", "han"),
+            ("丽", "han"), ("ᄀ", "hangul"),
+            ("ꥠ", "hangul"), ("ힰ", "hangul"),
+            ("ㄱ", "hangul"), ("ﾡ", "hangul"),
+            ("𛀁", "kana"), ("ｶ", "kana"),
+        ):
+            with self.subTest(codepoint=ord(text)):
+                self.assertEqual(script_of(text), expected)
+
+    def test_supplementary_han_search_keeps_original_characters(self):
+        text = "\U00020bb7\U00020bb8\U00020bb9\U00020bba\U00020bbb"
+        self.assertIn(text[1:3], search_units(text))
+        self.assertIn("han", profile_text(text).scripts)
+        self.assertEqual("".join(token_units(text)), text)
+
+    def test_lone_surrogate_in_xml_fails_open_instead_of_crashing(self):
+        import json
+        from tameru.format_adapters import adapt_format
+        body = ("<testsuite><testcase name='case'>" + "x" * 300 + "\ud800"
+                "</testcase></testsuite>")
+        for candidate in (body, json.dumps({"output": body, "exit_code": 1})):
+            result = compress_context(candidate, "which test failed",
+                                      ccr=False, citations=False)
+            self.assertTrue(result.fail_open)
+            self.assertEqual(result.compressed_text, candidate)
+        catalog = "<catalog>\n<item>\ud800</item>\n</catalog>"
+        adapted = adapt_format(catalog, "target-case", format_name="xml")
+        self.assertEqual(adapted.text, catalog)
+        self.assertFalse(adapted.structurally_valid)
 
 if __name__ == "__main__":
     unittest.main()

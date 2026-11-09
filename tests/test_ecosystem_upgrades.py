@@ -86,6 +86,23 @@ class SecretsScreenTests(unittest.TestCase):
                 "ccr skipped: secret material detected", out.reasons
             )
 
+    def test_new_credential_shapes_skip_ccr_without_dropping_the_answer(self):
+        for credential in (
+            "DB_PASS=p1anted-db-pass-9f8e7d6c5b4a",
+            "MYSQL_PWD=mys3cret-pw-1122334455",
+            "api_key=sh0rtk3y!",
+            "db-1:5432:shop:svc:synthetic-pg-password",
+        ):
+            with self.subTest(credential=credential), tempfile.TemporaryDirectory() as td:
+                result = compress_context(
+                    _needle_context() + "\n\n" + credential,
+                    "quixotic configuration", ccr_dir=td,
+                )
+                self.assertFalse(result.fail_open)
+                self.assertIsNone(result.ccr)
+                self.assertIn("ccr skipped: secret material detected", result.reasons)
+                self.assertEqual(list_ccr(td), [])
+
 
 class RecursionGuardTests(unittest.TestCase):
     def test_ccr_marked_output_not_recompressed(self):

@@ -214,6 +214,11 @@ def script_of(char: str) -> str | None:
             return name
     unicode_name = unicodedata.name(char, "")
     for name, marker in (
+        ("han", "CJK UNIFIED IDEOGRAPH"),
+        ("han", "CJK COMPATIBILITY IDEOGRAPH"),
+        ("hangul", "HANGUL"),
+        ("kana", "HIRAGANA"),
+        ("kana", "KATAKANA"),
         ("latin", "LATIN"),
         ("greek", "GREEK"),
         ("cyrillic", "CYRILLIC"),

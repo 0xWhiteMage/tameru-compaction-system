@@ -104,3 +104,33 @@ def test_the_line_anchored_assignments_stay_linear():
         started = time.perf_counter()
         contains_secret(text)
         assert time.perf_counter() - started < 2.0
+
+
+def test_database_aliases_short_literals_and_pgpass_are_screened():
+    for text in (
+        "DB_PASS=p1anted-db-pass-9f8e7d6c5b4a",
+        "MYSQL_PWD=mys3cret-pw-1122334455",
+        "PGPASSWORD=synthetic-password-12345",
+        "REDISCLI_AUTH=synthetic-password-12345",
+        "api_key=sh0rtk3y!",
+        '\"api_key\": \"sh0rtk3y!\"',
+        "db-1:5432:shop:svc:synthetic-pg-password",
+        r"db-1:5432:shop:svc:synthetic\:password",
+        "*:5432:*:svc:synthetic-password\r\n",
+    ):
+        assert contains_secret(text), text
+        assert contains_secret("ordinary log\n" + text + "\nordinary log"), text
+
+
+def test_new_credential_rules_leave_code_and_noncredential_colons_alone():
+    for text in (
+        "DB_PASS=os.getenv('DB_PASS')",
+        "MYSQL_PWD=${MYSQL_PWD}",
+        "api_key = key_from_config",
+        'api_key = "short"',
+        "PWD=/a/long/working/directory123",
+        "2026-11-05 10:05:00 INFO request complete",
+        "db-1:5432:shop:svc:",
+        "# db-1:5432:shop:svc:example-password",
+    ):
+        assert not contains_secret(text), text

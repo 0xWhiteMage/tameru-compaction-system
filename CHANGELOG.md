@@ -8,10 +8,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-09
+
+- Version aligned with `hermes-tameru-plugin` 1.9.0. No engine behaviour changed.
+- `compress_context` is shorter: four of its steps are now their own functions (`_resolve_objective`, `_normalise_options`,
+  `_build_receipt`, `_write_audit_log`), moved verbatim (1,353 to 1,149 lines). The function is still long: the rest of it
+  is branches that return early and share many local variables, and splitting those needs a redesign, not a move.
+- A permanent safety net for that kind of change: `tests/test_golden_compress_context.py` runs 216 input and query
+  combinations over 26 option sets and compares one hash per combination with `tests/golden/compress_context.json`
+  (recorded from the code before the move). Regenerate it with `TAMERU_WRITE_GOLDEN=1` only when behaviour is meant to change.
+- Documentation: the README and a new repository guide state what this engine repository owns and what the Hermes plugin repository owns, and the name is written `Tameru (ためる)` throughout.
+
 ### Documentation
 - Fresh v1.6.0 comparison of all five runnable methods (`benchmarks/comparison-v1.6.0.json`, 2026-11-05) rendered into the README and `benchmarks/COMPARISON.md`: Tameru 25/25 required strings, 0 forbidden leaks, 16/16 clean, 82.4% mean saved; competitor outputs are byte-identical to the v1.4.1 record; timings re-measured on a different machine.
 - Install commands pin the published `v1.6.0` tag instead of the release commit, and the docs no longer call the tag pending.
 - The comparison renderer keeps the repeat-timing caveat and the `--verify-against` command, and mentions a resumed run only when the report has more than one execution segment.
+
+## [1.8.0] - 2026-11-09
+
+- Version aligned with `hermes-tameru-plugin` 1.8.0, whose version must equal the vendored engine's. No engine behaviour changed since the 1.7.0 candidate below.
+- **1.7.0 was never tagged or published.** It stayed a release candidate and its changes ship here, together with two fixes made after it: structured-compaction source associations are preserved, and YAML dependencies and Git note boundaries are preserved.
+
+## [1.7.0] - 2026-11-05 (candidate; never published, shipped in 1.8.0)
+
+- Preserve selected SARIF findings, notebook cells/source/positions, Kubernetes resource identity/status, whole Git log entries/patches, LCOV file records/test names and uncovered lines, and JUnit testcases with raw byte spans.
+- Keep GraphQL error responses whole; avoid misclassifying structured reports as tool envelopes or tables.
+- Fail open for JSON numbers that reserialization would change (decimals, large exponents and signed zero), malformed XML/Unicode, and ambiguous structured input.
+- Fix repeat-compression instability, extended CJK/Hangul classification, Cargo diagnostics, disk mount paths containing spaces and Kubernetes event-row accounting.
+- Extend credential screening for recovery storage.
 
 ## [1.6.0] - 2026-11-04
 

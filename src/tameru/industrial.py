@@ -6,7 +6,9 @@ import hashlib
 from dataclasses import asdict, dataclass, replace
 from typing import Callable
 
-from .format_adapters import FormatLimits, FormatResult, adapt_format, detect_format
+from .format_adapters import (
+    FormatLimits, FormatResult, adapt_format, adapt_report, detect_format, yaml_requires_original,
+)
 from .unicode_profile import profile_text, unicode_safety_counts
 
 
@@ -177,6 +179,8 @@ def industrial_preprocess(
     limits: IndustrialLimits | None = None,
     *,
     gap_marker: Callable[[int, int], str] | None = None,
+    allow_reports: bool = True,
+    reports_only: bool = False,
 ) -> IndustrialResult:
     value = str(text or "")
     resolved = limits or IndustrialLimits()
@@ -212,14 +216,24 @@ def industrial_preprocess(
             limits=resolved,
             reason="malformed surrogate code point detected",
         )
-    format_result = adapt_format(
-        value,
-        query,
-        resolved.format_limits(),
-        format_name=profile.format,
-        gap_marker=gap_marker,
-    )
-    if not format_result.structurally_valid:
+    if profile.format == 'yaml' and yaml_requires_original(value):
+        return IndustrialResult(
+            text=value, applied=False, hard_fail_open=True,
+            profile=profile, limits=resolved,
+            reason='YAML anchors and aliases require the original document')
+    if reports_only:
+        format_result = (adapt_report(value, query, resolved.format_limits(), gap_marker=gap_marker)
+                         if allow_reports else None)
+    else:
+        format_result = adapt_format(
+            value,
+            query,
+            resolved.format_limits(),
+            format_name=profile.format,
+            gap_marker=gap_marker,
+            allow_reports=allow_reports,
+        )
+    if format_result is not None and not format_result.structurally_valid:
         return IndustrialResult(
             text=value,
             applied=False,
@@ -229,7 +243,7 @@ def industrial_preprocess(
             format_result=format_result,
             reason=format_result.reason or "malformed structured input",
         )
-    if format_result.applied and len(format_result.text) < len(value):
+    if format_result is not None and format_result.applied and len(format_result.text) < len(value):
         return IndustrialResult(
             text=format_result.text,
             applied=True,
@@ -246,5 +260,5 @@ def industrial_preprocess(
         profile=profile,
         limits=resolved,
         format_result=format_result,
-        reason=format_result.reason,
+        reason=format_result.reason if format_result is not None else 'no recognized structured report',
     )

@@ -11,3 +11,4 @@ venv/
 build/
 dist/
 docs/INTERNAL_ROADMAP.md
+benchmarks/redteam/runs/

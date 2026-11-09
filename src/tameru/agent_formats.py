@@ -1001,6 +1001,7 @@ _JEST_TICK_RE = re.compile(r"^\s*[✓✔√]\s")
 _JEST_SUITE_LINE_RE = re.compile(r"^\s?(PASS|FAIL) {1,2}\S+\.(?:test|spec)\.[cm]?[jt]sx?\b")
 _GO_PKG_RE = re.compile(r"^(?:ok|FAIL|\?)\s+\S+(?:\s|$)")
 _CARGO_OK_RE = re.compile(r"^test \S.* \.\.\. ok$")
+_CARGO_TEST_RE = re.compile(r"^test \S.* \.\.\. (?:ok|FAILED|ignored(?:, .*)?)$")
 _CARGO_RUNNING_RE = re.compile(r"^running \d+ tests?$")
 _GO_RESULT_RE = re.compile(r"^(?:ok|FAIL)\s+\S+\s+(?:[\d.]+s|\(cached\))")
 _PYTEST_START_RE = re.compile(r"^={3,} test session starts ={3,}$")
@@ -3059,6 +3060,7 @@ def detect_test_runner(text: str) -> str | None:
             return "docker_build"
         return "status_table" if _detect_status_table(text) else None
     running = cargo_result = jest_suites = jest_tests = go = pytest_open = pytest_sum = False
+    cargo_test = False
     gradle_task = gradle_end = rspec = phpunit = dotnet = pytest_q = pytest_prog = False
     first = None
     surefire_run = surefire_running = False
@@ -3099,6 +3101,8 @@ def detect_test_runner(text: str) -> str | None:
             surefire_run = True
         if not surefire_running and "Running " in ln and _SUREFIRE_RUNNING_RE.match(ln):
             surefire_running = True
+        if not cargo_test and _CARGO_TEST_RE.match(ln):
+            cargo_test = True
         if ln.startswith("running ") and _CARGO_RUNNING_RE.match(ln):
             running = True
         elif ln.startswith("test result: "):
@@ -3114,7 +3118,7 @@ def detect_test_runner(text: str) -> str | None:
                 pytest_open = True
             elif _PYTEST_FINAL_RE.match(ln):
                 pytest_sum = True
-    if running and cargo_result:
+    if (running or cargo_test) and cargo_result:
         return "cargo"
     if jest_suites and jest_tests:
         return "jest"
@@ -3261,8 +3265,7 @@ def _classify_kubectl_pods(lines):
         if i == header_idx or not line.strip():
             continue
         if not _K8S_GET_PODS_ROW_RE.match(line):
-            if is_diagnostic_line(line):
-                keep[i] = True
+            keep[i] = True
             continue
 
         tokens = line.split()
@@ -3272,21 +3275,21 @@ def _classify_kubectl_pods(lines):
                 ready_idx = j
                 break
         if ready_idx is None or ready_idx + 2 >= len(tokens):
-            if is_diagnostic_line(line):
-                keep[i] = True
+            keep[i] = True
             continue
 
         ready = tokens[ready_idx]
         status = tokens[ready_idx + 1]
         restarts_token = tokens[ready_idx + 2]
-        restarts_match = re.match(r"\d+", restarts_token)
-        restarts = int(restarts_match.group()) if restarts_match else 0
+        if not re.fullmatch(r"\d+", restarts_token):
+            keep[i] = True
+            continue
 
         try:
             x, y = (int(part) for part in ready.split("/"))
+            restarts = int(restarts_token)
         except ValueError:
-            if is_diagnostic_line(line):
-                keep[i] = True
+            keep[i] = True
             continue
 
         if (
@@ -4080,8 +4083,7 @@ def _classify_status_table(lines):
     parsed = []
     for i, ln in rows:
         if len(ln.split()) != modal:
-            if is_diagnostic_line(ln):
-                keep[i] = True
+            keep[i] = True
             continue
         parsed.append((i, ln.split()))
     if not parsed:
@@ -4118,8 +4120,9 @@ def _classify_status_table(lines):
         keep[i] = True
     return keep, [0] * n, [0] * n
 
-_GIT_ONELINE_RE = r"^(?:[*|/\\ ]+)?[0-9a-f]{7,40} \S"
-_GIT_COMMIT_RE = r"^commit [0-9a-f]{40}\b"
+# A graph commit has '*'; indentation alone can introduce a SHA inside a note.
+_GIT_ONELINE_RE = r"^(?:[|/\\ ]*\*[|/\\ ]*)?[0-9a-f]{7,64} \S"
+_GIT_COMMIT_RE = r"^commit [0-9a-f]{4,64}\b"
 
 
 def _git_subject_template(subject: str) -> str:
@@ -4170,7 +4173,7 @@ def _classify_git_log(lines):
         starts = [i for i, line in enumerate(lines) if re.match(_GIT_ONELINE_RE, line)]
         for idx, start in enumerate(starts):
             end = starts[idx + 1] if idx + 1 < len(starts) else n
-            m = re.match(r"^(?:[*|/\\ ]+)?[0-9a-f]{7,40} (.*)$", lines[start])
+            m = re.match(r"^(?:[*|/\\ ]+)?[0-9a-f]{7,64} (.*)$", lines[start])
             subject = m.group(1).strip() if m else lines[start].strip()
             commits.append({
                 "start": start,
@@ -4199,39 +4202,10 @@ def _classify_git_log(lines):
         keep[i] = True
 
     for commit in commits:
-        start = commit["start"]
-        end = commit["end"]
-        template = commit["template"]
-
-        if template in routine_templates:
-            if commit is first[template]:
-                if is_full:
-                    keep[start] = True
-                    if commit["subject_idx"] is not None:
-                        keep[commit["subject_idx"]] = True
-                else:
-                    keep[start] = True
+        if commit['template'] in routine_templates and commit is not first[commit['template']]:
             continue
-
-        if is_full:
-            in_diff = False
-            for i in range(start, end):
-                line = lines[i]
-                if line.startswith("diff --git "):
-                    keep[i] = True
-                    in_diff = True
-                elif in_diff:
-                    if line.startswith("+++") or line.startswith("---"):
-                        keep[i] = True
-                    elif line.startswith(("+", "-", " ", "@@")):
-                        keep[i] = False
-                    else:
-                        keep[i] = True
-                else:
-                    keep[i] = True
-        else:
-            for i in range(start, end):
-                keep[i] = True
+        for i in range(commit['start'], commit['end']):
+            keep[i] = True
 
     return keep, [0] * n, [0] * n
 
@@ -4388,6 +4362,14 @@ def preprocess_test_output(
             requirement_hits = hits
             for i in hits:
                 keep[i] = True
+    if runner == 'git_log':
+        starts = [i for i, line in enumerate(lines) if re.match(_GIT_COMMIT_RE, line)]
+        if not starts:
+            starts = [i for i, line in enumerate(lines) if re.match(_GIT_ONELINE_RE, line)]
+        for index, start in enumerate(starts):
+            end = starts[index + 1] if index + 1 < len(starts) else len(lines)
+            if any(keep[start:end]):
+                keep[start:end] = [True] * (end - start)
     if runner == "requirements" and not requirement_hits:
         return None
     if all(keep):
@@ -4407,7 +4389,7 @@ def preprocess_test_output(
                   else ("pod rows" if runner == "kubectl_pods"
                         else ("build lines" if runner == "docker_build"
                               else ("table rows" if runner == "status_table"
-                                    else ("git log lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else ("connection rows" if runner == "netstat" else ("disconnected adapter lines" if runner == "ipconfig" else ("numbered list items" if runner == "indexed_list" else ("non-open port lines" if runner == "nmap" else ("default-valued settings" if runner == "pg_settings" else ("routine log lines" if runner == "macos_log" else ("ordinary sample rows" if runner == "vmstat" else ("non-security package updates" if runner == "apt_upgradable" else None)))))))))))))))))))))))))))))))))))))))))))
+                                    else ("nonblank git lines" if runner == "git_log" else "describe lines" if runner == "kubectl" else ("lint lines" if runner == "lint" else ("slow log lines" if runner == "slowlog" else ("env lines" if runner == "env_dump" else ("plan lines" if runner == "terraform_plan" else ("asset lines" if runner == "bundle_assets" else ("host lines" if runner == "ansible" else ("install lines" if runner == "pip_install" else ("rustc warning lines" if runner == "rust_build" else ("gradle tasks" if runner == "gradle" else ("git status entries" if runner == "git_status" else ("package lines" if runner == "package_install" else ("process rows" if runner == "ps_aux" else ("running container rows" if runner == "docker_ps" else ("requirement lines" if runner == "requirements" else ("low-severity advisory lines" if runner == "npm_audit" else ("passed test lines" if runner == "playwright" else ("process rows" if runner == "top" else ("configure check lines" if runner == "cmake" else ("dependency tree lines" if runner == "npm_tree" else ("TLS and header trace lines" if runner == "curl_verbose" else ("rollout progress lines" if runner == "rollout_wait" else ("faster unit lines" if runner == "systemd_blame" else ("all-zero rows" if runner == "zero_rows" else ("ping reply lines" if runner == "ping" else ("progress lines" if runner == "progress" else ("timed-out hops" if runner == "traceroute" else ("certificate body and key lines" if runner == "openssl_sclient" else ("repeated table rows" if runner == "ps_table" else ("repeated progress lines" if runner == "ps_error" else ("successful installer actions" if runner == "msi_log" else ("connection rows" if runner == "netstat" else ("disconnected adapter lines" if runner == "ipconfig" else ("numbered list items" if runner == "indexed_list" else ("non-open port lines" if runner == "nmap" else ("default-valued settings" if runner == "pg_settings" else ("routine log lines" if runner == "macos_log" else ("ordinary sample rows" if runner == "vmstat" else ("non-security package updates" if runner == "apt_upgradable" else None)))))))))))))))))))))))))))))))))))))))))))
         ),
     )
     if runner == "pytest":

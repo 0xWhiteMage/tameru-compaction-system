@@ -1,4 +1,4 @@
-from tameru.agent_formats import detect_test_runner, _classify_status_table
+from tameru.agent_formats import detect_test_runner, _classify_status_table, preprocess_test_output
 from tameru.compress_context import compress_context
 
 
@@ -80,3 +80,17 @@ def test_kubectl_pods_still_detected_before_status_table():
         "pod-2  1/1     Running  0          1d",
     ])
     assert detect_test_runner(text) == "kubectl_pods"
+
+
+def test_full_row_with_spaced_mount_survives():
+    base = ('Filesystem Size Used Avail Use% Mounted on\n'
+            + '\n'.join(f'tmpfs 100G 10G 90G 10% /mnt/vol{i}' for i in range(30)))
+    full = '/dev/archive 100G 100G 0G 100% /mnt/archive data'
+    source = base + '\n/dev/data 100G 95G 5G 95% /data\n' + full + '\n'
+    for out in (preprocess_test_output(source, "which filesystems are full"),
+                compress_context(source, "which filesystems are full",
+                                 ccr=False, citations=False).compressed_text):
+        assert full in out
+        assert '/dev/data 100G 95G 5G 95% /data' in out
+        assert 'Filesystem Size Used Avail Use% Mounted on' in out
+        assert len(out) < len(source) / 2

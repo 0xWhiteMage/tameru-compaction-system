@@ -1,12 +1,11 @@
-# Tameru (貯める)
+# Tameru (ためる)
 
 <p align="center">
   <img src="assets/header.png" alt="The White Mage — Tameru Compaction System" width="100%"><br><br>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.6.0-blue.svg" alt="Version 1.6.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.9.0-blue.svg" alt="Version 1.9.0"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-1939%20passed-success.svg" alt="1939 tests passed"></a>
-  <a href="benchmarks/production-qa-v3-results.json"><img src="https://img.shields.io/badge/release_QA-15%2F15-brightgreen.svg" alt="15 of 15 release QA cases passed"></a>
+  <a href="tests/">Tests</a> · <a href="benchmarks/">Release checks</a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
 </p>
 
@@ -22,19 +21,28 @@ The default engine runs locally with **no LLM call, no GPU and no runtime depend
 |:---:|:---:|:---:|:---:|
 | **82.4%** | **25/25** | **0** | **2.79 ms** |
 
-Measured on **16 shared task cases**, with 5 runnable methods on CPU, **2026-11-05**. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
+Historical v1.6.0 measurements on **16 shared task cases**, with 5 runnable methods on CPU, **2026-11-05**; not re-measured for v1.7.0. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
 
 <!-- tameru:headline:end -->
 
-[Performance](#comparison-with-other-approaches) · [See it work](#see-it-work) · [Quickstart](#quickstart) · [Hermes](#hermes) · [What's in 1.6.0](#whats-in-160) · [Documentation](#documentation)
+[Performance](#comparison-with-other-approaches) · [See it work](#see-it-work) · [Quickstart](#quickstart) · [Repositories](#how-the-repositories-fit) · [Hermes](#hermes-and-other-harnesses) · [What's new](#whats-new-since-160) · [Documentation](#documentation)
+
+## How the repositories fit
+
+**This repository is the engine, and it runs on any agent harness**: use the Python API, the CLI or the generic
+transcript adapter. It has no dependency on Hermes or any other host. The
+[Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) is a separate repository that vendors this engine
+unchanged and adds everything Hermes-specific: the adaptive policy and self-tuning, Restore and Keep, the per-turn
+note, the Desktop panel and the `/tameru` commands. Engine changes land here first. See the
+[repository guide](docs/REPOSITORIES.md) for who owns what.
 
 ## Comparison with other approaches
 
 <!-- tameru:comparison:start -->
 
-**Same input. Same query. Same 16 tasks.** The current comparison covers documents, configuration, Git/npm/YAML output, multilingual text and saturated grep, captured pytest and numbered-source cases.
+**Same input. Same query. Same 16 tasks.** *Historical measurements, recorded on v1.6.0; they have not been re-run for this release.* The current comparison covers documents, configuration, Git/npm/YAML output, multilingual text and saturated grep, captured pytest and numbered-source cases.
 
-![v1.6.0 comparison of mean character savings and clean cases across measured methods](assets/comparison-v1.6.0.svg)
+![Historical v1.6.0 measurement: mean character savings and clean cases across measured methods](assets/comparison-v1.6.0.svg)
 
 | Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ |
 |---|---:|---:|---:|---:|---:|
@@ -230,9 +238,9 @@ cat context.txt | tameru-compress - "Find the active error" --no-ccr
 
 Read from a file or stdin; compacted text goes to stdout. `--stats` prints JSON diagnostics, then `---`, then the extract. A specific query such as “find the active error” gives selection more signal than “continue”.
 
-### Hermes
+### Hermes (and other harnesses)
 
-Install the maintained [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) using its instructions, then select the engine:
+Hermes is one integration, not the engine's home. Everything Hermes-specific is in the plugin repository. Install the maintained [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) using its instructions, then select the engine:
 
 ```yaml
 context:
@@ -243,17 +251,20 @@ The plugin provides the Hermes integration and retrieval path. It vendors the en
 
 For another agent framework, start with the Python API, CLI or generic transcript adapter. The [integration guide](docs/INTEGRATION.md) covers message lists, task-derived queries and keeping vendored copies current.
 
-## What's in 1.6.0
+## What's new since 1.6.0
+
+The 1.7.0 candidate below was never tagged or published; its changes first ship in 1.8.0, and 1.9.0 carries no further engine behaviour change.
 
 | Area | What users gain |
 |---|---|
-| **More tool outputs reduced** | New reducers for Linux, macOS and Windows tools, containers, builds, package managers, service logs and test runners keep the failures and outliers and fold the routine rows (see [Formats and languages](#formats-and-languages)). |
-| **Generic and empty queries** | “What happened?” or no query at all now anchors on errors, failure lines, rare warnings, state changes and odd lines in uniform logs, and summarises large JSON arrays, JSON Lines, CSV/TSV and Markdown tables to an example, the outliers and a count. |
-| **Multi-language queries and prose** | Accented query words stay whole; question words and generic asks in 20 languages besides English no longer count as query terms; `prose_brief` splits sentences in CJK, Thai, Devanagari and Arabic as well as Latin scripts, and back-to-back repeated sentences fold in any script. |
-| **Regex cache** | Query- and input-derived patterns use a private compiled-pattern cache, so long runs no longer thrash Python's `re` cache (recompiles per replay loop fell from 156 to 3 in our profile). |
-| **Secrets handling unchanged** | Env/config dump folding never keeps a secret-looking line on its own or moves it; the recovery-cache credential screen is unchanged. |
+| **Structured reports stay whole** | Selected SARIF findings, notebook cells, Kubernetes identity/status, whole Git log entries/patches, LCOV file records/test names and uncovered lines, and JUnit testcases keep their raw byte spans. |
+| **Fewer misclassified payloads** | GraphQL error responses stay whole, and structured reports are no longer treated as tool envelopes or tables. |
+| **Safer fail-open** | JSON numbers that reserialization would change (decimals, large exponents, signed zero), malformed XML/Unicode and ambiguous structured input all return the exact original. |
+| **Stability fixes** | Repeat-compression instability, extended CJK/Hangul classification, Cargo diagnostics, disk mount paths containing spaces and Kubernetes event-row accounting are fixed. |
+| **Recovery screening** | Credential screening for recovery storage is extended. |
 
-On the comparison corpus 13 of 16 outputs are unchanged and retention is identical; the 15-case QA battery and every budget ratio stay clean. See the [v1.6.0 release notes](docs/releases/v1.6.0.md) and the [changelog](CHANGELOG.md) for details, verification and history.
+See the [1.7.0 candidate notes](docs/releases/v1.7.0.md) for captured validation
+and the [changelog](CHANGELOG.md) for version history.
 
 ## Recovery and limits
 
@@ -303,6 +314,7 @@ It exits non-zero if any output hash, saving or retention result differs; timing
 | Start here | Find out how to… |
 |---|---|
 | [Usage and API](docs/USAGE.md) | Set budgets, inspect receipts, configure recovery and use advanced controls |
+| [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what the Hermes plugin repository owns |
 | [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework and keep vendored copies current |
 | [Current comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
 | [v1.6.0 notes](docs/releases/v1.6.0.md) | Review the current release's changes and verification |
@@ -311,7 +323,7 @@ It exits non-zero if any output hash, saving or retention result differs; timing
 
 ## Credits and support
 
-Built by **The White Mage**. Tameru (貯める) means “to store up”. Research and ecosystem acknowledgements, including LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery, are recorded in the [research digest](docs/RESEARCH.md) and [changelog](CHANGELOG.md).
+Built by **The White Mage**. Tameru (ためる) means “to store up”. Research and ecosystem acknowledgements, including LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery, are recorded in the [research digest](docs/RESEARCH.md) and [changelog](CHANGELOG.md).
 
 [Follow on X](https://x.com/0xWhiteMage) · [Support on Ko-fi](https://ko-fi.com/0xwhitemage) · [Report an issue](https://github.com/0xWhiteMage/tameru-compaction-system/issues) · [Contribute](https://github.com/0xWhiteMage/tameru-compaction-system/pulls)
 
