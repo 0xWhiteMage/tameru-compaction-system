@@ -30,7 +30,14 @@ sys.path.insert(0, str(HERE))
 
 from markers import MARKER_RES, PREFIX_MARKERS, JSON_CRUSH_FRAGMENTS, marker_name  # noqa: E402
 
-VERSION = "1.6.0"
+def _engine_version() -> str:
+    """The version of the engine under test, so a run writes findings-<version>.* and never overwrites an earlier record."""
+    text = (ENGINE_SRC / "tameru" / "compress_context.py").read_text(encoding="utf-8")
+    match = re.search(r'^ENGINE_VERSION\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1) if match else "unknown"
+
+
+VERSION = _engine_version()
 CASE_TIMEOUT_S = 30          # whole worker lifetime
 COMPRESS_CAP_MS = 5000       # invariant 10: per-case wall-clock cap
 HASH_SAMPLE = 60
