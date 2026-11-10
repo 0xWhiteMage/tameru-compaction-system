@@ -253,7 +253,14 @@ _SECRET_LITERALS = (
     "xox", "sk-", "eyJ", "AIza", "_live_",
     "ASIA", "ya29.", "1//0", "hf_", "npm_", "pypi-AgE", "SG.", "glpat-", "dckr_pat_",
     "xapp-", "hooks.slack.com", "/api/webhooks/", "_test_", "whsec_", "dop_v1_", "shp",
-    "sq0", "SK", ":AA", "Key=", "sig=", "://", "sshpass", "curl", "TOKEN", "ACCESS_KEY", "key-", ":",
+    "sq0", "SK", ":AA", "Key=", "sig=", "://", "sshpass", "curl", "TOKEN", "ACCESS_KEY", "key-",
+)
+# The one alternative that has no literal: a ``.pgpass`` record ``host:port:database:user:password`` at the start of a
+# line. A bare ":" used to stand for it, which every timestamp satisfies, so no log was ever ruled out. This hint is the
+# record's first three fields and their colons (a superset of the full pattern): an ordinary log line has a space where
+# the third field must end, so it does not match and the two long patterns are skipped.
+_PGPASS_HINT_RE = re.compile(
+    r"(?m:^[ \t]*(?:\\[^\r\n]|[^:\\\s#]){1,256}:(?:\*|[0-9]{1,5}):(?:\\[^\r\n]|[^:\\\s]){1,256}:)"
 )
 _SECRET_FOLDED_LITERALS = (
     "password", "passwd", "secret", "api_key", "api-key", "apikey", "access_token",
@@ -267,7 +274,7 @@ _SECRET_FOLDED_LITERALS = (
 def _secret_scan(text: str) -> bool:
     if text.isascii() and not any(lit in text for lit in _SECRET_LITERALS):
         folded = text.lower()
-        if not any(lit in folded for lit in _SECRET_FOLDED_LITERALS):
+        if not any(lit in folded for lit in _SECRET_FOLDED_LITERALS) and _PGPASS_HINT_RE.search(text) is None:
             return False
     return _SECRETS_RE.search(text) is not None or _SECRETS_EXTRA_RE.search(text) is not None
 

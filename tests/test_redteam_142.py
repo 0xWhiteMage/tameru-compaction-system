@@ -26,6 +26,32 @@ KW = dict(ccr=False, citations=False)
 # --- quadratic regexes -------------------------------------------------------
 
 
+@pytest.mark.parametrize("record", [
+    "db.example.com:5432:appdb:svc_user:Hunter2Hunter2",
+    "*:*:*:postgres:correct-horse-battery",
+    "  localhost:5432:*:admin:s3cr3t-pass",
+    "host:5432:db:user:pass\\:word",
+    "first line\ndb:5432:app:u:Hunter2Hunter2\nlast line",
+])
+def test_a_pgpass_record_is_still_found_without_the_bare_colon_literal(record):
+    assert cc._PGPASS_HINT_RE.search(record) is not None
+    assert cc._secret_scan(record) is True
+
+
+def test_an_ordinary_timestamped_log_is_ruled_out_by_the_prefilter():
+    log = "\n".join(f"2025-03-14T02:13:{i % 60:02d}.278Z INFO  worker-{i}: processed batch {i}" for i in range(400))
+    assert cc._PGPASS_HINT_RE.search(log) is None and cc._secret_scan(log) is False
+
+
+def test_colon_heavy_text_agrees_with_the_bare_patterns():
+    rng = random.Random(23)
+    fragments = ["host", "db.example.com", "5432", "*", "user", "pw", "Hunter2Hunter2", ":", ":", ":", "\\:", " ", "\n", "#", "12", "03.278Z", "ERROR"]
+    for _ in range(4000):
+        text = "".join(rng.choice(fragments) for _ in range(rng.randint(3, 14)))
+        bare = cc._SECRETS_RE.search(text) is not None or cc._SECRETS_EXTRA_RE.search(text) is not None
+        assert cc._secret_scan(text) == bare, repr(text)
+
+
 @pytest.mark.perf
 @pytest.mark.parametrize(
     "make",
