@@ -13,7 +13,7 @@ Harness: `run_redteam.py` (now named after the engine version under test, so a r
 ## Still open
 | Case | Severity | What it is | Decision |
 |---|---|---|---|
-| `atk-superseded` | safety-leak | A superseded value (`connect_timeout_ms = 30000`) is kept next to its replacement. | Open. The supersession pass compares same-key lines within one output; this case needs the old value dropped when a later line redefines it. Needs an engine change and a test in `tests/`; not part of the plugin phase. |
+| `atk-superseded` | safety-leak | A superseded value (`connect_timeout_ms = 30000`) is kept next to its replacement. | Open. Not yet investigated: the cause (why the supersession pass keeps the older value in this case) has not been traced, so no fix is proposed. Needs an engine change with a regression test; not part of the plugin phase. |
 | `scale-log-16x`, `scale-syslog-16x` | perf | 5.8-6.1 s against the harness's 5 s cap on a 16x log. Measured on the same machine: 2.7 s at the 1.6.0 commit `459e354`, 5.8 s at the 1.9.0 commit `7ebc35a`, unchanged by the later refactors (`b77eed3`, `c7e4453`). | Open. The profile shows the credential screen (`_secret_scan`) taking about 39% of the time: after 1.6.0 it gained many more patterns, and its prefilter cannot skip a log because the literals `:` and `://` occur on every line. A digest memo for texts over 1 MB was tried and did not help, because the reported time is the first call. A cheaper prefilter is the next step. |
 
 ## Reported as "fabrication", not a product defect
