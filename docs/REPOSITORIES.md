@@ -11,7 +11,7 @@ first-class part of Hermes and owns every Hermes-specific enhancement.
 | Contains | Extraction and reducers, structured-format handling, folding, supersession, Unicode handling, credential screening for recovery storage, the benchmarks | The Hermes context-engine subclass, adaptive policy and self-tuning, Restore and Keep, the per-turn note, the Desktop panel, `/tameru` commands, per-chat state, security gates for chat surfaces, Hermes catalogue packaging |
 | Depends on | The Python standard library only | Hermes' plugin interfaces; the engine, vendored |
 | Knows about | Text in, smaller text out | Chats, sessions, tools, the prompt cache, Hermes settings and surfaces |
-| Version | Semantic; `ENGINE_VERSION` | Always equal to the vendored engine's version |
+| Version | Semantic; `ENGINE_VERSION` | Semantic, separate from the engine's (1.9.0 vendors engine 1.9.0; `/tameru stats` shows both) |
 
 ## What stays here
 
@@ -37,5 +37,4 @@ Keep this repository free of anything that only makes sense in one host:
   recognises Hermes' tool-result wrapper as one of several input formats.
 - The plugin vendors `src/tameru/` byte-for-byte and never edits it. Engine fixes land here first and are released
   here; the plugin then re-vendors them (`scripts/sync_to_harness.py`).
-- Versions move together: the plugin's version must equal the engine version it vendors, so each plugin release has
-  a matching engine release even when the engine's behaviour did not change.
+- Versions are separate: the plugin records the engine commit it vendors (`VENDORED_FROM`) and shows both versions, so a plugin release does not need an engine release, and an engine release is picked up by the next plugin release that re-vendors it.

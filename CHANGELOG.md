@@ -10,7 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.9.0] - 2026-11-09
 
-- Version aligned with `hermes-tameru-plugin` 1.9.0. No engine behaviour changed.
+- Released with `hermes-tameru-plugin` 1.9.0 (the two are versioned separately from here on; the plugin vendors this engine at its recorded commit). No engine output changed.
+- Performance: the credential screen no longer treats every colon as a reason to run its long patterns (a precise `.pgpass` hint replaces the bare `:` literal). A 16x log took 5.8 s and now takes 2.9 s with the same answers (`tests/test_golden_compress_context.py` and the red-team corpus are unchanged).
+- `score_blocks` is also split into helpers, moved without a behaviour change (golden corpus and suite unchanged).
+- The red-team harness is tracked in `benchmarks/redteam/` (228 cases) with two recorded runs: 1.6.0 (5 safety leaks, 4 gold losses, 7 low-savings) and 1.9.0 (`FINDINGS-1.9.0.md`, `NOTES-1.9.0.md`): four of the five leaks and all four gold losses are gone; the `atk-superseded` case was traced and is not a leak (both values are kept with their labels).
 - `compress_context` is shorter: four of its steps are now their own functions (`_resolve_objective`, `_normalise_options`,
   `_build_receipt`, `_write_audit_log`), moved verbatim (1,353 to 1,149 lines). The function is still long: the rest of it
   is branches that return early and share many local variables, and splitting those needs a redesign, not a move.

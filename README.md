@@ -253,7 +253,7 @@ For another agent framework, start with the Python API, CLI or generic transcrip
 
 ## What's new since 1.6.0
 
-The 1.7.0 candidate below was never tagged or published; its changes first ship in 1.8.0, and 1.9.0 carries no further engine behaviour change.
+The 1.7.0 candidate below was never tagged or published; its changes first ship in 1.9.0 (1.8.0 was not published either), and 1.9.0 adds no engine output change beyond them: it splits two long functions behind a golden-output test, speeds up the credential screen, and tracks the red-team harness in `benchmarks/redteam/`.
 
 | Area | What users gain |
 |---|---|
@@ -318,6 +318,7 @@ It exits non-zero if any output hash, saving or retention result differs; timing
 | [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework and keep vendored copies current |
 | [Current comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
 | [v1.6.0 notes](docs/releases/v1.6.0.md) | Review the current release's changes and verification |
+| [Red-team findings](benchmarks/redteam/FINDINGS-1.9.0.md) | Read what 228 adversarial cases found in 1.6.0 and what was fixed by 1.9.0 ([notes](benchmarks/redteam/NOTES-1.9.0.md)) |
 | [Architecture](docs/industrial-compaction-v1.2.md) | Understand the format adapters and Unicode design; the document's filename reflects its original design version |
 | [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |
 
