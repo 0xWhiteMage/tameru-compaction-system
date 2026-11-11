@@ -57,22 +57,32 @@ note, the Desktop panel and the `/tameru` commands. Engine changes land here fir
 
 <!-- tameru:comparison:start -->
 
-**Same input. Same query. Same 16 tasks.** *Historical measurements, recorded on v1.6.0; they have not been re-run for this release.* The current comparison covers documents, configuration, Git/npm/YAML output, multilingual text and saturated grep, captured pytest and numbered-source cases.
+**Same input. Same query. Same 16 tasks.** Tameru and the TF-IDF baseline were **re-measured on 2026-11-11 on v1.9.0**; the third-party methods were measured on 2026-11-05 at v1.6.0 on a Linux VM and **have not been re-run**. The comparison covers documents, configuration, Git/npm/YAML output, multilingual text and saturated grep, captured pytest and numbered-source cases.
 
-![Historical v1.6.0 measurement: mean character savings and clean cases across measured methods](assets/comparison-v1.6.0.svg)
+![Recorded v1.6.0 measurement: mean character savings and clean cases across measured methods](assets/comparison-v1.6.0.svg)
+
+**Re-measured on v1.9.0** (Windows 11, Python 3.13, 1 warmup and 5 timed calls per case):
+
+| Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ |
+|---|---:|---:|---:|---:|---:|
+| **Tameru v1.9.0** | 25/25 | 0 | 16/16 | 82.4% | 3.05 ms |
+| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.10 ms |
+
+**Recorded on v1.6.0, not re-run** (Linux VM, Python 3.12, 3 timed calls per case):
 
 | Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ |
 |---|---:|---:|---:|---:|---:|
 | **Tameru v1.6.0** | 25/25 | 0 | 16/16 | 82.4% | 2.79 ms |
 | LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 3.92 ms |
 | Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.36 ms |
-| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.09 ms |
 | LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 2,839.60 ms |
 | LCC → JEV — unmeasured | — | — | — | — | — |
 
+Tameru's output on this corpus is **identical in 1.9.0 and 1.6.0** (`--verify-against` reports 0 differing fields), so the savings and retention carry over; the two runs used different machines, so compare savings and retention, not milliseconds.
+
 **A clean case keeps every required string and excludes every planted forbidden string.** Savings are the arithmetic mean per case; wall time is the median of per-case medians. Headroom's row measures the **TextCrusher component**. JEV was unmeasured because its API credential was unavailable.
 
-[Complete comparison and per-task results →](benchmarks/COMPARISON.md) · [Raw measurements →](benchmarks/comparison-v1.6.0.json)
+[Complete comparison and per-task results →](benchmarks/COMPARISON.md) · [v1.9.0 re-run, raw →](benchmarks/comparison-v1.9.0.json) · [recorded v1.6.0, raw →](benchmarks/comparison-v1.6.0.json)
 
 <details>
 <summary><strong>Evaluation details: corpus, methods, timing and limits</strong></summary>
@@ -83,9 +93,9 @@ note, the Desktop panel and the `/tameru` commands. Engine changes land here fir
 
 **Methods.** Tameru uses default extraction with `ccr=False`, `citations=True`. LCC 1.0.0 uses one scoring worker and no marker; Headroom 0.40.0 uses Rust TextCrusher at defaults, without the full router or recovery store. TF-IDF is a simple paragraph-retrieval baseline. Laya 0.4.4 runs its pinned multilingual model on CPU. LCC's protected no-ops are valid policy outcomes; model fallbacks receive no score.
 
-**Timing.** One untimed warmup and 3 timed complete calls per case. Parsing, scoring and rendering are inside the timer; imports and model loading are outside it. All 5 scored methods produced identical output across the warmup and timed repeats. Hardware and scheduling affect latency. Since v1.5.0 Tameru remembers analyses of repeated identical text, so this repeat-timing protocol flatters it; its first-call (cold) speed-up is in the [v1.5.0 release notes](docs/releases/v1.5.0.md#performance).
+**Timing.** One untimed warmup and 3 timed complete calls per case (5 in the v1.9.0 re-run of Tameru and the TF-IDF baseline). Parsing, scoring and rendering are inside the timer; imports and model loading are outside it. All 5 scored methods produced identical output across the warmup and timed repeats. Hardware and scheduling affect latency. Since v1.5.0 Tameru remembers analyses of repeated identical text, so this repeat-timing protocol flatters it; its first-call (cold) speed-up is in the [v1.5.0 release notes](docs/releases/v1.5.0.md#performance).
 
-**Runtime and provenance.** Python 3.12.16 on Intel(R) Xeon(R) Processor, with CPU-quota and thread settings in the JSON. Source/model pins, input/output hashes, package versions and individual timing samples are recorded in the raw JSON.
+**Runtime and provenance.** The v1.9.0 re-run: Python 3.13.17 on Windows 11 (AMD64, 16 logical CPUs), engine commit `cab2edc`; package versions and every timing sample are in `benchmarks/comparison-v1.9.0.json`. The recorded v1.6.0 run: Python 3.12.16 on a Linux x86-64 VM; its source and model pins, input and output hashes and package versions are in `benchmarks/comparison-v1.6.0.json`. The third-party arms need packages, GitHub source and a model download, so they were not run again for this release.
 
 **Interpretation.** This is Tameru's own regression corpus, including adversarial fixtures. Broader independent and live-agent evaluations are still needed to establish generality. An unmeasured provider has no score carried forward from an earlier release.
 
@@ -94,6 +104,10 @@ note, the Desktop panel and the `/tameru` commands. Engine changes land here fir
 <!-- tameru:comparison:end -->
 
 ## See it work
+
+![A terminal recording: tameru-compress turns a 200-line Gradle build log into 20 lines that keep the failing test, its assertion and the build result](assets/demo-cli.gif)
+
+*Recorded output of the real engine on a sample Gradle build log (rendered by [`scripts/render_demo_gif.py`](scripts/render_demo_gif.py) from what `compress_context` actually returns): 200 lines in, 20 out, 93% fewer tokens, and the failing test, its assertion and the build result are all still there.*
 
 **Task:** “Which database endpoint does Project Orion use?”
 
@@ -135,6 +149,12 @@ This is an excerpt of the input structure; the Python example below constructs a
 
 </details>
 
+### In Hermes
+
+![The Tameru panel in Hermes Desktop after a real run: nine tool outputs shortened, about 55K tokens freed, with a table of every pass](assets/hermes-panel.png)
+
+*A real run in Hermes Desktop (Claude Haiku 4.5): sixteen command outputs of about 25,000 characters each, nine shortened, about 55K tokens freed, and every answer correct. The panel lists each pass and `/tameru stats` prints the numbers above it. The screenshot is cropped to the chat and the panel.*
+
 ## Where Tameru helps
 
 | Your agent is reading… | Tameru focuses on… |
@@ -167,7 +187,7 @@ Script-aware matching has regression coverage across **20 script/language famili
 
 ## Measured results
 
-The separate **15-case release QA battery passes every case** on v1.6.0. All required answer strings survive, and no planted forbidden strings leak. These figures use **estimated tokens**, whereas the comparison above measures **characters**.
+The separate **15-case release QA battery passes every case** on v1.9.0 (re-run 2026-11-11, same savings as v1.6.0). All required answer strings survive, and no planted forbidden strings leak. These figures use **estimated tokens**, whereas the comparison above measures **characters**.
 
 | Workload | Evidence checked | Estimated token savings |
 |---|---|---:|
@@ -191,7 +211,7 @@ The separate **15-case release QA battery passes every case** on v1.6.0. All req
 | Large synthetic document | Savings, repeatability and timing; no answer-string check | **99.9%** |
 | Empty query | Original input returned | **0.0%** |
 
-The 4,000-record synthetic document completed in **113.9 ms CPU time**, within its 1,200 ms gate on the recorded runner. Its maximum saving is specific to that input. Token counts use Tameru's estimator; savings with a model's own tokenizer will vary. [Full release results →](benchmarks/production-qa-v3-results.json)
+The 4,000-record synthetic document completed in about **140 ms wall time** on the 1.9.0 re-run (the gate is 1,200 ms; the recorded v1.6.0 runner measured 113.9 ms of CPU time). Its maximum saving is specific to that input. Token counts use Tameru's estimator; savings with a model's own tokenizer will vary. [Full release results →](benchmarks/production-qa-v3-results.json)
 
 ### Choose a context budget
 
@@ -207,15 +227,50 @@ Use `mode="fixed"` and `budget_ratio` to request a smaller extract. Lower ratios
 
 Every operating point retained all required strings with no forbidden leaks in this corpus. Validate the evidence your own tasks need before choosing a ratio. [Replay the sweep →](benchmarks/threshold_sweep.py)
 
-## Quickstart
+## Commands
 
-Requires **Python 3.10+**. Install the verified **v1.6.0 source**:
+**Command line** (`tameru-compress`, installed with the package):
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.6.0"
+tameru-compress build.log "Why did the build fail?" --no-ccr
+tameru-compress build.log "Why did the build fail?" --no-ccr --stats    # JSON diagnostics, then ---, then the extract
+cat build.log | tameru-compress - "Find the active error" --no-ccr        # read stdin
+tameru-compress notes.md "What is the backup host?" --mode fixed --budget-ratio 0.3 --no-ccr   # ask for a smaller extract
 ```
 
-The command installs the `v1.6.0` Git tag; its engine code is identical to release commit `386a70c`. No GitHub Release page or PyPI package is published.
+| Option | What it does |
+|---|---|
+| `--no-ccr` / `--ccr` | Turn the reversible recovery store off or on (on by default). |
+| `--citations` / `--no-citations` | Mark dropped blocks with a citation (on by default). |
+| `--stats` | Print JSON diagnostics (tokens, savings, risk, verifier), then `---`, then the extract. |
+| `--mode {adaptive,fixed,compiler,precision}` and `--budget-ratio R` | Ask for a smaller extract; lower ratios request less text. |
+| `--strategy {clear,extract,summarise,auto}` | `extract` (default, no model), `clear` (drop tool payloads), `auto` (extract, escalate only if extraction fails open). |
+| `--pin-recent N` | Always keep the first block and the newest N blocks. |
+| `--min-savings-ratio R` | Return the original when the achieved savings fall below this ratio (0 disables). |
+| `--derive-query` | On an empty or generic query, infer a conservative objective from recurring rare terms instead of failing open. |
+
+**In Hermes**, with the [plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) installed, type these in any chat:
+
+| Command | What it does |
+|---|---|
+| `/tameru` | What Tameru did in this chat, and the context gauge. |
+| `/tameru help` · `/tameru stats` | Every verb in one line each · numbers for this chat (context freed, outputs shortened, cache use). |
+| `/tameru changes` | The outputs it shortened, and where each original is. |
+| `/tameru view REF [OFFSET]` · `/tameru ask REF` | Read an original · text that makes the agent re-read an output. |
+| `/tameru keep REF` · `/tameru restore REF` · `/tameru unkeep REF` · `/tameru cancel` | Show an output in full: until you unpin it, for a few replies, or stop. |
+| `/tameru pin TEXT` · `/tameru pins` · `/tameru unpin N` | Keep a line of your own, word for word, through every summary. |
+| `/tameru bias save\|balanced\|detail` · `/tameru pause` · `/tameru resume` | Save space or keep detail; stop or restart changes to the chat. |
+| `/tameru reset [confirm]` | Put the chat's self-tuning back to neutral (lists what it clears first). |
+
+## Quickstart
+
+Requires **Python 3.10+**. Install the verified **1.9.0 source**, pinned to its commit:
+
+```bash
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@9f1f1c4"
+```
+
+The command installs commit `9f1f1c4`, the engine code of 1.9.0 (later commits change documentation only). The only published Git tag is `v1.6.0`; no GitHub Release page or PyPI package is published.
 
 ### Python
 
@@ -264,13 +319,13 @@ context:
   engine: tameru
 ```
 
-The plugin provides the Hermes integration and retrieval path. It vendors the engine, so update the plugin to receive its engine changes. Its catalogue submission is [Hermes PR #94102](https://github.com/NousResearch/hermes-agent/pull/94102).
+The plugin provides the Hermes integration and retrieval path. It vendors the engine, so update the plugin to receive its engine changes. It is listed in the Hermes plugin catalogue; the update to 1.9.0 is [Hermes PR #153033](https://github.com/NousResearch/hermes-agent/pull/153033), open and awaiting review.
 
 For another agent framework, start with the Python API, CLI or generic transcript adapter. The [integration guide](docs/INTEGRATION.md) covers message lists, task-derived queries and keeping vendored copies current.
 
-## What's new since 1.6.0
+## What's new in 1.9.0
 
-The 1.7.0 candidate below was never tagged or published; its changes first ship in 1.9.0 (1.8.0 was not published either), and 1.9.0 adds no engine output change beyond them: it splits two long functions behind a golden-output test, speeds up the credential screen, and tracks the red-team harness in `benchmarks/redteam/`.
+1.7.0 and 1.8.0 were never tagged or published, so everything since 1.6.0 first ships in 1.9.0. The engine's output on the comparison corpus is unchanged from 1.6.0; the gains are in the areas below.
 
 | Area | What users gain |
 |---|---|
@@ -280,7 +335,7 @@ The 1.7.0 candidate below was never tagged or published; its changes first ship 
 | **Stability fixes** | Repeat-compression instability, extended CJK/Hangul classification, Cargo diagnostics, disk mount paths containing spaces and Kubernetes event-row accounting are fixed. |
 | **Recovery screening** | Credential screening for recovery storage is extended. |
 
-See the [1.7.0 candidate notes](docs/releases/v1.7.0.md) for captured validation
+See the [1.9.0 notes](docs/releases/v1.9.0.md), the [1.7.0 candidate notes](docs/releases/v1.7.0.md) for captured validation
 and the [changelog](CHANGELOG.md) for version history.
 
 ## Recovery and limits
@@ -309,7 +364,7 @@ python benchmarks/run_battery.py
 python benchmarks/threshold_sweep.py
 ```
 
-v1.6.0 verification: **1,939 tests passed / 2 skipped** (1,879 passed with `-m 'not perf'`, which omits the 60 timing-scaling tests), **15/15 release QA cases**, and a fresh comparison of all five runnable methods on 2026-11-05 that `--verify-against` reproduces with 0 differing fields. Timing tests depend on hardware. The battery rewrites its JSON with your local timings.
+v1.9.0 verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests), **15/15 release QA cases**, the budget sweep above unchanged, and `compare.py --verify-against benchmarks/comparison-v1.6.0.json` reporting **0 differing fields** over the 16 comparison cases. Timing tests depend on hardware. The battery rewrites its JSON with your local timings.
 
 <details>
 <summary><strong>Replay the external comparisons or regenerate this README's figures</strong></summary>
@@ -322,7 +377,7 @@ To check that the current engine still produces the recorded Tameru results, wit
 python benchmarks/compare.py --verify-against benchmarks/comparison-v1.6.0.json
 ```
 
-It exits non-zero if any output hash, saving or retention result differs; timings are not compared. On v1.6.0 it reports 0 differing fields. Against the older `benchmarks/comparison-v1.4.1.json` it lists the three intended output changes of this release (Japanese document 35.3% → 27.3% saved, Travis YAML 64.1% → 76.8%, captured pytest 81.1% → 84.6%). `--render-from` regenerates the README figures, table, chart and detailed comparison from a completed report of the same engine version; this release's come from `benchmarks/comparison-v1.6.0.json`.
+It exits non-zero if any output hash, saving or retention result differs; timings are not compared. On v1.9.0 it reports 0 differing fields against the recorded v1.6.0 run. Against the older `benchmarks/comparison-v1.4.1.json` it lists the three intended output changes of that release (Japanese document 35.3% → 27.3% saved, Travis YAML 64.1% → 76.8%, captured pytest 81.1% → 84.6%). `--render-from` regenerates the README figures, table, chart and detailed comparison from a completed report of the same engine version.
 
 </details>
 
@@ -334,7 +389,7 @@ It exits non-zero if any output hash, saving or retention result differs; timing
 | [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what the Hermes plugin repository owns |
 | [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework and keep vendored copies current |
 | [Current comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
-| [v1.6.0 notes](docs/releases/v1.6.0.md) | Review the current release's changes and verification |
+| [v1.9.0 notes](docs/releases/v1.9.0.md) | Review this release's changes and verification |
 | [Red-team findings](benchmarks/redteam/FINDINGS-1.9.0.md) | Read what 228 adversarial cases found in 1.6.0 and what was fixed by 1.9.0 ([notes](benchmarks/redteam/NOTES-1.9.0.md)) |
 | [Architecture](docs/industrial-compaction-v1.2.md) | Understand the format adapters and Unicode design; the document's filename reflects its original design version |
 | [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |
