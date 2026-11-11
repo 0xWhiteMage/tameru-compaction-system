@@ -12,3 +12,6 @@ build/
 dist/
 docs/INTERNAL_ROADMAP.md
 benchmarks/redteam/runs/
+
+# Local video exports (MP4s for separate use; the README uses the GIFs)
+assets/videos/
