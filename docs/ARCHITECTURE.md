@@ -1,13 +1,11 @@
-# Tameru v1.2 Industrial Compaction Architecture
+# Tameru Architecture: format adapters, Unicode and bounded work
 
-**Status:** Living implementation specification
-**Date:** 2026-08-31
-**Baseline:** Tameru v1.1.1 (`05941e0`)
+**Status:** Living implementation specification (original design written 2026-08-31; the module names below are current)
 **Constraints:** deterministic, local-first, stdlib-only core, extractive, fail-open, reversible where CCR is enabled
 
 ## 1. Goal
 
-Tameru v1.2 expands from a capable text/log/JSON compactor into a bounded, format-aware, multilingual compaction engine suitable for multi-megabyte production context. The design must improve recall and compression without changing the core safety contract: if structure, query intent, Unicode semantics, or complexity cannot be handled confidently, return the exact caller input.
+Tameru is a bounded, format-aware, multilingual compaction engine suitable for multi-megabyte production context. The design must improve recall and compression without changing the core safety contract: if structure, query intent, Unicode semantics, or complexity cannot be handled confidently, return the exact caller input.
 
 ## 2. Non-negotiable contracts
 
@@ -95,7 +93,7 @@ Scale SLOs on the reference host:
 4. invoke the ordered industrial adapter registry when the query is distinctive;
 5. pass accepted extracts into the existing scorer, verifier, CCR and accounting pipeline;
 6. attach format/profile/limit metadata to the receipt;
-7. use all existing v1.1 behaviour when adapters decline.
+7. use the generic engine's behaviour when adapters decline.
 
 The original caller text remains the CCR source and fail-open return value.
 

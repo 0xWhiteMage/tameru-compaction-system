@@ -78,5 +78,5 @@ The default pipeline combines bounded preflight, format adapters, lexical/entity
 
 The recursion guard avoids compacting recognised Tameru output again. `inspect_compressibility()` estimates duplicate-removal headroom. `fold_lossless`, `error_fingerprints`, `brief_context` and `extract_evidence_lines` are available for host-specific reduction.
 
-For implementation details, see [the source](../src/tameru/), [industrial architecture](industrial-compaction-v1.2.md) and [research digest](RESEARCH.md). Research inspiration is documented separately from implemented mechanisms.
+For implementation details, see [the source](../src/tameru/), [architecture](ARCHITECTURE.md) and [research digest](RESEARCH.md). Research inspiration is documented separately from implemented mechanisms.
 

@@ -5,7 +5,7 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.9.0-blue.svg" alt="Version 1.9.0"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache 2.0 licence"></a>
   <a href="https://github.com/0xWhiteMage/hermes-tameru-plugin"><img src="https://img.shields.io/badge/Hermes-plugin-8A2BE2.svg" alt="Hermes plugin"></a>
   <a href="https://x.com/0xWhiteMage"><img src="https://img.shields.io/badge/X-@0xWhiteMage-000000?logo=x&logoColor=white" alt="Follow 0xWhiteMage on X"></a>
   <a href="https://ko-fi.com/0xwhitemage"><img src="https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
@@ -134,8 +134,6 @@ Measured against stock Hermes in a replay of scripted agent sessions (mean cost,
 ![A recording of /tameru and /tameru help in Hermes Desktop](assets/features/09-tameru-status-and-help.gif)
 
 ![A recording of /tameru stats in Hermes Desktop](assets/features/10-tameru-stats.gif)
-
-![The Tameru panel in Hermes Desktop after a real run: nine tool outputs shortened, about 55K tokens freed, with a table of every pass](assets/hermes-panel.png)
 
 </details>
 
@@ -402,7 +400,7 @@ Verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests
 | [Comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
 | [Release notes](docs/releases/v1.9.0.md) and [changelog](CHANGELOG.md) | Review this release's changes and the version history |
 | [Red-team findings](benchmarks/redteam/FINDINGS-1.9.0.md) | Read what 228 adversarial cases found and what was fixed ([notes](benchmarks/redteam/NOTES-1.9.0.md)) |
-| [Architecture](docs/industrial-compaction-v1.2.md) | Understand the format adapters and Unicode design; the filename reflects its original design version |
+| [Architecture](docs/ARCHITECTURE.md) | Understand the format adapters, Unicode handling and bounded-work limits |
 | [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |
 
 ## Credits and support
@@ -411,4 +409,4 @@ Built by **The White Mage**. Tameru (ためる) means “to store up”. Researc
 
 [Follow on X](https://x.com/0xWhiteMage) · [Support on Ko-fi](https://ko-fi.com/0xwhitemage) · [Report an issue](https://github.com/0xWhiteMage/tameru-compaction-system/issues) · [Contribute](https://github.com/0xWhiteMage/tameru-compaction-system/pulls)
 
-Released under the [MIT licence](LICENSE).
+Released under the [Apache License 2.0](LICENSE).

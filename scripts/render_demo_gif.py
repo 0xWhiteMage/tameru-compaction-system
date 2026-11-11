@@ -30,7 +30,7 @@ FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/System/Library/Fonts/Menlo.ttc",
 )
 BG, FG, DIM, GREEN, RED, AMBER, BAR = "#14161c", "#d7dae0", "#7b8190", "#7ee787", "#ff7b72", "#e3b341", "#232733"
-WIDTH, HEIGHT, PAD, TOP, SIZE = 1000, 560, 22, 54, 15
+WIDTH, HEIGHT, PAD, TOP, SIZE = 1000, 640, 22, 54, 15
 
 
 def sample_log() -> str:
@@ -68,7 +68,7 @@ def load_font() -> ImageFont.FreeTypeFont:
 
 
 def colour_for(line: str) -> str:
-    if "FAILED" in line or "AssertionFailedError" in line or line.startswith("FAILURE"):
+    if "RefundTest" in line or "AssertionFailedError" in line:   # the one failure the animation points at; nothing else is red
         return RED
     if line.strip() == "[…]":
         return DIM
@@ -87,25 +87,30 @@ def main(out: Path) -> None:
         ("$ wc -l build.log", FG, True), (f"{in_lines} build.log", DIM, False), ("", FG, False),
         (f'$ tameru-compress build.log "{QUERY}" --no-ccr', FG, True),
         *[(line, colour_for(line), False) for line in shown], ("", FG, False),
-        ("$ tameru-compress build.log \"" + QUERY + "\" --no-ccr | wc -l", FG, True),
-        (f"{out_lines}", GREEN, False),
-        (f"# {in_lines} lines in, {out_lines} out ({result.tokens_saved_pct:.0f}% fewer tokens). The failing test and its assertion are still there.", AMBER, False),
+        (f"# {in_lines} lines in, {out_lines} out: {result.tokens_saved_pct:.0f}% fewer tokens, and the failing test is still there.", GREEN, False),
     ]
+    note_row = next(i for i, (text, _c, _t) in enumerate(script) if "RefundTest" in text)
+    NOTE = "<- kept: the failing test and why it failed"
 
     font = load_font()
     line_h = SIZE + 6
     capacity = (HEIGHT - TOP - PAD) // line_h
 
-    def frame(rows: list[tuple[str, str]], cursor: bool) -> Image.Image:
+    def frame(rows: list[tuple[str, str]], cursor: bool, note: bool = False) -> Image.Image:
         img = Image.new("RGB", (WIDTH, HEIGHT), BG)
         d = ImageDraw.Draw(img)
         d.rectangle([0, 0, WIDTH, 34], fill=BAR)
         for i, colour in enumerate(("#ff5f56", "#ffbd2e", "#27c93f")):
             d.ellipse([PAD + i * 22, 11, PAD + 12 + i * 22, 23], fill=colour)
-        d.text((WIDTH // 2 - 90, 9), "tameru-compress  (v1.9.0)", font=font, fill=DIM)
+        d.text((WIDTH // 2 - 90, 9), "tameru-compress", font=font, fill=DIM)
         visible = rows[-capacity:]
         for index, (text, colour) in enumerate(visible):
             d.text((PAD, TOP + index * line_h), text, font=font, fill=colour)
+        if note:
+            index = note_row - max(0, len(rows) - capacity)
+            if 0 <= index < len(visible):
+                x = PAD + d.textlength(visible[index][0], font=font) + 18
+                d.text((x, TOP + index * line_h), NOTE, font=font, fill=AMBER)
         if cursor:
             y = TOP + (len(visible) - 1) * line_h if visible else TOP
             width = d.textlength(visible[-1][0], font=font) if visible else 0
@@ -116,23 +121,23 @@ def main(out: Path) -> None:
     durations: list[int] = []
     rows: list[tuple[str, str]] = []
 
-    def add(rows_now, ms, cursor=False):
-        frames.append(frame(rows_now, cursor))
+    def add(rows_now, ms, cursor=False, note=False):
+        frames.append(frame(rows_now, cursor, note))
         durations.append(ms)
 
-    add(rows, 500, True)
+    add(rows, 350, True)
     for text, colour, typed in script:
         if typed:
-            step = 3
-            for end in range(step, len(text) + step, step):
-                add(rows + [(text[:end], colour)], 45, True)
+            for end in range(4, len(text) + 4, 4):
+                add(rows + [(text[:end], colour)], 28, True)
             rows.append((text, colour))
-            add(rows, 350)
+            add(rows, 260)
         else:
             rows.append((text, colour))
-            if len(rows) % 3 == 0 or text.startswith("#"):
-                add(rows, 70)
-    add(rows, 4200)
+            if len(rows) % 4 == 0:
+                add(rows, 60)
+    add(rows, 400)
+    add(rows, 3400, note=True)
 
     frames[0].save(out, save_all=True, append_images=frames[1:], duration=durations, loop=0, optimize=True, disposal=1)
     print(f"wrote {out} ({out.stat().st_size // 1024} KiB, {len(frames)} frames); {in_lines} lines -> {out_lines}, "
