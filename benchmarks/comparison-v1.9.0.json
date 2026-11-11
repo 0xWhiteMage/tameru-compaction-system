@@ -1,0 +1,1546 @@
+{
+  "schema": "tameru-comparison/2",
+  "tameru_version": "1.9.0",
+  "run_at_utc": "2026-11-11T01:57:30.211822+00:00",
+  "source_commit": "cab2edc1531173ffd8a37e19f131f43bb9bed2ba",
+  "runner_sha256": "970d2fac18fde281e0df47979f3c3c0fb9b42116fa62aa57231a1f8b89e68bba",
+  "corpus_sha256": "46c2c8bc9fe5795e363af54e673fd93712cc959457fc871c870c39df4c2d09d4",
+  "protocol": {
+    "common_cases": [
+      "lexical_distractor",
+      "multi_hop_chain",
+      "current_value",
+      "negation_override",
+      "no_marker_keeps_both",
+      "evidence_chain_holdout",
+      "git_log",
+      "npm_log",
+      "jp_musubi",
+      "zh_needle",
+      "ar_needle",
+      "travis_yaml",
+      "excluded_sample",
+      "grep_saturated_command",
+      "pytest_captured_blank_lines",
+      "numbered_source"
+    ],
+    "warmups_per_case": 1,
+    "timed_runs_per_case": 5,
+    "timing": "median wall time of complete calls; imports/model load and warmup excluded",
+    "savings": "arithmetic mean character savings per common answer case",
+    "tameru": {
+      "ccr": false,
+      "citations": true,
+      "strategy": "extract"
+    },
+    "lcc": {
+      "marker": false,
+      "max_workers": 1,
+      "other_options": "defaults"
+    },
+    "headroom": "Rust TextCrusher defaults; full Headroom router not tested",
+    "tfidf": "ASCII paragraph retrieval, first paragraph retained; full scoring timed",
+    "laya": {
+      "model": "convaiinnovations/laya-multilingual",
+      "revision": null,
+      "device": "cpu"
+    },
+    "retention": "worst required/forbidden string result across warmup and all timed outputs"
+  },
+  "environment": {
+    "python": "3.13.17",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "machine": "AMD64",
+    "cpu_count": 16,
+    "packages": {
+      "GitPython": "3.1.46",
+      "Jinja2": "3.1.6",
+      "Markdown": "3.10.2",
+      "MarkupSafe": "3.0.3",
+      "PyAudio": "0.2.14",
+      "PyNaCl": "1.6.2",
+      "PyYAML": "6.0.3",
+      "Pygments": "2.20.0",
+      "Werkzeug": "3.1.8",
+      "absl-py": "2.4.0",
+      "aiohappyeyeballs": "2.6.1",
+      "aiohttp": "3.13.5",
+      "aiosignal": "1.4.0",
+      "annotated-doc": "0.0.4",
+      "annotated-types": "0.7.0",
+      "antlr4-python3-runtime": "4.9.3",
+      "anyio": "4.13.0",
+      "argbind": "0.3.9",
+      "asttokens": "3.0.1",
+      "attrs": "26.1.0",
+      "audioop-lts": "0.2.2",
+      "audioread": "3.1.0",
+      "baize": "0.23.1",
+      "bcrypt": "5.0.0",
+      "brotli": "1.2.0",
+      "cachetools": "7.0.5",
+      "certifi": "2026.2.25",
+      "cffi": "2.0.0",
+      "charset-normalizer": "3.4.7",
+      "click": "8.3.2",
+      "colorama": "0.4.6",
+      "contourpy": "1.3.3",
+      "cryptography": "50.0.2",
+      "cycler": "0.12.1",
+      "datasets": "2.18.0",
+      "decorator": "5.2.1",
+      "descript-audio-codec": "1.0.0",
+      "descript-audiotools": "0.7.2",
+      "dill": "0.3.8",
+      "docstring_parser": "0.18.0",
+      "einops": "0.8.2",
+      "einx": "0.2.2",
+      "executing": "2.2.1",
+      "fastapi": "0.136.0",
+      "ffmpy": "1.0.0",
+      "filelock": "3.28.0",
+      "fire": "0.7.1",
+      "fish-speech": "2.0.0",
+      "flatten-dict": "0.4.2",
+      "fonttools": "4.62.1",
+      "frozendict": "2.4.7",
+      "frozenlist": "1.8.0",
+      "fsspec": "2024.2.0",
+      "gitdb": "4.0.12",
+      "gradio": "6.12.0",
+      "gradio_client": "2.4.1",
+      "groovy": "0.1.2",
+      "grpcio": "1.80.0",
+      "h11": "0.16.0",
+      "hf-gradio": "0.3.2",
+      "httpcore": "1.0.9",
+      "httpx": "0.28.1",
+      "huggingface_hub": "0.36.2",
+      "hydra-core": "1.3.2",
+      "idna": "3.11",
+      "importlib_resources": "7.1.0",
+      "iniconfig": "2.3.1",
+      "invoke": "3.0.3",
+      "ipython": "9.12.0",
+      "ipython_pygments_lexers": "1.1.1",
+      "jedi": "0.19.2",
+      "joblib": "1.5.3",
+      "julius": "0.2.7",
+      "kiwisolver": "1.5.0",
+      "kui": "1.14.1",
+      "lazy-loader": "0.5",
+      "librosa": "0.11.0",
+      "lightning": "2.6.1",
+      "lightning-utilities": "0.15.3",
+      "llvmlite": "0.47.0",
+      "loguru": "0.7.3",
+      "loralib": "0.1.2",
+      "markdown-it-py": "4.0.0",
+      "markdown2": "2.5.5",
+      "matplotlib": "3.10.8",
+      "matplotlib-inline": "0.2.1",
+      "mdurl": "0.1.2",
+      "modelscope": "1.17.1",
+      "mpmath": "1.3.0",
+      "msgpack": "1.1.2",
+      "multidict": "6.7.1",
+      "multiprocess": "0.70.16",
+      "natsort": "8.4.0",
+      "networkx": "3.6.1",
+      "numba": "0.65.0",
+      "numpy": "2.4.4",
+      "omegaconf": "2.3.0",
+      "opencc-python-reimplemented": "0.1.7",
+      "orjson": "3.11.8",
+      "ormsgpack": "1.12.2",
+      "packaging": "26.1",
+      "pandas": "3.0.2",
+      "paramiko": "5.1.0",
+      "parso": "0.8.6",
+      "pillow": "12.2.0",
+      "pip": "26.2.2",
+      "platformdirs": "4.9.6",
+      "pluggy": "1.7.0",
+      "pooch": "1.9.0",
+      "prompt_toolkit": "3.0.52",
+      "propcache": "0.4.1",
+      "protobuf": "3.19.6",
+      "pure_eval": "0.2.3",
+      "pyarrow": "23.0.1",
+      "pyarrow-hotfix": "0.7",
+      "pycparser": "3.0",
+      "pydantic": "2.9.2",
+      "pydantic_core": "2.23.4",
+      "pydub": "0.25.1",
+      "pyloudnorm": "0.2.0",
+      "pyparsing": "3.3.2",
+      "pyrootutils": "1.0.4",
+      "pystoi": "0.4.1",
+      "pytest": "9.2.0",
+      "python-dateutil": "2.9.0.post0",
+      "python-dotenv": "1.2.2",
+      "python-multipart": "0.0.26",
+      "pytorch-lightning": "2.6.1",
+      "pytz": "2026.1.post1",
+      "randomname": "0.2.1",
+      "regex": "2026.4.4",
+      "requests": "2.33.1",
+      "resampy": "0.4.3",
+      "rich": "15.0.0",
+      "safehttpx": "0.1.7",
+      "safetensors": "0.7.0",
+      "scikit-learn": "1.8.0",
+      "scipy": "1.17.1",
+      "semantic-version": "2.10.0",
+      "sentry-sdk": "2.58.0",
+      "setuptools": "82.0.1",
+      "shellingham": "1.5.4",
+      "silero-vad": "6.2.1",
+      "six": "1.17.0",
+      "smmap": "5.0.3",
+      "soundfile": "0.13.1",
+      "soxr": "1.0.0",
+      "stack-data": "0.6.3",
+      "standard-aifc": "3.13.0",
+      "standard-chunk": "3.13.0",
+      "standard-sunau": "3.13.0",
+      "starlette": "1.0.0",
+      "sympy": "1.14.0",
+      "tameru-compaction-system": "1.7.0",
+      "tensorboard": "2.20.0",
+      "tensorboard-data-server": "0.7.2",
+      "termcolor": "3.3.0",
+      "threadpoolctl": "3.6.0",
+      "tiktoken": "0.12.0",
+      "tokenizers": "0.22.2",
+      "tomlkit": "0.14.0",
+      "torch": "2.8.0",
+      "torch-stoi": "0.2.3",
+      "torchaudio": "2.8.0",
+      "torchmetrics": "1.9.0",
+      "tqdm": "4.67.3",
+      "traitlets": "5.14.3",
+      "transformers": "4.57.3",
+      "typer": "0.24.1",
+      "typing-inspection": "0.4.2",
+      "typing_extensions": "4.15.0",
+      "tzdata": "2026.1",
+      "urllib3": "2.6.3",
+      "uvicorn": "0.44.0",
+      "wandb": "0.25.0",
+      "wcwidth": "0.6.0",
+      "win32_setctime": "1.2.0",
+      "xxhash": "3.6.0",
+      "yarl": "1.23.0",
+      "zstandard": "0.25.0"
+    },
+    "thread_settings": {
+      "OMP_NUM_THREADS": null,
+      "MKL_NUM_THREADS": null,
+      "RAYON_NUM_THREADS": null
+    }
+  },
+  "source_pins": {
+    "lcc": null,
+    "laya": null
+  },
+  "cases": [
+    {
+      "name": "lexical_distractor",
+      "input_chars": 5443,
+      "input_sha256": "979be043d647c95e37f0e22f3f78f38b9a5d9457ac296cebebc153063dfbb33c",
+      "query": "What is the backup host for the lunar warehouse?",
+      "gold": [
+        "DB-77-Z"
+      ],
+      "forbid": [
+        "glossary"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "multi_hop_chain",
+      "input_chars": 5342,
+      "input_sha256": "0baa94e00523c72048ae1e6d27912f9179581b12c38752adea0da89c53114958",
+      "query": "Which database endpoint does Project Orion use?",
+      "gold": [
+        "DB-EU-7"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "current_value",
+      "input_chars": 1867,
+      "input_sha256": "5bd67f88499399a0a26cc10e0c5384c9a358604614846fd931117b0ddd68abeb",
+      "query": "What is the current payment timeout?",
+      "gold": [
+        "5 seconds"
+      ],
+      "forbid": [
+        "config: payment timeout is 30 seconds"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "negation_override",
+      "input_chars": 1833,
+      "input_sha256": "4b9b34dbdd72acca9a952e288bcb3e6305a2c3e26abecf2d94bfd8a6546dbf08",
+      "query": "Is feature Falcon enabled now?",
+      "gold": [
+        "not enabled"
+      ],
+      "forbid": [
+        "runbook: feature Falcon is enabled"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "no_marker_keeps_both",
+      "input_chars": 1842,
+      "input_sha256": "6aa273d37264a59670862a352edc643f4ec67540304b60e1dd5d7c4d5cbe2a9c",
+      "query": "What is the payment timeout?",
+      "gold": [
+        "30 seconds"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "evidence_chain_holdout",
+      "input_chars": 7128,
+      "input_sha256": "d44a10e2266d1ad6250a36356058d26dd5cd6114bb7b3aa08dae0d2d3f3fbb7b",
+      "query": "What checksum belongs to the current release alias?",
+      "gold": [
+        "SHA-ABC-991",
+        "RLS-884",
+        "Bluebird"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "git_log",
+      "input_chars": 8036,
+      "input_sha256": "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+      "query": "which commit stopped deleted profiles coming back?",
+      "gold": [
+        "2038d4034d"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "npm_log",
+      "input_chars": 4593,
+      "input_sha256": "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+      "query": "which playwright version did npm exec request?",
+      "gold": [
+        "playwright@1.55.0"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "jp_musubi",
+      "input_chars": 8023,
+      "input_sha256": "aba86061f3b7dcb0bc540014c2aad920612641ad204aa18b007c2d123324b817",
+      "query": "Ideogram 4のDiTは何層ですか？",
+      "gold": [
+        "34層"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "zh_needle",
+      "input_chars": 561,
+      "input_sha256": "40278cd512ecc41ecdeda96dc9d426b816dd766b68c40879bcc7403bfb25fedd",
+      "query": "月面仓库的备份主机是哪一台？",
+      "gold": [
+        "DB-ZH-42"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "ar_needle",
+      "input_chars": 1139,
+      "input_sha256": "475f8378dbe4adafaf10d07665a9413c0cd021f28a733d898588b363e575b8f6",
+      "query": "ما هو مضيف النسخ الاحتياطي؟",
+      "gold": [
+        "DB-AR-77"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "travis_yaml",
+      "input_chars": 2691,
+      "input_sha256": "97c242b971c8f596bd269cd6a5d027902ba894aba6b53f80b2dde7cc228eff96",
+      "query": "what apt distro and compiler language is this travis job on?",
+      "gold": [
+        "dist: xenial",
+        "language: c"
+      ],
+      "forbid": [
+        "libenchant-dev"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "large_doc_perf",
+      "input_chars": 502279,
+      "input_sha256": "9982fa972f49650df24c287a87f5513610aeffc648f460c5f9cb69f2be2f45b6",
+      "query": "which region completed stage 3?",
+      "gold": [],
+      "forbid": [],
+      "scope": "robustness"
+    },
+    {
+      "name": "empty_query_failopen",
+      "input_chars": 61832,
+      "input_sha256": "296cf42815e68e100ead3e88fbe118fca504c62f5d38dceab2492d1cf5a3161a",
+      "query": "",
+      "gold": [],
+      "forbid": [],
+      "scope": "robustness"
+    },
+    {
+      "name": "excluded_sample",
+      "input_chars": 1872,
+      "input_sha256": "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+      "query": "what is the database host? use operational config only",
+      "gold": [
+        "DB-PROD-11"
+      ],
+      "forbid": [
+        "EXCLUDED-HOST"
+      ],
+      "scope": "answer"
+    },
+    {
+      "name": "grep_saturated_command",
+      "input_chars": 8342,
+      "input_sha256": "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+      "query": "rg -n InsufficientStock; where is InsufficientStock defined?",
+      "gold": [
+        "class InsufficientStock(RuntimeError):"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "pytest_captured_blank_lines",
+      "input_chars": 5070,
+      "input_sha256": "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+      "query": "Why did test_order fail?",
+      "gold": [
+        "assert 'pending' == 'paid'",
+        "DB-PAY-17",
+        "WARNING app.order retry budget exhausted",
+        "FAILED tests/test_orders.py::test_order"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    },
+    {
+      "name": "numbered_source",
+      "input_chars": 16580,
+      "input_sha256": "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+      "query": "what does handler_60 do?",
+      "gold": [
+        "def handler_60(request, context=None):",
+        "value = request.get('key_60', 60), context",
+        "return value[0] + 60",
+        "handler_60-done"
+      ],
+      "forbid": [],
+      "scope": "answer"
+    }
+  ],
+  "arms": {
+    "tameru": {
+      "status": "complete",
+      "results": {
+        "lexical_distractor": {
+          "status": "measured",
+          "output_chars": 175,
+          "output_sha256": "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+          "savings_pct": 96.7849,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.9792,
+          "latency_samples_ms": [
+            3.0467,
+            3.0003,
+            2.9792,
+            2.9676,
+            2.9521
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f",
+            "8d1bfa27ef72eebb1d2c8272ee0f33231151ba004b3f75e53703c4bb592df84f"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "multi_hop_chain": {
+          "status": "measured",
+          "output_chars": 266,
+          "output_sha256": "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+          "savings_pct": 95.0206,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.4153,
+          "latency_samples_ms": [
+            2.4198,
+            2.412,
+            2.4073,
+            2.4398,
+            2.4153
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49",
+            "b41992ac3d31acc0d0cc1a238c53a5bd92eefc7ca0269f3b3c7af487bf42ec49"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "current_value": {
+          "status": "measured",
+          "output_chars": 166,
+          "output_sha256": "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+          "savings_pct": 91.1087,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.8471,
+          "latency_samples_ms": [
+            2.8483,
+            2.837,
+            2.8576,
+            2.7789,
+            2.8471
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714",
+            "18e8db6145412403cb8877b5a57cd72c95ef54a051f5f37ed4349c98f4218714"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "negation_override": {
+          "status": "measured",
+          "output_chars": 138,
+          "output_sha256": "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+          "savings_pct": 92.4714,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.8355,
+          "latency_samples_ms": [
+            2.8567,
+            2.8211,
+            2.833,
+            2.8458,
+            2.8355
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97",
+            "d61d56863e6ed2c9e819ebb320b9d6977288c037f823baef697a1b6626c3bc97"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "no_marker_keeps_both": {
+          "status": "measured",
+          "output_chars": 195,
+          "output_sha256": "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+          "savings_pct": 89.4137,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.7755,
+          "latency_samples_ms": [
+            2.7499,
+            2.7578,
+            2.783,
+            2.8027,
+            2.7755
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019",
+            "1945f77aeee84c4a0357aa43076785bf5571f096201c1ffd2e603039d2915019"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "evidence_chain_holdout": {
+          "status": "measured",
+          "output_chars": 295,
+          "output_sha256": "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+          "savings_pct": 95.8614,
+          "gold_kept": 3,
+          "gold_total": 3,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 3.1188,
+          "latency_samples_ms": [
+            3.1278,
+            3.1247,
+            3.1188,
+            3.1024,
+            3.1077
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19",
+            "68470e50d54298557b619dd257d1f872219b9785fbacb8d5f238cda1bb326d19"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "git_log": {
+          "status": "measured",
+          "output_chars": 487,
+          "output_sha256": "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+          "savings_pct": 93.9398,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 6.8052,
+          "latency_samples_ms": [
+            8.3683,
+            7.9356,
+            6.8052,
+            6.7917,
+            6.728
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e",
+            "95c548176bac9fbc265e58ff629d0c6043eeeac9be0db4d8bf7955f65de3856e"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "npm_log": {
+          "status": "measured",
+          "output_chars": 3192,
+          "output_sha256": "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+          "savings_pct": 30.5029,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.7121,
+          "latency_samples_ms": [
+            2.7429,
+            2.7121,
+            2.715,
+            2.6978,
+            2.7116
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915",
+            "22daf5c754245b26c314328e1ea488bccf3ce56ded3be62bc8c3baa5d8d12915"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "jp_musubi": {
+          "status": "measured",
+          "output_chars": 5832,
+          "output_sha256": "e642eb5d95dc0b11afb38bbcaea4965f03395cb131100f41bf8873157cef6036",
+          "savings_pct": 27.309,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 6.9126,
+          "latency_samples_ms": [
+            6.9988,
+            6.9518,
+            6.9126,
+            6.8986,
+            6.8686
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "e642eb5d95dc0b11afb38bbcaea4965f03395cb131100f41bf8873157cef6036",
+            "e642eb5d95dc0b11afb38bbcaea4965f03395cb131100f41bf8873157cef6036",
+            "e642eb5d95dc0b11afb38bbcaea4965f03395cb131100f41bf8873157cef6036",
+            "e642eb5d95dc0b11afb38bbcaea4965f03395cb131100f41bf8873157cef6036",
+            "e642eb5d95dc0b11afb38bbcaea4965f03395cb131100f41bf8873157cef6036",
+            "e642eb5d95dc0b11afb38bbcaea4965f03395cb131100f41bf8873157cef6036"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "zh_needle": {
+          "status": "measured",
+          "output_chars": 60,
+          "output_sha256": "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+          "savings_pct": 89.3048,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 3.9316,
+          "latency_samples_ms": [
+            3.9489,
+            3.9316,
+            3.9024,
+            3.921,
+            3.934
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07",
+            "045d8ba8ae00e952d267baae2bf05e0f311906feda060086c47040ef91389e07"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "ar_needle": {
+          "status": "measured",
+          "output_chars": 125,
+          "output_sha256": "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+          "savings_pct": 89.0255,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 6.1791,
+          "latency_samples_ms": [
+            6.1524,
+            6.1799,
+            6.1791,
+            6.1876,
+            6.1706
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e",
+            "151e2287c9bb76477ee7a1bda886431b391cc2b7ae51d8038b830df6ccbae20e"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "travis_yaml": {
+          "status": "measured",
+          "output_chars": 624,
+          "output_sha256": "90e4ca300f8402355bd68644971eed4010db41dd71f02397f1f9b5784c210fee",
+          "savings_pct": 76.8116,
+          "gold_kept": 2,
+          "gold_total": 2,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 3.9336,
+          "latency_samples_ms": [
+            3.9361,
+            3.9336,
+            3.9302,
+            3.9201,
+            3.9483
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "90e4ca300f8402355bd68644971eed4010db41dd71f02397f1f9b5784c210fee",
+            "90e4ca300f8402355bd68644971eed4010db41dd71f02397f1f9b5784c210fee",
+            "90e4ca300f8402355bd68644971eed4010db41dd71f02397f1f9b5784c210fee",
+            "90e4ca300f8402355bd68644971eed4010db41dd71f02397f1f9b5784c210fee",
+            "90e4ca300f8402355bd68644971eed4010db41dd71f02397f1f9b5784c210fee",
+            "90e4ca300f8402355bd68644971eed4010db41dd71f02397f1f9b5784c210fee"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "large_doc_perf": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "empty_query_failopen": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "excluded_sample": {
+          "status": "measured",
+          "output_chars": 232,
+          "output_sha256": "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+          "savings_pct": 87.6068,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.9034,
+          "latency_samples_ms": [
+            2.9156,
+            2.912,
+            2.9034,
+            2.8948,
+            2.8732
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98",
+            "4cfaea577a5800a7ecd1beaf205c2df5f6a89740e0929f4eb724d9dafa27ba98"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "grep_saturated_command": {
+          "status": "measured",
+          "output_chars": 1682,
+          "output_sha256": "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+          "savings_pct": 79.837,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 5.5522,
+          "latency_samples_ms": [
+            5.6213,
+            5.5522,
+            5.5257,
+            5.5467,
+            5.5592
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43",
+            "8c0da00d3beec03718d26bb97cb5ab56e6984ede4be351246b20dd792be1bc43"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "pytest_captured_blank_lines": {
+          "status": "measured",
+          "output_chars": 780,
+          "output_sha256": "ec41cffb4433d8ce89d70fe2cf8333de21d4309438a6cc9d91fdf6df304d0026",
+          "savings_pct": 84.6154,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 2.2341,
+          "latency_samples_ms": [
+            2.2341,
+            2.2276,
+            2.2273,
+            2.2722,
+            2.238
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "ec41cffb4433d8ce89d70fe2cf8333de21d4309438a6cc9d91fdf6df304d0026",
+            "ec41cffb4433d8ce89d70fe2cf8333de21d4309438a6cc9d91fdf6df304d0026",
+            "ec41cffb4433d8ce89d70fe2cf8333de21d4309438a6cc9d91fdf6df304d0026",
+            "ec41cffb4433d8ce89d70fe2cf8333de21d4309438a6cc9d91fdf6df304d0026",
+            "ec41cffb4433d8ce89d70fe2cf8333de21d4309438a6cc9d91fdf6df304d0026",
+            "ec41cffb4433d8ce89d70fe2cf8333de21d4309438a6cc9d91fdf6df304d0026"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        },
+        "numbered_source": {
+          "status": "measured",
+          "output_chars": 246,
+          "output_sha256": "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+          "savings_pct": 98.5163,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 4.6457,
+          "latency_samples_ms": [
+            4.6457,
+            4.6758,
+            4.6702,
+            4.6376,
+            4.6199
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5",
+            "1d364001b5839611d08c6e9ea6023bd4e3212a2b0a4baf5fe26970e7479c64d5"
+          ],
+          "returned_original": false,
+          "provider": "tameru-extract",
+          "fail_open": false
+        }
+      },
+      "common_summary": {
+        "cases": 16,
+        "gold_kept": 25,
+        "gold_total": 25,
+        "clean_cases": 16,
+        "forbid_leaks": 0,
+        "mean_character_savings_pct": 82.3831,
+        "median_wall_ms": 3.049,
+        "deterministic": true
+      }
+    },
+    "tfidf": {
+      "status": "complete",
+      "results": {
+        "lexical_distractor": {
+          "status": "measured",
+          "output_chars": 232,
+          "output_sha256": "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+          "savings_pct": 95.7376,
+          "gold_kept": 0,
+          "gold_total": 1,
+          "missing_gold": [
+            "DB-77-Z"
+          ],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "glossary"
+          ],
+          "latency_ms": 0.3215,
+          "latency_samples_ms": [
+            0.3342,
+            0.3279,
+            0.3215,
+            0.3205,
+            0.3188
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d",
+            "f52c1aa747db6c18b24f051f50b678b71bae6043c9292f7e24ea8873e454f35d"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "multi_hop_chain": {
+          "status": "measured",
+          "output_chars": 169,
+          "output_sha256": "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+          "savings_pct": 96.8364,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.3304,
+          "latency_samples_ms": [
+            0.3304,
+            0.3251,
+            0.3711,
+            0.3335,
+            0.3278
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd",
+            "6cba80e0f6025033d8c12db40555538ed5df8a4964d865007669c328f92f6efd"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "current_value": {
+          "status": "measured",
+          "output_chars": 214,
+          "output_sha256": "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+          "savings_pct": 88.5378,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "config: payment timeout is 30 seconds"
+          ],
+          "latency_ms": 0.1055,
+          "latency_samples_ms": [
+            0.11,
+            0.1069,
+            0.1055,
+            0.1041,
+            0.1032
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f",
+            "6bbe1e16506fb3e679ac1350340e88fd03b3287ea315d8ad4082b967d65e310f"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "negation_override": {
+          "status": "measured",
+          "output_chars": 180,
+          "output_sha256": "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+          "savings_pct": 90.18,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "runbook: feature Falcon is enabled"
+          ],
+          "latency_ms": 0.0984,
+          "latency_samples_ms": [
+            0.104,
+            0.0997,
+            0.0984,
+            0.0979,
+            0.0978
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38",
+            "b1a18c73b8ec0067b16e41c5199dd59c0a88c7067eba05acd15dd5ece7ba8a38"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "no_marker_keeps_both": {
+          "status": "measured",
+          "output_chars": 189,
+          "output_sha256": "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+          "savings_pct": 89.7394,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.0976,
+          "latency_samples_ms": [
+            0.1029,
+            0.0996,
+            0.0976,
+            0.097,
+            0.0974
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3",
+            "adf84ce248f015625b05f60da81b36c147b559978ac9673038287a11f4dc62e3"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "evidence_chain_holdout": {
+          "status": "measured",
+          "output_chars": 157,
+          "output_sha256": "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+          "savings_pct": 97.7974,
+          "gold_kept": 3,
+          "gold_total": 3,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.4274,
+          "latency_samples_ms": [
+            0.4274,
+            0.4205,
+            0.4294,
+            0.419,
+            0.4304
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3",
+            "8ea1fd7455536ac64792de1b36d9962e1149d2f34904e4414f1094f4703668a3"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "git_log": {
+          "status": "measured",
+          "output_chars": 8036,
+          "output_sha256": "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.2019,
+          "latency_samples_ms": [
+            0.2212,
+            0.2093,
+            0.1985,
+            0.2019,
+            0.1954
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da",
+            "817e959dea8f353bd5fcb0889a837fbebec39d0412cc10158e8333c3c79d44da"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "npm_log": {
+          "status": "measured",
+          "output_chars": 4593,
+          "output_sha256": "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.0776,
+          "latency_samples_ms": [
+            0.0842,
+            0.0776,
+            0.0776,
+            0.0694,
+            0.0684
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0",
+            "ebf29345f7950298b917e7fe669b862e425ddf6bc31133d65467c7905f157fb0"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "jp_musubi": {
+          "status": "measured",
+          "output_chars": 4608,
+          "output_sha256": "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+          "savings_pct": 42.5651,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.2623,
+          "latency_samples_ms": [
+            0.2854,
+            0.2711,
+            0.2623,
+            0.2593,
+            0.2494
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a",
+            "aac3a857588497d55abc4b3e0a47c9a25160b8019dafc77b8777cd9f790aa96a"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "zh_needle": {
+          "status": "measured",
+          "output_chars": 24,
+          "output_sha256": "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+          "savings_pct": 95.7219,
+          "gold_kept": 0,
+          "gold_total": 1,
+          "missing_gold": [
+            "DB-ZH-42"
+          ],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.041,
+          "latency_samples_ms": [
+            0.046,
+            0.0422,
+            0.0403,
+            0.041,
+            0.0403
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e",
+            "4b078b9af7a6535bde7df4bc2a40001c2da68ea40da923f9e229109fa1fcc67e"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "ar_needle": {
+          "status": "measured",
+          "output_chars": 51,
+          "output_sha256": "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+          "savings_pct": 95.5224,
+          "gold_kept": 0,
+          "gold_total": 1,
+          "missing_gold": [
+            "DB-AR-77"
+          ],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.0449,
+          "latency_samples_ms": [
+            0.0489,
+            0.0461,
+            0.0448,
+            0.0449,
+            0.0443
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1",
+            "b3e3ffc9d8911cfe225c896cc3709a571e754d1cc3097d66a47de95ae428b0c1"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "travis_yaml": {
+          "status": "measured",
+          "output_chars": 1048,
+          "output_sha256": "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+          "savings_pct": 61.0554,
+          "gold_kept": 2,
+          "gold_total": 2,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "libenchant-dev"
+          ],
+          "latency_ms": 0.0834,
+          "latency_samples_ms": [
+            0.096,
+            0.0877,
+            0.0827,
+            0.0834,
+            0.0803
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a",
+            "2cd5d80e22fac354fc59fcf7e68774d1f2773b6f164518c433318d682f7f517a"
+          ],
+          "returned_original": false,
+          "provider": "tfidf"
+        },
+        "large_doc_perf": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "empty_query_failopen": {
+          "status": "skipped",
+          "reason": "robustness/performance covered separately by release battery"
+        },
+        "excluded_sample": {
+          "status": "measured",
+          "output_chars": 1872,
+          "output_sha256": "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 1,
+          "leaked_forbid": [
+            "EXCLUDED-HOST"
+          ],
+          "latency_ms": 0.1168,
+          "latency_samples_ms": [
+            0.1227,
+            0.1248,
+            0.1168,
+            0.1153,
+            0.1157
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b",
+            "c0c7288132b7eb0d9236770ceef5f9b1380c43a68c648b693894f1ca3895b89b"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "grep_saturated_command": {
+          "status": "measured",
+          "output_chars": 8342,
+          "output_sha256": "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+          "savings_pct": 0.0,
+          "gold_kept": 1,
+          "gold_total": 1,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.0918,
+          "latency_samples_ms": [
+            0.0978,
+            0.0918,
+            0.095,
+            0.0881,
+            0.088
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d",
+            "e32584c4b89dd89eb802dad2be39eba91d5950d066efb0487b94e417436ba99d"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "pytest_captured_blank_lines": {
+          "status": "measured",
+          "output_chars": 5070,
+          "output_sha256": "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.0937,
+          "latency_samples_ms": [
+            0.1011,
+            0.0957,
+            0.0937,
+            0.0907,
+            0.0903
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171",
+            "fc0b7447effb8984e219bc4c43a6781c68be73765ca002f655fec1e8d85b4171"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        },
+        "numbered_source": {
+          "status": "measured",
+          "output_chars": 16580,
+          "output_sha256": "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+          "savings_pct": 0.0,
+          "gold_kept": 4,
+          "gold_total": 4,
+          "missing_gold": [],
+          "forbid_leaks": 0,
+          "leaked_forbid": [],
+          "latency_ms": 0.2693,
+          "latency_samples_ms": [
+            0.2794,
+            0.2851,
+            0.2693,
+            0.2688,
+            0.265
+          ],
+          "deterministic": true,
+          "output_samples_sha256": [
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6",
+            "4e4a1ed9d2556009465f45e7d9db11074458e3a2ed2c59c711420ec138f25df6"
+          ],
+          "returned_original": true,
+          "provider": "tfidf"
+        }
+      },
+      "common_summary": {
+        "cases": 16,
+        "gold_kept": 22,
+        "gold_total": 25,
+        "clean_cases": 9,
+        "forbid_leaks": 5,
+        "mean_character_savings_pct": 53.3558,
+        "median_wall_ms": 0.1019,
+        "deterministic": true
+      }
+    }
+  },
+  "execution_segments": [
+    {
+      "runner_sha256": "970d2fac18fde281e0df47979f3c3c0fb9b42116fa62aa57231a1f8b89e68bba",
+      "started_at_utc": "2026-11-11T01:57:30.211822+00:00",
+      "measured_cases": {
+        "tameru": [
+          "lexical_distractor",
+          "multi_hop_chain",
+          "current_value",
+          "negation_override",
+          "no_marker_keeps_both",
+          "evidence_chain_holdout",
+          "git_log",
+          "npm_log",
+          "jp_musubi",
+          "zh_needle",
+          "ar_needle",
+          "travis_yaml",
+          "excluded_sample",
+          "grep_saturated_command",
+          "pytest_captured_blank_lines",
+          "numbered_source"
+        ],
+        "tfidf": [
+          "lexical_distractor",
+          "multi_hop_chain",
+          "current_value",
+          "negation_override",
+          "no_marker_keeps_both",
+          "evidence_chain_holdout",
+          "git_log",
+          "npm_log",
+          "jp_musubi",
+          "zh_needle",
+          "ar_needle",
+          "travis_yaml",
+          "excluded_sample",
+          "grep_saturated_command",
+          "pytest_captured_blank_lines",
+          "numbered_source"
+        ]
+      }
+    }
+  ]
+}

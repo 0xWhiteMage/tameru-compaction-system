@@ -19,13 +19,30 @@ The default engine runs locally with **no LLM call, no GPU and no runtime depend
 
 | Mean characters saved | Required strings retained | Forbidden strings retained | Median wall time |
 |:---:|:---:|:---:|:---:|
-| **82.4%** | **25/25** | **0** | **2.79 ms** |
+| **82.4%** | **25/25** | **0** | **3.05 ms** |
 
-Historical v1.6.0 measurements on **16 shared task cases**, with 5 runnable methods on CPU, **2026-11-05**; not re-measured for v1.7.0. These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
+Measured on Tameru **1.9.0** on **16 shared task cases**, 2026-11-11 (Windows 11, Python 3.13, CPU only): the output is identical to the recorded v1.6.0 run (0 differing fields). These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
 
 <!-- tameru:headline:end -->
 
-[Performance](#comparison-with-other-approaches) · [See it work](#see-it-work) · [Quickstart](#quickstart) · [Repositories](#how-the-repositories-fit) · [Hermes](#hermes-and-other-harnesses) · [What's new](#whats-new-since-160) · [Documentation](#documentation)
+[Why Tameru](#why-tameru) · [Performance](#comparison-with-other-approaches) · [See it work](#see-it-work) · [Commands](#commands) · [Quickstart](#quickstart) · [Repositories](#how-the-repositories-fit) · [Hermes](#hermes-and-other-harnesses) · [What's new](#whats-new-in-190) · [Documentation](#documentation)
+
+## Why Tameru
+
+An agent that reads a 600-line build log, a `grep` with hundreds of hits or a long document pays for every token on every later turn, and
+loses the one line that mattered somewhere in the middle. Tameru gives you the part of that text your task needs:
+
+- **The evidence survives.** The error template, the failing assertion, the definition, the current value: on the 16-case comparison corpus every required string
+  is kept (25/25) and no planted wrong one leaks (0), and each distinct error template of a log keeps at least one line.
+- **Far fewer tokens.** 82.4% fewer characters on that corpus on average, 93% on the Gradle log below, 95% on a multi-hop document; an npm log is only 31%. The savings
+  depend on how much of the input is noise, and the tables below show both ends.
+- **Nothing is thrown away for good.** When the engine is unsure it returns the original text. In Hermes, every shortened output names its original, the agent can read any
+  line range back (`tameru_read_original`), and you can **Restore** or **Keep** an output in full from the panel or with a command.
+- **No model, no GPU, no new bill.** It is deterministic standard-library Python: about 3 ms for a typical input, no LLM call, no network, the same answer every run.
+- **Works anywhere.** A Python function, a command-line tool and a transcript adapter for any harness; a ready-made plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+
+In Hermes, measured against stock Hermes in a replay of scripted agent sessions: **-0.6% / -7.2% / -7.4%** cost at 64K / 128K / 200K windows (a few cases cost more; the
+[plugin README](https://github.com/0xWhiteMage/hermes-tameru-plugin#at-a-glance) lists them), and a live heavy-output task on Hermes Desktop cost 18.5% less than stock.
 
 ## How the repositories fit
 
