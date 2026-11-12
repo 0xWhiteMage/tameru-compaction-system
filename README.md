@@ -191,7 +191,7 @@ context:
   engine: tameru
 ```
 
-The plugin vendors this engine, so updating the plugin updates the engine. It is listed in the Hermes plugin catalogue; the update to plugin 1.9.1 is [Hermes PR #153033](https://github.com/NousResearch/hermes-agent/pull/153033), open and awaiting review. To turn Tameru off for a chat or everywhere, set `enabled: false` in its settings: Hermes then behaves as stock.
+The plugin vendors this engine, so updating the plugin updates the engine. It is listed in the Hermes plugin catalogue; the update to plugin 1.9.1 is [Hermes PR #153033](https://github.com/NousResearch/hermes-agent/pull/153033), merged on 2026-11-12. To turn Tameru off for a chat or everywhere, set `enabled: false` in its settings: Hermes then behaves as stock.
 
 ### The engine on its own
 
