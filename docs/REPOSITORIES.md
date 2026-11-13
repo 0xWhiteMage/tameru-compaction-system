@@ -11,7 +11,7 @@ first-class part of Hermes and owns every Hermes-specific enhancement.
 | Contains | Extraction and reducers, structured-format handling, folding, supersession, Unicode handling, credential screening for recovery storage, the benchmarks | The Hermes context-engine subclass, adaptive policy and self-tuning, Restore and Keep, the per-turn note, the Desktop panel, `/tameru` commands, per-chat state, security gates for chat surfaces, Hermes catalogue packaging |
 | Depends on | The Python standard library only | Hermes' plugin interfaces; the engine, vendored |
 | Knows about | Text in, smaller text out | Chats, sessions, tools, the prompt cache, Hermes settings and surfaces |
-| Version | Semantic; `ENGINE_VERSION` | Semantic, separate from the engine's (1.9.0 vendors engine 1.9.0; `/tameru stats` shows both) |
+| Version | Semantic; `ENGINE_VERSION` | Semantic, separate from the engine's (plugin 1.9.1 vendors engine 1.9.0; `/tameru stats` shows both) |
 
 ## What stays here
 

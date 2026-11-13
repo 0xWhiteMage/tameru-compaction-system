@@ -38,6 +38,8 @@ on any agent harness as a Python function or a command-line tool: no LLM call, n
 
 Full details: [1.9.0 release notes](docs/releases/v1.9.0.md) and the [changelog](CHANGELOG.md).
 
+**Current releases:** engine **1.9.0** (this repository) and Hermes plugin **1.9.1**, the version listed in the Hermes catalogue. The plugin vendors this engine unchanged; 1.9.1 moved the plugin's per-chat records into Hermes' public plugin state and changed nothing in what the engine shortens. See the [plugin changelog](https://github.com/0xWhiteMage/hermes-tameru-plugin/blob/main/CHANGELOG.md).
+
 [Why Tameru](#why-tameru) · [Pin your rules](#pin-the-lines-that-must-survive) · [Adaptive compaction](#adaptive-compaction) · [See it work](#see-it-work) · [Commands](#commands) · [Install](#install) · [Engine results](#engine-results) · [Documentation](#documentation)
 
 ## Why Tameru
