@@ -6,204 +6,45 @@
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache 2.0 licence"></a>
-  <a href="https://github.com/0xWhiteMage/hermes-tameru-plugin"><img src="https://img.shields.io/badge/Hermes-plugin-8A2BE2.svg" alt="Hermes plugin"></a>
+  <a href="#integrations"><img src="https://img.shields.io/badge/harness-agnostic-8A2BE2.svg" alt="Harness-agnostic engine"></a>
   <a href="https://x.com/0xWhiteMage"><img src="https://img.shields.io/badge/X-@0xWhiteMage-000000?logo=x&logoColor=white" alt="Follow 0xWhiteMage on X"></a>
   <a href="https://ko-fi.com/0xwhitemage"><img src="https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
 </p>
 
-**Adaptive context compaction for long-running AI agents. The instructions you pin survive every compaction.**
+**Deterministic, query-aware context compaction for long-running AI agents. Local, fail-open, with recoverable originals.**
 
-Long agent sessions break down in two ways. Bulky tool output (build logs, test runs, `grep` dumps) fills the context and gets paid for on every later turn. And when the
-agent finally summarises its history, the rule you gave in message three quietly disappears. Tameru fixes both:
+Long agent sessions get expensive in a predictable way: bulky tool output (build logs, test runs, `grep` dumps, API responses) stays in the context and is paid for on every
+later turn. Tameru shortens that output to the part the task needs, keeps every distinct error, and hands back the original text whenever it is unsure:
 
-- **Pin the lines that must never be lost.** Anything you pin is carried word for word into every summary, however many times the session compacts.
-- **Shorten the bulk, keep the evidence.** Old tool output shrinks to the part the task needs, adaptively, as the context fills. Every error stays; every original stays one call away.
-- **Stay in control.** Keep or Restore any output in full, see exactly what was left out, and switch it all off with one setting.
+- **Shorten the bulk, keep the evidence.** An extract chosen against the question you are working on, not a blind head-and-tail cut. Every distinct error survives.
+- **No new bill.** No LLM call, no GPU, nothing beyond Python's standard library. The default engine is deterministic: about 3 ms for a typical input, the same answer every run.
+- **Fail open.** Ambiguous, malformed or low-saving input returns the exact original. Output that looks like a credential is never stored.
+- **Recoverable.** A cut can point to its original (optional, off when you want no persistence), so a host can let the agent read any stretch back.
 
-It is built for [Hermes Agent](https://github.com/NousResearch/hermes-agent) through the [Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin), and the engine underneath runs
-on any agent harness as a Python function or a command-line tool: no LLM call, no GPU, nothing beyond Python's standard library.
-
-![Hermes Desktop with the Tameru panel: sixteen large command outputs run one after another, the panel fills, shortens ten outputs and frees about 65K tokens, and the Left Out viewer shows exactly what was removed](assets/features/11-shorten.gif)
-
-*A real run in Hermes Desktop (Claude Haiku 4.5): sixteen commands of about 25,000 characters each. Tameru shortens ten outputs and frees about 65K tokens, the answers stay correct, and Left Out shows what was removed. The recording is sped up and cropped to the chat and the panel.*
-
-## What's new in 1.9.0
-
-- **Pinned instructions.** `/tameru pin TEXT` keeps a line you wrote word for word in every Hermes summary of the chat.
-- **Keep and Restore.** Show the model a shortened output in full again, for a few replies or until you unpin it. Saved history is never edited.
-- **A Desktop panel with a Left Out viewer.** A gauge, a table of every cleanup, and a line-by-line view of what was removed.
-- **Adaptive compaction by default.** The prune trigger follows the model's window and tunes itself from live signals, within bounds.
-- **An Artifact Trail in every summary.** Files touched, commands with their last exit code, and one line per distinct error survive each Hermes summary.
-- **A sturdier engine.** Structured reports (SARIF, notebooks, Kubernetes, Git, LCOV, JUnit) stay whole, ambiguous input returns the exact original, and the credential screen is about twice as fast on a large log.
-
-Full details: [1.9.0 release notes](docs/releases/v1.9.0.md) and the [changelog](CHANGELOG.md).
-
-**Current releases:** engine **1.9.0** (this repository) and Hermes plugin **1.9.1**, the version listed in the Hermes catalogue. The plugin vendors this engine unchanged; 1.9.1 moved the plugin's per-chat records into Hermes' public plugin state and changed nothing in what the engine shortens. See the [plugin changelog](https://github.com/0xWhiteMage/hermes-tameru-plugin/blob/main/CHANGELOG.md).
-
-[Why Tameru](#why-tameru) · [Pin your rules](#pin-the-lines-that-must-survive) · [Adaptive compaction](#adaptive-compaction) · [See it work](#see-it-work) · [Commands](#commands) · [Install](#install) · [Engine results](#engine-results) · [Documentation](#documentation)
-
-## Why Tameru
-
-| You want to… | Tameru gives you… |
-|---|---|
-| Keep a rule alive through a long task ("never touch the production config", "use the staging database") | **Pinned instructions**: up to five lines, kept word for word in every compaction summary of that chat. |
-| Stop re-paying for the same 600-line log on every turn | **Shortened tool output**: a query-aware extract that keeps every distinct error, with the original one call away. |
-| Trust that nothing important was thrown away | **Recoverable originals**, **Keep** and **Restore**, and a **Left Out** viewer that shows each removed stretch. |
-| Let a long session run for hours without it drifting | An **Artifact Trail** in every summary (files, commands and exit codes, errors) so the agent knows what it already did. |
-| See what it is doing to your chat | A live **panel**, `/tameru stats`, and honest labels (freed context is not a bill). |
-| Switch it off without ceremony | `enabled: false` is stock Hermes, byte for byte. |
-
-Also worth knowing:
-
-- **Safe by default.** Output that looks like a credential is never stored. Web, browser and MCP results stay marked as untrusted data. When the engine is unsure, it returns the original text.
-- **No new bill.** Tameru adds no model calls. The default engine is deterministic: about 3 ms for a typical input, the same answer every run.
-- **Works in your language.** Script-aware matching is tested across 20 script and language families, including Japanese, Chinese and Arabic.
-- **Not locked to one agent.** The engine is a Python function, a CLI and a transcript adapter for any harness.
-
-## Pin the lines that must survive
-
-Every compaction is a chance for the agent to forget something you told it. A summariser decides what matters, and a rule stated once, early, is exactly what tends to be
-softened or dropped. Pinning takes that decision away from the summariser.
-
-![A recording of the Tameru pins list in Hermes Desktop: a rule is typed, pinned, and a second rule added, giving two of five pins](assets/features/07-pinned-instructions.gif)
-
-```text
-/tameru pin Never touch the production config
-/tameru pin Use the staging database, db-eu-staging
-/tameru pins            # list them
-/tameru unpin 1         # remove one
-```
-
-- **Word for word, every time.** Pins are added to every Hermes summary of the chat under a `## Pinned by you (Tameru, verbatim)` heading, so the summariser cannot reword them.
-- **Yours alone.** Nothing is ever pinned for you and nothing is inferred. Text that looks like a credential is refused.
-- **Two ways in.** Type `/tameru pin TEXT`, or use the pin button in the Desktop panel, which opens the list with a box to add a rule and an x to remove one.
-- **Bounded.** Up to 5 lines, 300 characters each, 1,500 together. They are saved with the chat, and `/tameru unpin N` removes one.
-- **Outputs too.** **Keep** does the same for a tool output: pin it from the panel (or `/tameru keep REF`) and the model sees it in full on every reply until you unpin it.
-
-Pinning is a mechanism, not a benchmark: this repository does not claim a measured accuracy gain from it. What it guarantees is that your lines are present in the summary, verbatim.
-
-## Adaptive compaction
-
-Tameru does not shrink everything all the time. It watches the session and acts when acting pays.
-
-1. **Hermes decides when to compact; Tameru decides what to keep.** The plugin works inside Hermes' own gates, so the usual safety rules still apply.
-2. **It prunes early, in proportion to the window.** The first prune fires before Hermes would compact (on a 128K window at 72,000 tokens, where Hermes compacts at 96,000; the trigger is derived from the model's window), and a repeat prune only goes ahead if it brings the prompt well down, so it is worth breaking the prompt cache.
-3. **It tunes itself from four signals**: Hermes summarising before Tameru acted, repeated checks that found too little to reclaim, the model re-reading a shortened output, and context refilling quickly after a cleanup. Steps are small and bounded, calm stretches relax it, and the only choices left to you are a bias (**Save space**, **Balanced**, **Preserve detail**) and **Pause**.
-4. **What survives a summary is exact, not paraphrased**: your pins, the Artifact Trail, and at least one line of every distinct error template.
-5. **Any cut can be undone.** Each shortened output names its original; the agent reads any line range back with `tameru_read_original`, and you can Restore or Keep it from the panel.
-
-Measured against stock Hermes in a replay of scripted agent sessions (mean cost, negative is cheaper): **-0.6% at 64K, -7.2% at 128K, -7.4% at 200K** windows. It is not free everywhere: at 64K it roughly breaks even, a session that never reaches a compaction costs about 2% more, and many small results cost a little more. A live heavy-output task on Hermes Desktop cost 18.5% less than stock (2 sessions against 3; live runs cannot resolve a few percent). The plugin README lists [every case where Tameru costs more](https://github.com/0xWhiteMage/hermes-tameru-plugin#at-a-glance).
-
-## See it work
-
-**Shorten.** Bulky output shrinks as the chat grows, and every removed stretch stays inspectable.
-
-![Hermes Desktop with the Tameru panel: sixteen large command outputs run one after another, the panel fills, shortens ten outputs and frees about 65K tokens, and the Left Out viewer shows exactly what was removed](assets/features/11-shorten.gif)
-
-**Restore.** Click the arrow on a shortened output; with your next message the model sees the full original again, for its next few replies. Saved history is never edited.
-
-![A recording of Tameru in Hermes Desktop: Restore shows the model a shortened output in full on the next message](assets/features/05-restore.gif)
-
-**Keep.** Click the pin on a row and the output stays in front of the model on every reply until you unpin it.
-
-![A recording of Tameru in Hermes Desktop: Keep pins a shortened output so the model keeps seeing it until it is unpinned](assets/features/06-keep-and-unkeep.gif)
-
-<details>
-<summary><strong>More recordings: Left Out viewer, lean modes, row details, commands</strong></summary>
-
-**Left Out.** Kept lines show normally; each removed stretch folds into one bar. Click a bar to read it, then **Add** (small, trusted text) or **Re-Read** (large text, or when you would rather the agent fetch it). Both only fill your message box; nothing is sent until you send it.
-
-![A recording of the Left Out viewer folding removed stretches into bars and adding a re-read request to the message box](assets/features/04-left-out-viewer.gif)
-
-**Lean mode.** Save space, Balanced or Preserve detail, per chat.
-
-![A recording of the lean mode dropdown switching between Save space, Preserve detail and Balanced](assets/features/02-lean-mode.gif)
-
-**Row details.** Method, lean mode, tokens in and out, duration and whether the original is available.
-
-![A recording of a panel row expanding to show method, tokens and duration](assets/features/03-row-details.gif)
-
-**The panel and its hover cards.** About 30 px when closed, a fixed height when open, with an explanation on every control.
-
-![A recording of the Tameru panel hover cards for the gauge, Freed, Pause and Pin](assets/features/01-panel-and-hover-cards.gif)
-
-**Collapse.** One click folds the panel to a thin bar and another opens it.
-
-![A recording of the Tameru panel collapsing to a thin bar and opening again](assets/features/14-collapse-and-open.gif)
-
-**Commands.** `/tameru` and `/tameru help`, then `/tameru stats`.
-
-![A recording of /tameru and /tameru help in Hermes Desktop](assets/features/09-tameru-status-and-help.gif)
-
-![A recording of /tameru stats in Hermes Desktop](assets/features/10-tameru-stats.gif)
-
-</details>
-
-**And the engine on its own**, on a sample Gradle build log:
+It is a Python function, a command-line tool and a transcript adapter. It has no dependency on any agent harness; harness plugins are separate repositories that vendor this
+engine unchanged (see [Integrations](#integrations)).
 
 ![A terminal recording: tameru-compress turns a 200-line Gradle build log into 20 lines that keep the failing test, its assertion and the build result](assets/demo-cli.gif)
 
 *Recorded output of the real engine (rendered by [`scripts/render_demo_gif.py`](scripts/render_demo_gif.py) from what `compress_context` returns): 200 lines in, 20 out, 93% fewer tokens, and the failing test, its assertion and the build result are all still there.*
 
-## Commands
+[Why Tameru](#why-tameru) · [Use it](#use-it) · [Integrations](#integrations) · [Install](#install) · [Engine results](#engine-results) · [Recovery and limits](#recovery-and-limits) · [Documentation](#documentation)
 
-**In Hermes**, with the [plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) installed, type these in any chat:
+## Why Tameru
 
-| Command | What it does |
+| You want to… | Tameru gives you… |
 |---|---|
-| `/tameru` | What Tameru did in this chat, and the context gauge. |
-| `/tameru help` · `/tameru stats` | Every verb in one line each · numbers for this chat (context freed, outputs shortened, cache use). |
-| `/tameru changes` | The outputs it shortened, and where each original is. |
-| `/tameru view REF [OFFSET]` · `/tameru ask REF` | Read an original · text that makes the agent re-read an output. |
-| `/tameru keep REF` · `/tameru restore REF` · `/tameru unkeep REF` · `/tameru cancel` | Show an output in full: until you unpin it, for a few replies, or stop. |
-| `/tameru pin TEXT` · `/tameru pins` · `/tameru unpin N` | Keep a line of your own, word for word, through every summary. |
-| `/tameru bias save\|balanced\|detail` · `/tameru pause` · `/tameru resume` | Save space or keep detail; stop or restart changes to the chat. |
-| `/tameru reset [confirm]` | Put the chat's self-tuning back to neutral (lists what it clears first). |
+| Stop re-paying for the same 600-line log on every turn | **Shortened tool output**: a query-aware extract that keeps every distinct error, with the original one call away. |
+| Trust that nothing important was thrown away | **Recoverable originals** and per-call diagnostics (tokens, savings, risk, verifier result) so you can see what was kept and what was dropped. |
+| Run it anywhere, offline | A pure-Python core with no model call, a CLI for any language, and a message-list adapter for any harness. |
+| Read logs, diffs, reports and tables the way they are written | Structure-aware handling: SARIF, notebooks, Kubernetes, Git, LCOV, JUnit, unified diffs, grep output, shell and OS tool output. |
+| Work in your language | Script-aware matching, tested across 20 script and language families, including Japanese, Chinese and Arabic. |
 
-**Command line** (`tameru-compress`, installed with the package):
+Safety defaults: output that looks like a credential is never stored, and when the engine is unsure it returns the original text.
 
-```bash
-tameru-compress build.log "Why did the build fail?" --no-ccr
-tameru-compress build.log "Why did the build fail?" --no-ccr --stats    # JSON diagnostics, then ---, then the extract
-cat build.log | tameru-compress - "Find the active error" --no-ccr        # read stdin
-tameru-compress notes.md "What is the backup host?" --mode fixed --budget-ratio 0.3 --no-ccr   # ask for a smaller extract
-```
+## Use it
 
-| Option | What it does |
-|---|---|
-| `--no-ccr` / `--ccr` | Turn the reversible recovery store off or on (on by default). |
-| `--citations` / `--no-citations` | Mark dropped blocks with a citation (on by default). |
-| `--stats` | Print JSON diagnostics (tokens, savings, risk, verifier), then `---`, then the extract. |
-| `--mode {adaptive,fixed,compiler,precision}` and `--budget-ratio R` | Ask for a smaller extract; lower ratios request less text. |
-| `--strategy {clear,extract,summarise,auto}` | `extract` (default, no model), `clear` (drop tool payloads), `auto` (extract, escalate only if extraction fails open). |
-| `--pin-recent N` | Always keep the first block and the newest N blocks. |
-| `--min-savings-ratio R` | Return the original when the achieved savings fall below this ratio (0 disables). |
-| `--derive-query` | On an empty or generic query, infer a conservative objective from recurring rare terms instead of failing open. |
-
-## Install
-
-Requires **Python 3.10+**.
-
-### In Hermes
-
-Install the maintained [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) by following its instructions, then select the engine:
-
-```yaml
-context:
-  engine: tameru
-```
-
-The plugin vendors this engine, so updating the plugin updates the engine. It is listed in the Hermes plugin catalogue; the update to plugin 1.9.1 is [Hermes PR #153033](https://github.com/NousResearch/hermes-agent/pull/153033), merged on 2026-11-12. To turn Tameru off for a chat or everywhere, set `enabled: false` in its settings: Hermes then behaves as stock.
-
-### The engine on its own
-
-Install the verified **1.9.0** source, pinned to its commit:
-
-```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@9f1f1c4"
-```
-
-That commit is the engine code of 1.9.0 (later commits change documentation only). No release tag, GitHub Release page or PyPI package is published yet.
+### Python
 
 ```python
 from tameru.compress_context import compress_context
@@ -228,16 +69,64 @@ print(result.compressed_text)
 print(f"Estimated token savings: {result.tokens_saved_pct:.1f}%")
 ```
 
-Supply the task's question alongside the source text. The example uses the default extractive strategy and disables recovery persistence: 5,342 characters in, 266 out (95.0% fewer tokens), with the two linking facts (**Project Orion → warehouse Cedar → endpoint DB-EU-7**) intact. [API options and receipts →](docs/USAGE.md)
+Supply the task's question alongside the source text. The example uses the default extractive strategy and disables recovery persistence: 5,342 characters in, 266 out
+(95.0% fewer tokens), with the two linking facts (**Project Orion → warehouse Cedar → endpoint DB-EU-7**) intact. [API options and receipts →](docs/USAGE.md)
 
-For another agent framework, start with the Python API, CLI or generic transcript adapter. The [integration guide](docs/INTEGRATION.md) covers message lists, task-derived queries and keeping vendored copies current.
+### Command line
 
-## How the two repositories fit
+`tameru-compress` is installed with the package and works from any language or shell:
 
-**This repository is the engine**, and it runs on any agent harness. It has no dependency on Hermes or any other host. The
-[Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) is a separate repository that vendors this engine unchanged and adds everything Hermes-specific: the
-adaptive policy and self-tuning, pinned instructions, Keep and Restore, the Artifact Trail, the Desktop panel and the `/tameru` commands. Engine changes land here first.
-See the [repository guide](docs/REPOSITORIES.md).
+```bash
+tameru-compress build.log "Why did the build fail?" --no-ccr
+tameru-compress build.log "Why did the build fail?" --no-ccr --stats    # JSON diagnostics, then ---, then the extract
+cat build.log | tameru-compress - "Find the active error" --no-ccr        # read stdin
+tameru-compress notes.md "What is the backup host?" --mode fixed --budget-ratio 0.3 --no-ccr   # ask for a smaller extract
+```
+
+| Option | What it does |
+|---|---|
+| `--no-ccr` / `--ccr` | Turn the reversible recovery store off or on (on by default). |
+| `--citations` / `--no-citations` | Mark dropped blocks with a citation (on by default). |
+| `--stats` | Print JSON diagnostics (tokens, savings, risk, verifier), then `---`, then the extract. |
+| `--mode {adaptive,fixed,compiler,precision}` and `--budget-ratio R` | Ask for a smaller extract; lower ratios request less text. |
+| `--strategy {clear,extract,summarise,auto}` | `extract` (default, no model), `clear` (drop tool payloads), `auto` (extract, escalate only if extraction fails open). |
+| `--pin-recent N` | Always keep the first block and the newest N blocks. |
+| `--min-savings-ratio R` | Return the original when the achieved savings fall below this ratio (0 disables). |
+| `--derive-query` | On an empty or generic query, infer a conservative objective from recurring rare terms instead of failing open. |
+
+### Message lists
+
+For an OpenAI-style transcript, the generic adapter prunes old tool results in place and leaves everything else alone. The [integration guide](docs/INTEGRATION.md) covers
+message lists, task-derived queries and keeping vendored copies current.
+
+## Integrations
+
+The engine is the same everywhere. A harness plugin adds what is specific to that harness: when to act, how to show it, where to keep state. Each plugin lives in its own
+repository and vendors this engine unchanged.
+
+| Harness | Plugin | State | What it adds |
+|---|---|---|---|
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | Released, **1.9.1**, listed in the Hermes plugin catalogue | Adaptive policy and self-tuning, pinned instructions, Keep and Restore, the Artifact Trail, a Desktop panel and `/tameru` commands |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `dsh-tameru` (new) | In development, not released | Planned: the same functions on the Harness's own extension points |
+
+Each plugin has its own version, independent of this engine's. The plugin README is the place for that harness's install steps, commands, screenshots and cost
+measurements, which are measured against that harness's own stock behaviour and do not carry over to another harness. To integrate Tameru with another harness, see
+[Writing a harness plugin](docs/INTEGRATION.md#4-writing-a-harness-plugin) and the [repository guide](docs/REPOSITORIES.md).
+
+## Install
+
+Requires **Python 3.10+**.
+
+Install the verified **1.9.0** source, pinned to its commit:
+
+```bash
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@9f1f1c4"
+```
+
+That commit is the engine code of 1.9.0 (later commits change documentation only). No release tag, GitHub Release page or PyPI package is published yet.
+
+To use Tameru inside a harness, install that harness's plugin from the [Integrations](#integrations) table instead; it brings its own copy of the engine, so updating the plugin
+updates the engine.
 
 ## Engine results
 
@@ -395,10 +284,10 @@ Verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests
 
 | Start here | Find out how to… |
 |---|---|
-| [Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | Install Tameru in Hermes, configure it and read the cost measurements |
+| [Integrations](#integrations) | Find the plugin for your harness: install steps, commands, screenshots and cost measurements live in each plugin's own README |
 | [Usage and API](docs/USAGE.md) | Set budgets, inspect receipts, configure recovery and use advanced controls |
-| [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what the Hermes plugin repository owns |
-| [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework and keep vendored copies current |
+| [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what each harness plugin repository owns |
+| [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework, write a harness plugin and keep vendored copies current |
 | [Comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
 | [Release notes](docs/releases/v1.9.0.md) and [changelog](CHANGELOG.md) | Review this release's changes and the version history |
 | [Red-team findings](benchmarks/redteam/FINDINGS-1.9.0.md) | Read what 228 adversarial cases found and what was fixed ([notes](benchmarks/redteam/NOTES-1.9.0.md)) |

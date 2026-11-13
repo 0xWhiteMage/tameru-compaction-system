@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tameru-compaction-system"
 version = "1.9.0"
-description = "Deterministic, query-aware context compaction for LLM agents: no LLM call, local, fail-open, with recoverable originals. The engine behind the Tameru plugin for Hermes Agent."
+description = "Deterministic, query-aware context compaction for LLM agents: no LLM call, local, fail-open, with recoverable originals. A harness-agnostic engine: a Python function, a CLI and a transcript adapter, used by the Tameru plugins for agent harnesses."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

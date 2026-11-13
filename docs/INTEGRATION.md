@@ -1,11 +1,13 @@
 # Agent integration guide
 
 Tameru's core has no imports of an agent framework. Integrate it through the
-Python API, a CLI subprocess or a self-contained vendored copy.
+Python API, a CLI subprocess or a self-contained vendored copy. Maintained plugins for
+specific harnesses are listed in the [README](../README.md#integrations); section 4 below is
+the guide for writing a new one.
 
 ## 1. Python API (pip)
 
-Install the reviewed v1.6.0 engine source directly from its Git tag; see the [quickstart](../README.md#quickstart) for details:
+Install the reviewed v1.6.0 engine source directly from its Git tag; see the [README](../README.md#install) for the current pinned install:
 
 ```bash
 python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.6.0"
@@ -76,11 +78,9 @@ runtime warning, but new integrations should not call them; bound the loss at
 compression time instead (`compress_context` risk rating plus your own
 retention checks).
 
-**Hermes Agent users:** use the plugin instead of wiring this yourself —
-[`0xWhiteMage/hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin).
-The plugin has CI against a pinned real Hermes checkout and tracks its private compaction interfaces. Installation and compatibility details live in that repository.
+**Using a harness that already has a Tameru plugin?** Use the plugin instead of wiring this yourself: the [README](../README.md#integrations) lists them. A plugin owns the harness-specific parts (when to act, state, interface) and tracks that harness's interfaces with its own CI.
 
-The engine repository retired its duplicate Hermes bundle in v1.4.0. The plugin is the maintained copy of the Hermes glue and its host-specific tests. Existing `tameru.agent_extractive_engine` and `tameru.hermes_extractive_engine` import paths remain compatibility aliases; new integrations should use `tameru.transcript`.
+The engine repository retired its duplicate Hermes bundle in v1.4.0. Existing `tameru.agent_extractive_engine` and `tameru.hermes_extractive_engine` import paths remain compatibility aliases of the generic adapter; new integrations should use `tameru.transcript`.
 
 ## 2. CLI shell-out (any language)
 
@@ -95,44 +95,28 @@ cat context.txt | tameru-compress - "Find the deployment failure" --no-ccr --pin
 
 Hosts written in TypeScript, shell or another language can use this interface without importing Python modules.
 
-## 3. Vendored plugin dir (Hermes-style)
+## 3. Vendored copy
 
-The maintained Hermes integration is
-[`0xWhiteMage/hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin) —
-install into `~/.hermes/plugins/tameru/` or `pip install` (registers via the
-`hermes_agent.plugins` entry point). Use it directly, or as the reference for
-other harnesses.
-
-When the host requires self-contained plugins with no external deps,
-vendor `src/tameru/*.py` into the plugin dir and let the sync script keep
-it current:
+When the host requires self-contained plugins with no external dependencies, vendor
+`src/tameru/*.py` into the plugin directory and let the sync script keep it current:
 
 ```bash
-python scripts/sync_to_harness.py <plugin_dir> --manifest plugin.yaml
+python scripts/sync_to_harness.py <plugin_dir>
 ```
-
-`--manifest` paths are resolved **relative to the target dir**, not the
-current directory. When the manifest sits next to a vendored subpackage
-(`hermes_tameru_plugin/plugin.yaml` for the target
-`hermes_tameru_plugin/tameru`), pass `--manifest ../plugin.yaml`.
 
 Check a vendored copy for drift without changing anything (for CI):
 
 ```bash
-python scripts/sync_to_harness.py <plugin_dir> --manifest plugin.yaml --check
+python scripts/sync_to_harness.py <plugin_dir> --check
 ```
 
-`--check` lists modules whose content differs, upstream modules missing from
-the target, stale vendored modules a sync would remove, and manifest stamps
-that would change (including a `--manifest` path that does not resolve). It
-exits 1 if anything differs and 0 if the copy is in sync, and never writes.
+`--check` lists modules whose content differs, upstream modules missing from the target and stale vendored modules a sync would remove. It exits 1 if anything differs and 0 if
+the copy is in sync, and never writes.
 
-Glue-only dirs that vendor no modules of their own (e.g. a compat alias that
-just re-exports the engine) should be stamped, not synced:
-
-```bash
-python scripts/sync_to_harness.py <alias_dir> --manifest plugin.yaml --stamp-only
-```
+**`--manifest` is optional and usually should not be used.** It stamps the engine's version and description into a plugin manifest, which makes the plugin's version follow the
+engine's. Plugins here version independently (see [REPOSITORIES.md](REPOSITORIES.md)), so leave it out unless a host's manifest is meant to track the engine. If you do use
+it, paths are resolved **relative to the target directory** (for a manifest next to a vendored subpackage, `--manifest ../plugin.yaml`), and `--stamp-only` stamps a glue-only
+directory that vendors no modules.
 
 ### Ownership contract
 
@@ -140,14 +124,50 @@ python scripts/sync_to_harness.py <alias_dir> --manifest plugin.yaml --stamp-onl
 |---|---|---|
 | `src/tameru/*.py` (all modules except `__init__.py`) | upstream | **yes** — copied wholesale |
 | `__init__.py` (registration/engine class) | harness | no — upstream's `__init__.py` is package metadata, not shipped |
-| `plugin.yaml` / manifest | harness | version + description stamped only |
+| `plugin.yaml` / manifest | harness | no, unless `--manifest` is given (version + description stamped only) |
 | tests, docs, benchmarks | upstream | not vendored |
 
-**Update workflow:** merge changes here → run `sync_to_harness.py` →
-`git commit && git push` in the harness repo → the integration PR updates
-automatically. The sync is a file copy plus a version stamp; nothing else
-to maintain. Run `sync_to_harness.py --check` in the harness repo's CI to
-catch a vendored copy that has drifted from upstream.
+**Update workflow:** merge changes here → run `sync_to_harness.py` in the plugin repo →
+record the engine commit it now matches (`VENDORED_FROM`) → commit. The sync is a file
+copy; nothing else to maintain. Run `sync_to_harness.py --check` in the plugin repo's CI
+to catch a vendored copy that has drifted from upstream.
+
+## 4. Writing a harness plugin
+
+A plugin is a separate repository. It owns everything specific to one harness and vendors
+this engine unchanged. Two exist, built on very different harnesses:
+
+| | Hermes Agent | DeepSeek Harness |
+|---|---|---|
+| Plugin | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | `dsh-tameru` (in development) |
+| Plugin language | Python, in the harness's own process | TypeScript on Node, with the engine as a worker process |
+| How it calls the engine | Imports the vendored `tameru` package | Sends one JSON line per request to a long-lived Python worker and reads one JSON line back |
+| Where state lives | The harness's per-plugin state | The harness's storage service |
+
+What a plugin decides, and the engine does not:
+
+1. **When to act.** The engine shortens one text on request. When a context is under enough
+   pressure to be worth a prompt-cache rewrite is the plugin's call.
+2. **Which messages are safe to change.** Never split a tool call from its result, and
+   never touch what the model has not read yet.
+3. **Where originals live**, and how the agent reads one back. If the harness keeps no
+   original, pass `ccr=False` and keep the text yourself.
+4. **State and interface**: pinned lines, settings, panels, commands.
+
+If the plugin talks to the engine through a worker process, the contract is small and
+should stay that way:
+
+- One request per line on stdin, one reply per line on stdout, UTF-8, `
+`-terminated.
+- A fixed, short list of accepted fields (text, query, and the budget options). Reject
+  everything else; in particular never accept options that write to disk (`ccr`,
+  `log_dir`) or reach a network or a model (summary endpoints, semantic tier).
+- Always reply with `fail_open` so the caller knows whether the original was returned.
+- Start it isolated (`python -I -B -P`, the plugin folder as working directory) so a
+  planted module in a workspace cannot be imported, and exit on stdin end-of-file so it
+  never outlives the harness.
+
+Whatever the harness, follow the rules below and the [repository guide](REPOSITORIES.md).
 
 ## Design rules for adapters
 

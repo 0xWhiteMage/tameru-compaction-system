@@ -134,7 +134,7 @@ The original caller text remains the CCR source and fail-open return value.
 3. NDJSON and CSV/TSV adapters.
 4. Markdown/YAML/markup/vertical adapters.
 5. Scale fixtures, adversarial tests and benchmark SLOs.
-6. Documentation, package release, Hermes vendored parity and independent review.
+6. Documentation, package release, vendored-copy parity in the harness plugins and independent review.
 
 ## 9. Primary references
 
