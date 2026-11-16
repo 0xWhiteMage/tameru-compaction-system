@@ -1,0 +1,69 @@
+name: Bug report
+description: The engine dropped a fact it should have kept, kept something stale, crashed, or changed a text's meaning.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. Before you post, please search [open and closed issues](https://github.com/0xWhiteMage/tameru-compaction-system/issues?q=is%3Aissue).
+        **Redact anything private** (keys, hosts, paths, names) from what you paste. If this is a security problem, do not post it here: see SECURITY.md.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong?
+      options:
+        - A fact the agent needed was dropped
+        - A stale or superseded value was kept over the current one
+        - The text's meaning changed
+        - It crashed, hung or was very slow
+        - The wrong format was detected
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: The smallest input that shows it
+      description: A few lines are usually enough. Attach a file if it is long.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: call
+    attributes:
+      label: How you called the engine
+      description: The query and options, or the command line. For example `compress_context(text, query="...", budget_ratio=0.3)`.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Engine version
+      description: "`python -c \"import tameru; print(tameru.ENGINE_VERSION)\"`"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python and operating system
+      placeholder: Python 3.12, Windows 11
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Where you use it
+      options:
+        - The Python function or command line
+        - Hermes Agent (the Hermes plugin)
+        - DeepSeek Harness (the DeepSeek Harness plugin)
+        - Another harness
+    validations:
+      required: true

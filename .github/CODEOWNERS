@@ -1,0 +1,12 @@
+# Every change is reviewed by a maintainer. The files below define what the engine may do inside other people's harnesses, so a change
+# to them is always a maintainer's decision.
+*                                     @0xWhiteMage
+/docs/HOST-RESTRICTIONS.md            @0xWhiteMage
+/scripts/check_host_rules.py          @0xWhiteMage
+/scripts/host_rules_baseline.json     @0xWhiteMage
+/scripts/check_attribution.py         @0xWhiteMage
+/.github/                             @0xWhiteMage
+/CONTRIBUTING.md                      @0xWhiteMage
+/SECURITY.md                          @0xWhiteMage
+/LICENSE                              @0xWhiteMage
+/NOTICE                               @0xWhiteMage

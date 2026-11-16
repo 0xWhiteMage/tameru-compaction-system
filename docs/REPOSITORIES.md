@@ -25,6 +25,7 @@ plugin repository that vendors the engine unchanged and owns everything specific
 6. **Inside a host, everything we add is prefixed `tameru`**: entry ids, commands, tools, storage names, settings namespaces, CSS classes. A plugin must not disable, replace or
    wrap a stock part of its host, so that removing it returns the host to exactly stock behaviour.
 7. **Measurements stay with the host they were taken on.** A cost figure against stock Hermes is not a claim about any other harness.
+8. **Host restrictions bind every change.** What harness maintainers have told us a plugin may and may not do is written in [HOST-RESTRICTIONS.md](HOST-RESTRICTIONS.md) and checked in CI (`scripts/check_host_rules.py`). Contributors follow [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## What stays in this repository
 

@@ -1,0 +1,36 @@
+name: Feature or format request
+description: A tool output Tameru does not handle well, or a capability you need.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search [open and closed issues](https://github.com/0xWhiteMage/tameru-compaction-system/issues?q=is%3Aissue) first, and read
+        [where a change belongs](https://github.com/0xWhiteMage/tameru-compaction-system/blob/main/docs/REPOSITORIES.md): things that
+        only make sense in one harness go to that harness's plugin repository. Every feature must also fit the
+        [known host restrictions](https://github.com/0xWhiteMage/tameru-compaction-system/blob/main/docs/HOST-RESTRICTIONS.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What does the agent need that it does not get today? Say what was lost or what was too long.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: A real sample
+      description: For a new format, a real sample of the tool's output (redacted), and the question an agent would ask about it. Without a sample we cannot tell whether a reducer would work.
+      render: text
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like to happen
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Checks
+      options:
+        - label: It does not need the network, a child process, a credential or a write the caller did not name.
+          required: true
+        - label: I would be willing to help build or test it.

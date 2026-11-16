@@ -286,6 +286,8 @@ Verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests
 |---|---|
 | [Integrations](#integrations) | Find the plugin for your harness: install steps, commands, screenshots and cost measurements live in each plugin's own README |
 | [Usage and API](docs/USAGE.md) | Set budgets, inspect receipts, configure recovery and use advanced controls |
+| [Contributing](CONTRIBUTING.md) | Set up, run the checks, and open a pull request; how contributors are credited |
+| [Host restrictions](docs/HOST-RESTRICTIONS.md) | The rules harness maintainers have taught us a plugin must follow, and how they are checked |
 | [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what each harness plugin repository owns |
 | [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework, write a harness plugin and keep vendored copies current |
 | [Comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
@@ -294,10 +296,14 @@ Verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests
 | [Architecture](docs/ARCHITECTURE.md) | Understand the format adapters, Unicode handling and bounded-work limits |
 | [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |
 
+## Contributing
+
+Contributions are welcome: bug reports with a small failing input, fixes, new tool-output formats with real samples, and documentation. Start with [CONTRIBUTING.md](CONTRIBUTING.md). Because the engine runs inside other people's agent harnesses, every pull request must also respect the [known host restrictions](docs/HOST-RESTRICTIONS.md) (no network, no unrequested writes, no credentials, standard library only), which CI checks. Contributors are credited by their GitHub profile; see [`contributors/`](contributors/README.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+
 ## Credits and support
 
 Built by **The White Mage**. Tameru (ためる) means “to store up”. Research and ecosystem acknowledgements, including LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery, are recorded in the [research digest](docs/RESEARCH.md) and [changelog](CHANGELOG.md).
 
-[Follow on X](https://x.com/0xWhiteMage) · [Support on Ko-fi](https://ko-fi.com/0xwhitemage) · [Report an issue](https://github.com/0xWhiteMage/tameru-compaction-system/issues) · [Contribute](https://github.com/0xWhiteMage/tameru-compaction-system/pulls)
+[Follow on X](https://x.com/0xWhiteMage) · [Support on Ko-fi](https://ko-fi.com/0xwhitemage) · [Report an issue](https://github.com/0xWhiteMage/tameru-compaction-system/issues) · [Contribute](CONTRIBUTING.md)
 
 Released under the [Apache License 2.0](LICENSE).
