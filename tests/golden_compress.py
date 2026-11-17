@@ -112,6 +112,8 @@ def capture(ccr_dir: Path) -> dict[str, str]:
                     blob = json.dumps(dataclasses.asdict(compress_context(text, query, **kwargs)), sort_keys=True, default=str)
                     for form in {str(ccr_dir), str(ccr_dir).replace("\\", "/"), json.dumps(str(ccr_dir))[1:-1]}:   # as printed and as JSON-escaped
                         blob = blob.replace(form, "<ccr>")
+                    # a file inside the cache is named with the platform's separator ("\\" on Windows, "/" elsewhere): the same result, one spelling
+                    blob = blob.replace("<ccr>\\\\", "<ccr>/")
                 except Exception as exc:               # an error is part of the behaviour too
                     blob = f"raised {type(exc).__name__}: {str(exc)[:80]}"
                 folded.update(f"{oi}:{blob}".encode("utf-8", "surrogatepass"))
