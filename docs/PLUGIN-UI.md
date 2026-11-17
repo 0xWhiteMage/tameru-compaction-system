@@ -52,7 +52,7 @@ The star, lock, undo arrow and size arrow are Tameru's own drawings and are iden
 
 ## Colour
 
-Three meanings only: the accent = working; the host's error colour = a problem; everything else is the host's label greys. Dim text uses the tertiary colour, never opacity. Tertiary text must measure at least 4.5 : 1 on its surface in light and dark.
+Three meanings only: the accent = working; the host's error colour = a problem; everything else is the host's label greys. Dim text uses the tertiary colour, never opacity. Tertiary text must measure at least 4.5 : 1 on its surface in light and dark. If a host's tertiary colour falls short (the Harness's is 3.66 : 1 in its light theme), blend part of the primary colour into it until it clears the bar (the DeepSeek plugin blends 30%: 6.03 : 1 light, 8.84 : 1 dark).
 
 ## Type
 
