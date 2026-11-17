@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "about": "The words every Tameru plugin interface shares, in English and Chinese. See docs/PLUGIN-UI.md. Each plugin keeps a copy and a test that its own strings equal these. {n}, {percent}, {used} and {max} are placeholders that must appear in both languages. English forbidden words match from the start of a word (so sav catches save and saving, but gain does not catch again); Chinese ones are substrings.",
+  "forbidden": {
+    "en": [
+      "cost",
+      "price",
+      "sav",
+      "pay",
+      "cheap",
+      "freed",
+      "gain"
+    ],
+    "zh": [
+      "成本",
+      "节省",
+      "价格",
+      "划算"
+    ]
+  },
+  "avoid": {
+    "en": [
+      "model",
+      "working memory"
+    ],
+    "zh": []
+  },
+  "brand": {
+    "name": {
+      "en": "Tameru",
+      "zh": "Tameru"
+    },
+    "kana": {
+      "en": "(ためる)",
+      "zh": "(ためる)"
+    }
+  },
+  "strength": {
+    "label": {
+      "en": "Strength",
+      "zh": "强度"
+    },
+    "off": {
+      "name": {
+        "en": "Off",
+        "zh": "关闭"
+      },
+      "line": {
+        "en": "Nothing is shortened. Pins still work.",
+        "zh": "不缩短任何内容。固定内容仍然有效。"
+      }
+    },
+    "less": {
+      "name": {
+        "en": "Less",
+        "zh": "较少"
+      },
+      "line": {
+        "en": "Shortens only when very sure.",
+        "zh": "仅在很有把握时缩短。"
+      }
+    },
+    "normal": {
+      "name": {
+        "en": "Normal",
+        "zh": "正常"
+      },
+      "line": {
+        "en": "The default.",
+        "zh": "默认。"
+      }
+    },
+    "more": {
+      "name": {
+        "en": "More",
+        "zh": "较多"
+      },
+      "line": {
+        "en": "Shortens more often.",
+        "zh": "更频繁地缩短。"
+      }
+    },
+    "scopeAll": {
+      "en": "Applies to all chats.",
+      "zh": "适用于所有对话。"
+    },
+    "scopeChat": {
+      "en": "This chat.",
+      "zh": "仅此对话。"
+    }
+  },
+  "status": {
+    "notConnected": {
+      "en": "Not connected",
+      "zh": "未连接"
+    },
+    "notRunning": {
+      "en": "Not running",
+      "zh": "未运行"
+    },
+    "notRunningRetrying": {
+      "en": "Not running: retrying",
+      "zh": "未运行：重试中"
+    },
+    "problem": {
+      "en": "Problem",
+      "zh": "出错了"
+    },
+    "waitingStep": {
+      "en": "Applies at next step",
+      "zh": "下一步生效"
+    },
+    "waitingMessage": {
+      "en": "Applies at next message",
+      "zh": "下一条消息生效"
+    },
+    "off": {
+      "en": "Off",
+      "zh": "已关闭"
+    },
+    "shortenedOne": {
+      "en": "1 output shortened",
+      "zh": "已缩短 1 项输出"
+    },
+    "shortened": {
+      "en": "{n} outputs shortened",
+      "zh": "已缩短 {n} 项输出"
+    },
+    "keptOnly": {
+      "en": "{n} kept in full",
+      "zh": "{n} 项完整保留"
+    },
+    "idleUntil": {
+      "en": "Idle until {percent}% full",
+      "zh": "上下文达 {percent}% 前待命"
+    },
+    "idle": {
+      "en": "Idle",
+      "zh": "待命"
+    },
+    "full": {
+      "en": "{percent}% full",
+      "zh": "已用 {percent}%"
+    }
+  },
+  "actions": {
+    "keep": {
+      "en": "Keep",
+      "zh": "保留"
+    },
+    "kept": {
+      "en": "Kept",
+      "zh": "已保留"
+    },
+    "keepConfirm": {
+      "en": "Kept. The AI gets it at its next step.",
+      "zh": "已保留。AI 将在下一步收到完整内容。"
+    },
+    "keepConfirmMessage": {
+      "en": "Kept. The AI gets it with your next message.",
+      "zh": "已保留。AI 将随你的下一条消息收到完整内容。"
+    },
+    "releaseTip": {
+      "en": "Kept in full. Click to let Tameru shorten it again.",
+      "zh": "已完整保留。点击让 Tameru 重新缩短。"
+    },
+    "releaseConfirm": {
+      "en": "Released. Tameru may shorten it again from the next step.",
+      "zh": "已释放。Tameru 可能从下一步起重新缩短。"
+    },
+    "releaseConfirmMessage": {
+      "en": "Released. Tameru may shorten it again from the next message.",
+      "zh": "已释放。Tameru 可能从下一条消息起重新缩短。"
+    },
+    "nextStep": {
+      "en": "next step",
+      "zh": "下一步"
+    },
+    "nextMessage": {
+      "en": "next message",
+      "zh": "下一条消息"
+    },
+    "restore": {
+      "en": "Restore",
+      "zh": "恢复"
+    },
+    "close": {
+      "en": "Close",
+      "zh": "关闭"
+    },
+    "back": {
+      "en": "Back",
+      "zh": "返回"
+    },
+    "undo": {
+      "en": "Undo",
+      "zh": "撤销"
+    },
+    "removed": {
+      "en": "Removed",
+      "zh": "已移除"
+    },
+    "loadMore": {
+      "en": "Load more",
+      "zh": "加载更多"
+    }
+  },
+  "views": {
+    "tabShortened": {
+      "en": "Shortened",
+      "zh": "已缩短"
+    },
+    "tabPins": {
+      "en": "Pins",
+      "zh": "固定"
+    },
+    "aiSees": {
+      "en": "AI sees",
+      "zh": "AI 所见"
+    },
+    "original": {
+      "en": "Original",
+      "zh": "原文"
+    },
+    "characters": {
+      "en": "characters",
+      "zh": "字符"
+    },
+    "keptDivider": {
+      "en": "Kept in full · {n}",
+      "zh": "完整保留 · {n}"
+    }
+  },
+  "pins": {
+    "placeholder": {
+      "en": "A rule the AI must always see…",
+      "zh": "一条 AI 必须始终看到的规则…"
+    },
+    "empty": {
+      "en": "The AI sees pins in every request, word for word. No passwords.",
+      "zh": "AI 会在每次请求中原样看到固定内容。请勿放入密码。"
+    },
+    "limit": {
+      "en": "{used} of {max} used. Remove one to add another.",
+      "zh": "已用 {used} / {max}。移除一条后才能再添加。"
+    }
+  },
+  "problems": {
+    "notConnected": {
+      "en": "Cannot reach Tameru. Your chat is unchanged. Retrying every few seconds.",
+      "zh": "无法连接 Tameru。你的对话未受影响。每隔几秒重试。"
+    },
+    "notRunning": {
+      "en": "Python 3.10 or newer was not found, so nothing is shortened. Your chat is unchanged. Name an interpreter in Tameru's settings.",
+      "zh": "未找到 Python 3.10 或更新版本，因此不会缩短任何内容。你的对话未受影响。请在 Tameru 设置中指定解释器。"
+    },
+    "notRunningRetrying": {
+      "en": "The engine failed several times, so nothing is shortened. Your chat is unchanged. It retries within 5 minutes.",
+      "zh": "引擎多次失败，因此不会缩短任何内容。你的对话未受影响。将在 5 分钟内重试。"
+    },
+    "problem": {
+      "en": "That change did not apply. Your chat is unchanged. Try again.",
+      "zh": "该更改未生效。你的对话未受影响。请重试。"
+    },
+    "details": {
+      "en": "Details:",
+      "zh": "详情："
+    }
+  },
+  "emptyReasons": {
+    "belowStart": {
+      "en": "Waiting until the context is fuller.",
+      "zh": "等到上下文更满时再开始。"
+    },
+    "noCandidates": {
+      "en": "No old, large outputs yet.",
+      "zh": "暂无旧的大输出。"
+    },
+    "notConfident": {
+      "en": "Nothing could be shortened safely yet.",
+      "zh": "暂时无法安全缩短。"
+    },
+    "tooSmall": {
+      "en": "Too small to shorten yet.",
+      "zh": "太小，暂不缩短。"
+    },
+    "engineSilent": {
+      "en": "The engine did not answer.",
+      "zh": "引擎没有响应。"
+    },
+    "off": {
+      "en": "Strength is Off.",
+      "zh": "强度为关闭。"
+    }
+  }
+}

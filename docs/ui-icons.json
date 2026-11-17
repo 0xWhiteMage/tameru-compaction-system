@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "about": "The drawings only Tameru has, shared by every plugin interface (docs/PLUGIN-UI.md). One 16 x 16 grid, outline stroke, round caps and joins, currentColor. Draw at 14 px (the size arrow at 12 px). A path with fill true is filled with currentColor; every other path is stroke only. Generic icons (close, chevrons, trash, plus, warning) are the host's own.",
+  "grid": 16,
+  "stroke": 1.4,
+  "size": 14,
+  "icons": {
+    "star": {
+      "label": "Tameru",
+      "paths": [{ "d": "M8 1.5C8.6 5.2 10.8 7.4 14.5 8C10.8 8.6 8.6 10.8 8 14.5C7.4 10.8 5.2 8.6 1.5 8C5.2 7.4 7.4 5.2 8 1.5Z" }]
+    },
+    "lock": {
+      "label": "Keep",
+      "paths": [{ "d": "M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" }, { "d": "M5 7h6a1.5 1.5 0 0 1 1.5 1.5v4A1.5 1.5 0 0 1 11 14H5a1.5 1.5 0 0 1-1.5-1.5v-4A1.5 1.5 0 0 1 5 7Z" }]
+    },
+    "lockFilled": {
+      "label": "Kept",
+      "paths": [{ "d": "M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" }, { "d": "M5 7h6a1.5 1.5 0 0 1 1.5 1.5v4A1.5 1.5 0 0 1 11 14H5a1.5 1.5 0 0 1-1.5-1.5v-4A1.5 1.5 0 0 1 5 7Z", "fill": true }]
+    },
+    "undo": {
+      "label": "Restore",
+      "paths": [{ "d": "M6 3.5 3 6.5l3 3" }, { "d": "M3.5 6.5H10a3.5 3.5 0 0 1 0 7H7" }]
+    },
+    "arrow": {
+      "label": "to",
+      "size": 12,
+      "paths": [{ "d": "M3 8h10" }, { "d": "M9.5 4.5 13 8l-3.5 3.5" }]
+    }
+  }
+}

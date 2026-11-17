@@ -287,6 +287,7 @@ Verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests
 | [Integrations](#integrations) | Find the plugin for your harness: install steps, commands, screenshots and cost measurements live in each plugin's own README |
 | [Usage and API](docs/USAGE.md) | Set budgets, inspect receipts, configure recovery and use advanced controls |
 | [Contributing](CONTRIBUTING.md) | Set up, run the checks, and open a pull request; how contributors are credited |
+| [Plugin interface](docs/PLUGIN-UI.md) | The bar, icons and words every Tameru plugin shares, with the shared string and drawing files |
 | [Host restrictions](docs/HOST-RESTRICTIONS.md) | The rules harness maintainers have taught us a plugin must follow, and how they are checked |
 | [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what each harness plugin repository owns |
 | [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework, write a harness plugin and keep vendored copies current |
