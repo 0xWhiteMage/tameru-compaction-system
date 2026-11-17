@@ -1,6 +1,9 @@
 import os
 import re
-import re._compiler as re_compiler
+try:
+    import re._compiler as re_compiler  # Python 3.11 and later
+except ModuleNotFoundError:  # Python 3.10: the same module under its old name, which `re` calls through at run time
+    import sre_compile as re_compiler
 import traceback
 
 import tameru
