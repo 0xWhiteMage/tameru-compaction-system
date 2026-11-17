@@ -45,7 +45,7 @@ The star, lock, undo arrow and size arrow are Tameru's own drawings and are iden
 
 ## Words
 
-- **"AI"**, never "model". **"context"**, never "working memory". **Shortened**, **Keep / Kept / Release**, **Restore**, **Pins**. Sizes are in **characters**, and a list says so once.
+- **"AI"**, never "model". **"context"**, never "working memory". **Shortened**, **Keep / Kept / Release**, **Restore**, **Pins**. Sizes are in **characters**, and a list says so once (the Hermes table keeps exact tokens; see below).
 - Nothing on a bar or in a card says or implies a cost or a saving. A shared test fails on the words `cost`, `price`, `sav…`, `pay…`, `cheap…`, `freed`, `gain` and their Chinese equivalents (English words match from the start of a word, so "again" is fine).
 - No "new" badge and no unread tracking. No "Freed" figure on the bar.
 - Every error says what happened, that the chat is unchanged, and what to do or when it retries.
@@ -79,4 +79,19 @@ A problem on the bar clears on the next success of the same kind, or 10 seconds 
 
 ## Where each plugin follows this
 
-The [DeepSeek Harness plugin](https://github.com/0xWhiteMage/dsh-tameru-plugin) draws the bar as a pill built like that harness's own goal bar and opens a floating card. The [Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) keeps its card head and its table. Both use the same strings, the same drawings and the same meanings. A new plugin follows the same rules in its own host's idiom and adds the two JSON files to its tests.
+The [DeepSeek Harness plugin](https://github.com/0xWhiteMage/dsh-tameru-plugin) draws the bar as a pill built like that harness's own goal bar and opens a floating card. The [Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) (from 1.10.0) keeps its card head and its table. Both use the same strings, the same drawings and the same meanings. A new plugin follows the same rules in its own host's idiom and adds the two JSON files to its tests.
+
+Where a host differs, the difference is in the host, not in the words:
+
+| | DeepSeek Harness plugin | Hermes plugin |
+|---|---|---|
+| Strength scope line | `Applies to all chats.` | `This chat.` |
+| Waiting phrase | `Applies at next step` | `Applies at next message` |
+| Strength menu | a pop-up menu | opens inline under the bar, because the app's composer area clips pop-ups |
+| Details view | floating card with two tabs | the results table (time, source, lines, reduction, tokens reduced, status, actions) and the pins list in the same container |
+| Sizes | characters | the table keeps exact tokens, which Hermes reports itself |
+| Removed-text figure | none | one line under the table (`about N% of the context removed`), never on the bar |
+| Extra phrases | none | `Open a chat`, `Loading…` and `Compacting…` (Hermes reports compaction as an event); they are host states, not part of the shared list |
+| Off | sets `shorten` off | pauses the chat's tuner; choosing Less, Normal or More from Off turns Tameru on first |
+
+In Hermes, Less, Normal and More are the existing `/tameru bias` words `detail`, `balanced` and `save`, so commands and saved state did not change.
