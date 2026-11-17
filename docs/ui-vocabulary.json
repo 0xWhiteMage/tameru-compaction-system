@@ -237,12 +237,16 @@
       "zh": "一条 AI 必须始终看到的规则…"
     },
     "empty": {
-      "en": "The AI sees pins in every request, word for word. No passwords.",
-      "zh": "AI 会在每次请求中原样看到固定内容。请勿放入密码。"
+      "en": "The AI sees pins in every request, word for word.",
+      "zh": "AI 会在每次请求中原样看到固定内容。"
     },
     "limit": {
       "en": "{used} of {max} used. Remove one to add another.",
       "zh": "已用 {used} / {max}。移除一条后才能再添加。"
+    },
+    "warning": {
+      "en": "No passwords.",
+      "zh": "请勿放入密码。"
     }
   },
   "problems": {
