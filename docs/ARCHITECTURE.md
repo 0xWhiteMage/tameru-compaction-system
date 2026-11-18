@@ -97,6 +97,23 @@ Scale SLOs on the reference host:
 
 The original caller text remains the CCR source and fail-open return value.
 
+## 6a. Interface layer (1.10.0)
+
+Additive modules that let a host keep its acceptance rule, option set and worker schema as data instead of code. None of them
+changes what `compress_context` returns for an existing call (`tests/golden/compress_context.json` is unchanged).
+
+- `decide.py`: `decide(result, policy)` returns `Decision(accept, reason, basis)` with the closed reasons `fail_open`, `sanitized`,
+  `risk`, `lost_fingerprint`, `no_gain`, `low_confidence`, `not_enough_tokens`, `ok`. `HERMES_POLICY` and `DSH_POLICY` express the
+  two 1.9.x host rules. Lines the engine's trust screen flags never count as a surviving error fingerprint.
+- `presets.json` + `presets.py`: `tool-result@1` and `dsh-tool-result@1` are the exact option sets the two plugins pass today;
+  `resolve_preset(name, overrides)` returns explicit keyword arguments. The file is plain data, read with `pathlib`.
+- `protocol.py`: `PROTOCOL_VERSION = 2`, the worker request fields with types, ranges and closed enums, `pin_patterns` limits and a
+  conservative backtracking check, `validate_request`, `result_to_dict`, `version_info`. Errors are fixed codes and never echo request text.
+- `compress_context(redact_secrets=True)` replaces the engine's own credential patterns in the output with `[tameru:redacted]`
+  (opt-in; a fail-open returns the original unredacted). A `gap_marker` that declares a parameter named `kind` is told what the
+  dropped span is (`markers.GAP_KINDS`); 2-argument markers are called as before (`gap_kind.py`).
+- `unwrap_tool_payload` is the neutral name; `unwrap_hermes_tool` stays as a deprecated alias.
+
 ## 7. Test matrix
 
 ### Unicode and direction

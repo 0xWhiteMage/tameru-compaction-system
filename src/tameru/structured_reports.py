@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .gap_kind import call_gap_marker
+
 _WS = re.compile(r"[ \t\r\n]*")
 _SARIF_VERSION = re.compile(r'"version"\s*:\s*"2\.1\.0"')
 
@@ -153,7 +155,7 @@ def _select_sarif_records(
         omitted = len(text) - len(output)
         header = f"[tameru:report sarif kept {kept}/{total} result records]"
         if gap_marker is not None:
-            marker = str(gap_marker(omitted, len(text)))
+            marker = str(call_gap_marker(gap_marker, omitted, len(text), "records"))
             if getattr(gap_marker, "inline_short", False) and len(marker) >= omitted:
                 return ReportSelection("sarif", text, total, total, "marker would exceed omitted content")
             header += "\n" + marker
@@ -198,7 +200,7 @@ def _select_notebook_records(text, root, matches, *, max_records, max_record_cha
         header = (f'[tameru:report notebook kept {kept}/{total} cells; original positions (1-based): '
                   + ','.join(map(str, positions)) + ']')
         if gap_marker is not None:
-            marker = str(gap_marker(omitted, len(text)))
+            marker = str(call_gap_marker(gap_marker, omitted, len(text), "records"))
             if getattr(gap_marker, 'inline_short', False) and len(marker) >= omitted:
                 return ReportSelection('notebook', text, total, total, 'marker would exceed omitted content')
             header += '\n' + marker

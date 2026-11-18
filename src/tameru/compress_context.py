@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import unicodedata
+import warnings
 import dataclasses
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -44,6 +45,8 @@ from .contract_gates import (
 )
 from .folding import fold_lossless, json_brief, mask_template
 from .format_adapters import FILLER_WORDS
+from .gap_kind import call_gap_marker
+from .markers import REDACTED_MARKER
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
 from .supersession import apply_supersession
@@ -72,6 +75,8 @@ except Exception:
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
 ENGINE_VERSION = "1.9.0"
+# Shape of CompressResult for hosts: 1 until the additive fields land (see docs/1.10.0-BUILD-NOTES.md).
+RESULT_SCHEMA = 1
 CCR_TTL_SECONDS = 6 * 60 * 60
 CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
 FREEZE_MAX_DECISIONS = 4096
@@ -1518,7 +1523,7 @@ def preprocess_csv(
             if run:
                 dropped = "\n".join(run)
                 if dropped.strip():
-                    out.append(str(gap_marker(len(dropped), len(text))))
+                    out.append(str(call_gap_marker(gap_marker, len(dropped), len(text), "rows")))
                 run = []
             out.append(line)
         else:
@@ -1526,7 +1531,7 @@ def preprocess_csv(
     if run:
         dropped = "\n".join(run)
         if dropped.strip():
-            out.append(str(gap_marker(len(dropped), len(text))))
+            out.append(str(call_gap_marker(gap_marker, len(dropped), len(text), "rows")))
     return "\n".join(out)
 
 
@@ -1658,8 +1663,20 @@ def preprocess_filler_comments(text: str, query: str) -> str:
     return "\n".join(kept)
 
 
+_UNWRAP_ALIAS_WARNED = False
+
+
 def unwrap_hermes_tool(text: str) -> str:
-    """Score the inner payload of a Hermes tool JSON wrapper."""
+    """Deprecated alias: use ``unwrap_tool_payload(text).inner`` (the wrapper is not Hermes-specific).
+
+    Same output as before; emits one ``DeprecationWarning`` per process."""
+    global _UNWRAP_ALIAS_WARNED
+    if not _UNWRAP_ALIAS_WARNED:
+        _UNWRAP_ALIAS_WARNED = True
+        warnings.warn(
+            "unwrap_hermes_tool is deprecated; use unwrap_tool_payload(text).inner",
+            DeprecationWarning, stacklevel=2,
+        )
     return unwrap_tool_payload(text).inner
 
 
@@ -1937,7 +1954,7 @@ def _preprocess_scan(
         # Decode recognised Hermes content/output wrappers structurally before
         # JSON crushing. json.loads distinguishes escaped newlines from literal
         # backslash-n bytes; a blanket text replacement cannot.
-        unwrapped = unwrap_hermes_tool(text)
+        unwrapped = unwrap_tool_payload(text).inner
         if unwrapped != text:
             return preprocess(unwrapped, query)
         processed = preprocess_json(text, query)
@@ -4178,8 +4195,8 @@ class InliningGapMarker:
     def __init__(self, fn: Callable[[int, int], str]) -> None:
         self.fn = fn
 
-    def __call__(self, omitted: int, total: int) -> str:
-        return self.fn(omitted, total)
+    def __call__(self, omitted: int, total: int, kind: str = "lines") -> str:
+        return call_gap_marker(self.fn, omitted, total, kind)
 
 
 def _inlines_short(marker) -> bool:
@@ -4231,7 +4248,7 @@ def _render(
         if not any(ln.strip() for ln in probe_lines[lo:hi]):
             return None
         span_text = "\n".join(lines[lo:hi]) if inline_short else None
-        text = marker_fn(_span_chars(lines, lo, hi), total)
+        text = call_gap_marker(marker_fn, _span_chars(lines, lo, hi), total, "lines")
         marker = str(text) if text is not None else ""
         if not marker:
             return None
@@ -4353,7 +4370,7 @@ def _gap_marker_reserve(
     # One probe call sizes a marker at its widest (a span as long as the
     # whole input); callers that count gap_marker calls see exactly one extra
     # call in fixed mode, none in adaptive mode.
-    sample = str(gap_marker(total_chars, total_chars) or "")
+    sample = str(call_gap_marker(gap_marker, total_chars, total_chars, "lines") or "")
     return gaps * estimate_tokens(sample)
 
 
@@ -5458,7 +5475,7 @@ def brief_context(
 
     def mark(omitted: int) -> str:
         if gap_marker is not None:
-            made = gap_marker(omitted, total)
+            made = call_gap_marker(gap_marker, omitted, total, "lines")
             return str(made) if made else ""
         return f"[… {omitted} chars omitted …]"
 
@@ -7954,7 +7971,7 @@ def _reuse_probe_or_none(
     return None
 
 
-def compress_context(
+def _compress_context_impl(
     context: str,
     query: str | Iterable[str],
     *,
@@ -8100,9 +8117,11 @@ def compress_context(
         None
         if gap_marker is None
         else (
-            InliningGapMarker(lambda omitted, _total: gap_marker(omitted, len(caller_text)))
+            InliningGapMarker(lambda omitted, _total, kind="other": call_gap_marker(
+                gap_marker, omitted, len(caller_text), kind))
             if _inlines_short(gap_marker)
-            else (lambda omitted, _total: gap_marker(omitted, len(caller_text)))
+            else (lambda omitted, _total, kind="other": call_gap_marker(
+                gap_marker, omitted, len(caller_text), kind))
         )
     )
     industrial, degraded, payload_industrial = _industrial_preflight(
@@ -8394,6 +8413,99 @@ def compress_context(
     )
 
     return __cr
+
+
+
+_REDACT_PASSES = 3
+
+
+def redact_secrets_in(text: str) -> str:
+    """Replace every match of the engine's own secret patterns with ``[tameru:redacted]``.
+
+    Deterministic and idempotent. Uses the same literal prefilter as
+    :func:`contains_secret`, so text with no credential-shaped content is returned
+    untouched (the same object)."""
+    for _ in range(_REDACT_PASSES):
+        if not _secret_scan(text):
+            return text
+        text = _SECRETS_RE.sub(REDACTED_MARKER, text)
+        text = _SECRETS_EXTRA_RE.sub(REDACTED_MARKER, text)
+    return text
+
+
+def compress_context(
+    context: str,
+    query: str | Iterable[str],
+    *,
+    mode: str = "adaptive",
+    budget_ratio: Optional[float] = None,
+    ccr: bool = True,
+    cache_prefix: bool = False,
+    citations: bool = True,
+    ccr_dir: str | Path = DEFAULT_CCR_DIR,
+    decision_cache: Optional[dict] = None,
+    strategy: str = "extract",
+    ambiguity_fail_open: bool = False,
+    reorder_best: bool = False,
+    semantic_tier: Any = None,
+    log_dir: str | Path | None = None,
+    pin_patterns: Optional[list[str]] = None,
+    pin_recent: int = 0,
+    min_savings_ratio: float = 0.10,
+    degraded_view: bool = False,
+    summary_endpoint: str | None = None,
+    summary_models: Iterable[str] | str | None = None,
+    summary_timeout: float | None = None,
+    summary_allow_remote: bool | None = None,
+    limits: IndustrialLimits | None = None,
+    derive_query: bool = False,
+    anchor_errors: bool = False,
+    prose_brief: bool = False,
+    gap_marker: Callable[..., str] | None = None,
+    recursion_markers: Iterable[str] = (),
+    content_hint: str | None = None,
+    inline_short_gaps: bool = False,
+    redact_secrets: bool = False,
+    _ccr_defer: bool = False,
+) -> CompressResult:
+    result = _compress_context_impl(
+        context, query,
+        mode=mode, budget_ratio=budget_ratio, ccr=ccr, cache_prefix=cache_prefix,
+        citations=citations, ccr_dir=ccr_dir, decision_cache=decision_cache, strategy=strategy,
+        ambiguity_fail_open=ambiguity_fail_open, reorder_best=reorder_best,
+        semantic_tier=semantic_tier, log_dir=log_dir, pin_patterns=pin_patterns,
+        pin_recent=pin_recent, min_savings_ratio=min_savings_ratio, degraded_view=degraded_view,
+        summary_endpoint=summary_endpoint, summary_models=summary_models,
+        summary_timeout=summary_timeout, summary_allow_remote=summary_allow_remote,
+        limits=limits, derive_query=derive_query, anchor_errors=anchor_errors,
+        prose_brief=prose_brief, gap_marker=gap_marker, recursion_markers=recursion_markers,
+        content_hint=content_hint, inline_short_gaps=inline_short_gaps, _ccr_defer=_ccr_defer,
+    )
+    if redact_secrets and not result.fail_open:
+        redacted = redact_secrets_in(result.compressed_text)
+        if redacted is not result.compressed_text and redacted != result.compressed_text:
+            result = replace(
+                result, compressed_text=redacted, reasons=[*result.reasons, "redacted_secrets"],
+            )
+    return result
+
+
+compress_context.__doc__ = (_compress_context_impl.__doc__ or "") + """
+    ``redact_secrets`` (1.10.0, opt-in, default False: output bytes are unchanged)
+        When True, every match of the engine's own credential patterns (the ones behind
+        :func:`contains_secret`) in the OUTPUT text becomes the fixed marker
+        ``[tameru:redacted]``. Deterministic. It runs after the engine has decided, so it
+        never changes the fail-open decision, the risk or the confidence. On a fail-open
+        the original text is returned UNREDACTED (safe only because the caller already
+        holds that text); a host that must never forward a credential has to check
+        ``fail_open`` itself. A redacted result lists ``"redacted_secrets"`` in
+        ``reasons``; counts and the receipt describe the text before redaction.
+
+    ``gap_marker(omitted_chars, total_chars[, kind])`` (kind-aware since 1.10.0)
+        A marker that declares a parameter named ``kind`` is also told what the dropped
+        span is (one of ``tameru.markers.GAP_KINDS``), passed by keyword. A 2-argument
+        marker is called exactly as before, and the default marker text never changes.
+    """
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:

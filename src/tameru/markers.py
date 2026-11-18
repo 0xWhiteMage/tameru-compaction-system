@@ -12,8 +12,16 @@ input-derived (``[×N] <original line>``, ``[last] <original line>``); a checker
 verifies the remainder against the input.
 
 Pure data plus `marker_name`; no I/O and no imports beyond `re`.
+
+1.10.0 interface layer: ``GAP_KINDS`` names what a dropped span is. A caller's
+``gap_marker`` may declare a parameter called ``kind`` (see ``gap_kind.py``);
+the engine then passes it (by keyword) and otherwise calls ``gap_marker(omitted_chars, total_chars)``
+exactly as before. The engine's own default marker texts are unchanged, so a
+shape registered below is only ever emitted by a host's own callable.
 """
 import re
+
+REDACTED_MARKER = "[tameru:redacted]"  # inserted by compress_context(redact_secrets=True)
 
 ENGINE_MARKERS: list[tuple[str, "re.Pattern[str]", str]] = [
     # name, regex, emitting source location
@@ -67,6 +75,8 @@ ENGINE_MARKERS: list[tuple[str, "re.Pattern[str]", str]] = [
     ("report_notebook", re.compile(
         r"^\[tameru:report notebook kept \d+/\d+ cells; original positions \(1-based\): [\d,]+\]$"),
      "structured_reports.py notebook report header"),
+    ("redacted_secret", re.compile(r"^.*\[tameru:redacted\].*$"),
+     "compress_context.py redact_secrets_in (redact_secrets=True only): replaces a credential-shaped span inside a kept line"),
     ("json_record_join", re.compile(r"^\s*(\},\{|\}\])$"),
      "structured_reports.py SARIF/notebook ','.join(selected) glue between non-adjacent kept records"),
 ]
@@ -97,3 +107,19 @@ def marker_name(line: str) -> str | None:
             return name
     return None
 
+
+
+# What a dropped span holds. A kind-aware ``gap_marker(omitted, total, kind=...)``
+# receives one of these; a 2-argument marker never sees it.
+GAP_KINDS = (
+    "lines",     # a run of dropped lines (generic extractive render, brief)
+    "rows",      # CSV/TSV rows dropped by the distinctive-selector reducer
+    "hunks",     # diff hunk bodies
+    "files",     # whole diff files without a match
+    "matches",   # grep matches
+    "tests",     # passing test lines
+    "suites",    # passing suite lines
+    "captured",  # captured stdout/stderr lines
+    "records",   # structured-report records (lcov, junit, sarif, notebook)
+    "other",     # anything else an adapter drops
+)

@@ -21,6 +21,7 @@ from .agent_formats import (
     rejects_table,
 )
 from .contract_gates import GENERIC_WORDS, distinctive_query_terms
+from .gap_kind import call_gap_marker
 from .regex_cache import cached_compile
 from .coverage_reports import select_lcov
 from .junit_reports import select_junit
@@ -174,7 +175,7 @@ def _with_gaps(
         dropped = sep.join(run)
         if dropped.strip():
             if gap_marker is not None:
-                marker = str(gap_marker(len(dropped), total_chars))
+                marker = str(call_gap_marker(gap_marker, len(dropped), total_chars, "rows"))
                 if (
                     getattr(gap_marker, "inline_short", False)
                     and len(marker) >= len(dropped)
@@ -660,7 +661,7 @@ def _adapt_markdown(
         if gap_marker is not None and position > run_start:
             dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, position))
             if dropped.strip():
-                output.append(str(gap_marker(len(dropped), len(text))))
+                output.append(str(call_gap_marker(gap_marker, len(dropped), len(text), "other")))
         run_start = position + 1
         for heading in parents:
             if heading not in seen_headings:
@@ -674,7 +675,7 @@ def _adapt_markdown(
     if gap_marker is not None and run_start < len(sections):
         dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, len(sections)))
         if dropped.strip():
-            output.append(str(gap_marker(len(dropped), len(text))))
+            output.append(str(call_gap_marker(gap_marker, len(dropped), len(text), "other")))
     return FormatResult(
         format="markdown",
         applied=True,

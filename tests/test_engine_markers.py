@@ -33,6 +33,7 @@ SAMPLES = {
     "report_sarif": "[tameru:report sarif kept 2/81 result records]",
     "report_notebook": "[tameru:report notebook kept 2/41 cells; original positions (1-based): 1,41]",
     "json_record_join": "  },{",
+    "redacted_secret": "api_key = [tameru:redacted]",
 }
 
 
