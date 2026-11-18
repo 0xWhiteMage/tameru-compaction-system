@@ -492,10 +492,19 @@ def _norm_newlines(text: str) -> str:
 _CL_HEADING_RE = re.compile(r"^#{1,6}\s+")
 _CL_FENCE_RE = re.compile(r"^(```|~~~)")
 _CL_TRACE_RE = re.compile(
-    r"^(Traceback|Caused by:|Error:|Exception:|[A-Za-z]+Error\b|at\s+\S+\(|\s*File\s+\".+\", line \d+)"
+    r"^(Traceback|Caused by:|Error:|Exception:|[A-Za-z]+Error\b|at\s+\S+\(|\s*File\s+\".+\", line \d+"
+    # 1.10.0 (structure): per-language chain heads and frames. Packaged Java/.NET exception types,
+    # "Exception in thread", .NET "Unhandled exception." and "---> inner", Python chaining sentences,
+    # Go goroutines and panics, JS "at fn (file:line:col)" frames and "[cause]".
+    r"|Exception in thread\b|Unhandled exception\.|--->\s|Suppressed:|During handling of the above"
+    r"|The above exception was|goroutine \d+ \[|panic:|\[cause\]"
+    r"|from\s+\S+:\d+:in\s|[\w./-]+:\d+:in\s+[`']"
+    r"|#\d+\s+\S+\(\d+\):|#\d+\s+\{main\}|Stack trace:$"
+    r"|(?:[A-Za-z_$][\w$]*\.)+[A-Za-z_$][\w$]*(?:Exception|Error)\b(?::|\s|$)"
+    r"|at\s+(?:async\s+)?(?:new\s+)?[^\s(]+\s\([^()\s]*:\d+:\d+\)|at\s+(?:async\s+)?\S+:\d+:\d+$)"
 )
 _CL_LOG_RE = re.compile(
-    r"^\[?(20\d\d-\d\d-\d\d|20\d\d/\d\d/\d\d[ T]\d\d:\d\d:\d\d|\d\d:\d\d:\d\d|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d|INFO|WARN|WARNING|ERROR|DEBUG|TRACE|ERR|FAIL|FATAL|OK)\]?"
+    r"^\[?(20\d\d-\d\d-\d\d|20\d\d/\d\d/\d\d[ T]\d\d:\d\d:\d\d|\d\d:\d\d:\d\d|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d|INFO|WARN|WARNING|ERROR|DEBUG|TRACE|ERR|FAIL|FATAL|OK|(?:info|warn|fail|crit|dbug|trce):)\]?"
 )
 _CL_LOGFMT_RE = re.compile(
     r"^(?:ts|time|timestamp|t)=[^\s]+(?:\s+level=[A-Za-z0-9_.]+|\s+.*\slevel=[A-Za-z0-9_.]+)"
@@ -840,6 +849,11 @@ _ERROR_LINE_HINT_RE = re.compile(
 
 
 _DIAG_EXEMPLAR_CAP = 32
+# An indented "at <callee> (<file>:<line>)" / "at <callee> in <file>:line N" frame (Java, .NET, JS).
+_STACK_FRAME_LINE_RE = re.compile(
+    r"^[ \t]+at\s+\S[^\n]*?(?:\([^()\n]*:\d+(?::\d+)?\)|\bin\s+\S+:line\s+\d+|:\d+:\d+$)"
+    r"|^#\d+\s+(?:\S+\(\d+\):|\{main\})"
+)
 
 
 def _is_error_line(line: str) -> bool:
@@ -848,6 +862,10 @@ def _is_error_line(line: str) -> bool:
     Go panic, or a multi-language compiler/test/runtime diagnostic
     (agent_formats.DIAGNOSTIC_LINE_RE) — the lines :func:`error_fingerprints` keys on."""
     capped = line[:_RX_LINE_CAP]
+    if _STACK_FRAME_LINE_RE.match(capped) is not None:
+        # 1.10.0: an indented stack FRAME ("    at pkg.Cls.m(File.java:12)") is a location, not an error: the
+        # exception head above it is the error. Frames fold; the heads they hang from are what must survive.
+        return False
     if is_diagnostic_line(capped) and _ERR_NEGATED_RE.search(capped) is None:
         return True
     if _ERROR_LINE_HINT_RE.search(capped) is None:
@@ -933,7 +951,217 @@ def _error_fingerprints_cached(text: str) -> dict[str, str]:
 _TRACE_KEEP_HEAD = 3  # exception head + outermost frames (Java/Go/JS put the head first)
 _TRACE_KEEP_TAIL = 3  # innermost frame + source line + exception (Python), or the Caused-by root (Java)
 
-def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
+# ---------------------------------------------------------------------------
+# 1.10.0 (structure): per-cause chain folding. A stack trace run is a sequence
+# of "other" lines (exception heads, "Caused by:", "---> inner", "During
+# handling...", "goroutine N [...]", "... N more", messages) and FRAME groups
+# (a frame line plus the more-indented lines that belong to it: a Python source
+# line, a Go file:line). Heads, messages and "... N more" are never dropped. A
+# run of at least _FRAME_FOLD_MIN consecutive frame groups keeps its first
+# frame, its first frame outside the framework, its last frame (and up to the
+# remaining slots of query-matching frames) and one counted marker for the rest.
+# A folded run keeps at most _FRAME_FOLD_MIN - 1 frames, so folding is idempotent.
+# ---------------------------------------------------------------------------
+_FRAME_FOLD_MIN = 5
+_FRAME_HIT_SLOTS = 1
+_STRUCT_COLLAPSE_MIN = 12  # structural (query-less) pass: templates seen fewer times stay verbatim
+_FRAME_START_RE = re.compile(r"^\s*(?:at\s+\S|File\s+\"|from\s+\S+:\d+|#\d+\s+\S+\(\d+\):|#\d+\s+\{main\})")
+_GO_FRAME_FUNC_RE = re.compile(r"^[\w./*()\[\]{}-]+\(.*\)$")
+_FRAME_TAIL_RE = re.compile(r"^\s*(?:\.\.\.\s+\d+\s+(?:more|common frames omitted)\b|---\s*End of inner exception)")
+_FRAMEWORK_RE = re.compile(
+    r"org\.springframework"
+    r"|(?<![\w.])(?:java|javax|jdk|sun|System|Microsoft|scala|kotlin|kotlinx|akka|jakarta)\."
+    r"|node_modules|site-packages|/gems/|/lib/ruby/|/vendor/"
+    r"|(?<![\w.-])(?:runtime|internal)/"
+)
+_FRAMES_FOLDED_RE = re.compile(r"^\s*\.\.\. \d+ frames omitted$")
+
+
+def _is_framework_frame(frame: str) -> bool:
+    """A frame inside the language runtime or a framework (so not the caller's own code)."""
+    return _FRAMEWORK_RE.search(frame[:_RX_LINE_CAP]) is not None
+
+
+_CALL_FRAME_RE = re.compile(r"^\s+[\w./$*()\[\]-]+\([^()\n]*:\d+\)")
+
+
+def _is_frame_line(line: str) -> bool:
+    """A stack-frame line (Java/.NET/JS ``at ...``, Python ``File "..."``, Ruby ``from f:1``, indented ``fn(file:line)``); not an exception head or a ``... N more`` tail."""
+    capped = line[:_RX_LINE_CAP]
+    return _FRAME_START_RE.match(capped) is not None or _CALL_FRAME_RE.match(capped) is not None
+
+
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+# An indented line that starts a new cause, not a frame: "---> inner", "Caused by:", "[cause]: ...", an exception
+# type with a message, "Suppressed:". Any other indented line of a trace run is a frame of a format the pass does
+# not know (Swift, Haskell, Dart ...) and folds like one.
+_INDENTED_HEAD_RE = re.compile(
+    r"(?:--->|Caused by:|Suppressed:|\[cause\]|Unhandled exception|Exception in thread|Traceback|During handling|The above exception)"
+    r"|(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:Exception|Error)\b(?::|\s|$)"
+)
+
+
+def _starts_frame(line: str) -> bool:
+    """A frame the pass may fold: a known frame shape, or any other indented line that is not a head or tail marker."""
+    if _is_frame_line(line):
+        return not _FRAME_TAIL_RE.match(line)
+    return (
+        line[:1] in (" ", "\t") and bool(line.strip()) and _FRAME_TAIL_RE.match(line) is None
+        and _FRAMES_FOLDED_RE.match(line) is None
+        and _INDENTED_HEAD_RE.match(line.lstrip()[:_RX_LINE_CAP]) is None
+    )
+
+
+def _frames_folded_marker(count: int, indent: str) -> str:
+    return f"{indent}... {count} frames omitted"
+
+
+def _fold_trace_run(
+    run: list[str], src: list[int], idx: list[int], hits: set[int]
+) -> tuple[list[str], list[int]]:
+    """Fold the frame runs of one stack-trace run. ``hits`` holds the source indices a query selects (kept first)."""
+    n = len(run)
+    groups: list[tuple[int, int]] = []  # (start, end) of a frame group; other lines are not in any group
+    owner = [-1] * n
+    k = 0
+    while k < n:
+        line = run[k]
+        is_frame = _starts_frame(line)
+        if not is_frame and _GO_FRAME_FUNC_RE.match(line) and k + 1 < n and _indent_of(run[k + 1]) > _indent_of(line) \
+                and not run[k + 1].lstrip().startswith(("at ", "...")):
+            is_frame = True
+        if not is_frame:
+            k += 1
+            continue
+        end = k + 1
+        base = _indent_of(line)
+        while end < n and _indent_of(run[end]) > base and not _is_frame_line(run[end]) \
+                and not _FRAME_TAIL_RE.match(run[end]) and run[end].strip():
+            end += 1
+        for j in range(k, end):
+            owner[j] = len(groups)
+        groups.append((k, end))
+        k = end
+    out: list[str] = []
+    out_src: list[int] = []
+    pos = 0
+    g = 0
+    while pos < n:
+        if owner[pos] < 0:
+            out.append(run[pos])
+            out_src.append(src[pos])
+            pos += 1
+            continue
+        # a maximal run of consecutive frame groups
+        first = g
+        last = g
+        while last + 1 < len(groups) and groups[last + 1][0] == groups[last][1]:
+            last += 1
+        span = groups[first : last + 1]
+        total = len(span)
+        if total < _FRAME_FOLD_MIN:
+            keep = set(range(total))
+        else:
+            keep = {0, total - 1}
+            for j, (a, _b) in enumerate(span):
+                if not _is_framework_frame(run[a]):
+                    keep.add(j)  # the first frame outside the framework (the caller's own code)
+                    break
+            room = min(_FRAME_FOLD_MIN - 1 - len(keep), _FRAME_HIT_SLOTS)  # query-matching frames kept
+            if room > 0:
+                for j, (a, _b) in enumerate(span):
+                    if room <= 0:
+                        break
+                    if j not in keep and idx[a] in hits:
+                        keep.add(j)
+                        room -= 1
+        dropped = 0
+        drop_start = 0
+        for j, (a, b) in enumerate(span):
+            if j in keep:
+                if dropped:
+                    if dropped == 1:
+                        a0, b0 = span[j - 1]
+                        out.extend(run[a0:b0])
+                        out_src.extend(src[a0:b0])
+                    else:
+                        a0 = span[drop_start][0]
+                        out.append(_frames_folded_marker(dropped, run[a0][: _indent_of(run[a0])]))
+                        out_src.append(src[a0])
+                    dropped = 0
+                out.extend(run[a:b])
+                out_src.extend(src[a:b])
+            else:
+                if dropped == 0:
+                    drop_start = j
+                dropped += 1
+        if dropped:  # cannot happen (the last frame is always kept); kept for safety
+            a0 = span[drop_start][0]
+            out.append(_frames_folded_marker(dropped, run[a0][: _indent_of(run[a0])]))
+            out_src.append(src[a0])
+        pos = span[-1][1]
+        g = last + 1
+    return out, out_src
+
+
+# 1.10.0 (build output): lines that only say "still working" -- compile / link / resolve / download / install
+# steps and passing-test rows. A run of them becomes "[×N] <first line>"; failures, diagnostics, resolver
+# conflicts ("npm ERR!", "ERROR: Cannot install") and summary lines are never noise.
+_BUILD_NOISE_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:Compiling|Building|Restoring|Linking|Generating|Copying|Resolving|Fetching|Unpacking|Preparing|Scanning|Packaging|Transpiling|Bundling)\s+\S"
+    r"|\[\s*\d+%\]\s+(?:Building|Linking|Scanning|Generating)\b"
+    r"|\[\d+/\d+\]\s+(?:Building|Linking|Scanning|Generating|Compiling|CXX|CC|AR|LINK)\b"
+    r"|[\w./\\-]+\.(?:cpp|cc|cxx|c|cs|java|kt|go|rs|ts)\s*$"
+    r"|(?:clang|clang\+\+|gcc|g\+\+|cc|c\+\+|javac|cl)\S*\s+(?:-c|/c)\s"
+    r"|(?:Collecting|Downloading|Downloaded|Using cached|Requirement already satisfied|Obtaining|Building wheel|Created wheel|Stored in directory|Looking in indexes)\b"
+    r"|npm (?:WARN deprecated|http fetch|timing|notice)\b"
+    r"|\[INFO\]\s+(?:Downloading|Downloaded)\s+from\b"
+    r"|(?:PASS|PASSED|Passed|ok)\s+\S"
+    r"|(?:✓|✔|√)\s*\S"
+    r"|---\s+PASS:\s"
+    r"|test\s+\S+\s+\.\.\.\s+ok$"
+    r")"
+)
+_BUILD_NOISE_RUN_MIN = 4
+
+
+def _is_build_noise_line(line: str) -> bool:
+    if _BUILD_NOISE_RE.match(line[:_RX_LINE_CAP]) is None:
+        return False
+    low = line.casefold()
+    return not ("error" in low or "fail" in low or "warn" in low and "deprecated" not in low)
+
+
+def _fold_build_noise(lines: list[str]) -> list[str]:
+    """Replace each run of at least ``_BUILD_NOISE_RUN_MIN`` consecutive build-noise lines by ``[×N] <first line>``.
+    Idempotent (a marker line is not noise) and lossless for everything that is not noise."""
+    out: list[str] = []
+    n = len(lines)
+    i = 0
+    while i < n:
+        if _is_build_noise_line(lines[i]):
+            j = i + 1
+            while j < n and _is_build_noise_line(lines[j]):
+                j += 1
+            if j - i >= _BUILD_NOISE_RUN_MIN:
+                out.append(f"[\u00d7{j - i}] {lines[i].strip()}")
+                i = j
+                continue
+        out.append(lines[i])
+        i += 1
+    return out
+
+
+def structural_log_pass(lines: list[str]) -> list[str]:
+    """The always-on STRUCTURAL log pass (1.10.0): progress removal, ``[×N]`` template collapse with the last instance kept, and per-cause stack folding. It is :func:`preprocess_logs` with no query: it never drops a distinct error line, an exception head, a ``Caused by`` / inner-exception message, ``... N more``, or the first frame outside the framework, and it is idempotent."""
+    return preprocess_logs(_fold_build_noise(lines), "", structural=True)
+
+
+def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = False) -> list[str]:
     """v0.9.0 log preprocessing (NTK layer1 filter adoption):
 
     - progress bars / build spam deleted (N4)
@@ -962,50 +1190,22 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
         try:
             return fp_memo[line]
         except KeyError:
-            fp = fp_memo[line] = _log_fingerprint(line)
+            fp = _log_fingerprint(line)
+            if fp is not None and structural and not query_selectors and _is_error_line(line):
+                # 1.10.0: without a query, two error lines are the same line only when their text is
+                # identical apart from the leading timestamp (ids, keys and values are the evidence).
+                fp = "!" + line[_lead_ts_end(line):].strip()[:_FINGERPRINT_CAP]
+            fp_memo[line] = fp
             return fp
 
     def flush_trace() -> None:
         nonlocal trace, trace_src, trace_idx
         if not trace:
             return
-        if len(trace) <= _TRACE_KEEP_HEAD + _TRACE_KEEP_TAIL:
-            out.extend(trace)
-            out_src.extend(trace_src)
-        else:
-            out.extend(trace[:_TRACE_KEEP_HEAD])
-            out_src.extend(trace_src[:_TRACE_KEEP_HEAD])
-            tail_start = len(trace) - _TRACE_KEEP_TAIL
-            middle = trace[_TRACE_KEEP_HEAD:tail_start]
-            middle_src = trace_src[_TRACE_KEEP_HEAD:tail_start]
-            middle_idx = trace_idx[_TRACE_KEEP_HEAD:tail_start]
-
-            matched = [idx in query_match_source_indices for idx in middle_idx]
-            if sum(matched) > _TRACE_KEEP_HEAD + _TRACE_KEEP_TAIL:
-                out.append(f"  ... {len(middle)} frames omitted")
-                out_src.append(middle_src[0])
-            else:
-                omitted_run = 0
-                omitted_start_src = 0
-                for frame, src, idx in zip(middle, middle_src, middle_idx):
-                    if idx in query_match_source_indices:
-                        if omitted_run:
-                            out.append(f"  ... {omitted_run} frames omitted")
-                            out_src.append(omitted_start_src)
-                            omitted_run = 0
-                        out.append(frame)
-                        out_src.append(src)
-                    else:
-                        if omitted_run == 0:
-                            omitted_start_src = src
-                        omitted_run += 1
-
-                if omitted_run:
-                    out.append(f"  ... {omitted_run} frames omitted")
-                    out_src.append(omitted_start_src)
-
-            out.extend(trace[-_TRACE_KEEP_TAIL:])
-            out_src.extend(trace_src[-_TRACE_KEEP_TAIL:])
+        # 1.10.0: per-cause chain folding (heads, messages and "... N more" are kept; frame runs fold).
+        folded, folded_src = _fold_trace_run(trace, trace_src, trace_idx, query_match_source_indices)
+        out.extend(folded)
+        out_src.extend(folded_src)
         trace = []
         trace_src = []
         trace_idx = []
@@ -1080,6 +1280,9 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
         fp = fingerprint(line)
         if fp:
             short_counts[fp] = short_counts.get(fp, 0) + 1
+    # 1.10.0: without a query the pass cannot tell which rare variant matters, so a template seen fewer than
+    # _STRUCT_COLLAPSE_MIN times stays verbatim; only a dominant template folds into "[×N] exemplar + [last]".
+    collapse_floor = _STRUCT_COLLAPSE_MIN if structural and not query_selectors else 0
 
     i = 0
     n = len(kept_lines)
@@ -1104,7 +1307,7 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
             i += 1
             continue
         fp = fingerprint(line)
-        if fp and (_template_long_enough(line) or (short_counts.get(fp, 0) >= 5 and sum(ch.isalpha() for ch in line) >= 2 and "=" not in line)):
+        if fp and short_counts.get(fp, 0) >= collapse_floor and (_template_long_enough(line) or (short_counts.get(fp, 0) >= 5 and sum(ch.isalpha() for ch in line) >= 2 and "=" not in line)):
             if fp in exemplar_idx:
                 seen[fp] += 1
                 last_seen[fp] = line
@@ -1152,7 +1355,14 @@ def preprocess_logs(lines: list[str], query: str = "") -> list[str]:
     def has_error_signal(text: str) -> bool:
         return bool(_ERROR_RE.search(text))
 
-    orig_errors = [(i, ln) for i, ln in enumerate(lines) if has_error_signal(ln)]
+    # 1.10.0: a stack FRAME that merely mentions "Error"/"Exception" in a class name is not an error line
+    # (folding it is the point), and a trust-risk line (injection-shaped text) is never restored as one.
+    orig_errors = [
+        (i, ln)
+        for i, ln in enumerate(lines)
+        if has_error_signal(ln) and not _is_frame_line(ln) and not _FRAMES_FOLDED_RE.match(ln)
+        and not _is_trust_risk_line(ln)
+    ]
     if orig_errors:
         present_lines = set(result)
         present_fps: set[str] = set()
@@ -1648,6 +1858,11 @@ def _normalise_instruction_text(text: str) -> str:
     return "".join(
         char for char in normalised if unicodedata.category(char) != "Cf"
     )
+
+
+def _is_trust_risk_line(line: str) -> bool:
+    """Injection-shaped line (``_TRUST_RISK_RE`` on the normalised text). Never an anchor, a fingerprint or a restored error."""
+    return _TRUST_RISK_RE.search(_normalise_instruction_text(line[:_RX_LINE_CAP])) is not None
 
 
 def preprocess_filler_comments(text: str, query: str) -> str:
@@ -3180,6 +3395,9 @@ def _important(blocks: list[dict[str, Any]]) -> set[int]:
     return ids
 
 
+_TRACE_UNIT_MAX_BLOCKS = 32  # contiguous trace blocks kept as one unit around a kept trace block
+
+
 def _stitch_neighbors(blocks: list[dict[str, Any]], kept: set[int]) -> set[int]:
     by_id = {b["id"]: b for b in blocks}
     extra: set[int] = set()
@@ -3193,13 +3411,22 @@ def _stitch_neighbors(blocks: list[dict[str, Any]], kept: set[int]) -> set[int]:
         # A traceback is one unit: if we keep any part of a stack, keep the
         # whole stack and the log line that triggered it (error/exception).
         if by_id[i]["type"] == "trace" or i in extra and by_id[i]["type"] == "trace":
-            for nb in (i - 1, i + 1):
-                if nb in by_id and by_id[nb]["type"] in {"trace", "log"}:
-                    t = by_id[nb]["text"].lower()
-                    if by_id[nb]["type"] == "trace" or re.search(
-                        r"error|fail|exception|traceback", t
-                    ):
-                        extra.add(nb)
+            # 1.10.0: the unit is the whole (already folded) chain: every contiguous trace block around the
+            # kept one (bounded), plus the error log line that opened it.
+            for step in (-1, 1):
+                nb = i + step
+                walked = 0
+                while nb in by_id and walked < _TRACE_UNIT_MAX_BLOCKS and (
+                    by_id[nb]["type"] == "trace" or _FRAME_TAIL_RE.match(by_id[nb]["text"]) is not None
+                    or _FRAMES_FOLDED_RE.match(by_id[nb]["text"]) is not None
+                ):
+                    extra.add(nb)
+                    nb += step
+                    walked += 1
+                if nb in by_id and by_id[nb]["type"] == "log" and re.search(
+                    r"error|fail|exception|traceback", by_id[nb]["text"].lower()
+                ):
+                    extra.add(nb)
     # Code-block stitching: a signature line ("fn delay(...)") and its
     # indented body lines are separate blocks because each indented line
     # classifies as "definition". Keep them whole:
@@ -6298,6 +6525,8 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
         # Last resort: the one or two lines that break an otherwise uniform log.
         exemplars = set(_rare_template_lines(lines, max_regions))
         rare_exemplars = set(exemplars)
+    # 1.10.0: injection-shaped (trust-risk) lines are never anchors, whatever tier found them.
+    exemplars = {line for line in exemplars if not _is_trust_risk_line(line)}
     regions: list[str] = []
     seen_rows: set[int] = set()
 
@@ -6402,12 +6631,14 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
                     rows = list(range(lo, hi + 1)) + tail
                     seen_rows.update(rows)
                     regions.append(
-                        "\n".join(_strip_anchor_prefix(lines[j].strip())[:_ANCHOR_LINE_CHARS] for j in rows if lines[j].strip())
+                        "\n".join(_strip_anchor_prefix(lines[j].strip())[:_ANCHOR_LINE_CHARS] for j in rows
+                                  if lines[j].strip() and not _is_trust_risk_line(lines[j]))
                     )
                     continue
         seen_rows.update(range(lo, hi + 1))
         regions.append(
-            "\n".join(_strip_anchor_prefix(ln.strip())[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1] if ln.strip())
+            "\n".join(_strip_anchor_prefix(ln.strip())[:_ANCHOR_LINE_CHARS] for ln in lines[lo : hi + 1]
+                      if ln.strip() and not _is_trust_risk_line(ln))
         )
     return regions
 
@@ -6534,7 +6765,11 @@ def _resolve_objective(
                         _strip_anchor_prefix(line.strip())[:_ANCHOR_LINE_CHARS]
                         for line in rare_topic_lines
                     ]
-                if anchor_lines:
+                if anchor_lines and len(caller_text) > _ANCHOR_RETRY_MAX_CHARS:
+                    # 1.10.0: above the probe cap the comparison probes (two extra full runs) are skipped: the
+                    # anchored objective is used directly, so a large text pays for one run, not three.
+                    query = (query or "") + "\n" + "\n".join(anchor_lines)
+                elif anchor_lines:
                     anchored_query = (query or "") + "\n" + "\n".join(anchor_lines)
                     # Probe both objectives side-effect free (no CCR archive, log or
                     # decision cache); keep the anchored one only when it fails closed,
@@ -6894,6 +7129,180 @@ def _collect_reasons(
         # dsh-jev-pre-compaction lesson: scan for secrets BEFORE archiving.
         reasons.append("ccr skipped: secret material detected")
     return reasons, risk
+
+
+def _objective_is_empty_or_absent(query: str, original_text: str) -> bool:
+    """The guards of :func:`_apply_query_guards`, read before scoring: an empty or filler query, or one whose
+    distinctive terms occur nowhere in the text."""
+    q = query or ""
+    if not q.strip():
+        return True
+    if not query_has_distinctive_selectors(q) and not _topic_terms(q):
+        return True
+    terms = [t for t in distinctive_query_terms(q) if not t.startswith("script:")]
+    return bool(terms) and not any(t in original_text.casefold() for t in terms)
+
+
+def _structural_exit_lines(
+    *,
+    adapter_info,
+    ambiguity_fail_open,
+    code_hint,
+    content_type,
+    decision_cache,
+    degraded,
+    lines,
+    min_savings_ratio,
+    mode_norm,
+    no_table,
+    original_text,
+    prose_brief,
+    query,
+    route_hint,
+    text,
+):
+    """The structural fold to return when scoring may be skipped, else None. Only for an empty, filler or absent
+    objective, never for adapter output, source code, a prose brief, a CSV, a frozen decision cache, a
+    non-adaptive mode or text carrying injection-shaped (trust-risk) lines, and only when the fold clears
+    ``min_savings_ratio`` (otherwise the normal path runs and fails open exactly as before)."""
+    if (
+        adapter_info is not None or ambiguity_fail_open or degraded or mode_norm != "adaptive"
+        or decision_cache is not None or code_hint or route_hint == "numbered_code"
+        or content_type not in ("log", "text")
+    ):
+        return None
+    q = query or ""
+    if prose_brief and not q.strip() and content_type == "text":
+        return None
+    if not _objective_is_empty_or_absent(q, original_text):
+        return None
+    if not query_has_distinctive_selectors(q) and not no_table and _looks_like_csv(original_text):
+        return None
+    folded = "\n".join(lines)
+    if folded == original_text:
+        return None
+    if _TRUST_RISK_RE.search(_normalise_instruction_text(folded)) is not None:
+        return None
+    original_tokens = estimate_tokens(original_text)
+    kept_tokens = estimate_tokens(folded)
+    if original_tokens > 200:
+        clears = 1.0 - kept_tokens / max(1, original_tokens) >= min_savings_ratio
+    else:
+        clears = kept_tokens < original_tokens
+    return lines if clears else None
+
+
+def _builtin_anchor_lines(
+    *,
+    adapter_info,
+    anchor_lines,
+    code_hint,
+    content_type,
+    degraded,
+    derived_terms,
+    mode_norm,
+    query,
+    route_hint,
+    text,
+):
+    """Error regions as the built-in objective of a generic or absent query on a log (existing error fingerprints,
+    trust-risk lines excluded, no probe run). Empty when the caller already chose an objective or no real error exists."""
+    if (
+        adapter_info is not None or anchor_lines or derived_terms or code_hint or degraded
+        or mode_norm != "adaptive" or content_type != "log" or route_hint == "numbered_code"
+    ):
+        return []
+    q = query or ""
+    if query_has_distinctive_selectors(q) or _topic_terms(q):
+        return []
+    if "[\u00d7" in text or "frames omitted" in text or "[\u2026" in text or "[last] " in text:
+        return []  # already folded or cut by the engine: anchoring again would not be idempotent
+    if not any(not _is_trust_risk_line(example) for example in error_fingerprints(text).values()):
+        return []
+    return _anchor_regions(text, _ANCHOR_MAX_LINES)
+
+
+def _score_select_render(
+    *,
+    adapter_info,
+    ambiguity_fail_open,
+    blocks,
+    budget_ratio,
+    caller_text,
+    citations,
+    code_hint,
+    content_type,
+    decision_cache,
+    degraded,
+    gap_marker,
+    lines,
+    mode_norm,
+    no_table,
+    original_text,
+    pin_patterns,
+    pin_recent,
+    prose_brief,
+    query,
+    recall_base,
+    reorder_best,
+    score_lines,
+    semantic_tier,
+    text,
+):
+    """Score the blocks, apply pins and frozen decisions, select, reconcile, apply the query guards and render. Returns ``(scored, decision_cache, kept, fail_open, risk, selection, compressed, recall, structural_collapse_only)``."""
+    scored = _score_with_degraded_view(
+        blocks=blocks,
+        content_type=content_type,
+        degraded=degraded,
+        query=query,
+        score_lines=score_lines,
+    )
+
+    pin_recent_ids = _apply_pins(
+        pin_patterns=pin_patterns,
+        pin_recent=pin_recent,
+        scored=scored,
+    )
+
+    # Freeze-on-first-sight: if a decision_cache is provided and the block
+    # fingerprints match prior turns, replay the stored keep/drop decisions
+    # byte-identically. This keeps the provider prompt cache warm across a
+    # multi-turn session (the prefix doesn't churn when new turns arrive).
+    if decision_cache is not None and not isinstance(decision_cache, dict):
+        decision_cache = None
+    if decision_cache is not None:
+        scored = _apply_freeze(decision_cache, scored, text, query or "")
+    _reorder = bool(reorder_best) and adapter_info is None
+    kept, fail_open, risk, selection = _select_blocks(
+        budget_ratio=budget_ratio, caller_text=caller_text, citations=citations,
+        code_hint=code_hint, content_type=content_type, gap_marker=gap_marker, lines=lines,
+        mode_norm=mode_norm, prose_brief=prose_brief, query=query, score_lines=score_lines,
+        scored=scored, semantic_tier=semantic_tier,
+    )
+    kept, fail_open, risk = _reconcile_selection(
+        adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, code_hint=code_hint,
+        decision_cache=decision_cache, fail_open=fail_open, kept=kept,
+        pin_recent_ids=pin_recent_ids, query=query, risk=risk, scored=scored,
+    )
+
+    fail_open, risk = _apply_query_guards(
+        adapter_info=adapter_info,
+        fail_open=fail_open,
+        no_table=no_table,
+        original_text=original_text,
+        query=query,
+        risk=risk,
+        selection=selection,
+    )
+
+    compressed, kept, fail_open, risk, recall, structural_collapse_only = _render_and_check_recall(
+        adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, caller_text=caller_text,
+        citations=citations, decision_cache=decision_cache, fail_open=fail_open,
+        gap_marker=gap_marker, kept=kept, lines=lines, original_text=original_text, query=query,
+        recall_base=recall_base, _reorder=_reorder, risk=risk, score_lines=score_lines,
+        scored=scored,
+    )
+    return scored, decision_cache, kept, fail_open, risk, selection, compressed, recall, structural_collapse_only
 
 
 def _apply_cost_gates(
@@ -7358,12 +7767,26 @@ def _split_into_lines(
         # run at all; the result is identical.)
         lines = _compact_progress_lines(text.split("\n"))
         content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
+        recall_base = text
+        if content_type == "log":
+            # 1.10.0: the STRUCTURAL pass (progress removal, [×N] template collapse, per-cause frame folding)
+            # runs for every log/trace route whatever the query; only query-driven selection is skipped.
+            folded = structural_log_pass(lines)
+            if folded != lines:
+                lines = folded
+                recall_base = "\n".join(lines)
         if content_type == "json":
             summarized = preprocess_json(text, query or "")
             if summarized != text:
                 lines = _compact_progress_lines(summarized.split("\n"))
         elif content_type == "text":
             lines = _fold_repeated_sentences(lines)
+            # 1.10.0: compile / resolve / download / passing-test noise in text-routed tool output is
+            # folded the same way a log route folds it (counts, never the failures).
+            folded = _fold_build_noise(lines)
+            if folded != lines:
+                lines = folded
+                recall_base = "\n".join(lines)
             # Split long multi-sentence prose lines into sentence blocks so the
             # no-query prose brief can reach the minimum block count.
             if (
@@ -7378,7 +7801,6 @@ def _split_into_lines(
                     and len(_segment_blocks_memo(split)) >= _PROSE_MIN_BLOCKS
                 ):
                     lines = split
-        recall_base = text
     return lines, content_type, recall_base
 
 
@@ -7811,9 +8233,13 @@ def _verify_and_adjust_risk(
     recall,
     risk,
     route_hint,
+    structural_exit=False,
     text,
 ):
-    """Run the post-compression verifier (diagnostic only) and fold its risk and score in; a derived or error-anchored objective never rates 'low'. Returns (verifier, risk, recall)."""
+    """Run the post-compression verifier (diagnostic only) and fold its risk and score in; a derived or error-anchored objective never rates 'low'. Returns (verifier, risk, recall).
+
+    ``structural_exit`` (1.10.0): the result is the structural fold, which counts repeats instead of dropping them; the verifier's
+    critical-line tally cannot read ``[×N]`` and would rate every folded log "high", so its risk does not raise the fold's own."""
     verifier = None
     if not fail_open and compressed and original_tokens > 50:
         if route_hint == "numbered_code":
@@ -7827,7 +8253,7 @@ def _verify_and_adjust_risk(
             verifier = verify_compression(text, compressed, query or "")
         risk_order = {"low": 0, "medium": 1, "high": 2}
         verifier_risk = str(verifier.get("risk", "high"))
-        if risk_order.get(verifier_risk, 2) > risk_order.get(risk, 2):
+        if risk_order.get(verifier_risk, 2) > risk_order.get(risk, 2) and not structural_exit:
             risk = verifier_risk
         recall = min(recall, float(verifier.get("score", 0.0)))
     # An inferred objective is advisory context, not caller intent — a
@@ -8238,6 +8664,47 @@ def _compress_context_impl(
         route_hint=route_hint,
         text=text,
     )
+    # 1.10.0: the structural pass has run (inside _split_into_lines). When the objective is empty, filler or
+    # absent from the text and the fold alone clears min_savings_ratio, scoring is skipped (early exit).
+    if (
+        adapter_info is None and content_type == "log" and not code_hint and route_hint != "numbered_code"
+        and query_has_distinctive_selectors(query or "") and _objective_is_empty_or_absent(query, original_text)
+    ):
+        # An objective that names nothing present in the text selects nothing: the log is read through the
+        # structural pass alone (the query-driven collapse would only guess), so the fold is the same one the
+        # early exit returns and a second run over its own output changes nothing.
+        lines = structural_log_pass(_compact_progress_lines(text.split("\n")))
+        recall_base = "\n".join(lines)
+    exit_lines = _structural_exit_lines(
+        adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, code_hint=code_hint,
+        content_type=content_type, decision_cache=decision_cache, degraded=degraded, lines=lines,
+        min_savings_ratio=min_savings_ratio, mode_norm=mode_norm, no_table=no_table,
+        original_text=original_text, prose_brief=prose_brief, query=query, route_hint=route_hint,
+        text=text,
+    )
+    structural_exit = exit_lines is not None
+    if structural_exit:
+        lines = exit_lines
+    else:
+        # Built-in anchors: a generic or absent objective on a log that carries errors is steered by the
+        # error regions themselves (existing error fingerprints; no extra probe run).
+        built_in = _builtin_anchor_lines(
+            adapter_info=adapter_info, anchor_lines=anchor_lines, code_hint=code_hint,
+            content_type=content_type, degraded=degraded, derived_terms=derived_terms,
+            mode_norm=mode_norm, query=query, route_hint=route_hint, text=text,
+        )
+        if built_in:
+            anchor_lines = built_in
+            query = "\n".join(built_in)
+            lines, content_type, recall_base = _split_into_lines(
+                adapter_info=adapter_info,
+                code_hint=code_hint,
+                industrial=industrial,
+                prose_brief=prose_brief,
+                query=query,
+                route_hint=route_hint,
+                text=text,
+            )
     # numbered_code: the "N\t" / "N|" gutter stays in the output (_render emits
     # `lines`) but is not part of the code the scorer should read.
     score_lines = lines
@@ -8250,58 +8717,28 @@ def _compress_context_impl(
             content_hint=content_hint, industrial=industrial, query_as_given=query_as_given,
             requested_mode=requested_mode, strategy=strategy,
         )
-    scored = _score_with_degraded_view(
-        blocks=blocks,
-        content_type=content_type,
-        degraded=degraded,
-        query=query,
-        score_lines=score_lines,
-    )
-
-    pin_recent_ids = _apply_pins(
-        pin_patterns=pin_patterns,
-        pin_recent=pin_recent,
-        scored=scored,
-    )
-
-    # Freeze-on-first-sight: if a decision_cache is provided and the block
-    # fingerprints match prior turns, replay the stored keep/drop decisions
-    # byte-identically. This keeps the provider prompt cache warm across a
-    # multi-turn session (the prefix doesn't churn when new turns arrive).
-    if decision_cache is not None and not isinstance(decision_cache, dict):
-        decision_cache = None
-    if decision_cache is not None:
-        scored = _apply_freeze(decision_cache, scored, text, query or "")
-    _reorder = bool(reorder_best) and adapter_info is None
-    kept, fail_open, risk, selection = _select_blocks(
-        budget_ratio=budget_ratio, caller_text=caller_text, citations=citations,
-        code_hint=code_hint, content_type=content_type, gap_marker=gap_marker, lines=lines,
-        mode_norm=mode_norm, prose_brief=prose_brief, query=query, score_lines=score_lines,
-        scored=scored, semantic_tier=semantic_tier,
-    )
-    kept, fail_open, risk = _reconcile_selection(
-        adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, code_hint=code_hint,
-        decision_cache=decision_cache, fail_open=fail_open, kept=kept,
-        pin_recent_ids=pin_recent_ids, query=query, risk=risk, scored=scored,
-    )
-
-    fail_open, risk = _apply_query_guards(
-        adapter_info=adapter_info,
-        fail_open=fail_open,
-        no_table=no_table,
-        original_text=original_text,
-        query=query,
-        risk=risk,
-        selection=selection,
-    )
-
-    compressed, kept, fail_open, risk, recall, structural_collapse_only = _render_and_check_recall(
-        adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, caller_text=caller_text,
-        citations=citations, decision_cache=decision_cache, fail_open=fail_open,
-        gap_marker=gap_marker, kept=kept, lines=lines, original_text=original_text, query=query,
-        recall_base=recall_base, _reorder=_reorder, risk=risk, score_lines=score_lines,
-        scored=scored,
-    )
+    if structural_exit:
+        # 1.10.0 early exit: the objective is empty, filler or absent from the text and the structural fold
+        # already clears min_savings_ratio, so scoring cannot add anything: the fold IS the result.
+        scored = [
+            dict(b, score=0.0, reason="structural fold", entity_hits=0, term_hits=0, rare_term_hits=0,
+                 trust_risk=False, error_exemplar=False)
+            for b in blocks
+        ]
+        kept = {b["id"] for b in scored}
+        fail_open, risk, selection = False, "medium", {"path": "structural-exit"}
+        compressed, recall, structural_collapse_only = "\n".join(lines), 1.0, True
+    else:
+        (scored, decision_cache, kept, fail_open, risk, selection, compressed, recall,
+         structural_collapse_only) = _score_select_render(
+            adapter_info=adapter_info, ambiguity_fail_open=ambiguity_fail_open, blocks=blocks,
+            budget_ratio=budget_ratio, caller_text=caller_text, citations=citations, code_hint=code_hint,
+            content_type=content_type, decision_cache=decision_cache, degraded=degraded,
+            gap_marker=gap_marker, lines=lines, mode_norm=mode_norm, no_table=no_table,
+            original_text=original_text, pin_patterns=pin_patterns, pin_recent=pin_recent,
+            prose_brief=prose_brief, query=query, recall_base=recall_base, reorder_best=reorder_best,
+            score_lines=score_lines, semantic_tier=semantic_tier, text=text,
+        )
 
     if fail_open:
         risk = "high"
@@ -8373,7 +8810,7 @@ def _compress_context_impl(
     verifier, risk, recall = _verify_and_adjust_risk(
         anchor_lines=anchor_lines, compressed=compressed, derived_terms=derived_terms,
         fail_open=fail_open, original_tokens=original_tokens, query=query, recall=recall, risk=risk,
-        route_hint=route_hint, text=text,
+        route_hint=route_hint, structural_exit=structural_exit and not fail_open, text=text,
     )
     __cr = CompressResult(
         compressed_text=result_text,

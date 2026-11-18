@@ -222,5 +222,10 @@ def test_structural_collapse_only_is_reported():
     extract = compress_context(log, "heartbeat node=57", ccr=False, citations=False)
     assert extract.receipt["structural_collapse_only"] is False
     assert "structural collapse only (query terms absent)" not in extract.reasons
+    # 1.10.0: an empty query on this log returns the structural fold (the early exit) and says so; a log with
+    # nothing to fold fails open and reports False.
     generic = compress_context(log, "", ccr=False, citations=False)
-    assert generic.fail_open and generic.receipt["structural_collapse_only"] is False
+    assert not generic.fail_open and generic.receipt["structural_collapse_only"] is True
+    unique = "\n".join(f"2026-03-14 12:00:{i % 60:02d} INFO  w1 step {'abcdefghij'[i % 10]}{i} finished ok" for i in range(40))
+    nothing = compress_context(unique, "", ccr=False, citations=False)
+    assert nothing.fail_open and nothing.receipt["structural_collapse_only"] is False

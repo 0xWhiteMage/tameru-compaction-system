@@ -1,6 +1,7 @@
 """Bounded, extractive format adapters for industrial compaction."""
 from __future__ import annotations
 
+import bisect
 import csv
 import io
 import json
@@ -734,59 +735,103 @@ def _adapt_yaml_documents(
 def _adapt_yaml(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
+    """Keep each matching subtree with its parent keys.
+
+    1.10.0: the per-match backward scans (list anchor, parent key), the prefix scan of ancestor keys and the
+    forward subtree scan were O(lines) per match, so a large text with many matches was quadratic (600K chars:
+    over two minutes). The same selection is now computed from monotone stacks and a next-line table, in
+    O(lines + matches log lines); ``tests/test_perf_regressions.py`` pins it against the previous
+    implementation on randomised documents."""
     del limits
     lines = text.splitlines()
-    selected: set[int] = set()
+    n = len(lines)
     nonblank = [index for index, line in enumerate(lines) if line.strip()]
     matches = [index for index in nonblank if _contains_selector(lines[index], selectors)]
     has_document_separator = any(line.rstrip() == "---" for line in lines)
+    indents = [_indent(line) for line in lines]
+    # content lines (what the backward scans look at): non-blank and not a comment
+    content = [index for index in nonblank if not lines[index].lstrip().startswith("#")]
+    is_list = {index: re.match(r"^\s*-\s+", lines[index]) is not None for index in content}
+    is_colon = {index: lines[index].rstrip().endswith(":") for index in content}
+    colon_nonblank = [index for index in nonblank if lines[index].rstrip().endswith(":")]
+    separators = [index for index, line in enumerate(lines) if line.rstrip() == "---"] if has_document_separator else []
+    # next nonblank line (strictly after i) whose indent is <= indents[i]; n when none
+    next_le = [n] * n
+    stack: list[int] = []
+    for index in reversed(nonblank):
+        while stack and indents[stack[-1]] > indents[index]:
+            stack.pop()
+        next_le[index] = stack[-1] if stack else n
+        stack.append(index)
+
+    selected: set[int] = set()
+    spans: list[tuple[int, int]] = []
+    prefix_anchor: dict[int, int] = {}  # anchor indent -> largest anchor seen (its ancestor keys are a prefix)
+    list_stack: list[int] = []          # content list-item lines, strictly increasing indent bottom -> top
+    list_indents: list[int] = []
+    colon_stack: list[int] = []         # content colon lines, strictly increasing indent bottom -> top
+    colon_indents: list[int] = []
+    lpos = 0                            # next entry of `content` not yet pushed on the list stack
+    cpos = 0                            # next entry of `content` not yet pushed on the colon stack
     for match in matches:
-        match_indent = _indent(lines[match])
+        match_indent = indents[match]
+        while lpos < len(content) and content[lpos] <= match:
+            line_index = content[lpos]
+            lpos += 1
+            if is_list[line_index]:
+                d = indents[line_index]
+                while list_indents and list_indents[-1] >= d:
+                    list_indents.pop()
+                    list_stack.pop()
+                list_stack.append(line_index)
+                list_indents.append(d)
+        while cpos < len(content) and content[cpos] < match:
+            line_index = content[cpos]
+            cpos += 1
+            if is_colon[line_index]:
+                d = indents[line_index]
+                while colon_indents and colon_indents[-1] >= d:
+                    colon_indents.pop()
+                    colon_stack.pop()
+                colon_stack.append(line_index)
+                colon_indents.append(d)
         anchor = match
         list_anchor_found = False
-        for index in range(match, -1, -1):
-            if not lines[index].strip() or lines[index].lstrip().startswith("#"):
-                continue
-            indent = _indent(lines[index])
-            if indent <= match_indent and re.match(r"^\s*-\s+", lines[index]):
-                anchor = index
-                list_anchor_found = True
-                break
-        for index in range(match - 1, -1, -1):
-            if list_anchor_found:
-                break
-            if not lines[index].strip() or lines[index].lstrip().startswith("#"):
-                continue
-            indent = _indent(lines[index])
-            if indent < match_indent and lines[index].rstrip().endswith(":"):
-                anchor = index
-                break
-        anchor_indent = _indent(lines[anchor])
+        # nearest list item at or before the match with indent <= match_indent
+        k = bisect.bisect_right(list_indents, match_indent) - 1
+        if k >= 0:
+            anchor = list_stack[k]
+            list_anchor_found = True
+        if not list_anchor_found:
+            # nearest content colon line before the match with indent < match_indent
+            k = bisect.bisect_left(colon_indents, match_indent) - 1
+            if k >= 0:
+                anchor = colon_stack[k]
+        anchor_indent = indents[anchor]
         if anchor_indent == 0 and has_document_separator:
-            doc_start = 0
-            for index in range(match - 1, -1, -1):
-                if lines[index].rstrip() == "---":
-                    doc_start = index + 1
-                    break
-            doc_end = len(lines)
-            for index in range(match + 1, len(lines)):
-                if lines[index].rstrip() == "---":
-                    doc_end = index
-                    break
+            at = bisect.bisect_left(separators, match)
+            doc_start = separators[at - 1] + 1 if at > 0 else 0
+            at = bisect.bisect_right(separators, match)
+            doc_end = separators[at] if at < len(separators) else n
             if doc_end - doc_start <= 60:
                 selected.update(range(doc_start, doc_end))
                 continue
-        for index in range(anchor):
-            if not lines[index].strip():
-                continue
-            indent = _indent(lines[index])
-            if indent < anchor_indent and lines[index].rstrip().endswith(":"):
-                selected.add(index)
-        selected.add(anchor)
-        for index in range(anchor + 1, len(lines)):
-            if lines[index].strip() and _indent(lines[index]) <= anchor_indent:
+        if prefix_anchor.get(anchor_indent, -1) < anchor:
+            prefix_anchor[anchor_indent] = anchor
+        spans.append((anchor, max(anchor + 1, next_le[anchor])))
+    for anchor_indent, anchor in prefix_anchor.items():
+        for index in colon_nonblank:
+            if index >= anchor:
                 break
-            selected.add(index)
+            if indents[index] < anchor_indent:
+                selected.add(index)
+    spans.sort()
+    merged_end = -1
+    for start, end in spans:
+        start = max(start, merged_end)
+        if end > start:
+            selected.update(range(start, end))
+            merged_end = end
     if not selected or len(selected) >= len(lines):
         return _decline(text, "yaml", "no selective subtree match", total_records=len(nonblank))
     if gap_marker is None:

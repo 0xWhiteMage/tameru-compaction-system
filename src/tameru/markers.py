@@ -32,7 +32,7 @@ ENGINE_MARKERS: list[tuple[str, "re.Pattern[str]", str]] = [
     ("gap_generic", re.compile(r"^\[… .* omitted …\]$"),
      "agent_formats.py:691/721/934/3336-3346 (hunks/files/matches/tests/suites/captured/other)"),
     ("frames_omitted", re.compile(r"^\s*\.\.\. \d+ frames omitted$"),
-     "compress_context.py:954/962/973 middle-stack folding"),
+     "compress_context.py _fold_trace_run: per-cause stack folding keeps each exception head, its first, first non-framework and last frame and '... N more'; the rest of a frame run is one counted marker (1.10.0)"),
     ("more_items", re.compile(r"^\.\.\. \d+ more items$"),
      "compress_context.py:1210 _crush_value list tail"),
     ("similar_items", re.compile(r"^\.\.\. \d+ similar items omitted \(keys: .+\)$"),
