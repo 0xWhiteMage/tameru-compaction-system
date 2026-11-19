@@ -76,6 +76,7 @@ against the primary model is stated next to the primary result); token-estimate 
 ## Settings-tried log
 
 (empty; each sweep appends a line: date, what was swept, number of settings, split used)
+- 2026-11-19, DeepSeek plugin: policy G (act every step on old results) at confidence gates 0.5, 0.6, 0.7, 0.8, 0.85 and policy T (act only where the Harness pruner would cut) at gates 0 and 0.7: **7 settings** tried; chosen on development (36 scenarios), checked on validation (24); no holdout look. Result: none of the seven was inside the cost margin on development, so nothing was frozen (plugin `docs/REPLAY-1.10.0.md`).
 
 ## Amendments (appended after the plan was hashed; the original hash stays in the sha256 file)
 
@@ -87,3 +88,30 @@ unstructured prose without a specific question would mean dropping arbitrary sen
 decided to amend the gate: for unstructured prose, `jp_musubi` and similar rows must save no less than engine 1.9.0 and keep all evidence;
 the 70% target stays for structured Japanese (logs, traces, build output). This is the only gate changed after the hash; the change
 narrows a target that cannot be met safely, it does not add or widen any other gate, and it is stated here and in the CHANGELOG.
+
+### 2026-11-19: the DeepSeek fresh holdout is registered (before any DeepSeek setting is tuned)
+
+The DeepSeek plugin (`dsh-tameru-plugin`, branch `feat/engine-1.10.0`) holds the fresh holdout: 48 scenarios in 8 families that share
+no filler, tool, fact format, value shape or generator with the development pool (pytest, Maven, kubectl JSON logs, SQL rows, jest,
+`go test`, cargo, metrics CSV; four of the eight families, 24 scenarios, have Chinese user messages and Chinese output lines). The
+sha256 over the canonical text of every scenario (`id:sha256(canonical scenario)` lines, sorted by id) is
+
+`ac9e77dd723d3755b8238c4a1e60d6947e798ddcc0ee489e9d2c10f2b5ca1489`
+
+recorded in the plugin's `test/fixtures/replay/HOLDOUT.sha256`, with the scenario list in `holdout-definitions.json`. The plugin's
+runner refuses to read the holdout without `--holdout`, requires a frozen setting and a matching hash, and appends every look to
+`test/fixtures/replay/holdout_looks.json` (date, plugin commit, engine commit, setting hash) before it starts. It has not been run.
+Development and validation are the plugin's 60 development scenarios (three families), split 60/40 within each family by a hash of
+the scenario id (36 / 24).
+
+Pre-stated for the DeepSeek policy comparison on development and validation (no gate is added or widened; this fixes the procedure):
+
+- Settings tried, all declared here before they are run, 7 in all: policy G (act every step on old results, confidence gate) at gates
+  0.5, 0.6, 0.7, 0.8 and 0.85 on engine 1.10.0; policy T (act only when the Harness's own pruner is about to cut, the extract
+  replacing its head/tail cut) at gates 0 and 0.7. The 1.9.0-era plugin (engine 1.9.0, gate 0.7) and the stock Harness are references, not tried settings.
+- On development, each policy's setting is the one inside both margins with the most facts kept (ties: the more conservative gate).
+  A candidate is inside the margins when the one-sided 95% cluster-bootstrap (by scenario) upper bound of its whole-session cost
+  difference to the 1.9.0-era plugin is at most +1.0 point (read 0.1, write 1.0) and the lower bound of its facts-kept difference is at least -1.0 point.
+- On validation, the two chosen settings are compared by the same rule; the winner is frozen only if its facts kept are also above
+  the 1.9.0-era plugin's. If neither policy is inside the margins, nothing is frozen and the shipped setting stays.
+- Replay only: no real model ran, and the cost model is the one in `scripts/replay.ts` (read 0.1 and write 1.0; write 1.25 shown as a sensitivity).
