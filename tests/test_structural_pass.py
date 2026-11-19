@@ -386,3 +386,29 @@ def test_trust_risk_property_over_every_new_path(path):
             degraded=False, lines=structural_log_pass(poisoned), min_savings_ratio=0.1, mode_norm="adaptive",
             no_table=False, original_text=text, prose_brief=False, query="continue", route_hint=None, text=text,
         ) is None
+
+
+# ------------------------------------------------------------------ caller pins (regression)
+
+
+def _pinned_log() -> str:
+    rows = []
+    for i in range(300):
+        rows.append(f"2026-03-14 12:{i // 60:02d}:{i % 60:02d} INFO  w1 GET /api/v1/users/{i:08x}/profile 200 {i % 90}ms")
+        if i % 25 == 7:
+            rows.append(f"2026-03-14 12:{i // 60:02d}:{i % 60:02d} ERROR w1 upstream timeout after {100 + i}ms")
+    return "\n".join(rows)
+
+
+@pytest.mark.parametrize("query", ["handshake refused", "why did it time out"])
+def test_pins_are_kept_verbatim_and_compression_still_works(query):
+    text = _pinned_log()
+    result = compress_context(text, query, pin_patterns=["ERROR"], pin_recent=3, **KW)
+    assert not result.fail_open
+    assert len(result.compressed_text) < 0.5 * len(text)
+    out_lines = set(result.compressed_text.split("\n"))
+    for line in text.split("\n"):
+        if "ERROR" in line:
+            assert line in out_lines
+    for line in text.split("\n")[-3:]:
+        assert line in out_lines

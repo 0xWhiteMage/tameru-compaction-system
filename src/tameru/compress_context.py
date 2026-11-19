@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import bisect
 import collections
+import contextvars
 import functools
 import hashlib
 import json
@@ -48,7 +49,7 @@ from .contract_gates import (
 from .folding import fold_lossless, json_brief, mask_template
 from .format_adapters import FILLER_WORDS
 from .gap_kind import call_gap_marker, gap_accepts_kind
-from .markers import REDACTED_MARKER
+from .markers import REDACTED_MARKER, marker_name as _marker_name
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
 from .supersession import apply_supersession
@@ -988,6 +989,10 @@ _TRACE_KEEP_TAIL = 3  # innermost frame + source line + exception (Python), or t
 # A folded run keeps at most _FRAME_FOLD_MIN - 1 frames, so folding is idempotent.
 # ---------------------------------------------------------------------------
 _FRAME_FOLD_MIN = 5
+# Lines of the blocks a caller pinned (pin_patterns / pin_recent) for the call in progress. While a call has pins the
+# structural pass, build-noise counting, built-in anchors and the early exit are OFF: the pinned ORIGINAL blocks must come
+# back verbatim (the pinned-source cost gate), and folding moves block boundaries. Never read inside memoised functions.
+_PINNED_LINES: "contextvars.ContextVar[frozenset]" = contextvars.ContextVar("tameru_pinned_lines", default=frozenset())
 _FRAME_HIT_SLOTS = 1
 _STRUCT_COLLAPSE_MIN = 12  # structural (query-less) pass: templates seen fewer times stay verbatim
 _FRAME_START_RE = re.compile(r"^\s*(?:at\s+\S|File\s+\"|from\s+\S+:\d+|#\d+\s+\S+\(\d+\):|#\d+\s+\{main\})")
@@ -7490,7 +7495,7 @@ def _structural_exit_lines(
     non-adaptive mode or text carrying injection-shaped (trust-risk) lines, and only when the fold clears
     ``min_savings_ratio`` (otherwise the normal path runs and fails open exactly as before)."""
     if (
-        adapter_info is not None or ambiguity_fail_open or degraded or mode_norm != "adaptive"
+        _PINNED_LINES.get() or adapter_info is not None or ambiguity_fail_open or degraded or mode_norm != "adaptive"
         or decision_cache is not None or code_hint or route_hint == "numbered_code"
         or content_type not in ("log", "text")
     ):
@@ -7532,7 +7537,7 @@ def _builtin_anchor_lines(
     """Error regions as the built-in objective of a generic or absent query on a log (existing error fingerprints,
     trust-risk lines excluded, no probe run). Empty when the caller already chose an objective or no real error exists."""
     if (
-        adapter_info is not None or anchor_lines or derived_terms or code_hint or degraded
+        _PINNED_LINES.get() or adapter_info is not None or anchor_lines or derived_terms or code_hint or degraded
         or mode_norm != "adaptive" or content_type != "log" or route_hint == "numbered_code"
     ):
         return []
@@ -8097,7 +8102,8 @@ def _split_into_lines(
         lines = _compact_progress_lines(text.split("\n"))
         content_type = _HINT_ROUTES.get(route_hint) or route_content_type(lines)
         recall_base = text
-        if content_type == "log":
+        if content_type == "log" and not _PINNED_LINES.get():
+            # (pins active: the caller's pinned blocks are located in the ORIGINAL line structure, so nothing is folded)
             # 1.10.0: the STRUCTURAL pass (progress removal, [×N] template collapse, per-cause frame folding)
             # runs for every log/trace route whatever the query; only query-driven selection is skipped.
             folded = structural_log_pass(lines)
@@ -8112,7 +8118,7 @@ def _split_into_lines(
             lines = _fold_repeated_sentences(lines)
             # 1.10.0: compile / resolve / download / passing-test noise in text-routed tool output is
             # folded the same way a log route folds it (counts, never the failures).
-            folded = _fold_build_noise(lines)
+            folded = _fold_build_noise(lines) if not _PINNED_LINES.get() else lines
             if folded != lines:
                 lines = folded
                 recall_base = "\n".join(lines)
@@ -8904,6 +8910,10 @@ def _compress_context_impl(
             requested_mode=requested_mode, strategy=strategy,
         )
     source_pin_texts = _source_pin_texts(caller_text, pin_patterns, pin_recent)
+    _PINNED_LINES.set(frozenset(
+        form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
+        for form in (ln, strip_ansi(ln))
+    ))
     original_text = _norm_newlines(caller_text)
     industrial_text = industrial.text if industrial.applied else caller_text
     text = strip_ansi(_norm_newlines(industrial_text))
@@ -9010,7 +9020,8 @@ def _compress_context_impl(
     # 1.10.0: the structural pass has run (inside _split_into_lines). When the objective is empty, filler or
     # absent from the text and the fold alone clears min_savings_ratio, scoring is skipped (early exit).
     if (
-        adapter_info is None and content_type == "log" and not code_hint and route_hint != "numbered_code"
+        not _PINNED_LINES.get()
+        and adapter_info is None and content_type == "log" and not code_hint and route_hint != "numbered_code"
         and query_has_distinctive_selectors(query or "") and _objective_is_empty_or_absent(query, original_text)
     ):
         # An objective that names nothing present in the text selects nothing: the log is read through the
@@ -9256,7 +9267,9 @@ def compress_context(
     redact_secrets: bool = False,
     _ccr_defer: bool = False,
 ) -> CompressResult:
-    result = _compress_context_impl(
+    _pin_token = _PINNED_LINES.set(frozenset())
+    try:
+        result = _compress_context_impl(
         context, query,
         mode=mode, budget_ratio=budget_ratio, ccr=ccr, cache_prefix=cache_prefix,
         citations=citations, ccr_dir=ccr_dir, decision_cache=decision_cache, strategy=strategy,
@@ -9268,7 +9281,9 @@ def compress_context(
         limits=limits, derive_query=derive_query, anchor_errors=anchor_errors,
         prose_brief=prose_brief, gap_marker=gap_marker, recursion_markers=recursion_markers,
         content_hint=content_hint, inline_short_gaps=inline_short_gaps, _ccr_defer=_ccr_defer,
-    )
+        )
+    finally:
+        _PINNED_LINES.reset(_pin_token)
     if redact_secrets and not result.fail_open:
         redacted = redact_secrets_in(result.compressed_text)
         if redacted is not result.compressed_text and redacted != result.compressed_text:
