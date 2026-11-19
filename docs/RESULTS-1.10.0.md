@@ -36,6 +36,22 @@ The Hermes plugin does not use confidence. For the generic question under Hermes
 - **Squeez** (618 SWE-bench outputs, 1.9.0): the engine compresses about 39% of the input and falls open on 200 samples, with span precision 0.09 and recall 0.74. It is not a span extractor.
 - The speed budgets in `benchmarks/latency.py`: the `--quick` run passes all 84 cells (200K inputs about 0.2 to 0.3 s); the full run including 2M inputs has not been repeated for 1.10.0.
 
+## The DeepSeek plugin's whole-session replay (gate 8): not met
+
+The DeepSeek plugin measures the engine in whole sessions with a priced cache (read 0.1, write 1.0; write 1.25 as a sensitivity), replay only, in its own repository (`docs/REPLAY-1.10.0.md`).
+26 settings were tried on 60 development scenarios (36 development, 24 validation), declared in [`ANALYSIS-PLAN-1.10.md`](ANALYSIS-PLAN-1.10.md) before they ran; round 1 found nothing inside the margins, round 2 fixed a defect in
+the "act only where the Harness would cut" policy and froze that policy with no confidence gate (T-0). The one look at the fresh holdout (48 scenarios, hash registered in the plan before any tuning) gave:
+
+| Quantity (T-0, 48 clusters) | Result | Margin | Met |
+|---|---|---|---|
+| Cost vs the 1.9.0-era plugin | -0.03% (one-sided upper +0.36) | upper <= +1.0 | yes |
+| Facts kept vs the 1.9.0-era plugin | -0.50 points (one-sided lower -2.27) | lower >= -1.0 | no |
+| Accepted extracts keep their facts | 90.2% (one-sided lower 82.5) | lower >= 85 | no |
+| Cost vs stock | -1.27% (upper -0.85) | reported | |
+| Facts kept vs stock | +5.00 points (lower +2.74) | reported | |
+
+Gate 8 is therefore **not met**, and the look is spent; a further change of setting needs a new sealed holdout. The engine's own results above do not depend on this gate. No real model ran.
+
 ## Sealed-look log
 
 `benchmarks/engine_bench/sealed_looks.json` records one look at the candidate. The 1.9.0 baseline was run once over the same cases for comparison only.

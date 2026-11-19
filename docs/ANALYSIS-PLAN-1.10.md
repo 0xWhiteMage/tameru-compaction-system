@@ -149,3 +149,9 @@ bound of whole-session cost difference to the 1.9.0-era plugin <= +1.0 point; lo
 most facts kept (ties: the more conservative setting, the later in the list above); round 1 settings are candidates too. The per-policy
 choices are compared on validation by the same rule; a winner is frozen only if it is inside both margins on validation and its facts
 kept are above the 1.9.0-era plugin's. If none qualifies, nothing is frozen.
+
+### 2026-11-19: the DeepSeek holdout look (T gate 0) and its result
+
+One look, on the frozen setting (hash `a8b37679de4825f3f45b58d79105ead58cb3b4acb758c87ceb3c23051e1ed92b`), logged twice because the first run stopped before reading any result (the baseline arm needs `--baseline-vendor`). Result: cost upper bound
++0.36 against the 1.9.0-era plugin (met); facts kept -0.50 points with a one-sided lower bound of -2.27 (margin -1.0, not met); accepted extracts keep 90.2% of their facts with a lower bound of 82.5% (bar 85%, not met); the extract replaced the stock cut on 22.9% of trigger
+events (lower bound 18.8, not inert); no second rewrites. Gate 8 is not met. See `docs/RESULTS-1.10.0.md`.
