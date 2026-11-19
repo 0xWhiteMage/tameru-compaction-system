@@ -6,8 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased]
+## [1.10.0] - Unreleased
 
+Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
+release, paired, cluster bootstrap); none of it is a measurement against a real model's bill. Plan and rules: [`docs/ANALYSIS-PLAN-1.10.md`](docs/ANALYSIS-PLAN-1.10.md).
+
+- **Stack traces and build logs shrink under any question.** On a generic or tool-call-shaped question the engine used to skip its log folding, so Java and .NET
+  traces saved 0 to 21%. A structural pass now always runs for log and trace routes: frames fold per exception cause (Java, .NET, Python, Go, JS, Ruby, PHP)
+  keeping each head, cause message, `... N more` and the first frame outside the framework; repeated templates and build noise become counts. On the benchmark
+  every Java and .NET trace case saves at least 74% (mean 84 to 91%) under task, tool-call and generic questions for both hosts' call settings, with all evidence kept.
+- **The engine fails open less, never keeps less evidence.** Paired against 1.9.0 on dev and validation: evidence kept never lower in any cell, fail-open lower
+  in every cell (generic question under the DeepSeek call: 77.5% to 14%). 609 of 5,616 golden combinations that failed open now return a shortened text; none starts failing open.
+- **Confidence says what it rests on.** Keyword recall counts only query terms the source contains (a long query no longer caps confidence at 0.70), critical lines are
+  error lines and query-key lines, and every result names its basis (`confidence_basis`: lexical, cross_lingual, tool_call, structural, derived, anchored, none). Zero query keys never gives 1.0;
+  derived confidence is capped below 0.7 and never judged by the terms it derived. DeepSeek-style tool-call rows that are confident at 0.7 and not failing open: 48% to 76%.
+- **Chinese and full-width text.** Han bigrams and trigrams with a stop set replace single characters; classifiers, fingerprints and term extraction match on NFKC text while the output keeps the raw bytes;
+  a Chinese-only question that misses an English source fails open. A Chinese user message with an English tool call now gives confidence 0.94 (was 0.57) with all evidence kept.
+- **A 2M-character numbered source with a task question took over nine minutes** (600K: 25 s); a quadratic YAML check is now linear (2M: about 1 s). Anchor probes are size-capped.
+- **One interface for every host.** `decide()` (one accept-or-decline function with closed reason codes and the Hermes and DeepSeek policies as data), versioned presets
+  (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v2 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),
+  a shared `build_query`, query pruning to the terms the source contains, and the result schema 2 fields (`confidence_basis`, `stable_key`, `dropped`, `result_schema`, `preset`).
+  `dropped` names what an extract left out (category, line count, first locator) so a host can say what to re-read.
+- **`redact_secrets`** (off by default): replaces matches of the engine's own credential patterns in the output with `[tameru:redacted]`; a fail-open still returns the original text, and the decision never changes.
+- **One list of the lines the engine writes itself** (`tameru/markers.py`); the red-team checker uses it, clearing 11 false fabrication flags (the forged-marker detection stays).
+- **Benchmarks:** `benchmarks/engine_bench` (294 cases, 207 source clusters, dev / validation / sealed split with a committed sealed hash), `benchmarks/latency.py` with the 1.9.0 baseline,
+  and the Squeez result for 1.9.0 (`benchmarks/squeez-1.9.0.json`).
+- **Known limits.** Calls with `pin_patterns` or `pin_recent` do not get the structural features (the folds move the blocks the pins anchor to). Unstructured prose with no specific
+  question (a Japanese README, for example) still falls back to the original. Compiler diagnostics are not regrouped by file. Squeez: the engine compresses about 39% of the input and falls open on 200 of 618 samples; it is not a span extractor.
+- **Changed for plugin authors.** `unwrap_hermes_tool` is a deprecated alias of `unwrap_tool_payload`; the golden corpus is regenerated once (receipts carry the engine version and the new result fields).
 - **One interface for every plugin.** `docs/PLUGIN-UI.md` specifies the bar, the icon meanings, the Off / Less / Normal / More strength names and the words shared by the Hermes and DeepSeek Harness plugins; `docs/ui-vocabulary.json` (English and Chinese, with a forbidden-words list that keeps cost and saving wording out) and `docs/ui-icons.json` (the star, lock, undo and size-arrow drawings) are the data each plugin copies and tests against. Reviewed by five design specialists over four rounds. No file under `src/` changes.
 - **Open for contribution.** `CONTRIBUTING.md`, `SECURITY.md`, a pull request template, issue forms and CODEOWNERS, modelled on how Hermes Agent runs its contributions. `docs/HOST-RESTRICTIONS.md` records what harness maintainers have taught us a plugin may not do (14 numbered rules, each with where it was learned), and `scripts/check_host_rules.py` enforces it in CI: any new network, process, dynamic-code, file-write, home-path, environment, import or monkey-patching finding fails, against a baseline of the existing optional cache and summary route; every module must also import under `python -I -S`. Contributor credit follows Hermes: `.mailmap`, one-file-per-email mappings in `contributors/`, and an attribution check in CI. A CI workflow (tests on Linux and Windows, host restrictions, attribution) is added; actions are pinned by commit. No file under `src/` changes.
 - **Licence: MIT to Apache License 2.0.** `LICENSE` is the Apache-2.0 text and `NOTICE` carries the copyright line; the package metadata declares `Apache-2.0`. Copies of earlier releases remain available under the MIT licence they were published with.

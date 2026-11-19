@@ -77,7 +77,7 @@ except Exception:
     DEFAULT_CCR_DIR = Path(tempfile.gettempdir()) / ".tameru" / "cache" / "context-compress-ccr"
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
-ENGINE_VERSION = "1.9.0"
+ENGINE_VERSION = "1.10.0"
 # Shape of CompressResult for hosts: 2 since 1.10.0 (confidence_basis, stable_key, dropped, result_schema, preset).
 RESULT_SCHEMA = 2
 CCR_TTL_SECONDS = 6 * 60 * 60
