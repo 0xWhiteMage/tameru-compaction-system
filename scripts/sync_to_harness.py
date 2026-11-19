@@ -2,7 +2,7 @@
 """Sync vendored Tameru modules into a harness plugin directory.
 
 Vendored integrations (the Hermes plugin repo's `hermes_tameru_plugin/tameru/`,
-Pi/OpenCode extensions, etc.) track this repo by copying `src/tameru/*.py` (plus its package data, `presets.json`) wholesale.
+Pi/OpenCode extensions, etc.) track this repo by copying `src/tameru/*.py` (plus its package data, `presets.json` and `prices.json`) wholesale.
 This script makes that a single command:
 
     python scripts/sync_to_harness.py <target_plugin_dir> [--manifest plugin.yaml]
@@ -44,7 +44,7 @@ SRC = REPO_ROOT / "src" / "tameru"
 
 # Files upstream deliberately does NOT ship into vendored dirs.
 _SKIP = {"__init__.py", "__main__.py"}
-# Non-.py package data upstream ships next to the modules (presets.json is read at import time).
+# Non-.py package data upstream ships next to the modules (presets.json and prices.json are read at run time).
 _DATA = {".json"}
 
 

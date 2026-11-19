@@ -24,4 +24,4 @@ dev = ["pytest>=7"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-tameru = ["presets.json"]
+tameru = ["presets.json", "prices.json"]

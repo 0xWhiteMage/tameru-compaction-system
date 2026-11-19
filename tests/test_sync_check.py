@@ -85,6 +85,9 @@ class SyncCheckTests(unittest.TestCase):
         data = self.target / "presets.json"
         self.assertTrue(data.is_file(), "presets.json must be vendored with the modules")
         self.assertEqual(data.read_bytes(), (SRC / "presets.json").read_bytes().replace(b"\r\n", b"\n"))
+        prices = self.target / "prices.json"
+        self.assertTrue(prices.is_file(), "prices.json must be vendored with the modules")
+        self.assertEqual(prices.read_bytes(), (SRC / "prices.json").read_bytes().replace(b"\r\n", b"\n"))
         data.write_text("{}\n", encoding="utf-8")
         code, out = self._check()
         self.assertEqual(code, 1)
