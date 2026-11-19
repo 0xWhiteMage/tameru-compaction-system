@@ -76,3 +76,14 @@ against the primary model is stated next to the primary result); token-estimate 
 ## Settings-tried log
 
 (empty; each sweep appends a line: date, what was swept, number of settings, split used)
+
+## Amendments (appended after the plan was hashed; the original hash stays in the sha256 file)
+
+### 2026-11-19: the Japanese prose target
+
+The plan required `jp_musubi` (an unstructured Japanese prose document) to save at least 70%. On dev and validation the engine saves
+41.6% when asked a specific question and falls back to the original under tool-call-shaped and generic questions. Reaching 70% on
+unstructured prose without a specific question would mean dropping arbitrary sentences, which this project does not do. The maintainer
+decided to amend the gate: for unstructured prose, `jp_musubi` and similar rows must save no less than engine 1.9.0 and keep all evidence;
+the 70% target stays for structured Japanese (logs, traces, build output). This is the only gate changed after the hash; the change
+narrows a target that cannot be met safely, it does not add or widen any other gate, and it is stated here and in the CHANGELOG.
