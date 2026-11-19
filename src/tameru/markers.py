@@ -121,5 +121,8 @@ GAP_KINDS = (
     "suites",    # passing suite lines
     "captured",  # captured stdout/stderr lines
     "records",   # structured-report records (lcov, junit, sarif, notebook)
+    "frames",    # stack frames (1.10.0: the structural folds name what they cut)
+    "repeats",   # lines of one repeated template
+    "progress",  # progress-bar / spinner lines
     "other",     # anything else an adapter drops
 )

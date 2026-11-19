@@ -203,8 +203,9 @@ def request_was_sanitized(request: Mapping[str, Any]) -> bool:
     return any(isinstance(request.get(k), str) and clean_text(request[k])[1] for k in ("text", "query"))
 
 
-def result_to_dict(result: Any, *, sanitized: bool = False) -> dict[str, Any]:
-    """The reply body for a ``compress`` request: the version 1 keys, plus ``result_schema``."""
+def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None = None) -> dict[str, Any]:
+    """The reply body for a ``compress`` request: the version 1 keys, plus ``result_schema`` and the result schema 2
+    fields (``confidence_basis``, ``stable_key``, ``dropped``, ``preset``). Every v1 key keeps its meaning."""
     return {
         "text": result.compressed_text,
         "fail_open": bool(result.fail_open),
@@ -217,6 +218,10 @@ def result_to_dict(result: Any, *, sanitized: bool = False) -> dict[str, Any]:
         "reasons": [str(r)[:120] for r in list(result.reasons)[:MAX_REPLY_REASONS]],
         "sanitized": bool(sanitized),
         "result_schema": RESULT_SCHEMA,
+        "confidence_basis": str(getattr(result, "confidence_basis", "none")),
+        "stable_key": str(getattr(result, "stable_key", "")),
+        "dropped": [[str(c), int(n), str(loc)[:80]] for c, n, loc in (getattr(result, "dropped", None) or ())[:3]],
+        "preset": preset if preset is not None else getattr(result, "preset", None),
     }
 
 

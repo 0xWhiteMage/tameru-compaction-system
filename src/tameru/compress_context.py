@@ -41,11 +41,13 @@ from .agent_formats import (
 from .contract_gates import (
     GENERIC_WORDS,
     distinctive_query_terms,
+    han_units,
     query_has_distinctive_selectors,
+    query_profile,
 )
 from .folding import fold_lossless, json_brief, mask_template
 from .format_adapters import FILLER_WORDS
-from .gap_kind import call_gap_marker
+from .gap_kind import call_gap_marker, gap_accepts_kind
 from .markers import REDACTED_MARKER
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
@@ -75,8 +77,8 @@ except Exception:
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
 ENGINE_VERSION = "1.9.0"
-# Shape of CompressResult for hosts: 1 until the additive fields land (see docs/1.10.0-BUILD-NOTES.md).
-RESULT_SCHEMA = 1
+# Shape of CompressResult for hosts: 2 since 1.10.0 (confidence_basis, stable_key, dropped, result_schema, preset).
+RESULT_SCHEMA = 2
 CCR_TTL_SECONDS = 6 * 60 * 60
 CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
 FREEZE_MAX_DECISIONS = 4096
@@ -343,7 +345,7 @@ _TERM_TOKEN_RE = re.compile(
     r"[A-Za-z_\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u1E00-\u1EFF]"
     r"[A-Za-z_\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u1E00-\u1EFF0-9\u0300-\u036F]*"
     r"|\d+(?:\.\d+)?|"
-    r"[\u4e00-\u9fff]|"
+    r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f]|"
     r"[\u3040-\u30ff]{2,}|[\uac00-\ud7a3]{2,}|"
     r"[\u0600-\u06ff]{2,}|[\u0e00-\u0e7f]{2,}"
 )
@@ -383,6 +385,23 @@ def _finalize_reused_probe(res, query_as_given, anchor_lines) -> "CompressResult
     return dataclasses.replace(res, receipt=receipt, compression_risk=new_risk)
 
 
+def _rebase_anchored(res, caller_text, caller_query):
+    """A reused probe ran with the anchors as its query"""
+    extra: dict[str, Any] = {}
+    if not res.fail_open:
+        # The probe ran with the anchors as its query, so it rated itself on recall of terms taken from the text.
+        # The result's confidence rests on the anchors, i.e. on the error fingerprints it kept.
+        source = strip_ansi(_norm_newlines(caller_text))
+        basis = _query_basis(caller_query, source, anchored=True)
+        extra = {
+            "confidence_basis": basis,
+            "confidence": round(
+                _compute_confidence(basis=basis, compressed=res.compressed_text, fail_open=False, original=source,
+                                    recall=float(res.confidence or 0.0)), 3),
+        }
+    return dataclasses.replace(res, **extra)
+
+
 @dataclass
 class CompressResult:
     compressed_text: str
@@ -404,6 +423,12 @@ class CompressResult:
     reasons: list[str] = field(default_factory=list)
     verifier: Optional[dict[str, Any]] = None
     receipt: Optional[dict[str, Any]] = None
+    # 1.10.0 (result schema 2), all additive:
+    confidence_basis: str = "none"  # what the confidence rests on: see contract_gates.QUERY_BASES
+    stable_key: str = ""  # sha256(engine version, text, query)[:16]: the same call has the same key
+    dropped: tuple = ()  # up to 3 (category, line_count, first_locator) of what the output left out, largest first
+    result_schema: int = RESULT_SCHEMA
+    preset: Optional[str] = None  # the named option set the call used, when the host says so
 
     def __post_init__(self) -> None:
         self.tokens_saved = max(0, self.original_tokens - self.kept_tokens)
@@ -548,7 +573,7 @@ _REDIS_LINE_RE = re.compile(r"^\d+:[XCSM] \d{1,2} [A-Z][a-z]{2}(?: \d{4})? \d\d:
 
 
 def classify_line(line: str) -> str:
-    t = line.strip()
+    t = _nfkc(line.strip())  # 1.10.0: full-width text classifies as the ASCII it looks like
     if not t:
         return "blank"
     if _CL_HEADING_RE.match(t):
@@ -836,7 +861,7 @@ def _without_zero_counts(s: str) -> str:
 
 def _is_level_error_line(line: str) -> bool:
     """A level-tagged ERROR/FATAL/CRITICAL/PANIC/FAIL* log line."""
-    return _ERR_LEVEL_RE.search(_without_zero_counts(line[:_RX_LINE_CAP])) is not None
+    return _ERR_LEVEL_RE.search(_without_zero_counts(_nfkc(line[:_RX_LINE_CAP]))) is not None
 
 
 # Every way a line can be an error line contains one of these literals (the
@@ -861,7 +886,7 @@ def _is_error_line(line: str) -> bool:
     ``"level": "error"``), ``XxxError:``/``Exception:`` head, traceback head or
     Go panic, or a multi-language compiler/test/runtime diagnostic
     (agent_formats.DIAGNOSTIC_LINE_RE) — the lines :func:`error_fingerprints` keys on."""
-    capped = line[:_RX_LINE_CAP]
+    capped = _nfkc(line[:_RX_LINE_CAP])
     if _STACK_FRAME_LINE_RE.match(capped) is not None:
         # 1.10.0: an indented stack FRAME ("    at pkg.Cls.m(File.java:12)") is a location, not an error: the
         # exception head above it is the error. Frames fold; the heads they hang from are what must survive.
@@ -895,7 +920,7 @@ def _error_fp(line: str) -> str:
     that differ only in digit placement still collide), digits -> ``#``,
     whitespace collapsed, capped at 160 chars.
     """
-    s = _COUNT_PREFIX_RE.sub("", line[:_RX_LINE_CAP], count=1).lower()
+    s = _COUNT_PREFIX_RE.sub("", _nfkc(line[:_RX_LINE_CAP]), count=1).lower()
     return mask_template(s)[:_FINGERPRINT_CAP]
 
 
@@ -2240,8 +2265,33 @@ def _looks_like_repetitive_tool_output(lines: list[str]) -> bool:
     return repeated >= 0.5 * len(non_blank)
 
 
+_QUERY_MEMO_CHARS = 8192  # was 2048: a tool call plus a 2000-character user message is longer than that
+
+
+def _is_han_ord(o: int) -> bool:
+    """Han: unified, Extension A, compatibility ideographs, Extension B and later (supplementary planes)."""
+    return 0x3400 <= o <= 0x4DBF or 0x4E00 <= o <= 0x9FFF or 0xF900 <= o <= 0xFAFF or 0x20000 <= o <= 0x2FA1F
+
+
+def _is_syllabic_ord(o: int) -> bool:
+    """A script whose terms match by substring (no word boundaries): Han, kana, hangul, Arabic, Thai."""
+    return (
+        _is_han_ord(o)
+        or 0x3040 <= o <= 0x30FF
+        or 0xAC00 <= o <= 0xD7A3
+        or 0x0600 <= o <= 0x06FF
+        or 0x0E00 <= o <= 0x0E7F
+    )
+
+
+def _nfkc(text: str) -> str:
+    """NFKC of ``text`` (identity on ASCII). Classifiers, fingerprints and term extraction read this view, so a
+    full-width ``ＥＲＲＯＲ：`` is the ``ERROR:`` it looks like; the output is always the raw slices."""
+    return text if text.isascii() else unicodedata.normalize("NFKC", text)
+
+
 def _extract_terms(query: str) -> list[str]:
-    if type(query) is str and len(query) <= 2048:
+    if type(query) is str and len(query) <= _QUERY_MEMO_CHARS:
         return list(_extract_terms_cached(query))
     return _extract_terms_scan(query)
 
@@ -2254,20 +2304,15 @@ def _extract_terms_cached(query: str) -> tuple[str, ...]:
 def _extract_terms_scan(query: str) -> list[str]:
     terms: list[str] = []
     seen: set[str] = set()
-    for raw in _TERM_TOKEN_RE.findall(query or ""):
+    query = _split_cjk_edges(_nfkc(query or ""))
+    for raw in _TERM_TOKEN_RE.findall(query):
         term = raw.lower().strip("؟?!.،,;:…\"'()[]")
         if not term:
             continue
-        # CJK characters are single tokens (no word boundaries in CJK).
-        # Accept them even though they're 1 char — they carry meaning.
         o = ord(raw[0]) if raw else 0
-        is_cjk = (
-            0x4E00 <= o <= 0x9FFF
-            or 0x3040 <= o <= 0x30FF
-            or 0xAC00 <= o <= 0xD7A3
-            or 0x0600 <= o <= 0x06FF
-            or 0x0E00 <= o <= 0x0E7F
-        )
+        if _is_han_ord(o):
+            continue  # 1.10.0: Han is read as bigrams and trigrams below; a single character is never a term
+        is_cjk = _is_syllabic_ord(o)
         if (len(term) <= 2 and not is_cjk) or term in _STOP or term in _KANA_STOP or term in seen:
             continue
         seen.add(term)
@@ -2286,11 +2331,16 @@ def _extract_terms_scan(query: str) -> list[str]:
         terms.append(term)
     # Hyphenated compound names in the query ("titanium-torsion-rod") are
     # single search terms too — the tokenizer splits them on "-".
-    for m in re.findall(r"\b\w+(?:-\w+)+\b", query or ""):
+    for m in re.findall(r"\b\w+(?:-\w+)+\b", query):
         m = m.lower()
         if m not in _STOP and m not in seen:
             seen.add(m)
             terms.append(m)
+    # 1.10.0: Han bigrams/trigrams, minus function words (的/是/了 ...), after the Latin terms.
+    for unit in han_units(query):
+        if unit not in seen:
+            seen.add(unit)
+            terms.append(unit)
     return terms
 
 
@@ -2379,7 +2429,7 @@ def _topic_terms(query: str) -> list[str]:
 
 
 def _extract_entities(query: str) -> list[str]:
-    if type(query) is str and len(query) <= 2048:
+    if type(query) is str and len(query) <= _QUERY_MEMO_CHARS:
         return list(_extract_entities_cached(query))
     return _extract_entities_scan(query)
 
@@ -2389,10 +2439,25 @@ def _extract_entities_cached(query: str) -> tuple[str, ...]:
     return tuple(_extract_entities_scan(query))
 
 
+_CJK_EDGE_RE = re.compile(
+    r"(?<=[A-Za-z0-9_./\-])(?=[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7a3\U00020000-\U0002fa1f])"
+    r"|(?<=[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7a3\U00020000-\U0002fa1f])(?=[A-Za-z0-9_./\-])"
+)
+
+
+def _split_cjk_edges(text: str) -> str:
+    """A space between an ASCII identifier and the CJK text glued to it (``test_auth.py为什么``), so the identifier
+    is one term and the CJK units are others. ASCII and CJK-free text is returned untouched."""
+    if text.isascii():
+        return text
+    return _CJK_EDGE_RE.sub(" ", text)
+
+
 def _extract_entities_scan(query: str) -> list[str]:
     found: list[str] = []
+    query = _split_cjk_edges(_nfkc(query or ""))
     for rx in (_URI_RE, _PATH_RE, _DOTTED_RE, _CAMEL_RE, _QUOTED_RE, _CAPS_RE):
-        for m in rx.finditer(query or ""):
+        for m in rx.finditer(query):
             val = m.group(1) if m.lastindex else m.group(0)
             if val and val not in found and len(val) >= 2:
                 found.append(val)
@@ -2622,9 +2687,9 @@ def _clear_memos() -> None:
         _contains_secret_cached, _error_fingerprints_cached, _extract_critical_lines_cached,
         _preprocess_cached, _segment_blocks_cached, _brief_scan_cached,
         _block_link_terms_cached, _extract_entities_cached, _extract_terms_cached,
-        _estimate_tokens_cached,
+        _estimate_tokens_cached, _evidence_blob,
         industrial._profile_input_cached, unicode_profile._search_units_cached,
-        contract_gates._distinctive_query_terms_cached,
+        contract_gates._distinctive_query_terms_cached, contract_gates._source_blob,
     ):
         fn.cache_clear()
     with _SCORED_MEMO_LOCK:
@@ -2668,14 +2733,7 @@ def _term_test(term: str) -> Callable[[str], bool]:
     """``lambda lower: _term_in_text(term, lower)`` with the pattern compiled once."""
     if not term:
         return lambda lower: False
-    o = ord(term[0])
-    syllabic = (
-        0x4E00 <= o <= 0x9FFF
-        or 0x3040 <= o <= 0x30FF
-        or 0xAC00 <= o <= 0xD7A3
-        or 0x0600 <= o <= 0x06FF
-        or 0x0E00 <= o <= 0x0E7F
-    )
+    syllabic = _is_syllabic_ord(ord(term[0]))
     if syllabic or len(term) > 5:
         def base(lower: str) -> bool:
             return term in lower
@@ -2713,14 +2771,7 @@ def _term_in_text(term: str, lower: str) -> bool:
     """Substring for long / syllabic terms; word-boundary for short Latin."""
     if not term:
         return False
-    o = ord(term[0])
-    syllabic = (
-        0x4E00 <= o <= 0x9FFF
-        or 0x3040 <= o <= 0x30FF
-        or 0xAC00 <= o <= 0xD7A3
-        or 0x0600 <= o <= 0x06FF
-        or 0x0E00 <= o <= 0x0E7F
-    )
+    syllabic = _is_syllabic_ord(ord(term[0]))
     if syllabic:
         if len(term) > 5:
             return term in lower
@@ -4223,14 +4274,116 @@ def _query_content_terms(query: str) -> set[str]:
     return set(_extract_terms(query))
 
 
+def _match_fold(text: str) -> str:
+    """The lower-cased NFKC view keys are looked up in (ASCII: plain ``lower``)."""
+    return text.lower() if text.isascii() else unicodedata.normalize("NFKC", text).lower()
+
+
+@functools.lru_cache(maxsize=4)
+def _evidence_blob(text: str) -> str:
+    """``_match_fold(text)`` without its trust-risk lines. Injection-shaped text is never evidence: a key that only
+    an ``ignore previous instructions`` line holds is not present, and such a line never counts as kept."""
+    folded = _match_fold(text)
+    if _TRUST_RISK_RE.search(_normalise_instruction_text(folded)) is None:
+        return folded
+    return "\n".join(ln for ln in folded.split("\n") if not _is_trust_risk_line(ln))
+
+
+def _source_keys(query: str, blob: str) -> list[str]:
+    """The entities and terms of ``query`` that occur in ``blob`` (a folded source). Only these can count for or
+    against recall: a query word the text never contains says nothing about what was kept."""
+    keys: list[str] = []
+    for item in _extract_entities(query) + _extract_terms(query):
+        if item not in keys and item.lower() in blob:
+            keys.append(item)
+    return keys
+
+
+_QUERY_TERM_CAP = 24
+_IDENTIFIER_RE = re.compile(r"[_./:-]|"+chr(92)+chr(92))
+
+
+def _prune_query(query: str, source: str) -> str:
+    """A query with more than ``_QUERY_TERM_CAP`` terms (a tool call plus a long user message) is cut to the
+    terms the text contains: identifiers (a term with a digit or a ``_ . / \\ : -`` in it) always stay, the rest are
+    ranked by how rarely they occur in the text (fewest occurrences first, then the longer term, then the term
+    itself, so the order is fixed) and fill up to the cap. Only the query's own terms are ranked, never anything
+    the text offers, and text that only a trust-risk line holds is not present. Terms the text lacks are dropped:
+    they cannot match, and they used to hold confidence down. A query with no term in the text is returned
+    unchanged (that is the "absent objective" case). No tokenizing pass over the text: one ``str.count`` per term."""
+    terms = _extract_terms(query)
+    if len(terms) <= _QUERY_TERM_CAP:
+        return query
+    blob = _evidence_blob(source)
+    counted = [(blob.count(t), t) for t in terms]
+    present = [(c, t) for c, t in counted if c > 0]
+    if not present:
+        return query
+    ents = [e for e in _extract_entities(query) if e.lower() in blob]
+    identifiers = [t for c, t in present if _IDENTIFIER_RE.search(t)]
+    others = sorted((c, -len(t), t) for c, t in present if not _IDENTIFIER_RE.search(t))
+    room = max(0, _QUERY_TERM_CAP - len(identifiers))
+    kept = identifiers + [t for _c, _n, t in others[:room]]
+    return " ".join(dict.fromkeys([*ents, *kept]))
+
+
+_LOCATOR_RE = re.compile(r"[\w./\\-]+\.[A-Za-z]{1,5}:\d+|[A-Za-z_][\w.$]*(?:Error|Exception)\b|\b[A-Za-z_][\w.]{3,}\b")
+
+
+_LEVEL_WORDS = frozenset({"info", "debug", "warn", "warning", "error", "fatal", "trace", "notice", "critical"})
+
+
+def _dropped_summary(original: str, output: str) -> tuple:
+    """Up to three ``(category, line_count, first_locator)`` of the lines the output leaves out, largest first.
+
+    A line of the original is left out when the output holds no more copies of it than it has (a ``[×N]`` prefix
+    is read as the one copy it stands for). The category is ``classify_line``'s; the locator is the first
+    ``file:line`` or identifier of the first such line, else ``line N``. Pure function of the two texts: the same
+    input gives the same summary."""
+    if not original or original == output:
+        return ()
+    have = collections.Counter(ln.strip() for ln in _norm_newlines(output).split("\n"))
+    for line in list(have):
+        bare = _COUNT_PREFIX_RE.sub("", line, count=1)
+        if bare != line:
+            have[bare] += 1
+    counts: dict[str, int] = {}
+    first: dict[str, tuple[int, str]] = {}
+    for number, raw in enumerate(_norm_newlines(original).split("\n"), 1):
+        line = raw.strip()
+        if not line:
+            continue
+        if have[line] > 0:
+            have[line] -= 1
+            continue
+        category = classify_line(line)
+        counts[category] = counts.get(category, 0) + 1
+        if category not in first:
+            first[category] = (number, line)
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+    out = []
+    for category, count in ranked:
+        number, line = first[category]
+        found = next(
+            (m.group(0) for m in _LOCATOR_RE.finditer(line[:_RX_LINE_CAP]) if m.group(0).lower() not in _LEVEL_WORDS),
+            None,
+        )
+        out.append((category, count, found[:80] if found else f"line {number}"))
+    return tuple(out)
+
+
 def _entity_recall(original: str, compressed: str, query: str) -> float:
+    """Recall of the query keys the ORIGINAL contains (1.0 when it contains none: this is the selection's own
+    signal; the confidence reported to a host never takes 1.0 from zero keys, see ``_compute_confidence``)."""
+    orig_l = _match_fold(original)
     keys = []
     for item in _extract_entities(query) + _extract_terms(query):
-        if item.lower() in original.lower() and item not in keys:
+        if item.lower() in orig_l and item not in keys:
             keys.append(item)
     if not keys:
         return 1.0
-    hit = sum(1 for k in keys if k.lower() in compressed.lower())
+    comp_l = _match_fold(compressed)
+    hit = sum(1 for k in keys if k.lower() in comp_l)
     return hit / len(keys)
 
 
@@ -4296,12 +4449,8 @@ def _extract_critical_lines_scan(text: str) -> list[str]:
     return critical
 
 
-def _critical_line_recall(original: str, compressed: str) -> tuple[int, int]:
-    """Return (kept, total) counts of critical lines, matching Baseline RAG
-    verifier's critical_lines_kept/critical_lines_total fields."""
-    critical = _extract_critical_lines(original)
-    if not critical:
-        return 0, 0
+def _critical_kept(critical: list[str], compressed: str) -> int:
+    """How many of the ``critical`` lines (stripped, original case) the compressed text still holds."""
     kept = 0
     # Perf (v1.4.0, E2): lowercase the compressed text ONCE. Lowering it inside
     # the per-line loop was O(lines x output) — 30 s of a 35 s run on a 650 KB
@@ -4334,7 +4483,62 @@ def _critical_line_recall(original: str, compressed: str) -> tuple[int, int]:
             scan_budget -= len(compressed_lower)
             if core in compressed_lower:
                 kept += 1
-    return kept, len(critical)
+    return kept
+
+
+def _critical_line_recall(original: str, compressed: str) -> tuple[int, int]:
+    """Return (kept, total) counts of critical lines, matching Baseline RAG
+    verifier's critical_lines_kept/critical_lines_total fields."""
+    critical = _extract_critical_lines(original)
+    if not critical:
+        return 0, 0
+    return _critical_kept(critical, compressed), len(critical)
+
+
+_KEY_LINE_MAX = 12  # a key found on more lines than this names a topic, not a line that must survive
+
+
+def _verification_critical_lines(original: str, keys: list[str]) -> list[str]:
+    """The lines whose loss the verifier counts (1.10.0): error lines, and the lines that hold a query key the
+    source contains and that are rare (at most ``_KEY_LINE_MAX`` lines). A line with only a number or a
+    ``key: value`` in it is not critical. Trust-risk lines never count; repeats of one template count once."""
+    lines = original.split("\n")
+    flines = [ln.lower() for ln in lines] if original.isascii() else [_match_fold(ln) for ln in lines]
+    key_hits: set[int] = set()
+    wanted = [k.lower() for k in keys if len(k) >= 2]
+    if wanted:
+        # one pass per key over the folded text (C speed), then each hit position -> its line
+        blob = "\n".join(flines)
+        starts: list[int] = []
+        pos = 0
+        for fl in flines:
+            starts.append(pos)
+            pos += len(fl) + 1
+        for key in wanted:
+            found: set[int] = set()
+            at = blob.find(key)
+            while at >= 0 and len(found) <= _KEY_LINE_MAX:
+                found.add(bisect.bisect_right(starts, at) - 1)
+                at = blob.find(key, at + 1)
+            if len(found) <= _KEY_LINE_MAX:
+                key_hits |= found
+    critical: list[str] = []
+    seen: set[str] = set()
+    for i, raw in enumerate(lines):
+        t = raw.strip()
+        if not t:
+            continue
+        scan = t[:_RX_LINE_CAP]
+        if i not in key_hits and _CRITICAL_ERROR_RE.search(scan) is None:
+            continue
+        if _is_trust_risk_line(scan):
+            continue
+        shape = _DIGITS_RE.sub("#", flines[i].strip()[:80])
+        if shape in seen:
+            continue
+        seen.add(shape)
+        critical.append(t)
+    return critical
 
 
 def verify_compression(
@@ -4345,50 +4549,63 @@ def verify_compression(
     """Post-compression self-check, mirroring Baseline RAG's verifier object.
 
     Returns a dict with:
-      entity_recall     — fraction of query entities/terms present in compressed
-      keyword_recall    — fraction of query terms present in compressed
+      entity_recall     — fraction of the query's entities/terms THE ORIGINAL CONTAINS that are in compressed
+      keyword_recall    — the same over the query's terms alone (same source-present denominator)
       important_kept_pct — fraction of critical lines retained
       critical_lines_total / kept / dropped
+      keys_total        — how many query keys the original contains (0: recall says nothing)
       risk              — "low" / "medium" / "high" based on recall thresholds
       score             — overall 0-1 quality score (weighted blend)
+
+    1.10.0: a query word the text never contains no longer counts against recall (with a long tool-call
+    query, confidence used to fall as savings rose for that reason alone); critical lines are error lines
+    and the rare lines holding a query key, not every line with a number; trust-risk lines count for
+    nothing. With no key in the text, recall is not evidence: the score is the critical-line retention.
 
     This is a diagnostic pass: it does NOT modify the compressed output.
     Callers can use the result to decide whether to re-compress with a
     different strategy, expand dropped blocks, or fail open.
     """
-    entity_recall = _entity_recall(original, compressed, query)
-
-    # Keyword recall: fraction of query terms that appear in compressed
-    terms = _extract_terms(query)
-    if terms:
-        hit_terms = sum(1 for t in terms if t in compressed.lower())
-        keyword_recall = hit_terms / len(terms)
+    source = _evidence_blob(original)
+    kept_text = _evidence_blob(compressed)
+    keys = _source_keys(query, source)
+    if keys:
+        entity_recall = sum(1 for k in keys if k.lower() in kept_text) / len(keys)
+        query_terms = set(_extract_terms(query))
+        term_keys = [k for k in keys if k in query_terms]
+        keyword_recall = (
+            sum(1 for k in term_keys if k.lower() in kept_text) / len(term_keys) if term_keys else entity_recall
+        )
     else:
-        keyword_recall = 1.0
+        entity_recall = keyword_recall = 1.0
 
-    cl_kept, cl_total = _critical_line_recall(original, compressed)
+    critical = _verification_critical_lines(original, keys)
+    cl_total = len(critical)
+    cl_kept = _critical_kept(critical, compressed) if critical else 0
     important_kept_pct = (cl_kept / cl_total) if cl_total > 0 else 1.0
     critical_lines_dropped = cl_total - cl_kept
 
     # Risk assessment: combine all three signals
     risk = "low"
-    if entity_recall < 0.5:
-        risk = "high"
-    elif entity_recall < 0.8:
-        risk = "medium"
-    if keyword_recall < 0.5 and risk == "low":
-        risk = "medium"
-    elif keyword_recall < 0.3:
-        risk = "high"
+    if keys:
+        if entity_recall < 0.5:
+            risk = "high"
+        elif entity_recall < 0.8:
+            risk = "medium"
+        if keyword_recall < 0.5 and risk == "low":
+            risk = "medium"
+        elif keyword_recall < 0.3:
+            risk = "high"
     if important_kept_pct < 0.5 and risk != "high":
         risk = "high" if important_kept_pct < 0.3 else "medium"
 
     # Overall score: weighted blend (entity recall matters most for
-    # answer quality, keyword recall next, critical lines last)
-    score = round(
-        0.5 * entity_recall + 0.3 * keyword_recall + 0.2 * important_kept_pct,
-        3,
-    )
+    # answer quality, keyword recall next, critical lines last). With no key
+    # in the text there is no recall to blend.
+    if keys:
+        score = round(0.5 * entity_recall + 0.3 * keyword_recall + 0.2 * important_kept_pct, 3)
+    else:
+        score = round(important_kept_pct, 3)
 
     return {
         "entity_recall": round(entity_recall, 3),
@@ -4397,9 +4614,88 @@ def verify_compression(
         "critical_lines_total": cl_total,
         "critical_lines_kept": cl_kept,
         "critical_lines_dropped": critical_lines_dropped,
+        "keys_total": len(keys),
         "risk": risk,
         "score": score,
     }
+
+
+def _query_basis(
+    caller_query: str,
+    source: str,
+    *,
+    anchored: bool = False,
+    derived: bool = False,
+    structural: bool = False,
+) -> str:
+    """What the confidence of a result rests on (one of ``contract_gates.QUERY_BASES``). The caller's own words
+    win when the text contains any of them; otherwise the objective the engine took over (derived, error-anchored,
+    the structural fold); otherwise what the words are worth against this text (cross-lingual, none)."""
+    profile = query_profile(
+        caller_query or "", source,
+        extra_terms=_extract_entities(caller_query or "") + _extract_terms(caller_query or ""),
+        blob=_evidence_blob(source),
+    )
+    if profile.basis in ("lexical", "tool_call"):
+        return profile.basis
+    if derived:
+        return "derived"
+    if anchored:
+        return "anchored"
+    if structural:
+        return "structural"
+    return profile.basis
+
+
+def _error_retention(original: str, compressed: str) -> tuple[int, int]:
+    """(kept, total) of the original's error fingerprints (error heads) that the compressed text still holds.
+    Trust-risk lines are never a fingerprint to keep."""
+    want = {
+        fp for fp, example in error_fingerprints(original, status_rows=False).items()
+        if not _is_trust_risk_line(example)
+    }
+    if not want:
+        return 0, 0
+    have = set(error_fingerprints(compressed, status_rows=False))
+    return len(want & have), len(want)
+
+
+# Confidence ceilings per basis. A confidence that does not rest on the caller's own words stays below what a
+# host gates on (DeepSeek's default gate is 0.7): derived below it, the others cannot reach 1.0.
+_CONF_CAP_STRUCTURAL = 0.95
+_CONF_CAP_ANCHORED = 0.95
+_CONF_CAP_DERIVED = 0.69
+_CONF_NO_ERRORS_STRUCTURAL = 0.75  # a fold that only counts repeats, in text with no error to lose
+_CONF_NO_ERRORS_ANCHORED = 0.5
+_CONF_CAP_NONE = 0.5
+
+
+def _compute_confidence(
+    *,
+    basis: str,
+    compressed: str,
+    fail_open: bool,
+    original: str,
+    recall: float,
+) -> float:
+    """The confidence a result reports, by what the objective rests on.
+
+    ``lexical`` / ``tool_call``: the selection's recall blended with the verifier's score (both over the keys
+    the text contains). ``structural`` / ``anchored``: error-fingerprint and error-head retention. ``derived``:
+    the same, capped below 0.7, and never the recall of the derived terms themselves. ``cross_lingual`` /
+    ``none``: capped at 0.5. A fail-open result keeps the recall it was given (it returns the original)."""
+    if fail_open:
+        return recall
+    if basis in ("lexical", "tool_call"):
+        return recall
+    if basis in ("structural", "anchored", "derived"):
+        kept, total = _error_retention(original, compressed)
+        if basis == "structural":
+            return _CONF_NO_ERRORS_STRUCTURAL if not total else min(_CONF_CAP_STRUCTURAL, kept / total)
+        if basis == "anchored":
+            return _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_ANCHORED, kept / total)
+        return _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_DERIVED, kept / total)
+    return min(_CONF_CAP_NONE, recall)
 
 
 def _span_chars(lines: list[str], lo: int, hi: int) -> int:
@@ -4428,6 +4724,29 @@ class InliningGapMarker:
 
 def _inlines_short(marker) -> bool:
     return bool(getattr(marker, "inline_short", False))
+
+
+_SPAN_KIND_SAMPLE = 200
+_PASSING_TEST_LINE_RE = re.compile(r"(?:^|[\s\[(])(?:PASSED|PASS|ok|passed)(?:$|[\s\])]|:)|^\s*[✓✔]", re.IGNORECASE)
+
+
+def _span_kind(span: list[str]) -> str:
+    """What a dropped span of lines is, for a kind-aware gap marker: ``frames``, ``progress``, ``tests``, ``repeats``
+    (one repeated template) or ``lines``. Looks at the first ``_SPAN_KIND_SAMPLE`` non-blank lines only."""
+    sample = [ln for ln in span[:_SPAN_KIND_SAMPLE * 2] if ln.strip()][:_SPAN_KIND_SAMPLE]
+    if not sample:
+        return "lines"
+    if all(_is_frame_line(ln) or _FRAMES_FOLDED_RE.match(ln) for ln in sample):
+        return "frames"
+    if all(_PROGRESS_RE.match(ln.strip()) for ln in sample):
+        return "progress"
+    if all(_PASSING_TEST_LINE_RE.search(ln[:_RX_LINE_CAP]) for ln in sample):
+        return "tests"
+    if len(sample) > 1:
+        prints = {_log_fingerprint(ln) for ln in sample}
+        if len(prints) == 1 and None not in prints:
+            return "repeats"
+    return "lines"
 
 
 def _render(
@@ -4468,6 +4787,7 @@ def _render(
     # adjacent kept blocks.
     probe_lines = content_lines if content_lines is not None else lines
     inline_short = _inlines_short(marker_fn) if marker_fn is not None else False
+    wants_kind = marker_fn is not None and gap_accepts_kind(getattr(marker_fn, "fn", marker_fn))
 
     def _gap(lo: int, hi: int) -> list[str] | None:
         if marker_fn is None:
@@ -4475,7 +4795,8 @@ def _render(
         if not any(ln.strip() for ln in probe_lines[lo:hi]):
             return None
         span_text = "\n".join(lines[lo:hi]) if inline_short else None
-        text = call_gap_marker(marker_fn, _span_chars(lines, lo, hi), total, "lines")
+        kind = _span_kind(lines[lo:hi]) if wants_kind else "lines"
+        text = call_gap_marker(marker_fn, _span_chars(lines, lo, hi), total, kind)
         marker = str(text) if text is not None else ""
         if not marker:
             return None
@@ -7140,7 +7461,10 @@ def _objective_is_empty_or_absent(query: str, original_text: str) -> bool:
     if not query_has_distinctive_selectors(q) and not _topic_terms(q):
         return True
     terms = [t for t in distinctive_query_terms(q) if not t.startswith("script:")]
-    return bool(terms) and not any(t in original_text.casefold() for t in terms)
+    if terms:
+        blob = original_text.casefold() if original_text.isascii() else _match_fold(original_text)
+        return not any(t in blob for t in terms)
+    return query_profile(q, original_text).basis == "cross_lingual"
 
 
 def _structural_exit_lines(
@@ -7213,7 +7537,7 @@ def _builtin_anchor_lines(
     ):
         return []
     q = query or ""
-    if query_has_distinctive_selectors(q) or _topic_terms(q):
+    if (query_has_distinctive_selectors(q) or _topic_terms(q)) and not _objective_is_empty_or_absent(q, text):
         return []
     if "[\u00d7" in text or "frames omitted" in text or "[\u2026" in text or "[last] " in text:
         return []  # already folded or cut by the engine: anchoring again would not be idempotent
@@ -7525,10 +7849,15 @@ def _apply_query_guards(
             if not t.startswith("script:")
         ]
         if latin_terms:
-            blob = original_text.casefold()
+            blob = original_text.casefold() if original_text.isascii() else _match_fold(original_text)
             if not any(t in blob for t in latin_terms):
                 fail_open = True
                 risk = "high"
+        elif query_profile(q, original_text).basis == "cross_lingual":
+            # 1.10.0: a query that names only non-Latin units (a Chinese question about an English log) and
+            # none of them is in the text says nothing about this text: the same fail-open as an absent Latin term.
+            fail_open = True
+            risk = "high"
     if (
         not query_has_distinctive_selectors(q)
         and not no_table
@@ -8032,6 +8361,8 @@ def _compress_auto_ladder(
     *,
     ambiguity_fail_open,
     anchor_errors,
+    prose_brief=False,
+    inline_short_gaps=False,
     budget_ratio,
     cache_prefix,
     caller_text,
@@ -8087,6 +8418,8 @@ def _compress_auto_ladder(
         gap_marker=gap_marker,
         recursion_markers=recursion_markers,
         content_hint=content_hint,
+        prose_brief=prose_brief,
+        inline_short_gaps=inline_short_gaps,
     )
     base = compress_context(caller_text, query_as_given, strategy="extract", **ladder_kwargs)
     if not base.fail_open:
@@ -8360,6 +8693,7 @@ def _recursion_noop_result(
 def _reuse_probe_or_none(
     *,
     anchor_lines,
+    caller_query="",
     cache_prefix,
     caller_text,
     ccr,
@@ -8383,6 +8717,8 @@ def _reuse_probe_or_none(
         and summary_endpoint is None
     ):
         reused = _finalize_reused_probe(chosen_probe, query_as_given, anchor_lines)
+        if anchor_lines:
+            reused = _rebase_anchored(reused, caller_text, caller_query)
         if ccr and isinstance(chosen_probe.ccr, dict) and chosen_probe.ccr.get("deferred"):
             try:
                 info = _ccr_store(caller_text, ccr_dir)
@@ -8500,8 +8836,14 @@ def _compress_context_impl(
         recursion_markers=recursion_markers, reorder_best=reorder_best, semantic_tier=semantic_tier,
         strategy=strategy,
     )
+    # 1.10.0: the caller's own words, as the confidence basis reads them (before anchors or derived terms), and the
+    # query cut to the terms the text contains when it has many (a tool call plus a long user message).
+    caller_query = "" if _is_filler_query(query_as_given) else (query_as_given or "")
+    if not anchor_lines and not derived_terms and caller_query:
+        caller_query = _prune_query(caller_query, caller_text)
+        query = caller_query
     reused_result = _reuse_probe_or_none(
-        anchor_lines=anchor_lines, cache_prefix=cache_prefix, caller_text=caller_text, ccr=ccr,
+        anchor_lines=anchor_lines, caller_query=caller_query, cache_prefix=cache_prefix, caller_text=caller_text, ccr=ccr,
         ccr_dir=ccr_dir, chosen_probe=chosen_probe, decision_cache=decision_cache, log_dir=log_dir,
         query_as_given=query_as_given, strategy=strategy, summary_endpoint=summary_endpoint,
     )
@@ -8631,6 +8973,7 @@ def _compress_context_impl(
             decision_cache=decision_cache, degraded_view=degraded_view, derive_query=derive_query,
             gap_marker=gap_marker, limits=limits, log_dir=log_dir,
             min_savings_ratio=min_savings_ratio, pin_patterns=pin_patterns, pin_recent=pin_recent,
+            prose_brief=prose_brief, inline_short_gaps=inline_short_gaps,
             query_as_given=query_as_given, recursion_markers=recursion_markers,
             reorder_best=reorder_best, requested_mode=requested_mode, semantic_tier=semantic_tier,
             summary_allow_remote=summary_allow_remote, summary_endpoint=summary_endpoint,
@@ -8812,6 +9155,13 @@ def _compress_context_impl(
         fail_open=fail_open, original_tokens=original_tokens, query=query, recall=recall, risk=risk,
         route_hint=route_hint, structural_exit=structural_exit and not fail_open, text=text,
     )
+    # 1.10.0: the confidence rests on what the objective was (never on the recall of terms the engine took from the
+    # text itself, and never 1.0 from zero keys).
+    basis = "none" if fail_open else _query_basis(
+        caller_query, text, anchored=bool(anchor_lines), derived=bool(derived_terms),
+        structural=structural_exit or structural_collapse_only or adapter_info is not None,
+    )
+    recall = _compute_confidence(basis=basis, compressed=compressed, fail_open=fail_open, original=text, recall=recall)
     __cr = CompressResult(
         compressed_text=result_text,
         original_tokens=original_tokens,
@@ -8831,6 +9181,7 @@ def _compress_context_impl(
         frozen_blocks=sum(1 for b in scored if b.get("frozen")),
         reasons=reasons,
         verifier=verifier,
+        confidence_basis=basis,
     )
 
     receipt, query_hash = _build_receipt(
@@ -8924,7 +9275,35 @@ def compress_context(
             result = replace(
                 result, compressed_text=redacted, reasons=[*result.reasons, "redacted_secrets"],
             )
-    return result
+    return _with_schema_fields(result, context, query)
+
+
+def _stable_key(context: str, query: str) -> str:
+    """Same engine version, text and query: same key. Hashes, so the key leaks nothing."""
+    digest = hashlib.sha256()
+    for part in (ENGINE_VERSION, context, query):
+        digest.update(str(part).encode("utf-8", errors="surrogatepass"))
+        digest.update(b"\x00")
+    return digest.hexdigest()[:16]
+
+
+def _with_schema_fields(result: CompressResult, context: str, query: Any) -> CompressResult:
+    """Result schema 2: ``stable_key`` and ``dropped`` (and both in the receipt, with ``confidence_basis``)."""
+    try:
+        text = context if isinstance(context, str) else str(context)
+        q = query if isinstance(query, str) else chr(10).join(str(item) for item in query)
+        dropped = () if result.fail_open else _dropped_summary(text, result.compressed_text)
+        key = _stable_key(text, q)
+    except Exception:  # a summary never costs a result
+        return result
+    receipt = result.receipt
+    if receipt is not None:
+        receipt = dict(receipt)
+        receipt["dropped"] = [list(item) for item in dropped]
+        receipt["confidence_basis"] = result.confidence_basis
+        receipt["result_schema"] = RESULT_SCHEMA
+        receipt["stable_key"] = key
+    return replace(result, stable_key=key, dropped=dropped, result_schema=RESULT_SCHEMA, receipt=receipt)
 
 
 compress_context.__doc__ = (_compress_context_impl.__doc__ or "") + """

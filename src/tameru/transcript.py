@@ -19,6 +19,8 @@ from .compress_context import (
     _detect_json_payloads,
     _extract_entities,
     _extract_terms,
+    _nfkc,
+    _split_cjk_edges,
     _json_query_needles,
     _selector_patterns,
     _summary_preserves_required_facts,
@@ -221,6 +223,8 @@ def task_query(
     focus: str | None = None,
     max_chars: int = 2000,
     skip_user: Callable[[dict[str, Any]], bool] | None = None,
+    is_scaffold: Callable[[dict[str, Any]], bool] | None = None,
+    normalise: bool = False,
 ) -> list[str]:
     """Query parts describing what the agent is doing around ``messages[idx]``.
 
@@ -238,6 +242,10 @@ def task_query(
     4. the last user message with non-empty text, scanning backwards
        (``skip_user(msg)`` true skips a message, e.g. synthetic injections);
     5. the first such user message (the original task).
+
+    ``is_scaffold(msg)`` true drops ANY message (host scaffolding, compaction hand-off rows) from the query;
+    ``normalise=True`` reads every part as NFKC (full-width punctuation becomes ASCII) and puts a space between an
+    ASCII identifier and the CJK text glued to it (``test_auth.py为什么``). See :func:`build_query`.
 
     Returns an ordered list: parts are de-duplicated, empty ones dropped, each
     capped, and ``data:`` URIs and base64-like tokens (runs of >=200 printable
@@ -259,6 +267,8 @@ def task_query(
         if full or not isinstance(raw, str):
             return
         text = _clean_query_text(raw, cap)[:cap]
+        if normalise and text:
+            text = _split_cjk_edges(_nfkc(text))
         if not text:
             return
         room = max_chars - used - (1 if parts else 0)
@@ -294,7 +304,9 @@ def task_query(
     if isinstance(idx, int):
         for i in range(max(idx + 1, 0), len(messages)):
             follow = messages[i]
-            if isinstance(follow, dict) and follow.get("role") == "assistant":
+            if isinstance(follow, dict) and follow.get("role") == "assistant" and not (
+                is_scaffold is not None and is_scaffold(follow)
+            ):
                 add(text_of(follow.get("content")))
                 for call in follow.get("tool_calls") or []:
                     for leaf in _arg_leaves(_call_name_and_args(call)[1]):
@@ -308,6 +320,8 @@ def task_query(
         text = text_of(m.get("content"))
         if not text or text.isspace() or (skip_user is not None and skip_user(m)):
             return ""
+        if is_scaffold is not None and is_scaffold(m):
+            return ""
         return text
 
     # Scan lazily from each end: ``skip_user`` runs only until a message is
@@ -316,6 +330,28 @@ def task_query(
     add(last_user)
     add(next((t for t in map(real_user_text, messages) if t), ""))
     return parts
+
+
+def build_query(
+    messages: list[dict[str, Any]],
+    idx: int,
+    *,
+    focus: str | None = None,
+    max_chars: int = 2000,
+    skip_user: Callable[[dict[str, Any]], bool] | None = None,
+    is_scaffold: Callable[[dict[str, Any]], bool] | None = None,
+) -> str:
+    """The one query a host passes to ``compress_context`` for ``messages[idx]`` (1.10.0, deterministic).
+
+    Order: ``focus``, the tool name and its arguments, the assistant turn after the call, the LAST real user message,
+    the FIRST real user message. The tool call comes before any user text, so its identifiers survive the
+    ``max_chars`` cut however long the user message is. ``is_scaffold(msg)`` excludes host scaffolding and
+    compaction hand-off rows. Full-width punctuation is normalised and CJK text is split from an adjacent
+    identifier. Same input, same string."""
+    return chr(10).join(task_query(
+        messages, idx, focus=focus, max_chars=max_chars, skip_user=skip_user, is_scaffold=is_scaffold,
+        normalise=True,
+    ))
 
 
 def _requests_full_preservation(query: str) -> bool:

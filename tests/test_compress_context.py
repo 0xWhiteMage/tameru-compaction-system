@@ -776,9 +776,10 @@ class CJKTokenizationTests(unittest.TestCase):
         from tameru.compress_context import _extract_terms
         query = "数据库 连接 超时"
         terms = _extract_terms(query)
-        # Individual CJK characters should be in the terms list
-        self.assertIn("数", terms)
-        self.assertIn("据", terms)
+        # 1.10.0: Han is read as bigrams/trigrams; a single character is never a term
+        self.assertIn("数据", terms)
+        self.assertIn("连接", terms)
+        self.assertNotIn("数", terms)
 
     def test_cjk_compression_does_not_fail_open_unnecessarily(self):
         """CJK-heavy context should compress without failing open when
