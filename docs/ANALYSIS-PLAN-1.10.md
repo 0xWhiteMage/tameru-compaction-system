@@ -77,6 +77,7 @@ against the primary model is stated next to the primary result); token-estimate 
 
 (empty; each sweep appends a line: date, what was swept, number of settings, split used)
 - 2026-11-19, DeepSeek plugin: policy G (act every step on old results) at confidence gates 0.5, 0.6, 0.7, 0.8, 0.85 and policy T (act only where the Harness pruner would cut) at gates 0 and 0.7: **7 settings** tried; chosen on development (36 scenarios), checked on validation (24); no holdout look. Result: none of the seven was inside the cost margin on development, so nothing was frozen (plugin `docs/REPLAY-1.10.0.md`).
+- 2026-11-19, DeepSeek plugin, round 2: policy G (13 settings), T (1 new, gates 0 and 0.7 re-run after a defect fix), H (5): **19 new settings, 26 tried in all**, declared before running; chosen on development, confirmed on validation; no holdout look. Result: T gate 0 (policy `at-trigger`) was inside both margins on development and validation and was frozen (plugin `docs/FROZEN-1.10.0-SETTINGS.md`, `docs/REPLAY-1.10.0.md`).
 
 ## Amendments (appended after the plan was hashed; the original hash stays in the sha256 file)
 
@@ -115,3 +116,36 @@ Pre-stated for the DeepSeek policy comparison on development and validation (no 
 - On validation, the two chosen settings are compared by the same rule; the winner is frozen only if its facts kept are also above
   the 1.9.0-era plugin's. If neither policy is inside the margins, nothing is frozen and the shipped setting stays.
 - Replay only: no real model ran, and the cost model is the one in `scripts/replay.ts` (read 0.1 and write 1.0; write 1.25 shown as a sensitivity).
+
+### 2026-11-19: DeepSeek tuning round 2 (declared before running)
+
+Written before any round 2 grid run. Only two quick diagnostic runs (stock and T gate 0 on four development scenarios, to look at where
+policy T's cost comes from at 200K) happened before this paragraph; they selected nothing. Round 1 found no setting inside the cost
+margin. Round 2 declares **19 new settings** (total tried: 7 + 19 = **26**), all on development (36) and validation (24); the holdout
+is not run.
+
+Code changes made before the grid, not settings: (1) a defect fix in policy T: when T declines or leaves a result the stock pruner
+would cut and its replacements bring the prompt under the trigger, the stock pruner no longer runs, so the declined results stay in
+full and the prompt returns to the trigger a few steps later (a repeated cache rewrite). T and H now write only if the stock pruner
+will still run afterwards (projected prompt at or above the trigger) or nothing the pruner would cut is left; otherwise the pass is
+skipped and the stock cut happens as the policy always said it would. T gates 0 and 0.7 are re-run on the fixed code (same settings,
+not new). (2) policy H (`hybrid`) is added as a selectable policy.
+
+New settings (gate = confidence floor; share = pay-back share; act = activation as a fraction of the stock trigger; min = minimum result
+characters; protect = protectRecent; cap = maxPerPass; unlisted values stay at 6000, 4, 24):
+- G (every-step), gate 0.85: G1 share .35 act .9; G2 .5 act .75; G3 .65 act .75; G4 .5 act .9; G5 .65 act .9; G6 .5 act 1.0; G7 .65 act 1.0;
+  G8 .5 act .9 min 12000; G9 .65 act .9 min 12000; G10 .5 act .9 protect 8; G11 .5 act .9 cap 8.
+- G at gate 0.7: G12 share .5 act .9; G13 share .65 act 1.0.
+- T (at-trigger) gate 0.85: T3 (T gates 0 and 0.7 are the round 1 settings).
+- H (act only at the stock trigger step; an item the stock pruner would cut is replaced only if its extract is smaller than the stock cut and
+  needs no pay-back test; an item beyond the stock cut keeps the share rule, except where it lies after the first replaced item, whose
+  rewrite is shared): H1 gate .85 share .35; H2 .85 share .5; H3 .85 share .65; H4 gate .7 share .5; H5 gate .85 share .5 protect 8.
+The grid is chosen from the cache-cost arithmetic, not from the generator: a prune pays back only if freed/suffix >= (write-read)/(read x
+remaining requests), i.e. 0.9/(0.1 n) = 9/n at the primary price (share 0.35 means about 26 remaining requests, 0.5 about 18, 0.65 about
+14); acting later, or at the trigger where the compaction or cut rewrites the prompt anyway, makes the rewrite shared.
+
+Selection rule, unchanged: on development, per policy (G, T, H), the setting inside both margins (one-sided 95% cluster-bootstrap upper
+bound of whole-session cost difference to the 1.9.0-era plugin <= +1.0 point; lower bound of facts-kept difference >= -1.0 point) with the
+most facts kept (ties: the more conservative setting, the later in the list above); round 1 settings are candidates too. The per-policy
+choices are compared on validation by the same rule; a winner is frozen only if it is inside both margins on validation and its facts
+kept are above the 1.9.0-era plugin's. If none qualifies, nothing is frozen.
