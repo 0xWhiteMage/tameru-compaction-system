@@ -27,7 +27,8 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v2 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),
   a shared `build_query`, query pruning to the terms the source contains, and the result schema 2 fields (`confidence_basis`, `stable_key`, `dropped`, `result_schema`, `preset`).
   `dropped` names what an extract left out (category, line count, first locator) so a host can say what to re-read.
-- **`redact_secrets`** (off by default): replaces matches of the engine's own credential patterns in the output with `[tameru:redacted]`; a fail-open still returns the original text, and the decision never changes.
+  `pin_patterns` validation also refuses polynomial and exponential shapes (`a*a*a*b`, `.*x.*y`: any unbounded quantifier, more than four optional ones, more than six alternations; literal pins are unaffected); pin matching itself still scans the full block, as in 1.9.0.
+- **`redact_secrets`** (off by default): replaces matches of the engine's own credential patterns in the output with `[tameru:redacted]`; a fail-open still returns the original text, and the decision never changes. It also covers the `dropped` locators and the receipt copy.
 - **One list of the lines the engine writes itself** (`tameru/markers.py`); the red-team checker uses it, clearing 11 false fabrication flags (the forged-marker detection stays).
 - **Benchmarks:** `benchmarks/engine_bench` (294 cases, 207 source clusters, dev / validation / sealed split with a committed sealed hash), `benchmarks/latency.py` with the 1.9.0 baseline,
   and the Squeez result for 1.9.0 (`benchmarks/squeez-1.9.0.json`).

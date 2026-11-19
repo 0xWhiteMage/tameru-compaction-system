@@ -150,3 +150,15 @@ def test_unwrap_hermes_tool_is_a_one_time_deprecated_alias():
         warnings.simplefilter("error")
         second = cc.unwrap_hermes_tool(raw)
     assert first == second == cc.unwrap_tool_payload(raw).inner
+
+
+def test_redaction_also_covers_the_dropped_locators_and_the_receipt():
+    token = "ghp_" + "A1b2C3d4E5" * 4
+    text = ("\n".join(f"INFO request {i} ok" for i in range(200)) + "\n" + token + " leaked\n"
+            + "\n".join(f"INFO tail {i} ok" for i in range(200)) + "\nERROR boom happened\n")
+    plain = compress_context(text, "boom", ccr=False, citations=False)
+    assert any(token in loc for _c, _n, loc in plain.dropped)   # the plant really reaches a locator
+    red = compress_context(text, "boom", ccr=False, citations=False, redact_secrets=True)
+    assert red.dropped and not _has_match(repr(red.dropped)) and token[:12] not in repr(red.dropped)
+    assert token[:12] not in repr(red.receipt)
+    assert [(c, n) for c, n, _l in red.dropped] == [(c, n) for c, n, _l in plain.dropped]

@@ -75,8 +75,8 @@ def test_lone_surrogates_are_cleaned():
 
 
 def test_pin_patterns_literals_and_regexes():
-    got = validate_request({"text": "t", "pin_patterns": ["ERROR \\d+", {"literal": "a.b(c)"}]})
-    assert got["pin_patterns"] == ["ERROR \\d+", re.escape("a.b(c)")]
+    got = validate_request({"text": "t", "pin_patterns": ["ERROR \\d{1,6}", {"literal": "a.b(c)"}]})
+    assert got["pin_patterns"] == ["ERROR \\d{1,6}", re.escape("a.b(c)")]
     assert code({"text": "t", "pin_patterns": ["x"] * 17}) == "bad_pin_patterns"
     assert code({"text": "t", "pin_patterns": ["x" * 201]}) == "bad_pin_patterns"
     assert code({"text": "t", "pin_patterns": ["("]}) == "bad_pin_patterns"
@@ -88,8 +88,9 @@ def test_pin_patterns_literals_and_regexes():
 
 HOSTILE = ["(a+)+", "(a*)*", "(a+)*b", "(.*)+x", "(a|aa)+", "(a|a)*", "((a+)b)+", "(x+x+)+y", "(a{2,})+",
            r"(a)\1+", "(?P<n>a)(?P=n)"]
-BENIGN = ["ERROR \\d+", "(foo|bar)", "(?:ab)?c", "[(a+)+]+", "\\(a+\\)+", "fail(ed|ure)?", "^id=[0-9a-f]{8}$",
-          "(a+)b", "a+b*"]
+BS = chr(92)
+BENIGN = ["ERROR "+BS+"d{1,8}", "(foo|bar)", "(?:ab)?c", "[(a+)+]{1,3}", BS+"(a"+BS+")", "fail(ed|ure)?", "^id=[0-9a-f]{8}$",
+          "(a{1,3})b", "foo.{0,20}bar", "x{2,5}y", "a{1,20}b", "(?:ab)|(?:cd)", r"^"+BS+"[ERR"+BS+"] "+BS+"w{1,9}", "plain literal text"]
 
 
 @pytest.mark.parametrize("pattern", HOSTILE)
@@ -140,3 +141,49 @@ def test_result_dict_keeps_the_v1_keys():
     assert keys == {"text", "fail_open", "original_tokens", "kept_tokens", "tokens_saved_pct", "risk",
                     "confidence", "content_type", "reasons", "sanitized", "result_schema"} | {
         "confidence_basis", "stable_key", "dropped", "preset"}  # result schema 2, additive
+
+
+SLOW_SHAPES = ["a*b", "foo.*bar", "a+", "a*a*a*a*a*b", "(a|a)*b", "(a+)+", ".*.*.*x", "a*a*b", ".*x.*y", "a+b*", r"\d+\.\d+", "a?a?a?a?a?aaaaa",
+               "a{2,}a{2,}b", "a{1,100}a{1,100}b", "|".join("abcdefgh")]
+
+
+@pytest.mark.parametrize("pattern", SLOW_SHAPES)
+def test_polynomial_and_exponential_shapes_are_rejected(pattern):
+    assert code({"text": "t", "pin_patterns": [pattern]}) == "bad_pin_patterns"
+
+
+def test_literals_always_pass_the_static_check():
+    assert not protocol.regex_risk(re.escape("a*a*a*a*a*b|(a+)+" * 5))
+    assert validate_request({"text": "t", "pin_patterns": [{"literal": "a*a*a*a*a*b"}]})["pin_patterns"]
+
+
+def test_pin_patterns_that_validate_cannot_stall_compress_context():
+    """Every pattern the protocol accepts runs on a 50K adversarial input in about a second at most."""
+    import threading
+
+    candidates = BENIGN + [".{0,40}x", "a{1,40}b", "(?:ab){1,9}c", "x?y?z?a?b"]
+    inputs = ["a" * 50_000, "ab" * 25_000, "1" * 50_000, "x" * 50_000, ("a" * 99 + "\n") * 500]
+    for pattern in candidates:
+        pins = validate_request({"text": "t", "pin_patterns": [pattern]})["pin_patterns"]
+        for text in inputs:
+            thread = threading.Thread(
+                target=lambda: compress_context(text, "q", ccr=False, citations=False, pin_patterns=pins),
+                daemon=True,
+            )
+            started = time.perf_counter()
+            thread.start()
+            thread.join(10)
+            assert not thread.is_alive(), f"{pattern!r} stalled compress_context"
+            assert time.perf_counter() - started < 1.5, pattern
+
+
+def test_a_literal_pin_still_keeps_its_line():
+    text = "INFO a\n" * 400 + "needle-line-42\n" + "INFO b\n" * 400
+    got = validate_request({"text": text, "query": "zzz", "pin_patterns": [{"literal": "needle-line-42"}]})
+    assert "needle-line-42" in compress_context(**got).compressed_text
+
+
+def test_a_literal_pin_deep_in_a_50k_block_is_still_found():
+    text = "z" * 30_000 + "needle-42" + "z" * 20_000
+    got = validate_request({"text": text, "query": "zzz", "pin_patterns": [{"literal": "needle-42"}, "needle-4"+"2"]})
+    assert "needle-42" in compress_context(**got).compressed_text

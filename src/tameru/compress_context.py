@@ -4338,13 +4338,14 @@ _LOCATOR_RE = re.compile(r"[\w./\\-]+\.[A-Za-z]{1,5}:\d+|[A-Za-z_][\w.$]*(?:Erro
 _LEVEL_WORDS = frozenset({"info", "debug", "warn", "warning", "error", "fatal", "trace", "notice", "critical"})
 
 
-def _dropped_summary(original: str, output: str) -> tuple:
+def _dropped_summary(original: str, output: str, redact: bool = False) -> tuple:
     """Up to three ``(category, line_count, first_locator)`` of the lines the output leaves out, largest first.
 
     A line of the original is left out when the output holds no more copies of it than it has (a ``[×N]`` prefix
     is read as the one copy it stands for). The category is ``classify_line``'s; the locator is the first
     ``file:line`` or identifier of the first such line, else ``line N``. Pure function of the two texts: the same
-    input gives the same summary."""
+    input gives the same summary. With ``redact`` a first line that holds a credential is named by its number (``line N``), and any locator is
+    redacted again, so a credential never reaches ``dropped``."""
     if not original or original == output:
         return ()
     have = collections.Counter(ln.strip() for ln in _norm_newlines(output).split("\n"))
@@ -4369,11 +4370,15 @@ def _dropped_summary(original: str, output: str) -> tuple:
     out = []
     for category, count in ranked:
         number, line = first[category]
+        if redact:
+            clean = redact_secrets_in(line)
+            line = "" if clean != line else line   # a line that held a credential names its number, not a cut of itself
         found = next(
             (m.group(0) for m in _LOCATOR_RE.finditer(line[:_RX_LINE_CAP]) if m.group(0).lower() not in _LEVEL_WORDS),
             None,
         )
-        out.append((category, count, found[:80] if found else f"line {number}"))
+        locator = found[:80] if found else f"line {number}"
+        out.append((category, count, redact_secrets_in(locator) if redact else locator))
     return tuple(out)
 
 
@@ -9290,7 +9295,7 @@ def compress_context(
             result = replace(
                 result, compressed_text=redacted, reasons=[*result.reasons, "redacted_secrets"],
             )
-    return _with_schema_fields(result, context, query)
+    return _with_schema_fields(result, context, query, redact_secrets)
 
 
 def _stable_key(context: str, query: str) -> str:
@@ -9302,12 +9307,12 @@ def _stable_key(context: str, query: str) -> str:
     return digest.hexdigest()[:16]
 
 
-def _with_schema_fields(result: CompressResult, context: str, query: Any) -> CompressResult:
+def _with_schema_fields(result: CompressResult, context: str, query: Any, redact: bool = False) -> CompressResult:
     """Result schema 2: ``stable_key`` and ``dropped`` (and both in the receipt, with ``confidence_basis``)."""
     try:
         text = context if isinstance(context, str) else str(context)
         q = query if isinstance(query, str) else chr(10).join(str(item) for item in query)
-        dropped = () if result.fail_open else _dropped_summary(text, result.compressed_text)
+        dropped = () if result.fail_open else _dropped_summary(text, result.compressed_text, redact)
         key = _stable_key(text, q)
     except Exception:  # a summary never costs a result
         return result

@@ -11,7 +11,9 @@ I/O. Rules:
 * ``pin_patterns`` are at most ``MAX_PIN_PATTERNS`` items of at most ``MAX_PIN_CHARS`` characters,
   each a regex string or ``{"literal": "..."}``. A regex is compiled inside a guarded ``try`` and
   rejected when a conservative static check sees a construct that can backtrack catastrophically
-  (a quantified group that holds a quantifier or an alternation, or a back-reference).
+  (a quantified group that holds a quantifier or an alternation, or a back-reference), or a pattern with
+  any unbounded quantifier, more than 4 optional ones or more than 6 alternations (see ``regex_risk``).
+  Pins are still matched against the full text of each block.
 * A rejection is a ``ProtocolError`` whose ``code`` is a fixed identifier. It never contains request
   text, not even a field name.
 """
@@ -68,10 +70,25 @@ def _number(value: Any, low: float, high: float, code: str) -> float:
     return float(value)
 
 
+_BRACE_BODY = re.compile(r"\{(\d*)(,?)(\d*)\}")
+MAX_UNBOUNDED = 0       # `*`, `+`, `{n,}` and any `{n,m}` with m >= _BIG_BOUND, per pattern
+MAX_OPTIONAL = 4        # `?` and small `{n,m}` quantifiers, per pattern
+MAX_ALTERNATIONS = 6    # `|`, per pattern
+_BIG_BOUND = 50
+
+
 def regex_risk(pattern: str) -> bool:
-    """True when ``pattern`` holds a construct this check refuses (conservative, nothing is matched)."""
+    """True when ``pattern`` holds a construct this check refuses (conservative, nothing is matched).
+
+    Refused: back-references and conditionals; a quantified group that holds a quantifier or an
+    alternation (``(a+)+``, ``(a|a)*b``); any unbounded quantifier (``*``, ``+``,
+    ``{n,}``, or a bound of 50 or more), because even one (``a*b``) is quadratic on a long run and
+    several (``a*a*b``, ``.*x.*y``) are polynomial, and pins match the full block; more than ``MAX_OPTIONAL`` (4) ``?`` or small-bound quantifiers (``a?a?a?...a`` is
+    exponential); more than ``MAX_ALTERNATIONS`` (6) ``|``. Literals (``{"literal": ...}``) are
+    escaped and never reach this check."""
     if re.search(r"\\[1-9]|\(\?P=|\(\?\(", pattern):
         return True
+    unbounded = optional = alternations = 0
     stack: list[list[bool]] = []   # enclosing groups' [has_quantifier, has_alternation]
     cur = [False, False]
     in_class = False
@@ -111,12 +128,21 @@ def regex_risk(pattern: str) -> bool:
                 cur[1] = True
         elif ch == "|":
             cur[1] = True
+            alternations += 1
         elif ch in "+*":
             cur[0] = True
+            unbounded += 1
+        elif ch == "?" and pattern[i - 1:i] != "(":
+            optional += 1
         elif ch == "{" and _BRACE_QUANT.match(pattern, i):
             cur[0] = True
+            low, comma, high = _BRACE_BODY.match(pattern, i).groups()
+            if (comma and not high) or (high or low) and int(high or low) >= _BIG_BOUND:
+                unbounded += 1
+            else:
+                optional += 1
         i += 1
-    return False
+    return unbounded > MAX_UNBOUNDED or optional > MAX_OPTIONAL or alternations > MAX_ALTERNATIONS
 
 
 def _pin_patterns(value: Any) -> list[str]:
