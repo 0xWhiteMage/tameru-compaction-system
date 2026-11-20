@@ -17,14 +17,14 @@ from dataclasses import dataclass, field
 
 from .families import FAMILY_BY_ID, KG, VG, Family, render
 
-GENERATOR_VERSION = "session-corpus-2"  # 2: size-matched real outputs <= 40K (equivalence attempt 1 failed on size bins)
+GENERATOR_VERSION = "session-corpus-3"  # 3: real outputs from 11 repositories (Squeez test + train), one split per repository
 SCENARIOS_PER_FAMILY = 11
 CHARS_PER_TOKEN = 4
 WINDOWS = (128_000, 200_000, 252_000, 500_000, 1_000_000)
 SEGMENT_WINDOWS = (128_000, 252_000, 500_000, 1_000_000)  # facts are placed so each of these windows holds its own
 LENGTH_FACTOR = (1.6, 2.1)          # unpruned total >= factor x planning trigger, factor uniform in this range
 REAL_SHARE_TARGET = 0.34            # greedy interleave: a real step is next whenever real chars < this share
-REAL_MAX_CHARS = 40000              # largest real output used: the dev/validation repository pool has none in 40K-60K, so no pool uses them
+REAL_MAX_CHARS = 40000              # largest real output used (kept from attempt 2: the first two-repository pool had none above 40K)
 REUSE_PENALTY = 0.25                # log-size units added per earlier use of the same real output in a session
 STEP_MIN, STEP_MAX, STEP_SIGMA = 2000, 60000, 0.8
 LANG_CYCLE = ("en", "zh", "en", "mixed", "zh", "en", "en", "zh", "mixed", "en")

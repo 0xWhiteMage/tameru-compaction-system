@@ -3,7 +3,7 @@
     python -m benchmarks.session_corpus.split --seed SEED --attempt N   # (re)write splits.json + SEALED-HOLDOUT.sha256
     python -m benchmarks.session_corpus.split --check                   # verify both files, change nothing
 
-Both need the Squeez file (default build/session_corpus/squeez/canonical_test.jsonl, or --squeez).  The sealed hash is
+Both need the two Squeez files (default directory build/session_corpus/squeez/, or --squeez DIR).  The sealed hash is
 sha256 over the sorted [scenario id, scenario digest] rows of every holdout scenario, where a scenario digest covers
 its full canonical export (every step's tool, args, kind, facts and the sha256 of its output text, the task, the
 questions and the window table).  Only the digest is printed; no holdout text is shown.

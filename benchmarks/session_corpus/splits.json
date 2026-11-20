@@ -28,33 +28,33 @@
   }
  },
  "deal": {
-  "attempt": 7,
+  "attempt": 10,
   "rule": "the 8 round-1 families are pinned to dev; the others, sorted by id, are shuffled by random.Random(sha256('deal:'+seed)) and dealt 4 to dev, 8 to validation, the rest to holdout",
-  "seed": "session-corpus-round2-deal-7"
+  "seed": "session-corpus-round2-deal-10"
  },
  "families": {
   "ansible": "validation",
   "apijson": "holdout",
-  "apt": "validation",
-  "bazel": "holdout",
+  "apt": "holdout",
+  "bazel": "validation",
   "cargo": "dev",
-  "cmake": "dev",
+  "cmake": "validation",
   "configdump": "holdout",
-  "csvexport": "validation",
+  "csvexport": "holdout",
   "docker": "holdout",
   "dotnet": "holdout",
   "eslint": "holdout",
   "gcc": "dev",
   "ghactions": "dev",
-  "gitdiff": "dev",
+  "gitdiff": "holdout",
   "gitlog": "validation",
   "gotest": "dev",
   "gradle": "holdout",
-  "grep": "holdout",
+  "grep": "validation",
   "helm": "holdout",
   "javac": "holdout",
   "jest": "dev",
-  "journald": "validation",
+  "journald": "holdout",
   "k8sevents": "holdout",
   "kubectl": "dev",
   "markdown": "holdout",
@@ -62,30 +62,56 @@
   "metrics": "dev",
   "mypy": "holdout",
   "nginx": "holdout",
-  "npm": "validation",
-  "pglog": "holdout",
+  "npm": "holdout",
+  "pglog": "validation",
   "phpunit": "holdout",
   "pip": "holdout",
-  "promtext": "validation",
+  "promtext": "holdout",
   "pytest": "dev",
-  "rspec": "holdout",
+  "rspec": "dev",
   "sql": "dev",
   "terraform": "holdout",
   "trace-csharp": "holdout",
   "trace-go": "holdout",
   "trace-java": "holdout",
   "trace-node": "validation",
-  "trace-python": "holdout",
+  "trace-python": "validation",
   "tsc": "holdout",
-  "webpack": "holdout"
+  "webpack": "dev"
  },
- "generator": "session-corpus-2",
+ "generator": "session-corpus-3",
  "real_pools": {
-  "pallets/flask": [
-   "dev",
+  "astropy/astropy": [
+   "dev"
+  ],
+  "django/django": [
+   "holdout"
+  ],
+  "matplotlib/matplotlib": [
    "validation"
   ],
+  "mwaskom/seaborn": [
+   "holdout"
+  ],
+  "pallets/flask": [
+   "dev"
+  ],
   "pydata/xarray": [
+   "dev"
+  ],
+  "pylint-dev/pylint": [
+   "validation"
+  ],
+  "pytest-dev/pytest": [
+   "holdout"
+  ],
+  "scikit-learn/scikit-learn": [
+   "holdout"
+  ],
+  "sphinx-doc/sphinx": [
+   "validation"
+  ],
+  "sympy/sympy": [
    "holdout"
   ]
  },

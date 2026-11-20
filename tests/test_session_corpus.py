@@ -18,8 +18,8 @@ from benchmarks.session_corpus import build, corpus, equivalence, families, real
 from benchmarks.session_corpus import generator as g  # noqa: E402
 
 HERE = ROOT / "benchmarks" / "session_corpus"
-HAVE_SQUEEZ = real.DEFAULT_SQUEEZ.is_file()
-needs_squeez = pytest.mark.skipif(not HAVE_SQUEEZ, reason=f"Squeez file absent: put canonical_test.jsonl at {real.DEFAULT_SQUEEZ}")
+HAVE_SQUEEZ = real.files_present()
+needs_squeez = pytest.mark.skipif(not HAVE_SQUEEZ, reason=f"Squeez files absent: put canonical_test.jsonl and canonical_train.jsonl in {real.DEFAULT_SQUEEZ}")
 
 
 @pytest.fixture(scope="module")
@@ -81,20 +81,28 @@ def test_real_output_share_at_least_thirty_percent(plans):
     for split, ps in plans.items():
         tot = sum(sum(p.chars) for p in ps)
         rc = sum(c for p in ps for c, k in zip(p.chars, p.kinds) if k == "real")
-        assert rc / tot >= 0.30, (split, rc / tot)
+        assert rc / tot >= 0.335, (split, rc / tot)
         for p in ps:                                                # every gated window's slice too
             n = p.windows[252_000]
             assert sum(c for c, k in zip(p.chars[:n], p.kinds[:n]) if k == "real") / sum(p.chars[:n]) >= 0.25, p.id
 
 
-def test_real_pools_by_repository_never_shared_with_the_holdout(plans):
+def test_real_pools_by_repository_no_repository_straddles_splits(plans):
     m = real.load_manifest()
-    holdout_repos = {r for r, s in m["repo_splits"].items() if "holdout" in s}
-    assert all(m["repo_splits"][r] == ["holdout"] for r in holdout_repos)
-    by_id = {o["id"]: o["repo"] for o in m["outputs"]}
+    assert set(m["datasets"]) == {"test", "train"} and all(len(d["sha256"]) == 64 for d in m["datasets"].values())
+    assert all(len(s) == 1 for s in m["repo_splits"].values())
+    owner = {r: s[0] for r, s in m["repo_splits"].items()}
+    assert {owner[r] for r in owner} == set(corpus.SPLITS)
+    by_id = {o["id"]: o for o in m["outputs"]}
+    assert all(o["splits"] == [owner[o["repo"]]] and o["chars"] <= 40000 for o in m["outputs"])
+    used = defaultdict(set)
     for split, ps in plans.items():
-        repos = {by_id[o] for p in ps for o in p.real_ids if o}
-        assert (repos <= holdout_repos) if split == "holdout" else not (repos & holdout_repos), split
+        for p in ps:
+            for o in p.real_ids:
+                if o:
+                    used[by_id[o]["repo"]].add(split)
+    assert all(len(v) == 1 for v in used.values())
+    assert all(len({r for r, v in used.items() if s in v}) >= 3 for s in corpus.SPLITS)
 
 
 def test_trigger_crossing_lengths(plans):
@@ -189,7 +197,7 @@ def test_no_holdout_text_in_committed_files(plans):
     files = [f for f in HERE.rglob("*") if f.is_file() and "__pycache__" not in f.parts]
     assert all(f.stat().st_size < 1_500_000 for f in files)
     blob = "\n".join(f.read_text(encoding="utf-8", errors="replace") for f in files)
-    vocab = set(families.PKGS) | set(families.WORDS) | set(families.REASONS) | set(families.TF_TYPES)  # single vocabulary words
+    vocab = set(families.PKGS) | set(families.WORDS) | set(families.REASONS) | set(families.TF_TYPES) | set(families.NPM_CODES)  # single vocabulary words
     needles = set()
     for p in plans["holdout"]:
         for f in p.facts:

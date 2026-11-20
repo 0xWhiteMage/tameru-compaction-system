@@ -40,6 +40,7 @@ EXIT_CODES = ("1", "2", "126", "127", "137", "139", "143")
 HTTP_ERR = ("400", "401", "403", "404", "409", "422", "429", "500", "502", "503", "504")
 TF_TYPES = ("aws_s3_bucket", "aws_iam_role", "aws_lambda_function", "aws_security_group", "google_compute_instance",
             "azurerm_storage_account", "aws_rds_cluster", "aws_sqs_queue", "kubernetes_deployment", "aws_route53_record")
+NPM_CODES = ("ERESOLVE", "ETARGET", "EINTEGRITY", "ENOENT", "EACCES", "ECONNRESET", "E404")
 LEVELS = ("INFO",) * 6 + ("DEBUG",) * 3 + ("WARN",)
 
 
@@ -115,7 +116,7 @@ VG: dict[str, Callable[[Random], str]] = {
                                    "ConcurrentModificationException", "ClassCastException", "SocketTimeoutException")) + f"#{r.randrange(100, 999)}",
     "lineno": lambda r: str(r.randrange(20, 2400)),
     "npmmod": lambda r: f"@acme/{r.choice(WORDS)}-{_hex(r, 4)}",
-    "npmcode": lambda r: r.choice(("ERESOLVE", "ETARGET", "EINTEGRITY", "ENOENT", "EACCES", "ECONNRESET", "E404")),
+    "npmcode": lambda r: r.choice(NPM_CODES),
 }
 
 _PLACE = re.compile(r"\{(\w+)\}")

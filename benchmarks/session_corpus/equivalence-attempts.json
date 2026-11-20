@@ -261,5 +261,120 @@
  {
   "diagnosis_after_attempt": 7,
   "note": "same 45 families x 11 scenarios generated under both real-output pools (dev+validation = pallets/flask, holdout = pydata/xarray): the pool alone moves 1.10.0 acceptance by about 5-7 points (hermes 33.5% vs 40.5%, deepseek 28.6% vs 33.8%) and real_share_252k by 0.3 points (univariate AUC 0.61); this pool effect, not the family deal, drives the dev-vs-holdout separation in attempts 1-6. Attempt 7 passes the registered rule (grouped AUC 0.647, acceptance gap 9.9 points) but narrowly and after 7 draws; more repositories in the real-output pools are needed to remove the effect"
+ },
+ {
+  "date": "2026-11-20",
+  "generator": "session-corpus-3",
+  "deal": {
+   "attempt": 8,
+   "rule": "the 8 round-1 families are pinned to dev; the others, sorted by id, are shuffled by random.Random(sha256('deal:'+seed)) and dealt 4 to dev, 8 to validation, the rest to holdout",
+   "seed": "session-corpus-round2-deal-8"
+  },
+  "note": "attempt 8: generator session-corpus-3 (11 repositories, Squeez test + train, one split per repository, repo seed session-corpus-round2-repos-1); family deal seed session-corpus-round2-deal-8",
+  "sealed_holdout_sha256": "4ff1f7fb4ea6897281e94248fe31394c56d4ac559825e9d755f5f32c4242cf9b",
+  "comparisons": {
+   "dev_vs_validation": {
+    "auc_family_grouped": 0.507,
+    "auc_scenario_level": 0.6036,
+    "n": [
+     132,
+     88
+    ]
+   },
+   "dev_vs_holdout": {
+    "auc_family_grouped": 0.6249,
+    "auc_scenario_level": 0.7025,
+    "n": [
+     132,
+     275
+    ]
+   }
+  },
+  "acceptance_gaps": {
+   "1.10.0_deepseek_accept": 8.444,
+   "1.10.0_hermes_accept": 11.711,
+   "1.9.0_deepseek_accept": 9.404,
+   "1.9.0_hermes_accept": 8.973
+  },
+  "pass": false,
+  "result_sha256": "b9d58eed170062bd7f88bb2804019ebacf0365c875d44105543202f4226e2adb"
+ },
+ {
+  "date": "2026-11-20",
+  "generator": "session-corpus-3",
+  "deal": {
+   "attempt": 9,
+   "rule": "the 8 round-1 families are pinned to dev; the others, sorted by id, are shuffled by random.Random(sha256('deal:'+seed)) and dealt 4 to dev, 8 to validation, the rest to holdout",
+   "seed": "session-corpus-round2-deal-9"
+  },
+  "note": "attempt 9: family reshuffle with seed session-corpus-round2-deal-9 (generator session-corpus-3, 11 repositories)",
+  "sealed_holdout_sha256": "ff95bd98a523ce57f7d8b45d09cc5633a4f212a4c16af2aaaeab0957cffbef1a",
+  "comparisons": {
+   "dev_vs_validation": {
+    "auc_family_grouped": 0.5181,
+    "auc_scenario_level": 0.6173,
+    "n": [
+     132,
+     88
+    ]
+   },
+   "dev_vs_holdout": {
+    "auc_family_grouped": 0.5891,
+    "auc_scenario_level": 0.6656,
+    "n": [
+     132,
+     275
+    ]
+   }
+  },
+  "acceptance_gaps": {
+   "1.10.0_deepseek_accept": 12.595,
+   "1.10.0_hermes_accept": 10.101,
+   "1.9.0_deepseek_accept": 2.952,
+   "1.9.0_hermes_accept": 3.528
+  },
+  "pass": false,
+  "result_sha256": "2f9ca853857a23299c973418d89035be8f735004d5c03141afbd44d0a95b7eba"
+ },
+ {
+  "date": "2026-11-20",
+  "generator": "session-corpus-3",
+  "deal": {
+   "attempt": 10,
+   "rule": "the 8 round-1 families are pinned to dev; the others, sorted by id, are shuffled by random.Random(sha256('deal:'+seed)) and dealt 4 to dev, 8 to validation, the rest to holdout",
+   "seed": "session-corpus-round2-deal-10"
+  },
+  "note": "attempt 10: family reshuffle with seed session-corpus-round2-deal-10 (generator session-corpus-3, 11 repositories)",
+  "sealed_holdout_sha256": "38e14391b6c7c2f4a46c201b62ca15e86f9e76b491333b07f0eb4572c2e36115",
+  "comparisons": {
+   "dev_vs_validation": {
+    "auc_family_grouped": 0.6009,
+    "auc_scenario_level": 0.7049,
+    "n": [
+     132,
+     88
+    ]
+   },
+   "dev_vs_holdout": {
+    "auc_family_grouped": 0.6268,
+    "auc_scenario_level": 0.6983,
+    "n": [
+     132,
+     275
+    ]
+   }
+  },
+  "acceptance_gaps": {
+   "1.10.0_deepseek_accept": 8.548,
+   "1.10.0_hermes_accept": 7.26,
+   "1.9.0_deepseek_accept": 3.337,
+   "1.9.0_hermes_accept": 7.869
+  },
+  "pass": true,
+  "result_sha256": "dbd6cab9b22ae1b6fa08fb5760c3b952126cb0fab4519cb37fb57d26ce20b9ca"
+ },
+ {
+  "diagnosis_after_attempt": 10,
+  "note": "generator session-corpus-3 (11 repositories, one split each): the same 45 families x 11 scenarios generated under each split's real-output pool give 1.10.0 acceptance dev pool 34.6/39.0, holdout pool 34.5/39.5, validation pool 31.0/36.6 (deepseek/hermes, %); real_share_252k 0.342/0.342/0.341. The dev-vs-holdout repository effect is gone (<= 0.5 points); the validation pool is 2.5-3.5 points lower. Attempt 8 failed only on the hermes acceptance gap (11.7, from the family composition); attempt 9 failed on the deepseek gap (12.6); attempt 10 passes (grouped AUC 0.601 / 0.627, gaps <= 8.5)"
  }
 ]

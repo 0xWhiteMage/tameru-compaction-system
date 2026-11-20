@@ -5,7 +5,7 @@
     python -m benchmarks.session_corpus.build --split holdout --holdout --candidate NAME   # the ONE look; logged
 
 Output: build/session_corpus/<split>/<window or full>/<scenario id>.json and index.json (ids, family, language, style,
-window table).  The Squeez file is read from build/session_corpus/squeez/canonical_test.jsonl unless --squeez is given.
+window table).  The Squeez files are read from build/session_corpus/squeez/ unless --squeez DIR is given.
 """
 from __future__ import annotations
 

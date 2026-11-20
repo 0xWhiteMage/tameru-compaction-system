@@ -10,8 +10,8 @@ python -m benchmarks.session_corpus.build --split validation --window 252000
 python -m benchmarks.session_corpus.build --split holdout --holdout --candidate NAME   # the one look; logged
 ```
 
-Real outputs come from the Squeez file (`canonical_test.jsonl`, sha256 `1ead3be1…0540`), expected at
-`build/session_corpus/squeez/canonical_test.jsonl` (or `--squeez PATH`). It stays out of git.
+Real outputs come from the two Squeez files (`canonical_test.jsonl`, sha256 `1ead3be1…0540`, and `canonical_train.jsonl`,
+sha256 `8e64421b…22a3`; Apache-2.0), expected in `build/session_corpus/squeez/` (or `--squeez DIR`). They stay out of git.
 
 ## Committed files
 
@@ -28,7 +28,7 @@ Real outputs come from the Squeez file (`canonical_test.jsonl`, sha256 `1ead3be1
 
 ```jsonc
 {
-  "schema": 1, "generator": "session-corpus-2",
+  "schema": 1, "generator": "session-corpus-3",
   "id": "pytest-03", "family": "pytest", "index": 3, "seed": 123456789,   // seed = cluster (independent scenario)
   "language": "en" | "zh" | "mixed",      // zh: Chinese filler, fact lines, task and questions; mixed: English output, Chinese task/questions
   "task_style": "specific" | "vague",     // specific: the task names every fact key; vague: names none
@@ -51,7 +51,7 @@ Real outputs come from the Squeez file (`canonical_test.jsonl`, sha256 `1ead3be1
   "output_text": "...",                     // or "output_sha256" in the canonical hash form
   "source": "squeez:pydata__xarray-4094:2", // real steps only: manifest id
   "facts": [ {"id": "f04", "kind": "natural" | "error" | "buried" | "stale" | "real",
-              "key": "cache_17", "value": "12", "line_index": 233, "superseded": true /* stale only */} ]
+              "key": "example_suite", "value": "12", "line_index": 233, "superseded": true /* stale only */} ]
 }
 ```
 
@@ -68,7 +68,7 @@ Real outputs come from the Squeez file (`canonical_test.jsonl`, sha256 `1ead3be1
 ### Question
 
 ```jsonc
-{"id": "q-f04", "text": "Which test failed in the cache_17 suite?", "fact_ids": ["f04"],
+{"id": "q-f04", "text": "Which test failed in the example_suite suite?", "fact_ids": ["f04"],
  "stratum": "single" | "buried" | "superseded" | "aggregate" | "absent" | "real",
  "fact_kind": "natural" | "error" | "buried" | "pair" | "none" | "real",
  "first_window": 252000,                  // smallest window whose step slice holds every fact of the question
@@ -89,8 +89,8 @@ replay per arm, not here. Position strata (early / middle / late) are `step / st
   windows are prefixes of one step list (paired by step count). At 1M a session is about 200-300 steps and 5-7M characters.
 * Step sizes: lognormal around the family median (sigma 0.8), clipped to 2K-60K. Real outputs keep their exact size and are
   size-matched: for each real step a target is drawn from the same distribution (capped at 40K) and the pool output with the
-  closest log size is taken (+0.25 per earlier use of that output in the session). Only outputs of 2K-40K are used, because the
-  dev/validation repository pool has none above 40K (equivalence attempt 1 failed on exactly this size difference).
+  closest log size is taken (+0.25 per earlier use of that output in the session). Only outputs of 2K-40K are used (kept from
+  equivalence attempt 2, when the first two-repository pool had none above 40K).
 * Facts are placed per segment `[steps(prev), steps(W))` for W in 128K, 252K, 500K, 1M, so every gated window has its own.
 
 ## Content
@@ -98,7 +98,8 @@ replay per arm, not here. Position strata (early / middle / late) are `step / st
 * 45 families x 11 scenarios. Language cycles within each family (en, zh, en, mixed, zh, en, en, zh, mixed, en, rotated per
   family): about 30% Chinese, 20% mixed. Task style alternates within each family (offset per family).
 * Real outputs: a real step is next whenever the session's real characters are below 34% of its total, so every prefix is about
-  one third real. Pools are by repository (`manifest.json` `repo_splits`): the holdout's repository is used by no other split.
+  one third real. Pools are by repository: 11 SWE-bench repositories (at most 120 outputs each) are dealt by a logged seed
+  (`manifest.json` `repo_deal`) to holdout 5, dev 3, validation 3, so no repository straddles splits.
 * The eight round-1 families (burned round-1 DeepSeek holdout `ac9e77dd…1489`: pytest-zh, maven-en, kubectl-zh, sql-en, jest-en,
   gotest-zh, cargo-en, metrics-zh) are reproduced as `pytest`, `maven`, `kubectl`, `sql`, `jest`, `gotest`, `cargo`, `metrics`
   and pinned to dev.
@@ -108,6 +109,6 @@ replay per arm, not here. Position strata (early / middle / late) are `step / st
 * `SEALED-HOLDOUT.sha256` = sha256 of the canonical JSON of the sorted `[id, scenario digest]` rows of the holdout, where a
   scenario digest is sha256 over its canonical head (task, questions, window table, parameters) and every step with
   `output_sha256` in place of the text. `python -m benchmarks.session_corpus.split --check` verifies it (about 45 s).
-* `python -m benchmarks.session_corpus.real --check` proves `manifest.json` is byte-identical to a rebuild from the Squeez file.
+* `python -m benchmarks.session_corpus.real --check` proves `manifest.json` is byte-identical to a rebuild from the Squeez files.
 * `corpus.scenarios("holdout")` and `build --split holdout` refuse without `--holdout --candidate NAME`; a permitted read
   checks the sealed hash first and appends to `holdout_looks.json`.
