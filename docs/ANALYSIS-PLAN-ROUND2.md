@@ -149,3 +149,10 @@ margin is declared so now).
 
 Every cost figure is **replay-only** until live probes per profile land within ±10% of the replay price; no dollar claim before then.
 "Facts held" claims stay replay-only unless backed by answers (S3).
+
+## Appended clarifications (holdout registrations and stated clarifications only; no gate is added or widened)
+
+### 2026-11-21: planned holdout size
+
+The power table above shows that at the round-2 pass levels (α_r) the facts check needs 147 to 174 scenarios and the extract-retention check 8(a) needs 227 to 269, so a holdout of exactly 120 cannot decide 8(a). The maintainer chose to build every holdout at **about 270 scenarios in at least 24 families** (≥40 clusters per split still applies). "At least 120" in the text above remains the floor, not the target. No margin, bar or gate changes.
+
