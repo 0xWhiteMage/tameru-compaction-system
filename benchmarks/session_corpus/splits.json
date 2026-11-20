@@ -1,0 +1,93 @@
+{
+ "burned_round1": {
+  "families": {
+   "cargo-en": "cargo",
+   "gotest-zh": "gotest",
+   "jest-en": "jest",
+   "kubectl-zh": "kubectl",
+   "maven-en": "maven",
+   "metrics-zh": "metrics",
+   "pytest-zh": "pytest",
+   "sql-en": "sql"
+  },
+  "holdout_sha256": "ac9e77dd723d3755b8238c4a1e60d6947e798ddcc0ee489e9d2c10f2b5ca1489",
+  "note": "the burned round-1 DeepSeek holdout's families are dev material; reproduced here and pinned to dev"
+ },
+ "counts": {
+  "dev": {
+   "families": 12,
+   "scenarios": 132
+  },
+  "holdout": {
+   "families": 25,
+   "scenarios": 275
+  },
+  "validation": {
+   "families": 8,
+   "scenarios": 88
+  }
+ },
+ "deal": {
+  "attempt": 7,
+  "rule": "the 8 round-1 families are pinned to dev; the others, sorted by id, are shuffled by random.Random(sha256('deal:'+seed)) and dealt 4 to dev, 8 to validation, the rest to holdout",
+  "seed": "session-corpus-round2-deal-7"
+ },
+ "families": {
+  "ansible": "validation",
+  "apijson": "holdout",
+  "apt": "validation",
+  "bazel": "holdout",
+  "cargo": "dev",
+  "cmake": "dev",
+  "configdump": "holdout",
+  "csvexport": "validation",
+  "docker": "holdout",
+  "dotnet": "holdout",
+  "eslint": "holdout",
+  "gcc": "dev",
+  "ghactions": "dev",
+  "gitdiff": "dev",
+  "gitlog": "validation",
+  "gotest": "dev",
+  "gradle": "holdout",
+  "grep": "holdout",
+  "helm": "holdout",
+  "javac": "holdout",
+  "jest": "dev",
+  "journald": "validation",
+  "k8sevents": "holdout",
+  "kubectl": "dev",
+  "markdown": "holdout",
+  "maven": "dev",
+  "metrics": "dev",
+  "mypy": "holdout",
+  "nginx": "holdout",
+  "npm": "validation",
+  "pglog": "holdout",
+  "phpunit": "holdout",
+  "pip": "holdout",
+  "promtext": "validation",
+  "pytest": "dev",
+  "rspec": "holdout",
+  "sql": "dev",
+  "terraform": "holdout",
+  "trace-csharp": "holdout",
+  "trace-go": "holdout",
+  "trace-java": "holdout",
+  "trace-node": "validation",
+  "trace-python": "holdout",
+  "tsc": "holdout",
+  "webpack": "holdout"
+ },
+ "generator": "session-corpus-2",
+ "real_pools": {
+  "pallets/flask": [
+   "dev",
+   "validation"
+  ],
+  "pydata/xarray": [
+   "holdout"
+  ]
+ },
+ "scenarios_per_family": 11
+}

@@ -1,0 +1,7193 @@
+{
+ "dataset": {
+  "licence": "Apache-2.0",
+  "name": "Squeez canonical_test.jsonl",
+  "rows": 618,
+  "sha256": "1ead3be111439266370fbcc8ffabeadd38fbd1526bbd981d23347da013b20540",
+  "url": "https://huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench (file canonical_test.jsonl)"
+ },
+ "outputs": [
+  {
+   "chars": 22051,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     184,
+     192
+    ]
+   ],
+   "id": "squeez:pallets__flask-4045:0",
+   "instance_id": "pallets__flask-4045",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "b5689e8664fa4ffd7bb61e7efcabc905eeb506ac1744859590ac551aaaf2edd3",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 5755,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     10,
+     12
+    ],
+    [
+     102,
+     104
+    ]
+   ],
+   "id": "squeez:pallets__flask-4045:1",
+   "instance_id": "pallets__flask-4045",
+   "licence": "Apache-2.0",
+   "lines": 141,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "8385b99697b8388fc7b78e74b6dc6263ecc15ba047280105bad751ba9bf62408",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 21062,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     279,
+     288
+    ]
+   ],
+   "id": "squeez:pallets__flask-4074:3",
+   "instance_id": "pallets__flask-4074",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "5b9d2cc0cd2a2d446da00a11386a11bebab10ebb585751c3288ee8b398ea35df",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18806,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     304,
+     361
+    ]
+   ],
+   "id": "squeez:pallets__flask-4074:4",
+   "instance_id": "pallets__flask-4074",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "78543f27f3fef5bc083035e4af9dee5f50e61d5b2e0253b2353382a075652913",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 13227,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     42,
+     56
+    ]
+   ],
+   "id": "squeez:pallets__flask-4160:0",
+   "instance_id": "pallets__flask-4160",
+   "licence": "Apache-2.0",
+   "lines": 351,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "18bf4fa863202edbca85a7133ccdf751b2223dc4f7f27bb2c13bec5dca7e7deb",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 6414,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     95,
+     95
+    ]
+   ],
+   "id": "squeez:pallets__flask-4160:1",
+   "instance_id": "pallets__flask-4160",
+   "licence": "Apache-2.0",
+   "lines": 133,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "1e3292595dff73f2e8f1e3c2e4afa16dc906557f3f41375ea0bab6b78c166dd9",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 18806,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     337,
+     343
+    ]
+   ],
+   "id": "squeez:pallets__flask-4169:0",
+   "instance_id": "pallets__flask-4169",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "78543f27f3fef5bc083035e4af9dee5f50e61d5b2e0253b2353382a075652913",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2099,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     16,
+     18
+    ]
+   ],
+   "id": "squeez:pallets__flask-4544:0",
+   "instance_id": "pallets__flask-4544",
+   "licence": "Apache-2.0",
+   "lines": 20,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "b998d7be1029567cfd78dad3455c2f58d06ab7987d27d90e68eb5a046394c7c5",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 22612,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     457,
+     462
+    ]
+   ],
+   "id": "squeez:pallets__flask-4074:5",
+   "instance_id": "pallets__flask-4074",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "b9c89f3d74e5d6b23377ac5d9e54667ac493ab27dae8993175495bee3148c660",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 22729,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     324,
+     357
+    ]
+   ],
+   "id": "squeez:pallets__flask-4642:0",
+   "instance_id": "pallets__flask-4642",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "84affc833a4e194cbd57f85fe8db973cd9164d6ba8dcfd471cf0cc147b1df38e",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21903,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     453,
+     468
+    ]
+   ],
+   "id": "squeez:pallets__flask-4935:0",
+   "instance_id": "pallets__flask-4935",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "ac9bfbae6e2bf259b8966648e50fa2ec2bde647be3678ce55c516f6ceecbf929",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 28761,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     287,
+     287
+    ]
+   ],
+   "id": "squeez:pallets__flask-4160:3",
+   "instance_id": "pallets__flask-4160",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "e4f456d7ef17325cf7c0aa0e7e428ba59c32c6eede5e0df9ea6b30e583f4010f",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18443,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     359,
+     390
+    ]
+   ],
+   "id": "squeez:pallets__flask-4544:1",
+   "instance_id": "pallets__flask-4544",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "471b8c708165e589bfeace9094e79b0803a0dde15d942c78373795a950a32b4c",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18443,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     201,
+     228
+    ],
+    [
+     230,
+     254
+    ]
+   ],
+   "id": "squeez:pallets__flask-4575:1",
+   "instance_id": "pallets__flask-4575",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "6f9ad5a2d30d8f774923d369afcebf132cbef3931b48deecf213b51a493a0998",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 14172,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     261,
+     265
+    ]
+   ],
+   "id": "squeez:pallets__flask-4992:1",
+   "instance_id": "pallets__flask-4992",
+   "licence": "Apache-2.0",
+   "lines": 339,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "175cd0c032d7dfef91b8faf6b0c70b355bd13f082b08b4877725c521de28dff2",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21080,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     365,
+     395
+    ]
+   ],
+   "id": "squeez:pallets__flask-4575:3",
+   "instance_id": "pallets__flask-4575",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "3b95166b0498e74876aafdd9029c51c2f1f8b9594f9b342d782443c8735d9d89",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18666,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     466,
+     484
+    ]
+   ],
+   "id": "squeez:pallets__flask-4642:1",
+   "instance_id": "pallets__flask-4642",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "17e1f3b10716e7634273607ada574ed4371194ef2593fd73355058d790572c0b",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 3871,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     2,
+     3
+    ],
+    [
+     53,
+     53
+    ]
+   ],
+   "id": "squeez:pallets__flask-4935:1",
+   "instance_id": "pallets__flask-4935",
+   "licence": "Apache-2.0",
+   "lines": 73,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "3412b9e14ec1bdb60e9dbc44020212c79f7a93c186fb5ff73e48ce55a4892e40",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 3341,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     8,
+     9
+    ]
+   ],
+   "id": "squeez:pallets__flask-5014:1",
+   "instance_id": "pallets__flask-5014",
+   "licence": "Apache-2.0",
+   "lines": 59,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "f9ea3352a05ebe2c85f5aac0015c83d8a2ef1d3e3370e651dcd34913245de40a",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18460,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     292,
+     332
+    ]
+   ],
+   "id": "squeez:pallets__flask-5014:2",
+   "instance_id": "pallets__flask-5014",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "778515f990bc78e1a31b72abb52f9d839db34b4f5b8a319bc351ce419d575c83",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 22261,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     85,
+     103
+    ]
+   ],
+   "id": "squeez:pallets__flask-5063:1",
+   "instance_id": "pallets__flask-5063",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "7eda2cd8b165de9108ea6194dbd05e0d9eaf91265542dd8057cb61e7eaa5ac84",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 39996,
+   "gold_facts": 4,
+   "gold_spans": [
+    [
+     405,
+     405
+    ],
+    [
+     410,
+     410
+    ],
+    [
+     424,
+     428
+    ],
+    [
+     431,
+     431
+    ]
+   ],
+   "id": "squeez:pallets__flask-4935:2",
+   "instance_id": "pallets__flask-4935",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "06a1b5927cdb331a718613e74f5b9b74055667e5619b6165c25eca554f68bf2e",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 2664,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     17,
+     17
+    ]
+   ],
+   "id": "squeez:pydata__xarray-2922:0",
+   "instance_id": "pydata__xarray-2922",
+   "licence": "Apache-2.0",
+   "lines": 42,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "280f1b271029f6af4af586b0b9f6d01dd30a5b9a4cbad5d3c8d1a1cbcc88c3d2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 19721,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     220,
+     222
+    ]
+   ],
+   "id": "squeez:pydata__xarray-2905:0",
+   "instance_id": "pydata__xarray-2905",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "54c673f8e1e2472a0d00f4374f36f91551ae26f970c208725bfaf4dc33eaf773",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17394,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     83,
+     90
+    ]
+   ],
+   "id": "squeez:pydata__xarray-2905:1",
+   "instance_id": "pydata__xarray-2905",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "44255662b5633ed8b463e4c1868c70d8f5bd2779e99dd9d790e9cde5943c962e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20106,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     84,
+     166
+    ],
+    [
+     340,
+     344
+    ]
+   ],
+   "id": "squeez:pydata__xarray-2922:1",
+   "instance_id": "pydata__xarray-2922",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c7d96aca08c61190e5d27d5a93f6fec8c54b344c38fa8d0222134425e79aea59",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2661,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     41,
+     46
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3095:0",
+   "instance_id": "pydata__xarray-3095",
+   "licence": "Apache-2.0",
+   "lines": 57,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f5c867b28d8499ad9917d0bc738b703abea044e62112c516ea63b287efb06ae4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "test_output"
+  },
+  {
+   "chars": 25418,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     1
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3114:0",
+   "instance_id": "pydata__xarray-3114",
+   "licence": "Apache-2.0",
+   "lines": 193,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "06c0376fe7294d622c53b6ba9426c0b8d45d9e404c1c9af43931f3fcd6fc5b5f",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "type_check"
+  },
+  {
+   "chars": 20914,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     454,
+     462
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3114:1",
+   "instance_id": "pydata__xarray-3114",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a848373997eee3fb92852fd1569924f36c161767059dd165374033e63ff0b09e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 22645,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     71,
+     84
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3151:0",
+   "instance_id": "pydata__xarray-3151",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "0f9124e0636cd69763ecdb1da8d47e0b0a6a5969fb7670da6a1c6a76fa0f0862",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 28339,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     48,
+     51
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3151:1",
+   "instance_id": "pydata__xarray-3151",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "837042610b425a4f4a5fd485fe5284b577aee58137c05a6fd912ecb17e0e879a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 20646,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3095:3",
+   "instance_id": "pydata__xarray-3095",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4914369fa0a8a032a6ff1d18857dbe7c9fb200113e49907e884830fdfad667b1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20570,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     323,
+     331
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3114:2",
+   "instance_id": "pydata__xarray-3114",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3793f13805bbfdafb8a7df8e93390a041013dcaa4aad25697c69c0e1fa0b0195",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21034,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3114:3",
+   "instance_id": "pydata__xarray-3114",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7d54ff805c48a473af7f20fb7192e79db7bc1c4795b3c3e263e89319409b709e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2643,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     40,
+     46
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3156:1",
+   "instance_id": "pydata__xarray-3156",
+   "licence": "Apache-2.0",
+   "lines": 57,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "86248f28cbebf632ff46b67d66412d43f108726a36e9647889809a064bb65b14",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "test_output"
+  },
+  {
+   "chars": 20316,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     317,
+     322
+    ],
+    [
+     336,
+     340
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3156:3",
+   "instance_id": "pydata__xarray-3156",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "b84649f4d0afc8ec16d8f9ceac9a809e0213d06003aaa64ea012f7a1e42946d5",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 16933,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     272,
+     285
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3159:2",
+   "instance_id": "pydata__xarray-3159",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1874a2992a9bad423a5c78c20226c0ffc2dfe1f65b6b5e0e37b38a76b01d893e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20500,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     49,
+     115
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3239:0",
+   "instance_id": "pydata__xarray-3239",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "98fd978c7c981b4d5804d2b22081fac154cd55c52e1b782cd65c54a3aa5325a1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 15918,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     235,
+     241
+    ],
+    [
+     260,
+     289
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3239:1",
+   "instance_id": "pydata__xarray-3239",
+   "licence": "Apache-2.0",
+   "lines": 370,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "92be5dff2ca4989488104e9f36618a29c8d333d35a42b6da638e5707e3126fe3",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 12323,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     43,
+     59
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3302:1",
+   "instance_id": "pydata__xarray-3302",
+   "licence": "Apache-2.0",
+   "lines": 349,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "035058672a29561562d840b8e92461db6cc05428493a8d30974d37940ff59dc1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2469,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     30,
+     30
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3302:2",
+   "instance_id": "pydata__xarray-3302",
+   "licence": "Apache-2.0",
+   "lines": 39,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "016cde36f5300e5c3c5fb45d9c301f73424907cb2cfb3e4e7c3812ccac6325ae",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 18460,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pallets__flask-5063:3",
+   "instance_id": "pallets__flask-5063",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "778515f990bc78e1a31b72abb52f9d839db34b4f5b8a319bc351ce419d575c83",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 22914,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pallets__flask-5063:4",
+   "instance_id": "pallets__flask-5063",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pallets/flask",
+   "sha256": "78d600c81145c4d2ca7dda2193e8c1d9cb888a36ab5eaf3c7b5402f9cef6d740",
+   "splits": [
+    "dev",
+    "validation"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 27841,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     282,
+     288
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3305:1",
+   "instance_id": "pydata__xarray-3305",
+   "licence": "Apache-2.0",
+   "lines": 380,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7e054fdce0ea9c4a6cb17e0a301bf2e6b2c829cb65c65bb26c1c60353e7badd6",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18218,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     400,
+     447
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3302:3",
+   "instance_id": "pydata__xarray-3302",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2c86615c23fc8f44eb4cfca2fd24ea61a34d8dae23397f7f9dffc62f4f14797a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 5975,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     1,
+     4
+    ],
+    [
+     42,
+     42
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3305:2",
+   "instance_id": "pydata__xarray-3305",
+   "licence": "Apache-2.0",
+   "lines": 82,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "cf9192ab07f2664c08af1f722bf9140596ef3c634e7af3fca1421bffa1f0b447",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 17486,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     147,
+     185
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3338:1",
+   "instance_id": "pydata__xarray-3338",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "086cbf9769a29dcf3ef6cd1d9b50e6a0c78426fa109009059acd723048e67d41",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2516,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     17,
+     17
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3338:2",
+   "instance_id": "pydata__xarray-3338",
+   "licence": "Apache-2.0",
+   "lines": 40,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "eee9e4f7f59549a139cfe087d7b679e79ff1c325b63ee557c6677898a548a7eb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 27972,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     7,
+     13
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3159:3",
+   "instance_id": "pydata__xarray-3159",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "82962c5cf02b9cceb0829512b732c382310c2616f909bae35d38d638f9b27650",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18399,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     115,
+     160
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3305:3",
+   "instance_id": "pydata__xarray-3305",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "472aba26d01707503d0c2d55bec26a023674d20ec5a9dc687d12c29a33f48316",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2495,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     25,
+     26
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3338:4",
+   "instance_id": "pydata__xarray-3338",
+   "licence": "Apache-2.0",
+   "lines": 61,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1081ff895ccc8e1ceb9a896979d58e9cda5b39dc6e222889ca0b7d936d531775",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 2516,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     17,
+     17
+    ],
+    [
+     22,
+     22
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3338:5",
+   "instance_id": "pydata__xarray-3338",
+   "licence": "Apache-2.0",
+   "lines": 40,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "eee9e4f7f59549a139cfe087d7b679e79ff1c325b63ee557c6677898a548a7eb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 18333,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     314,
+     321
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3364:2",
+   "instance_id": "pydata__xarray-3364",
+   "licence": "Apache-2.0",
+   "lines": 427,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3e1cca203ee0dac6df64c449584efbe4ee6e845d15304964d0ff8826f10ae22c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18333,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     312,
+     320
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3364:3",
+   "instance_id": "pydata__xarray-3364",
+   "licence": "Apache-2.0",
+   "lines": 427,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3e1cca203ee0dac6df64c449584efbe4ee6e845d15304964d0ff8826f10ae22c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 9452,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     1
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3406:1",
+   "instance_id": "pydata__xarray-3406",
+   "licence": "Apache-2.0",
+   "lines": 183,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c359fe56d3f4b4d282c305f2b5a91d9f6f3632a0129ac90683101805b28827e9",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18504,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     38,
+     63
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3406:2",
+   "instance_id": "pydata__xarray-3406",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "036e2f825b824cf86f8db4427ba7bde1caf962a6148c1e65c24d403c6a54c95d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18504,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     38,
+     63
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3406:3",
+   "instance_id": "pydata__xarray-3406",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "036e2f825b824cf86f8db4427ba7bde1caf962a6148c1e65c24d403c6a54c95d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 58112,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     125,
+     148
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3406:4",
+   "instance_id": "pydata__xarray-3406",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c1ddd7f6c8977c9ed2a2c3cf79d7a234576dd1d359dca7019e7de06b41b2af8e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "git_blame"
+  },
+  {
+   "chars": 18218,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3520:0",
+   "instance_id": "pydata__xarray-3520",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2c86615c23fc8f44eb4cfca2fd24ea61a34d8dae23397f7f9dffc62f4f14797a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19032,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     20,
+     38
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3527:0",
+   "instance_id": "pydata__xarray-3527",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "02b973932f191b2acb2297e15c359b0c97dd0ceef0aaf21704a05b5175b14034",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2730,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     10,
+     27
+    ],
+    [
+     42,
+     42
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3520:2",
+   "instance_id": "pydata__xarray-3520",
+   "licence": "Apache-2.0",
+   "lines": 43,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "b98d2f131708cec673e9aecde21367b23ffe717c9a1793acf3b77f2510055ee8",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 20544,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     320,
+     347
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3631:0",
+   "instance_id": "pydata__xarray-3631",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "08c30d333fadb4ad93367f29d3203f096337690b8becf13c468e3f4add2fcaa7",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20231,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     71,
+     80
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3631:1",
+   "instance_id": "pydata__xarray-3631",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a464a0424811a02400e232e22f8519df62cbc1578952bb1992427f436e95ee29",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18218,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     119,
+     164
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3520:3",
+   "instance_id": "pydata__xarray-3520",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2c86615c23fc8f44eb4cfca2fd24ea61a34d8dae23397f7f9dffc62f4f14797a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19499,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     110,
+     115
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3527:1",
+   "instance_id": "pydata__xarray-3527",
+   "licence": "Apache-2.0",
+   "lines": 278,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "74db2daa91a8baddb7a3eb4aef655f6a5f62063459d72fd522ce2ee1e39c75a4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 2730,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     17,
+     18
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3637:1",
+   "instance_id": "pydata__xarray-3637",
+   "licence": "Apache-2.0",
+   "lines": 43,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8aa99cfc1931fcf9bb6454180508666655ca827c0d335fbb4edd2c29a9644a3e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 2730,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     17,
+     17
+    ],
+    [
+     42,
+     42
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3637:2",
+   "instance_id": "pydata__xarray-3637",
+   "licence": "Apache-2.0",
+   "lines": 43,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8aa99cfc1931fcf9bb6454180508666655ca827c0d335fbb4edd2c29a9644a3e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 19568,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     345,
+     353
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3635:2",
+   "instance_id": "pydata__xarray-3635",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1721281976b4a135ba6db307391cb44f2b6741441f9437d7f4ce1ca6f562514a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17932,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3677:0",
+   "instance_id": "pydata__xarray-3677",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "9455801abae5d4458d9dedbeea1056d019a6fcc850bb8dcd9fec6511baaf74bb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17486,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     398,
+     432
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3677:1",
+   "instance_id": "pydata__xarray-3677",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2361acaf9562e788e04c07cbdfb92722033af8cdca081739e2836dc265239ab8",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2704,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     38,
+     88
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3733:0",
+   "instance_id": "pydata__xarray-3733",
+   "licence": "Apache-2.0",
+   "lines": 89,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4ef28bdb2de59930a80cfcee65be022ab9dba7b6afaee7bfef8424231a59e87f",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 5851,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     58,
+     65
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3733:1",
+   "instance_id": "pydata__xarray-3733",
+   "licence": "Apache-2.0",
+   "lines": 104,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d833266be0699f1456114fa96522aa076d6507538b47e0a248eba40792a84c32",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 18577,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     455,
+     472
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3812:0",
+   "instance_id": "pydata__xarray-3812",
+   "licence": "Apache-2.0",
+   "lines": 473,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "fa472b6248149301a7574217bc35ae6623970241c9384618467640d75704a42b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17787,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     424,
+     501
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3733:2",
+   "instance_id": "pydata__xarray-3733",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a3b12a4e86b78b120ed62d25bc5e87c98957712dde922744d2bcfbc9e0a9795c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 47951,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     213,
+     245
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3733:3",
+   "instance_id": "pydata__xarray-3733",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "9502890bec6a9a23298b463e75025b8c3e252b9f65039708583d7c9f76e87caa",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "git_blame"
+  },
+  {
+   "chars": 5515,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     14,
+     24
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3812:1",
+   "instance_id": "pydata__xarray-3812",
+   "licence": "Apache-2.0",
+   "lines": 150,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e95158ab05d513493483da096abdecf6e45597468424859edd7b9793e2b387fe",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 47951,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     213,
+     218
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3733:4",
+   "instance_id": "pydata__xarray-3733",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "9502890bec6a9a23298b463e75025b8c3e252b9f65039708583d7c9f76e87caa",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "git_blame"
+  },
+  {
+   "chars": 18987,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     20,
+     38
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3812:2",
+   "instance_id": "pydata__xarray-3812",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "466f90ba3f7e72bb69d6e3a1f1c6bb273bd2f58611f476996d88d73892c27412",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2796,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     17,
+     17
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3976:0",
+   "instance_id": "pydata__xarray-3976",
+   "licence": "Apache-2.0",
+   "lines": 44,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c6a62e9d438ad4589ae6a9f6ee749a0d8e24ce35ac4b2a7fbed34b565b5c3081",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 25075,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     93,
+     93
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3976:1",
+   "instance_id": "pydata__xarray-3976",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "410c9a8c23f3f9a54814173d65a5ae6b5fbb81c9ff69418ecf99b5d794107079",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 2796,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     25,
+     26
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3976:2",
+   "instance_id": "pydata__xarray-3976",
+   "licence": "Apache-2.0",
+   "lines": 44,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c6a62e9d438ad4589ae6a9f6ee749a0d8e24ce35ac4b2a7fbed34b565b5c3081",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 17843,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     213,
+     245
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3733:5",
+   "instance_id": "pydata__xarray-3733",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7048daf872dc4983804e5ae1767043f8691258ee0e61545a28d6a2d8cad0ca1c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18712,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     425,
+     440
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3905:1",
+   "instance_id": "pydata__xarray-3905",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d12e554172cab5e7f018128992bb90d1e27c53cdd8483f7086c7c0022e1d620e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19493,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     90,
+     172
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3993:0",
+   "instance_id": "pydata__xarray-3993",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e09dbcd9d00cefae78cc9103cce26fd4e594803f50fc9a80c7f18aa7e6d0fac6",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 5526,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     14,
+     14
+    ],
+    [
+     22,
+     22
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3979:0",
+   "instance_id": "pydata__xarray-3979",
+   "licence": "Apache-2.0",
+   "lines": 74,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d6c72da926ccb41d8cad7a65a95b02dba2474e536d102a45f13a280be7b6ff5d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 20013,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3976:3",
+   "instance_id": "pydata__xarray-3976",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "6b13e1d1201f65131b0df88874ba1517a2da39345e0c0cf396ee821a5879f633",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 25406,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     62,
+     100
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3979:1",
+   "instance_id": "pydata__xarray-3979",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "37e5bffa04be105d1854a22a77ccffc80f9386eec9f3a4e13abd2cacef5c01e4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "build_output"
+  },
+  {
+   "chars": 18712,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     167,
+     197
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3905:2",
+   "instance_id": "pydata__xarray-3905",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d12e554172cab5e7f018128992bb90d1e27c53cdd8483f7086c7c0022e1d620e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20013,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3976:4",
+   "instance_id": "pydata__xarray-3976",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "6b13e1d1201f65131b0df88874ba1517a2da39345e0c0cf396ee821a5879f633",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19320,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3979:2",
+   "instance_id": "pydata__xarray-3979",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4ab5524c8dafe6b05cbb2bbb5414bb5367635b9f0377bb7ae17da16c71837088",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 9204,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     140,
+     146
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4075:0",
+   "instance_id": "pydata__xarray-4075",
+   "licence": "Apache-2.0",
+   "lines": 256,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1478efd59d75c509436870422ebb0b8fa67e398ef41c82322e073f01d2b3ad8c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 9204,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     138,
+     146
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4075:2",
+   "instance_id": "pydata__xarray-4075",
+   "licence": "Apache-2.0",
+   "lines": 256,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1478efd59d75c509436870422ebb0b8fa67e398ef41c82322e073f01d2b3ad8c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 24747,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     112,
+     115
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4075:4",
+   "instance_id": "pydata__xarray-4075",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ecf41b2d3dcea7c385ee25ef7bed7d8785c1041d5169ac4b69d1ca9bf0d415df",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 20368,
+   "gold_facts": 3,
+   "gold_spans": [
+    [
+     15,
+     16
+    ],
+    [
+     194,
+     198
+    ],
+    [
+     456,
+     456
+    ]
+   ],
+   "id": "squeez:pydata__xarray-3649:1",
+   "instance_id": "pydata__xarray-3649",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "12696476a29508f39e58d18c7eebf4847d8f47b8062c36053f0f898111ccd9b1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20049,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-4094:0",
+   "instance_id": "pydata__xarray-4094",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ff7e80a4c2bbf7fc32e85834380db2f317d546393bd06b735365cc22e87431ac",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2796,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     24,
+     24
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4098:0",
+   "instance_id": "pydata__xarray-4098",
+   "licence": "Apache-2.0",
+   "lines": 44,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e5912c6bd99a46bbbea22c7df761e5c80ffae694d73661a099dd73f793a53b17",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 18623,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     323,
+     325
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4098:1",
+   "instance_id": "pydata__xarray-4098",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "df36f8d48da45e20f529fe35fd681863500bd6825fbee4352c0a85dbd044983e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 28126,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     39
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4094:1",
+   "instance_id": "pydata__xarray-4094",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "35900cc2260b91e7405715fe4740a698f16a5942d1a59fbd2365271f483973da",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 20013,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-3976:5",
+   "instance_id": "pydata__xarray-3976",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "6b13e1d1201f65131b0df88874ba1517a2da39345e0c0cf396ee821a5879f633",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 9509,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     83,
+     84
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4098:2",
+   "instance_id": "pydata__xarray-4098",
+   "licence": "Apache-2.0",
+   "lines": 182,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "bedc9154a6e6d3c89e7638af34fa6e1de0f12cc35a4682d46a51cc2769b6aa04",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 2796,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     17,
+     18
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4182:1",
+   "instance_id": "pydata__xarray-4182",
+   "licence": "Apache-2.0",
+   "lines": 44,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "969f1f2ff1ebfb5f4ae865b47c817add62a2f46fc15c833a0f4e21fb65142f21",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 10018,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     120,
+     126
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4182:2",
+   "instance_id": "pydata__xarray-4182",
+   "licence": "Apache-2.0",
+   "lines": 284,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3619bdd8dadadb7cc58ffd4959ec43395fc8156d225c1bab147c4f957f4ba200",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17344,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-4094:3",
+   "instance_id": "pydata__xarray-4094",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c28f841ed870d777063f8c02950a70b28fd8f0150d8cfc92c36140bb5f132348",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 10018,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     95,
+     129
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4182:3",
+   "instance_id": "pydata__xarray-4182",
+   "licence": "Apache-2.0",
+   "lines": 284,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3619bdd8dadadb7cc58ffd4959ec43395fc8156d225c1bab147c4f957f4ba200",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17486,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     107,
+     124
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4339:1",
+   "instance_id": "pydata__xarray-4339",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d38f5a14825d5a3fef743b862cb1f105f3b7b3525bb4c8f3ba391fde3905298a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17486,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     107,
+     125
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4339:2",
+   "instance_id": "pydata__xarray-4339",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d38f5a14825d5a3fef743b862cb1f105f3b7b3525bb4c8f3ba391fde3905298a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17486,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     107,
+     124
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4339:3",
+   "instance_id": "pydata__xarray-4339",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d38f5a14825d5a3fef743b862cb1f105f3b7b3525bb4c8f3ba391fde3905298a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 4974,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     58,
+     58
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4184:0",
+   "instance_id": "pydata__xarray-4184",
+   "licence": "Apache-2.0",
+   "lines": 96,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a396ae976597bbd0a3b0f005b7c4e0750e9319f18da1505a538da601cb53cb18",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 17486,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     107,
+     125
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4339:4",
+   "instance_id": "pydata__xarray-4339",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d38f5a14825d5a3fef743b862cb1f105f3b7b3525bb4c8f3ba391fde3905298a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 7629,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     25,
+     38
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4356:0",
+   "instance_id": "pydata__xarray-4356",
+   "licence": "Apache-2.0",
+   "lines": 200,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "41b9a7640161938728cd0a2476927ef0bfcea8f160ba0b6bc8c67205554163cc",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2080,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     12,
+     12
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4423:1",
+   "instance_id": "pydata__xarray-4423",
+   "licence": "Apache-2.0",
+   "lines": 15,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "aac91df50ae99732962e2e511274f9eacc86eceeb26ff2b7ce3ffd55b48be580",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 31389,
+   "gold_facts": 3,
+   "gold_spans": [
+    [
+     3,
+     6
+    ],
+    [
+     9,
+     13
+    ],
+    [
+     15,
+     22
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4248:0",
+   "instance_id": "pydata__xarray-4248",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e63f258ef4e23c4bd061ce48f5534cb5db212239bed019e8f8ae5c46e1d40daf",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 2286,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     16,
+     16
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4423:2",
+   "instance_id": "pydata__xarray-4423",
+   "licence": "Apache-2.0",
+   "lines": 19,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f6d799957ea7152616c367e2033b12ffcd28200b9058f9a1511c2ab02ce3c4fd",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 11798,
+   "gold_facts": 6,
+   "gold_spans": [
+    [
+     87,
+     87
+    ],
+    [
+     89,
+     89
+    ],
+    [
+     94,
+     94
+    ],
+    [
+     96,
+     96
+    ],
+    [
+     110,
+     110
+    ],
+    [
+     123,
+     125
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4339:5",
+   "instance_id": "pydata__xarray-4339",
+   "licence": "Apache-2.0",
+   "lines": 173,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "446c795461df9faf5a476a19fb26e1f3e2b7adacf5d013540ab482412eb9bec1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 20485,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     288,
+     291
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4419:1",
+   "instance_id": "pydata__xarray-4419",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e90c32db768d8347a982ef6a49a474f1e78774d32d2f43934f093df12a78adbe",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 25508,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     136,
+     136
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4419:2",
+   "instance_id": "pydata__xarray-4419",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ede114dfbcf7e813fb46760d549bb476486dee5c3d4e159057c3b24b7ce0a150",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 14698,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     103,
+     112
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4442:0",
+   "instance_id": "pydata__xarray-4442",
+   "licence": "Apache-2.0",
+   "lines": 387,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2b5c160847fcbfcb37ba3f37ad4cc9eae666102569b03c832a4602501345075e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 22078,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     352,
+     360
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4419:3",
+   "instance_id": "pydata__xarray-4419",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f6bb5ebc2d376f87ea37630c29833665b2dad7be3c39ad47ffbae415ea5abdbb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 22078,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     455,
+     482
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4419:4",
+   "instance_id": "pydata__xarray-4419",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f6bb5ebc2d376f87ea37630c29833665b2dad7be3c39ad47ffbae415ea5abdbb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19721,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     215,
+     222
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4493:1",
+   "instance_id": "pydata__xarray-4493",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2eb138ac70061bf66f33ec55a000a55589a19d0f5734392dae2f6980f17c9f7a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19721,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     220,
+     221
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4493:3",
+   "instance_id": "pydata__xarray-4493",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2eb138ac70061bf66f33ec55a000a55589a19d0f5734392dae2f6980f17c9f7a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18779,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     311,
+     345
+    ],
+    [
+     353,
+     355
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4423:3",
+   "instance_id": "pydata__xarray-4423",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "adfe2f4f2221937dcba686d48108855acc1b19a69937a863ec6677fe4c7a357c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19323,
+   "gold_facts": 4,
+   "gold_spans": [
+    [
+     1,
+     6
+    ],
+    [
+     60,
+     62
+    ],
+    [
+     118,
+     124
+    ],
+    [
+     137,
+     143
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4442:1",
+   "instance_id": "pydata__xarray-4442",
+   "licence": "Apache-2.0",
+   "lines": 249,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d2272ee27a6e9b8438501c02b53e65ed16ff7fed3bfeeced51d9840d50275743",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 19721,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     221,
+     222
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4493:4",
+   "instance_id": "pydata__xarray-4493",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2eb138ac70061bf66f33ec55a000a55589a19d0f5734392dae2f6980f17c9f7a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2796,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     17,
+     17
+    ],
+    [
+     39,
+     41
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4510:0",
+   "instance_id": "pydata__xarray-4510",
+   "licence": "Apache-2.0",
+   "lines": 44,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "91b6e2b34bedb7d999500decb521bf79168f0c608acccdfd09c8f49dd6faab5b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 15983,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     193,
+     196
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4683:1",
+   "instance_id": "pydata__xarray-4683",
+   "licence": "Apache-2.0",
+   "lines": 430,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c4fc6a9e5f215af4d60ea14f5210cb3dc0bcc8a091338777e5667b23b53e279e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 15983,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     189,
+     197
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4683:2",
+   "instance_id": "pydata__xarray-4683",
+   "licence": "Apache-2.0",
+   "lines": 430,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c4fc6a9e5f215af4d60ea14f5210cb3dc0bcc8a091338777e5667b23b53e279e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20103,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     401,
+     421
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4684:0",
+   "instance_id": "pydata__xarray-4684",
+   "licence": "Apache-2.0",
+   "lines": 495,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4e55e92351a9d62f88734d71867630b14eb605b5a08055e410584d9131d5b813",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20147,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     357,
+     362
+    ],
+    [
+     425,
+     426
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4510:1",
+   "instance_id": "pydata__xarray-4510",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "0aabebbc56bf999bf55a98e4ae07eafc6171499846c25b9c0bd94a5f10a2eade",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17662,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     214,
+     296
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4184:2",
+   "instance_id": "pydata__xarray-4184",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d9c717862933a7be26808a658b9bb88d8434d7135bd38246048557f9faae233b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19504,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     26,
+     28
+    ],
+    [
+     373,
+     418
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4683:3",
+   "instance_id": "pydata__xarray-4683",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3e703b04d668969ed761babdd40dd9c552c7fcd428380b57bfedcaee4b7c7221",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17221,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     30
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4687:0",
+   "instance_id": "pydata__xarray-4687",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e2b3eb743cb18d9c77cf141eb5d3a26d72d0f491d72ace6f00e93001f40c96be",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17221,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-4687:1",
+   "instance_id": "pydata__xarray-4687",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e2b3eb743cb18d9c77cf141eb5d3a26d72d0f491d72ace6f00e93001f40c96be",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2796,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     18,
+     18
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4493:5",
+   "instance_id": "pydata__xarray-4493",
+   "licence": "Apache-2.0",
+   "lines": 44,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ff9845ea084c568a98b97260e028c265701847df35ee032515518058c450cbe8",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 19667,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     200
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4695:1",
+   "instance_id": "pydata__xarray-4695",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e9596665351dd8ef76838900f7f94be545a0d0a432e2d3303bbbdb313a4fad06",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19536,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     408,
+     412
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4750:1",
+   "instance_id": "pydata__xarray-4750",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "28c5ccd848f9d18d8490069409a0277eeae81549120db0b843700392ee52a6bf",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 36671,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     40,
+     40
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4683:5",
+   "instance_id": "pydata__xarray-4683",
+   "licence": "Apache-2.0",
+   "lines": 425,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8fe70bac808b37e82fa17d036243d34c39314316c5c8dd86901b6331899af150",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18713,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     496,
+     501
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4750:2",
+   "instance_id": "pydata__xarray-4750",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f3f7f3024602a3c28423cc2b356d4f93a1d0a51869624eab07060ab1d23e7d0b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18332,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     120
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4759:0",
+   "instance_id": "pydata__xarray-4759",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "6e00a6c8eea806df9ca4ccaeccbf9ebc4e0b1be614b1704be4b881ad1445ce6a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 16880,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     180,
+     206
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4767:0",
+   "instance_id": "pydata__xarray-4767",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "5850205f9711b739aa726bbc10a337c86ce258df740297102affdd05e1df3ad5",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2286,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     16,
+     16
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4767:1",
+   "instance_id": "pydata__xarray-4767",
+   "licence": "Apache-2.0",
+   "lines": 19,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "5c6c240f81f6a15d10537016ea4fc87a0f963ab4d816306a0cc474df9e06e302",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "build_output"
+  },
+  {
+   "chars": 18312,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     109,
+     109
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4759:1",
+   "instance_id": "pydata__xarray-4759",
+   "licence": "Apache-2.0",
+   "lines": 242,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "14bd55168511ebb09181f87162d84c9c27dcd4b33339ba0acac89ea779cd9746",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18332,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     120
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4759:2",
+   "instance_id": "pydata__xarray-4759",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "6e00a6c8eea806df9ca4ccaeccbf9ebc4e0b1be614b1704be4b881ad1445ce6a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20231,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     36
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4758:1",
+   "instance_id": "pydata__xarray-4758",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f65c02810d7f5b178916117d1bfcb114c41962e246e95bd5782f9c9930851e29",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 13560,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     268,
+     276
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4802:0",
+   "instance_id": "pydata__xarray-4802",
+   "licence": "Apache-2.0",
+   "lines": 328,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "827ab7baca3f4a66716416011dbe1577e8c999e9cede62ae61e9c031e4ad1f1b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20231,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     51,
+     63
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4758:2",
+   "instance_id": "pydata__xarray-4758",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f65c02810d7f5b178916117d1bfcb114c41962e246e95bd5782f9c9930851e29",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17344,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     240,
+     280
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4695:3",
+   "instance_id": "pydata__xarray-4695",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c28f841ed870d777063f8c02950a70b28fd8f0150d8cfc92c36140bb5f132348",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 13560,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     272,
+     275
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4802:1",
+   "instance_id": "pydata__xarray-4802",
+   "licence": "Apache-2.0",
+   "lines": 328,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "827ab7baca3f4a66716416011dbe1577e8c999e9cede62ae61e9c031e4ad1f1b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17246,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     186,
+     211
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4819:2",
+   "instance_id": "pydata__xarray-4819",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3f44822c1cf21e176d225e89800c081fb5d7c2e2f4686780e88002e388acfebb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 13616,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     197,
+     214
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4879:0",
+   "instance_id": "pydata__xarray-4879",
+   "licence": "Apache-2.0",
+   "lines": 336,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2961a314e2a8f3477e83881447b5eebd1f8ad1e86686ce2bbbbce43251937bab",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 13616,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     197,
+     215
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4879:1",
+   "instance_id": "pydata__xarray-4879",
+   "licence": "Apache-2.0",
+   "lines": 336,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2961a314e2a8f3477e83881447b5eebd1f8ad1e86686ce2bbbbce43251937bab",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20472,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     415,
+     425
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4827:1",
+   "instance_id": "pydata__xarray-4827",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "67649d26e21274082548778ea8cab563bfa53667de0139ddfd33e2cd11dea574",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 13616,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     168,
+     185
+    ],
+    [
+     197,
+     215
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4879:2",
+   "instance_id": "pydata__xarray-4879",
+   "licence": "Apache-2.0",
+   "lines": 336,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2961a314e2a8f3477e83881447b5eebd1f8ad1e86686ce2bbbbce43251937bab",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 7657,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     109,
+     115
+    ],
+    [
+     183,
+     189
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4911:1",
+   "instance_id": "pydata__xarray-4911",
+   "licence": "Apache-2.0",
+   "lines": 202,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8971f1c7bcd6ba249b95b4f7441a60f477283e1f53f9ef3338ead34df81c0ce2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17246,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     186,
+     210
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4819:3",
+   "instance_id": "pydata__xarray-4819",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3f44822c1cf21e176d225e89800c081fb5d7c2e2f4686780e88002e388acfebb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 5504,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     37,
+     37
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4827:2",
+   "instance_id": "pydata__xarray-4827",
+   "licence": "Apache-2.0",
+   "lines": 76,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "30735743541d730bd3c8ab61d99084f5cf70a76429177ef775e404fe850f088a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 5143,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     144,
+     168
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4911:2",
+   "instance_id": "pydata__xarray-4911",
+   "licence": "Apache-2.0",
+   "lines": 169,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a9dc01827172df3042eacf4dee95a8da96cddaf9bf954f4a2aa2ce72702a01fe",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 27832,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     78,
+     95
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4939:0",
+   "instance_id": "pydata__xarray-4939",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a6f98a8755f53ba98b8b61a9e0a8f66f6d75c1b55e651dfc6664dca3dc75e6d7",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 5116,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     58,
+     59
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4911:3",
+   "instance_id": "pydata__xarray-4911",
+   "licence": "Apache-2.0",
+   "lines": 96,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "85bc89d42a13a919587b6d538ab70cbcfc9f9512f97dc46cfc17abd4ac1f8624",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 2796,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     18,
+     18
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4911:4",
+   "instance_id": "pydata__xarray-4911",
+   "licence": "Apache-2.0",
+   "lines": 44,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "6b4c4a817e461eadb27430e93b04428b0a15d12d61a62c5f62c46fc80117f6b1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 21888,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     38,
+     40
+    ],
+    [
+     145,
+     155
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4827:3",
+   "instance_id": "pydata__xarray-4827",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ffe2c3d00cedea43f2c88426c3dfcf68ab7580cbbc96830b14205378c8b89751",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 12052,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     145,
+     178
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4966:0",
+   "instance_id": "pydata__xarray-4966",
+   "licence": "Apache-2.0",
+   "lines": 328,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a9b8f8920ca942d5684cf7e9f259f641c863eb466be0e5aad2f7c28b1b20ff82",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 19668,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     374,
+     452
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4939:3",
+   "instance_id": "pydata__xarray-4939",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "450d674abe9e8a58de7e4124d061605cd6533a6b34295f20db2d9e688a741af1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19668,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     374,
+     452
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4939:4",
+   "instance_id": "pydata__xarray-4939",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "450d674abe9e8a58de7e4124d061605cd6533a6b34295f20db2d9e688a741af1",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 13584,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     308,
+     326
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4966:2",
+   "instance_id": "pydata__xarray-4966",
+   "licence": "Apache-2.0",
+   "lines": 328,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1ea1357128e83a101f22a80c50be90760782ac590053ca0366caa58ad9875270",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2295,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     16,
+     16
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4939:5",
+   "instance_id": "pydata__xarray-4939",
+   "licence": "Apache-2.0",
+   "lines": 19,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2d3b783216cecf88044f621eb8b98fd685c5b0f07be4f3b219e6d97fe815d00e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 19515,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     186,
+     193
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4940:1",
+   "instance_id": "pydata__xarray-4940",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4e43ab7bec7f92ad079e3773496428488a5038455dc86378901492bd1f441f39",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17279,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-4940:2",
+   "instance_id": "pydata__xarray-4940",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "04594a8ce79bd4cd732f7b17dc9a9719ee15d0dff515a5b0946e47eeffd3ce63",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19515,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     351,
+     417
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4994:0",
+   "instance_id": "pydata__xarray-4994",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4e43ab7bec7f92ad079e3773496428488a5038455dc86378901492bd1f441f39",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19515,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     351,
+     417
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4994:1",
+   "instance_id": "pydata__xarray-4994",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4e43ab7bec7f92ad079e3773496428488a5038455dc86378901492bd1f441f39",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19515,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     351,
+     417
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4994:2",
+   "instance_id": "pydata__xarray-4994",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4e43ab7bec7f92ad079e3773496428488a5038455dc86378901492bd1f441f39",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17279,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-4940:3",
+   "instance_id": "pydata__xarray-4940",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "04594a8ce79bd4cd732f7b17dc9a9719ee15d0dff515a5b0946e47eeffd3ce63",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 4717,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     115,
+     122
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5033:1",
+   "instance_id": "pydata__xarray-5033",
+   "licence": "Apache-2.0",
+   "lines": 123,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1397460d0942eea63b276c02a1b6c362de207d7fe7466031c8904a48fe9a74e3",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2616,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     24,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5033:2",
+   "instance_id": "pydata__xarray-5033",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d4154f58aa32d288740ea04c6b6a5def7a7ebe852f69a3d93882988bbc2dd004",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 18953,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     77,
+     154
+    ]
+   ],
+   "id": "squeez:pydata__xarray-4966:3",
+   "instance_id": "pydata__xarray-4966",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8593ec77ac9781dddd7bae569bf79c5d13f4749a999a4e21a62e61de6bef79aa",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18511,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     438,
+     444
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5131:0",
+   "instance_id": "pydata__xarray-5131",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ca13c8938e2649cc0adaeda47b74581745a7034894310fc778bef20038483dc9",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18511,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     438,
+     444
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5131:1",
+   "instance_id": "pydata__xarray-5131",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ca13c8938e2649cc0adaeda47b74581745a7034894310fc778bef20038483dc9",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19832,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     168,
+     174
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5180:1",
+   "instance_id": "pydata__xarray-5180",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3593901f842c1d346a42701408c755af3bfce8c63335f5abd6fecd7a58a79826",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2613,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5187:0",
+   "instance_id": "pydata__xarray-5187",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c3d8fa0fba141028889bd1a9e7e6117b2234e17f6d820ddcaa659eab46f69a34",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 27250,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     153,
+     153
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5033:3",
+   "instance_id": "pydata__xarray-5033",
+   "licence": "Apache-2.0",
+   "lines": 343,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8314b7ca3fc28dd7ea80fd98c3d64d66435de23d0c27178c1269eabe0d101d30",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 2613,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5187:1",
+   "instance_id": "pydata__xarray-5187",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "9c8001c9a735223837795ed137e76ab37bcde38fb97967e7b3bad29ef9f295d9",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "build_output"
+  },
+  {
+   "chars": 17429,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     120
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5233:2",
+   "instance_id": "pydata__xarray-5233",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "210e23cc300c3516500f03b48c5d30345ab45354361a7b48cbfe1c2a77324535",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 6166,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     6,
+     8
+    ],
+    [
+     28,
+     40
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5126:1",
+   "instance_id": "pydata__xarray-5126",
+   "licence": "Apache-2.0",
+   "lines": 164,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "adb7ccd7851008218fccf8afaabe44450aa9f5204421d43f55caa693dc8784ae",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 14148,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     119,
+     174
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5233:3",
+   "instance_id": "pydata__xarray-5233",
+   "licence": "Apache-2.0",
+   "lines": 364,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "247f8e28906c0bb89e011f98e6a71a011e2b67e51641996db5b6e2d9da5d6238",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 9829,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     122,
+     145
+    ],
+    [
+     236,
+     242
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5362:0",
+   "instance_id": "pydata__xarray-5362",
+   "licence": "Apache-2.0",
+   "lines": 265,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c28f83915059b287523ac17a9c0ba98c01fdf04fed215f2042d0669143e1f53d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 9829,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     239,
+     242
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5362:1",
+   "instance_id": "pydata__xarray-5362",
+   "licence": "Apache-2.0",
+   "lines": 265,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c28f83915059b287523ac17a9c0ba98c01fdf04fed215f2042d0669143e1f53d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 14434,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     397,
+     398
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5455:1",
+   "instance_id": "pydata__xarray-5455",
+   "licence": "Apache-2.0",
+   "lines": 399,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8a7ed9066a11e1b82ff5364629fe604d71b8ca19f676f6e3efa64402be169215",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 5494,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     135,
+     195
+    ],
+    [
+     198,
+     200
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5365:2",
+   "instance_id": "pydata__xarray-5365",
+   "licence": "Apache-2.0",
+   "lines": 200,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "75025f4b0821cdc159de50f6d5e386249a90db6980d439c6aa2660d116ea57ac",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 31203,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     373,
+     375
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5131:2",
+   "instance_id": "pydata__xarray-5131",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "9018111ff036a1826d113ee98ff4a35b4ec1cc293abaa4861be0821270d9d6ba",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 3091,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     19,
+     19
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5365:3",
+   "instance_id": "pydata__xarray-5365",
+   "licence": "Apache-2.0",
+   "lines": 100,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "61cfa870179ed52353ef1151179be55af40745e2de3f744072ea5fe233243da0",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2933,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     19,
+     20
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5580:1",
+   "instance_id": "pydata__xarray-5580",
+   "licence": "Apache-2.0",
+   "lines": 46,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d9232a3161b5323541c7ed6499236b56d79244cf57741f750244c11fdb3d82bc",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 15264,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     280,
+     286
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5682:0",
+   "instance_id": "pydata__xarray-5682",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "594e3dcb8a3960c3f21c652248dc501935bb313771cd4072942831158d6010b6",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 19181,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     285,
+     288
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5662:1",
+   "instance_id": "pydata__xarray-5662",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "853bf65760aa998fc1b409a3e0e6f639291f960d13bda448f909f41ad060b525",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19145,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     375,
+     382
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5580:3",
+   "instance_id": "pydata__xarray-5580",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c4c92f70540a8cd7bfc58f8379803227fc7c20c0daed41629ea3b8eed8d1520e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19592,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-5187:2",
+   "instance_id": "pydata__xarray-5187",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7b794c05ab6f575953d293828048d5ff17541b25f56559e552e9d5d7749dfcca",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2610,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6135:0",
+   "instance_id": "pydata__xarray-6135",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1e0ea65c127ecc17a37b8d7faaa4e50857eeda7ade442c7a57742937b30246e9",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 18753,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     418,
+     426
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6386:1",
+   "instance_id": "pydata__xarray-6386",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "59eb44718ce1a3ba9c072be6090277e25d6b605af66daab7842776f3969607a2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18796,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     93,
+     99
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6135:1",
+   "instance_id": "pydata__xarray-6135",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "85bfffffa166dd11dbb00659e4e401012bb6d368016bac8f63db73d14f6fbf2e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 3065,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     21,
+     21
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6386:2",
+   "instance_id": "pydata__xarray-6386",
+   "licence": "Apache-2.0",
+   "lines": 48,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "77b53c9cb2bab1a3c704eabc4f450c3f7aa9982f9f8bf668b9ca8cc98de6d017",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 18753,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     349,
+     383
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6394:1",
+   "instance_id": "pydata__xarray-6394",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "59eb44718ce1a3ba9c072be6090277e25d6b605af66daab7842776f3969607a2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18753,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     360,
+     368
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6394:2",
+   "instance_id": "pydata__xarray-6394",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "59eb44718ce1a3ba9c072be6090277e25d6b605af66daab7842776f3969607a2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2628,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6400:1",
+   "instance_id": "pydata__xarray-6400",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c52413778e5be7f6d0f804119cfa8c601c08513484c486d85b91bd60572681a8",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 9573,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     31,
+     47
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6400:3",
+   "instance_id": "pydata__xarray-6400",
+   "licence": "Apache-2.0",
+   "lines": 245,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "dfee1da09a2f9c9dbd1f6fc5262cccf64532d000bc0432671135e43523991809",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18990,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     156,
+     199
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6400:4",
+   "instance_id": "pydata__xarray-6400",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1fbed9f60f182ace4f3fa374dd56b8c7523f6f99b3601ba48d02e106d5190e29",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18378,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     439,
+     500
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6394:3",
+   "instance_id": "pydata__xarray-6394",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c1f6c85d6c0995abbe362e53774bf072a53e3caada61213df866f92715fa8d51",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21660,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-6386:3",
+   "instance_id": "pydata__xarray-6386",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "425b44fe0cbb88559a6f67de1fde74361581cd369c8b482c9a9f71492dc86968",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 30210,
+   "gold_facts": 8,
+   "gold_spans": [
+    [
+     1,
+     4
+    ],
+    [
+     6,
+     6
+    ],
+    [
+     10,
+     21
+    ],
+    [
+     23,
+     24
+    ],
+    [
+     26,
+     42
+    ],
+    [
+     44,
+     45
+    ],
+    [
+     47,
+     48
+    ],
+    [
+     50,
+     53
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6386:4",
+   "instance_id": "pydata__xarray-6386",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a1f0535e804810c34980eb233656136f452cf5ff936d01ec086b64e33a09998c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18454,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     9,
+     22
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6461:3",
+   "instance_id": "pydata__xarray-6461",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3c1e5c5b1c9c362b6cab5156bd51a463946b9fd3b202d1d610803953e7b7b6c6",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 4656,
+   "gold_facts": 3,
+   "gold_spans": [
+    [
+     18,
+     20
+    ],
+    [
+     22,
+     22
+    ],
+    [
+     26,
+     31
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6461:4",
+   "instance_id": "pydata__xarray-6461",
+   "licence": "Apache-2.0",
+   "lines": 75,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "04345e64f31cb25536c3845cc90b8f7197025e9b64c93cfc69ee67932eaa7da5",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 13486,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     173,
+     210
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6599:0",
+   "instance_id": "pydata__xarray-6599",
+   "licence": "Apache-2.0",
+   "lines": 234,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "04134b365d711eb57f4c0cb0b979cb70d7beac30f0e5d613e561e553cd2567b4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "build_output"
+  },
+  {
+   "chars": 19218,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     13,
+     27
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6548:0",
+   "instance_id": "pydata__xarray-6548",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ca7cf0ea9a6611ab8b1c81da13b020a76424bb2473cac275a9d7abbacdbba5fd",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20013,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     220,
+     230
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6598:0",
+   "instance_id": "pydata__xarray-6598",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ca42e6cd8cb9b85affa639ba07ccad321e0cb0b86196d4695922c8f6142d699a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20013,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     220,
+     230
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6598:1",
+   "instance_id": "pydata__xarray-6598",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ca42e6cd8cb9b85affa639ba07ccad321e0cb0b86196d4695922c8f6142d699a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17708,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     465,
+     494
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5682:1",
+   "instance_id": "pydata__xarray-5682",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "fb529f3a4923b53f448a5ac81d88ce7fc9828804e0f4c0d4f7e2b8ae6862c2d4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17708,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     465,
+     494
+    ]
+   ],
+   "id": "squeez:pydata__xarray-5682:2",
+   "instance_id": "pydata__xarray-5682",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "fb529f3a4923b53f448a5ac81d88ce7fc9828804e0f4c0d4f7e2b8ae6862c2d4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2643,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     22,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6599:1",
+   "instance_id": "pydata__xarray-6599",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3b1e47b3c00a4a5cb52ae9702934b986e671c62bc90bbaaa10900beda228da07",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 5122,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     1
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6598:2",
+   "instance_id": "pydata__xarray-6598",
+   "licence": "Apache-2.0",
+   "lines": 62,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f204bbb5a88ff7af3c0e5bb49cfdebe82aaaa338dce10b5e2e083287c7b99149",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 15305,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     159,
+     162
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6598:3",
+   "instance_id": "pydata__xarray-6598",
+   "licence": "Apache-2.0",
+   "lines": 342,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "220cd9f54d2620db4c845f99d92f0c8fee6baf47a989d436cf48f8ebaae824b0",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17410,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     81,
+     84
+    ],
+    [
+     248,
+     262
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6601:1",
+   "instance_id": "pydata__xarray-6601",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "bbd1c98bd20648649974fd56a4f2427eb13eecd8b2044a816d0b2cdea8b5587c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 3045,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     38,
+     38
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6744:2",
+   "instance_id": "pydata__xarray-6744",
+   "licence": "Apache-2.0",
+   "lines": 50,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d26de0ddc2610a3555b3a88980959546aa4a386046fffcfe4374fb2041b6cd76",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 19493,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     270,
+     283
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6744:3",
+   "instance_id": "pydata__xarray-6744",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "dec05b405ab1522a9873ec05a6aa2ffbd4404a201c12c6259b4238bc0fa84f69",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17239,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-5731:2",
+   "instance_id": "pydata__xarray-5731",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "16cd6cdaaaec084400cc94d4c751f8e1202451ecfa3c6c6fc1096fa57c5603db",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19493,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     270,
+     283
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6744:4",
+   "instance_id": "pydata__xarray-6744",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "dec05b405ab1522a9873ec05a6aa2ffbd4404a201c12c6259b4238bc0fa84f69",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19519,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     60,
+     68
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6804:1",
+   "instance_id": "pydata__xarray-6804",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a54d5a2e99733265eb1f19867b6866adb40eae64654253cb7b6f85f714f22dfc",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17410,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-6599:2",
+   "instance_id": "pydata__xarray-6599",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "07225bc24637e0ce22782f767e9757dfb767dedd1277113b0029eed159d9f0b2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18867,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     297,
+     299
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6798:0",
+   "instance_id": "pydata__xarray-6798",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "70b22e6f554e95cf37bebcd1b9c3553e33180ce1c93061ef493b7585c65bee88",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17410,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-6601:2",
+   "instance_id": "pydata__xarray-6601",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "bbd1c98bd20648649974fd56a4f2427eb13eecd8b2044a816d0b2cdea8b5587c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 4734,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     3,
+     3
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6823:1",
+   "instance_id": "pydata__xarray-6823",
+   "licence": "Apache-2.0",
+   "lines": 58,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ca122ff972799400235198358b186903cf1927d96144e790697fcd9fccf86132",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 19540,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     18,
+     18
+    ],
+    [
+     132,
+     132
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6798:1",
+   "instance_id": "pydata__xarray-6798",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "e3a3c16b91af816195be959a672f99b8c15526e9a56741850064fba68b98997c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19276,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     166,
+     169
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6823:2",
+   "instance_id": "pydata__xarray-6823",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ad3901c5b5d5ed48e7b4681fbba387398aea914b102e2cd46c2894116d3a4927",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19276,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     166,
+     168
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6823:3",
+   "instance_id": "pydata__xarray-6823",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ad3901c5b5d5ed48e7b4681fbba387398aea914b102e2cd46c2894116d3a4927",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19086,
+   "gold_facts": 3,
+   "gold_spans": [
+    [
+     230,
+     232
+    ],
+    [
+     371,
+     382
+    ],
+    [
+     412,
+     426
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6804:3",
+   "instance_id": "pydata__xarray-6804",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f90eb5b29f8653761c3121f0fb379afc611bc5f5cba7fcee4ee1a3af66835980",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19289,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     65,
+     88
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6857:0",
+   "instance_id": "pydata__xarray-6857",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "0fb00e8c42f6696cc61f4d1af4f11b0f0d9104e2cf3b29b66933042d0969e177",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "curl"
+  },
+  {
+   "chars": 21681,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     79,
+     85
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6857:1",
+   "instance_id": "pydata__xarray-6857",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7a92ae2b6c8da0e34d275e308c487549b3f70d6705018d9507eb2b7ec3b6993c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2637,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6857:2",
+   "instance_id": "pydata__xarray-6857",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "044acf1541c56d5b430304b626966cc8993cc0d91e027516e07e231043e65534",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "build_output"
+  },
+  {
+   "chars": 19317,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     339,
+     342
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6721:0",
+   "instance_id": "pydata__xarray-6721",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ffd38e1bdffa42a851e105eff74bc39e75eccb639565c656e3f530f153d0befe",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20224,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     170,
+     190
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6882:0",
+   "instance_id": "pydata__xarray-6882",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "44f888f742af6bae9c1128302b5f20561b07cbe7814d8dd15ad48be39a8f9500",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20224,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     170,
+     191
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6882:1",
+   "instance_id": "pydata__xarray-6882",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "44f888f742af6bae9c1128302b5f20561b07cbe7814d8dd15ad48be39a8f9500",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18382,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     429,
+     447
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6938:1",
+   "instance_id": "pydata__xarray-6938",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "677cf76b2d1e95e2c8c3dd33cb476675d4c9de9a03ca99acdf9662fbd9f9b6f2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21681,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     65,
+     87
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6857:3",
+   "instance_id": "pydata__xarray-6857",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7a92ae2b6c8da0e34d275e308c487549b3f70d6705018d9507eb2b7ec3b6993c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18454,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     15,
+     16
+    ],
+    [
+     153,
+     154
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6938:2",
+   "instance_id": "pydata__xarray-6938",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3c1e5c5b1c9c362b6cab5156bd51a463946b9fd3b202d1d610803953e7b7b6c6",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21789,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     492,
+     501
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6889:1",
+   "instance_id": "pydata__xarray-6889",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "52c789aaa3d43cbb328846fe826cf1bb1a8e35293c98f35a6dcd608fd4f3df13",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 17410,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-6599:3",
+   "instance_id": "pydata__xarray-6599",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "07225bc24637e0ce22782f767e9757dfb767dedd1277113b0029eed159d9f0b2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 12315,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     1
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6971:0",
+   "instance_id": "pydata__xarray-6971",
+   "licence": "Apache-2.0",
+   "lines": 145,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7263db80af5972769c227e91dee51c9ab6b3e4c8422c48da32a5d708eef5cf31",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18347,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     430,
+     438
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6971:1",
+   "instance_id": "pydata__xarray-6971",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "635b7623f063764a3fdebc5bfe7d78dea61f629f801bc8f54b985132aafdcd96",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18382,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     429,
+     447
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6938:3",
+   "instance_id": "pydata__xarray-6938",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "677cf76b2d1e95e2c8c3dd33cb476675d4c9de9a03ca99acdf9662fbd9f9b6f2",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2990,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     20,
+     20
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6992:0",
+   "instance_id": "pydata__xarray-6992",
+   "licence": "Apache-2.0",
+   "lines": 47,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "c06f4837f67734d07221bd1c8f9751707daca0cc64eff590b08a18509bad2d10",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 19183,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     37,
+     108
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6971:2",
+   "instance_id": "pydata__xarray-6971",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "856cf340dd092d4c2ed44628b2f3632e8be9d4aaecf55beae5cf93b793ca0251",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 54897,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     495,
+     501
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6889:2",
+   "instance_id": "pydata__xarray-6889",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "23ab9781a7dc8803bf9a272c81e6e2bc3b13e2fba5d0b4853caab869b646728d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "git_blame"
+  },
+  {
+   "chars": 2238,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     14,
+     14
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6992:2",
+   "instance_id": "pydata__xarray-6992",
+   "licence": "Apache-2.0",
+   "lines": 36,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "99469c444ca19aa8eee3f2338af17f292adffafd0be8f678a1f47538f7a98256",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 21688,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     181,
+     242
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6971:3",
+   "instance_id": "pydata__xarray-6971",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2abcd40643e1fb7de8ba2db7b9db126a5a79fcf60338232eea12ecd38ab477a4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19579,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-6938:4",
+   "instance_id": "pydata__xarray-6938",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "5bf356977cfbc73302f10c232844d85e23411449f6ee5588c1d5959443606563",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18867,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     278,
+     287
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6992:3",
+   "instance_id": "pydata__xarray-6992",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "70b22e6f554e95cf37bebcd1b9c3553e33180ce1c93061ef493b7585c65bee88",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18347,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-6999:3",
+   "instance_id": "pydata__xarray-6999",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7df4404805278757c485f0b08e5f2a5cb85a259b428767bcb2a27dde8e337f33",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 4996,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     42,
+     93
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7052:1",
+   "instance_id": "pydata__xarray-7052",
+   "licence": "Apache-2.0",
+   "lines": 147,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3b2531371bd0e2b2b2502e499174f79f802cc872be4dcff21e73841e08da77d3",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 29065,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     99,
+     103
+    ]
+   ],
+   "id": "squeez:pydata__xarray-6999:4",
+   "instance_id": "pydata__xarray-6999",
+   "licence": "Apache-2.0",
+   "lines": 364,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "9b8ef75f8622c5d6d76ca8034d86e7ef4be850f940976efc2e5a20d2efbca7c0",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 20927,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     120
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7019:1",
+   "instance_id": "pydata__xarray-7019",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8319b1ec9bead4ecf64e6588bd6f72c111cf04f266bc97bb8ff5ea0422c07758",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18422,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     289,
+     304
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7101:0",
+   "instance_id": "pydata__xarray-7101",
+   "licence": "Apache-2.0",
+   "lines": 468,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ecc78955ac8f6ed0a1d429ceff53433aa5aead3654dfd6b5bf5a9439f1b9a34d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18984,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     23,
+     37
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7089:1",
+   "instance_id": "pydata__xarray-7089",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1a84071cb90cd129a6ae8fe476308c8337040d28fcbaf6dfc0728582a39249a5",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 28474,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     41,
+     41
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7003:1",
+   "instance_id": "pydata__xarray-7003",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "59ac2360fb21c15169370a71841c868d7ad1ea33d79260d1a289f400ff30c335",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 6785,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     48,
+     53
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7052:2",
+   "instance_id": "pydata__xarray-7052",
+   "licence": "Apache-2.0",
+   "lines": 95,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d76d657b8d6de810c69a1f301a31a18b62170abd01f98fa8572aa43bb8516965",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 19540,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     249,
+     283
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7003:2",
+   "instance_id": "pydata__xarray-7003",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "54fe357b8f554b87720a09c7f3f284d6da8efbe3a1eac5b02cc009496602d009",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 42933,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     3
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7101:1",
+   "instance_id": "pydata__xarray-7101",
+   "licence": "Apache-2.0",
+   "lines": 296,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "64c2eccbd91f0d169e82c4093a4d3889519ab76e617986564e7e1cbaa9dafe5c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "type_check"
+  },
+  {
+   "chars": 18422,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     289,
+     305
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7101:2",
+   "instance_id": "pydata__xarray-7101",
+   "licence": "Apache-2.0",
+   "lines": 468,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ecc78955ac8f6ed0a1d429ceff53433aa5aead3654dfd6b5bf5a9439f1b9a34d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 40013,
+   "gold_facts": 3,
+   "gold_spans": [
+    [
+     74,
+     74
+    ],
+    [
+     76,
+     76
+    ],
+    [
+     194,
+     194
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7089:2",
+   "instance_id": "pydata__xarray-7089",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "811ef789ccac9773c0ff13575324d9364a4b27b2e0415b3d5af7b5e61aa24a24",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 48672,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     191,
+     191
+    ],
+    [
+     424,
+     428
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7089:3",
+   "instance_id": "pydata__xarray-7089",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "51530b809cfc699a3601be05d76444f487c5394499e8503c3f61dc3ab7fc5658",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 40046,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     3
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7105:0",
+   "instance_id": "pydata__xarray-7105",
+   "licence": "Apache-2.0",
+   "lines": 275,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "cead4465f85081809c642062c061beeacbecd5cd878b3e75751c00466f091b57",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "type_check"
+  },
+  {
+   "chars": 16994,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     289,
+     302
+    ],
+    [
+     318,
+     332
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7105:1",
+   "instance_id": "pydata__xarray-7105",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4cdd17e509bb60a4a350dd2e1b1ee2e7fb5dc21b65e07e486a26e85ff001857b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2625,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     23,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7112:1",
+   "instance_id": "pydata__xarray-7112",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "4bacbc1445d5a87fba4624d91edf48f84e40390591c6d4d753661420311d2ae5",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 19540,
+   "gold_facts": 0,
+   "gold_spans": [],
+   "id": "squeez:pydata__xarray-7003:3",
+   "instance_id": "pydata__xarray-7003",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "54fe357b8f554b87720a09c7f3f284d6da8efbe3a1eac5b02cc009496602d009",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21688,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     204,
+     209
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7105:3",
+   "instance_id": "pydata__xarray-7105",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2abcd40643e1fb7de8ba2db7b9db126a5a79fcf60338232eea12ecd38ab477a4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18343,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     430,
+     432
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7120:0",
+   "instance_id": "pydata__xarray-7120",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f878e1c81246049431bd62bba877059fa117c78ab2aa28b5a0e1d12e76510f7f",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 39822,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     3
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7112:2",
+   "instance_id": "pydata__xarray-7112",
+   "licence": "Apache-2.0",
+   "lines": 273,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7464e51efa679534c2acc1283ef35efc3587b379413ba1cf39393ab81b7cdf4c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "type_check"
+  },
+  {
+   "chars": 21688,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     328,
+     341
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7120:1",
+   "instance_id": "pydata__xarray-7120",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2abcd40643e1fb7de8ba2db7b9db126a5a79fcf60338232eea12ecd38ab477a4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 4592,
+   "gold_facts": 3,
+   "gold_spans": [
+    [
+     3,
+     3
+    ],
+    [
+     5,
+     7
+    ],
+    [
+     12,
+     14
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7112:3",
+   "instance_id": "pydata__xarray-7112",
+   "licence": "Apache-2.0",
+   "lines": 56,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "136a107fd57ddf35f4d1620cb6085e29cdcf6a3d89bb821ccb0e6c441ebc5847",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 19097,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     284,
+     295
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7105:4",
+   "instance_id": "pydata__xarray-7105",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2342dcbba851908297caefa22b99f730aaee7efd1589d1f06a7cbd17d8bcb08e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21688,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     81,
+     86
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7112:4",
+   "instance_id": "pydata__xarray-7112",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2abcd40643e1fb7de8ba2db7b9db126a5a79fcf60338232eea12ecd38ab477a4",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 6475,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     67,
+     102
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7150:0",
+   "instance_id": "pydata__xarray-7150",
+   "licence": "Apache-2.0",
+   "lines": 217,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "ba006329ace446beca4eec1492d6ad80e503d6c6f72d68a55aac4ab6fb5303f7",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18343,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     255,
+     282
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7120:4",
+   "instance_id": "pydata__xarray-7120",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "f878e1c81246049431bd62bba877059fa117c78ab2aa28b5a0e1d12e76510f7f",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19051,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     366,
+     371
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7147:2",
+   "instance_id": "pydata__xarray-7147",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "8f3a19f92ed2ead3e6eac3330e05a31131d073fbf16dc6a8c30e4993a3de0753",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 15339,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     163,
+     182
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7179:0",
+   "instance_id": "pydata__xarray-7179",
+   "licence": "Apache-2.0",
+   "lines": 428,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "903f145e59929a7d341fdba290aa5baa65bd4bf9af3b7e4fa6e529da6cb6a65d",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21168,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     31
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7179:1",
+   "instance_id": "pydata__xarray-7179",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "926782d31b9526e82d4f76e430842cb5e96a0a24b4ea9e6e1d5ada6e4d2692e6",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2640,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     22,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7179:2",
+   "instance_id": "pydata__xarray-7179",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "72e1aa2c684da33f49e15d1519a44b3eda58c06b4d29b18f579c5fe528fbbbe5",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 19119,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     34,
+     42
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7179:3",
+   "instance_id": "pydata__xarray-7179",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "043ceb7b706b0add8e7778953fe9ddcbb48687754e9891c3f7c5784598894b4e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 20418,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     235,
+     244
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7150:1",
+   "instance_id": "pydata__xarray-7150",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1da4cbacc3b91414dee082391b75c7248a003e7cb9f11a17ed749e357151d68e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 37502,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     279,
+     279
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7179:4",
+   "instance_id": "pydata__xarray-7179",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1e48850720e47db2899ff34c72e9877334cb2b0411fd23d967b20590cc20e27b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 11024,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     8,
+     9
+    ],
+    [
+     54,
+     56
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7147:3",
+   "instance_id": "pydata__xarray-7147",
+   "licence": "Apache-2.0",
+   "lines": 298,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "a917057bd70b800adaf193d9423ddff6909994a572b9fc0f8b4ad01bda840beb",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18990,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     61,
+     78
+    ],
+    [
+     80,
+     92
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7203:1",
+   "instance_id": "pydata__xarray-7203",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "84ea2024742745081d5228cf5503993dd1f6190def4843bd02bc2bc761d86d0a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2992,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     20,
+     20
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7229:1",
+   "instance_id": "pydata__xarray-7229",
+   "licence": "Apache-2.0",
+   "lines": 47,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "b89a4fa0694e39c15e5041bccdb0fd861ac3a6658556eac220b5eaf050e0e2bd",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 2646,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7203:2",
+   "instance_id": "pydata__xarray-7203",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7c614015adf672c5eb01340b76c0f9ad95a5fa30f4fa1d366b7fbebb2e21f9ca",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "build_output"
+  },
+  {
+   "chars": 4433,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     8,
+     8
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7229:2",
+   "instance_id": "pydata__xarray-7229",
+   "licence": "Apache-2.0",
+   "lines": 54,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2473ed4414f77e343ac881fe6965897761f1fef0e90a1949c20a821d6513d42c",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 19127,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     35,
+     105
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7347:0",
+   "instance_id": "pydata__xarray-7347",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "07be46aa1994478f4027d10845eea9eb93904a81f76b3d42072e28fb3f78942b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19371,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     395,
+     403
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7233:0",
+   "instance_id": "pydata__xarray-7233",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2de1275e20c18a11e9ac30f348bd13aab901a2aa05ce7499990af260434ce004",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19371,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     397,
+     401
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7233:1",
+   "instance_id": "pydata__xarray-7233",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2de1275e20c18a11e9ac30f348bd13aab901a2aa05ce7499990af260434ce004",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19371,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     395,
+     403
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7233:2",
+   "instance_id": "pydata__xarray-7233",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2de1275e20c18a11e9ac30f348bd13aab901a2aa05ce7499990af260434ce004",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19371,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     395,
+     404
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7233:3",
+   "instance_id": "pydata__xarray-7233",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2de1275e20c18a11e9ac30f348bd13aab901a2aa05ce7499990af260434ce004",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2646,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7233:4",
+   "instance_id": "pydata__xarray-7233",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7ffaa77580e733d602ec3a85e1621bebbf8c70ac751c856d8250e397df53e27f",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 18080,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     261,
+     263
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7229:3",
+   "instance_id": "pydata__xarray-7229",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "cb06eb5da490aaf7bf90dd1ebf9a79656f95486c73e78138cc3135806568b11e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 19371,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     397,
+     403
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7233:5",
+   "instance_id": "pydata__xarray-7233",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2de1275e20c18a11e9ac30f348bd13aab901a2aa05ce7499990af260434ce004",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18591,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     210,
+     216
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7391:0",
+   "instance_id": "pydata__xarray-7391",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "016292b5a9053275e8c868c12b3fa9d69fba62b61d3c95b06dee0e77e599599b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18080,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     330,
+     336
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7229:4",
+   "instance_id": "pydata__xarray-7229",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "cb06eb5da490aaf7bf90dd1ebf9a79656f95486c73e78138cc3135806568b11e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18080,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     261,
+     263
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7229:5",
+   "instance_id": "pydata__xarray-7229",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "cb06eb5da490aaf7bf90dd1ebf9a79656f95486c73e78138cc3135806568b11e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 18080,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     306,
+     313
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7229:6",
+   "instance_id": "pydata__xarray-7229",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "cb06eb5da490aaf7bf90dd1ebf9a79656f95486c73e78138cc3135806568b11e",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21499,
+   "gold_facts": 5,
+   "gold_spans": [
+    [
+     9,
+     9
+    ],
+    [
+     46,
+     48
+    ],
+    [
+     222,
+     222
+    ],
+    [
+     224,
+     224
+    ],
+    [
+     226,
+     226
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7233:6",
+   "instance_id": "pydata__xarray-7233",
+   "licence": "Apache-2.0",
+   "lines": 227,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "48b825b7bdae948a53b6fb98f3a3669c7160c16ed2054fde6c533544d46a9635",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 4433,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     1
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7347:1",
+   "instance_id": "pydata__xarray-7347",
+   "licence": "Apache-2.0",
+   "lines": 54,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "6be4d0f2b727ec717ecef33490c1838322975483412e12c3f4e9a8d2fe7f028a",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 17381,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     19,
+     21
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7393:0",
+   "instance_id": "pydata__xarray-7393",
+   "licence": "Apache-2.0",
+   "lines": 142,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d83f1bc3076334c3b32bd9e552828736bc9449c2217010f427e0d91b5559b805",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "type_check"
+  },
+  {
+   "chars": 2628,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     22,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7400:0",
+   "instance_id": "pydata__xarray-7400",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "7318e9bfab27ee35cb87ade737c3e78b139fc3835d9f8a6d25ba511b8418d933",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 4433,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     8,
+     8
+    ],
+    [
+     43,
+     43
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7393:1",
+   "instance_id": "pydata__xarray-7393",
+   "licence": "Apache-2.0",
+   "lines": 54,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "9ccea785bd00c863b2b00f5850c83691b5e5173b461099c2ed29f069c44c1754",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 23828,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     1,
+     4
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7391:1",
+   "instance_id": "pydata__xarray-7391",
+   "licence": "Apache-2.0",
+   "lines": 164,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "891aedefd10744e3f09f78ece377be8670bfb5ad9b4da587283e832284966618",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "type_check"
+  },
+  {
+   "chars": 2992,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     19,
+     20
+    ],
+    [
+     27,
+     27
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7393:2",
+   "instance_id": "pydata__xarray-7393",
+   "licence": "Apache-2.0",
+   "lines": 47,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "06c8ec17570ba2b980eed52a5f2f0773417536a760f7378dc49d5d6149236be0",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "ls"
+  },
+  {
+   "chars": 21899,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     332,
+     341
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7400:1",
+   "instance_id": "pydata__xarray-7400",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2e31ff0650b84f54fc9fd39b27a97c07fac369ad7b5c5e79a4f50c6c551cbd01",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 21899,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     336,
+     341
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7400:2",
+   "instance_id": "pydata__xarray-7400",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2e31ff0650b84f54fc9fd39b27a97c07fac369ad7b5c5e79a4f50c6c551cbd01",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2631,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     28,
+     28
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7444:0",
+   "instance_id": "pydata__xarray-7444",
+   "licence": "Apache-2.0",
+   "lines": 29,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "1bcd89113eaafaa757c7430efd5ce9da52a84b0c2ad5051bc31cde5068b73340",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "pip_install"
+  },
+  {
+   "chars": 39665,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     3,
+     3
+    ],
+    [
+     50,
+     51
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7393:3",
+   "instance_id": "pydata__xarray-7393",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "3543e303694a79060748c08a5061f9268c59aafc783bbaf5de8f3ac4403abd79",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 18441,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     440,
+     501
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7391:2",
+   "instance_id": "pydata__xarray-7391",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "92c7218e9602e5cdf1fda1ebfcf2a216aa92a8ee9e630d4bc644572e1736441b",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 2897,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     50,
+     69
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7444:1",
+   "instance_id": "pydata__xarray-7444",
+   "licence": "Apache-2.0",
+   "lines": 71,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "2432636df8c97828c775ae03528905fb8e03beaf820e047d78b9138ff82059d5",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  },
+  {
+   "chars": 11314,
+   "gold_facts": 1,
+   "gold_spans": [
+    [
+     92,
+     92
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7444:2",
+   "instance_id": "pydata__xarray-7444",
+   "licence": "Apache-2.0",
+   "lines": 210,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "841dc554a563684b64e29c33ee535cbe9d25fbfc54abc1a6a53cf2ffa8094c81",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "grep"
+  },
+  {
+   "chars": 19000,
+   "gold_facts": 2,
+   "gold_spans": [
+    [
+     366,
+     393
+    ],
+    [
+     408,
+     437
+    ]
+   ],
+   "id": "squeez:pydata__xarray-7393:4",
+   "instance_id": "pydata__xarray-7393",
+   "licence": "Apache-2.0",
+   "lines": 501,
+   "origin": "Squeez canonical_test.jsonl (SWE-bench agent tool output)",
+   "redaction": "none",
+   "repo": "pydata/xarray",
+   "sha256": "d14825999296f874b4e21d2c2cfecb4afdc17e114de8a3ebb5024e527f91f459",
+   "splits": [
+    "holdout"
+   ],
+   "tool_type": "read_file"
+  }
+ ],
+ "repo_chars": {
+  "pallets/flask": 424332,
+  "pydata/xarray": 4835090
+ },
+ "repo_splits": {
+  "pallets/flask": [
+   "dev",
+   "validation"
+  ],
+  "pydata/xarray": [
+   "holdout"
+  ]
+ },
+ "selection": "source == 'swe' and 2000 <= chars <= 60000; synthetic rows are not real and are not used",
+ "straddle": [
+  "pallets/flask: dev+validation"
+ ],
+ "straddle_note": "only two repositories are in the file: the holdout's repository is used by no other split; dev and validation share the other one until more repositories are fetched"
+}
