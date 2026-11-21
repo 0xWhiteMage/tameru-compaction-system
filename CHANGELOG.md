@@ -32,11 +32,17 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   arguments (`tameru.transcript.build_selector_query` builds it): the destructive pre-filters then run only when the user's part names something distinctive, and when they
   run they keep lines matching the full query — a line that matches only a call's term is kept. Scoring, selection and confidence always use the full query. The result
   reports `fact_lines_dropped` — schema 3, in the receipt too — and when it is positive confidence caps at 0.98, or at `max(0, 1 − 0.1 × dropped)` when the query has no
-  distinctive selectors. On the round-2 engine benchmark's dev split (replay-free development data, no model answers): English fact-line gold kept among accepted calls
-  under transcript-built vague queries rose from 32–67% to 100%; the remaining losses are cells where a query names nothing distinctive enough to filter on. On the round-1
-  development splits gold kept and saved ratio are unchanged within noise. Fact detection costs roughly one extra linear pass per call (about +27% p50 mean on the quick
-  latency classes, machine-dependent). Engine tuning decisions now read only the r2 dev split; r2 validation is queried through the ledger-enforced thresholdout oracle,
-  and the two earlier full-validation reads (the 1.10.0 diagnosis, the first S5 evaluation) are disclosed in `docs/SETTINGS-TRIED-LEDGER.json`.
+  distinctive selectors. Facts are detected on the caller's original text before the industrial and format adapters run, so a fact line an adapter would delete is restored
+  verbatim; on a near-empty extract the highest-priority missing fact is kept even when it exceeds the character cap; detection reads the NFKC view while the output keeps
+  raw bytes. The first line per error fingerprint (at most 16) gets the same exemption from the destructive pre-filters and adapters — an error exemplar a selector misses
+  is never deleted — independent of fact density, with no floor, and secret-bearing lines are never protected. On the round-2 engine benchmark's dev split (replay-free
+  development data, no model answers): fact-line gold kept among accepted calls under transcript-built vague queries is 100% in English and Chinese for both hosts
+  (baseline: 58–68%), evidence gold kept among accepted is unchanged or better vs 1.10.0 in every cell (English up 25–28 points), and in the stage diagnosis no
+  gold line is deleted by a selector pre-filter or adapter any more; the 23 accepted calls that still lose one lose it in selection. On the round-1 development splits gold kept and saved ratio are unchanged within noise. Fact and error detection cost roughly one
+  extra linear pass per call (about +32% p50 mean on the quick latency classes, machine-dependent). Candidate adoption used a small-cell rule set before the candidate ran
+  — within one retention point for cells of 20+ accepted calls, at most one more dropped call for smaller ones — because one case moves 2.5–9 points on cells that size.
+  Engine tuning decisions now read only the r2 dev split; r2 validation is queried through the ledger-enforced thresholdout oracle, and the two earlier full-validation
+  reads (the 1.10.0 diagnosis, the first S5 evaluation) are disclosed in `docs/SETTINGS-TRIED-LEDGER.json`.
 - **A 2M-character numbered source with a task question took over nine minutes** (600K: 25 s); a quadratic YAML check is now linear (2M: about 1 s). Anchor probes are size-capped.
 - **One interface for every host.** `decide()` (one accept-or-decline function with closed reason codes and the Hermes and DeepSeek policies as data), versioned presets
   (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v2 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),

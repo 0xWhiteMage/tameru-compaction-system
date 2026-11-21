@@ -290,3 +290,79 @@ def test_floor_minimum_keeps_top_priority_past_cap():
     assert "cfg_y = 7" in out          # newest wins the guaranteed slot
     assert "cfg_x = 9" not in out      # the cap still governs the rest
     assert cc._apply_fact_floor(compressed="x" * 40, facts=[], query="", budget_chars=None) == "x" * 40
+
+
+# ----------------------------------------------------------------------------- E6: error exemplars
+
+
+def test_error_exemplar_survives_flat_records_prefilter():
+    """E6: the first line per error fingerprint of the caller's original text is exempt from
+    the selector pre-filters — a selector miss must not delete the error (the stage-a drops
+    on r2 dev were exactly this)."""
+    text = "\n".join([
+        "host: web-01",
+        "status: running",
+        "role: frontend",
+        "Error: /Stage[main]/Acme::sync/Exec[acme-sync-seed]/returns: change from notrun to 0 failed: exit 1",
+        "zone: us-east",
+        "ttl: 300",
+    ])
+    query = "ttl for acme-sync-seed-42.config"
+    cc._ERR_PROTECTED.set(frozenset(cc._protected_error_exemplars(text)))
+    try:
+        out = cc.preprocess_flat_records(text, query)
+    finally:
+        cc._ERR_PROTECTED.set(frozenset())
+    err = text.split("\n")[3]
+    assert err in out                      # the exemplar is never a dropped row
+    assert "ttl: 300" not in out           # non-matching rows are still cut
+
+
+def test_error_exemplar_secret_lines_never_protected():
+    """E6: a secret-bearing error line is not protected — the same predicates as the
+    S5 fact rule, so protection can never resurrect a credentials strip."""
+    bad = "Error: api_key = \"" + "sk_" + "live_" + "4eC39HqLyjWDarjtT1zdp7dc" + "\" rejected during auth"
+    good = "Error: worker heartbeat missed three beats"
+    text = good + "\n" + bad + "\n" + "INFO loop end"
+    assert bad not in cc._protected_error_exemplars(text)
+    assert good in cc._protected_error_exemplars(text)
+
+
+def test_error_exemplar_independent_of_fact_density_and_capped():
+    """E6: protection does not depend on fact-density rule B, and stops at 16 exemplars."""
+    dense_facts = ["cfg_alpha = 1", "cfg_beta = 2", "cfg_gamma = 3", "cfg_delta = 4",
+                   "cfg_epsilon = 5", "cfg_zeta = 6", "cfg_eta = 7", "cfg_theta = 8",
+                   "cfg_iota = 9"]
+    errs = ["ERROR worker pool %s stalled on task" % w for w in
+            ("alpha bravo charlie delta echo foxtrot golf hotel india juliet "
+             "kilo lima mike november oscar papa quebec romeo sierra tango").split()]
+    text = "\n".join(dense_facts + errs)
+    facts, dense = cc._fact_summary(text)
+    assert dense                                  # rule B says dense: facts off
+    exemplars = cc._protected_error_exemplars(text)
+    assert len(exemplars) == 16                   # cap, in position order
+    assert exemplars[0] == errs[0] and exemplars[-1] == errs[15]
+    # and the restore still fires with _FACT_OFF on (density-independent)
+    cc._ERR_PROTECTED.set(frozenset(exemplars))
+    cc._FACT_OFF.set(True)
+    try:
+        after = "\n".join(dense_facts[:2])
+        restored = cc._restore_facts((), after)
+    finally:
+        cc._ERR_PROTECTED.set(frozenset())
+        cc._FACT_OFF.set(False)
+    assert errs[0] in restored and errs[15] in restored
+
+
+def test_error_exemplar_end_to_end_in_compress():
+    """E6 end-to-end: an error exemplar survives compression even though no query term
+    matches it (before E6 the flat-records pre-filter deleted it)."""
+    rows = ["param_%02d: enabled" % i for i in range(30)]
+    err = "Error: /Stage[main]/Acme::deploy/Exec[deploy-run]/returns: change from notrun to 0 failed: exit 2"
+    text = "\n".join(["host: web-01", "status: running"] + rows[:14]
+                     + [err] + rows[14:] + ["zone: us-east"])
+    res = cc.compress_context(
+        text, "terminal\npuppet agent --test --environment acme_prod\nrun the acme_prod deploy again",
+        selector_query="run the acme_prod deploy again", **OPTS,
+    )
+    assert err in res.compressed_text or res.fail_open
