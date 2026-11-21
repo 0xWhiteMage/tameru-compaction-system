@@ -127,12 +127,12 @@ def test_errors_never_echo_request_text():
 
 def test_version_info_and_describe():
     info = protocol.version_info()
-    assert info == {"engine": ENGINE_VERSION, "protocol": 2, "result_schema": 2,
+    assert info == {"engine": ENGINE_VERSION, "protocol": 2, "result_schema": 3,
                     "presets": ["dsh-tool-result@1", "tool-result@1"]}
     json.dumps(info)
     res = compress_context("x\n" * 50, "x", ccr=False)
     assert protocol.describe(res, preset="p", decision=Decision(True, "ok")) == {
-        "result_schema": 2, "preset": "p", "decision": {"accept": True, "reason": "ok", "basis": None}}
+        "result_schema": 3, "preset": "p", "decision": {"accept": True, "reason": "ok", "basis": None}}
 
 
 def test_result_dict_keeps_the_v1_keys():
@@ -140,7 +140,8 @@ def test_result_dict_keeps_the_v1_keys():
     keys = set(protocol.result_to_dict(res))
     assert keys == {"text", "fail_open", "original_tokens", "kept_tokens", "tokens_saved_pct", "risk",
                     "confidence", "content_type", "reasons", "sanitized", "result_schema"} | {
-        "confidence_basis", "stable_key", "dropped", "preset"}  # result schema 2, additive
+        "confidence_basis", "stable_key", "dropped", "preset", "fact_lines_dropped"}
+        # result schema 2 + 3, additive
 
 
 SLOW_SHAPES = ["a*b", "foo.*bar", "a+", "a*a*a*a*a*b", "(a|a)*b", "(a+)+", ".*.*.*x", "a*a*b", ".*x.*y", "a+b*", r"\d+\.\d+", "a?a?a?a?a?aaaaa",

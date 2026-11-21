@@ -225,6 +225,7 @@ def task_query(
     skip_user: Callable[[dict[str, Any]], bool] | None = None,
     is_scaffold: Callable[[dict[str, Any]], bool] | None = None,
     normalise: bool = False,
+    include_call: bool = True,
 ) -> list[str]:
     """Query parts describing what the agent is doing around ``messages[idx]``.
 
@@ -295,7 +296,7 @@ def task_query(
 
     msg = messages[idx] if isinstance(idx, int) and 0 <= idx < len(messages) else None
     call_id = str((msg or {}).get("tool_call_id") or "") if isinstance(msg, dict) else ""
-    if call_id:
+    if include_call and call_id:
         name, args = _call_name_and_args(_find_tool_call(messages, idx, call_id))
         add(name, _QUERY_ARG_CHARS)
         for leaf in _arg_leaves(args):
@@ -351,6 +352,27 @@ def build_query(
     return chr(10).join(task_query(
         messages, idx, focus=focus, max_chars=max_chars, skip_user=skip_user, is_scaffold=is_scaffold,
         normalise=True,
+    ))
+
+
+def build_selector_query(
+    messages: list[dict[str, Any]],
+    idx: int,
+    *,
+    focus: str | None = None,
+    max_chars: int = 2000,
+    skip_user: Callable[[dict[str, Any]], bool] | None = None,
+    is_scaffold: Callable[[dict[str, Any]], bool] | None = None,
+) -> str:
+    """``build_query`` without the producing call's name and arguments (1.10.0, deterministic).
+
+    Passed as ``compress_context(..., selector_query=...)`` so the destructive selector pre-filters
+    key on the user's question (and the follow-up), not on tokens that only occur in the tool call
+    that produced this output — a ``host-07`` arg should not decide which CSV rows survive. Scoring,
+    selection and confidence still see the full ``build_query`` string."""
+    return chr(10).join(task_query(
+        messages, idx, focus=focus, max_chars=max_chars, skip_user=skip_user, is_scaffold=is_scaffold,
+        normalise=True, include_call=False,
     ))
 
 

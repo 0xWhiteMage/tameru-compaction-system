@@ -230,8 +230,9 @@ def request_was_sanitized(request: Mapping[str, Any]) -> bool:
 
 
 def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None = None) -> dict[str, Any]:
-    """The reply body for a ``compress`` request: the version 1 keys, plus ``result_schema`` and the result schema 2
-    fields (``confidence_basis``, ``stable_key``, ``dropped``, ``preset``). Every v1 key keeps its meaning."""
+    """The reply body for a ``compress`` request: the version 1 keys, plus ``result_schema``, the result schema 2
+    fields (``confidence_basis``, ``stable_key``, ``dropped``, ``preset``) and the schema 3 field
+    ``fact_lines_dropped``. Every v1 key keeps its meaning."""
     return {
         "text": result.compressed_text,
         "fail_open": bool(result.fail_open),
@@ -248,6 +249,7 @@ def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None =
         "stable_key": str(getattr(result, "stable_key", "")),
         "dropped": [[str(c), int(n), str(loc)[:80]] for c, n, loc in (getattr(result, "dropped", None) or ())[:3]],
         "preset": preset if preset is not None else getattr(result, "preset", None),
+        "fact_lines_dropped": int(getattr(result, "fact_lines_dropped", 0)),
     }
 
 

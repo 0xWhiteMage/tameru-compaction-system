@@ -78,8 +78,9 @@ except Exception:
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
 ENGINE_VERSION = "1.10.0"
-# Shape of CompressResult for hosts: 2 since 1.10.0 (confidence_basis, stable_key, dropped, result_schema, preset).
-RESULT_SCHEMA = 2
+# Shape of CompressResult for hosts: 3 since 1.10.0 (fact_lines_dropped; schema 2 added
+# confidence_basis, stable_key, dropped, result_schema, preset).
+RESULT_SCHEMA = 3
 CCR_TTL_SECONDS = 6 * 60 * 60
 CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
 FREEZE_MAX_DECISIONS = 4096
@@ -430,6 +431,8 @@ class CompressResult:
     dropped: tuple = ()  # up to 3 (category, line_count, first_locator) of what the output left out, largest first
     result_schema: int = RESULT_SCHEMA
     preset: Optional[str] = None  # the named option set the call used, when the host says so
+    # 1.10.0 (result schema 3), additive:
+    fact_lines_dropped: int = 0  # protected fact lines of the original absent from the output
 
     def __post_init__(self) -> None:
         self.tokens_saved = max(0, self.original_tokens - self.kept_tokens)
@@ -1186,6 +1189,170 @@ def _fold_build_noise(lines: list[str]) -> list[str]:
     return out
 
 
+# ----------------------------------------------------------------------- 1.10.0 S5: fact lines
+# A "fact-shaped" line holds one assignment after any leading timestamp/log prefix (_lead_ts_end)
+# and an optional comment marker (#, ;, //, --): "key=value", "key: value", "key -> value",
+# "key => value", or a JSON/log/CSV line with an embedded "k=v". The key is 1-60 chars of word
+# chars, '.', '-' and space or CJK; the value has at least one alphanumeric or CJK character.
+# Linear passes, bounded quantifiers.
+_FACT_KEY_HEAD = r"[\w.\-一-鿿]"
+_FACT_KEY = rf"{_FACT_KEY_HEAD}(?:[\w.\- 一-鿿]{{0,58}}{_FACT_KEY_HEAD})?"
+_FACT_ASSIGN_RE = re.compile(
+    rf"^[ \t]*(?:#|;|//|--)?[ \t]*"
+    rf"(?P<key>{_FACT_KEY})[ \t]*(?:=>|->|=|:)[ \t]*"
+    rf"(?P<value>\S[^\n]{{0,399}}?)[ \t]*$"
+)
+_FACT_INLINE_EQ_RE = re.compile(
+    rf"(?P<key>{_FACT_KEY_HEAD}(?:[\w.\-一-鿿]{{0,58}}{_FACT_KEY_HEAD})?)"
+    r"=(?P<value>[^\s\"',}\])]{1,120})"
+)
+_FACT_VALUE_ALNUM_RE = re.compile(r"[^\W_]")
+_FACT_PROTECT_FP_MAX = 2  # rarity: a fingerprint seen more times is filler, not a fact
+_FACT_FLOOR_MAX_LINES = 8
+_FACT_FLOOR_RATIO = 0.15
+
+
+def _fact_parts(line: str) -> tuple[str, str] | None:
+    """``(key, value)`` when ``line`` is fact-shaped, else ``None``."""
+    if "=" not in line and ":" not in line and "->" not in line:
+        return None
+    rest = line[_lead_ts_end(line):]
+    m = _FACT_ASSIGN_RE.match(rest)
+    if m is not None:
+        key, value = m.group("key"), m.group("value")
+    else:
+        m = _FACT_INLINE_EQ_RE.search(rest)
+        if m is None:
+            return None
+        key, value = m.group("key"), m.group("value")
+    if _FACT_VALUE_ALNUM_RE.search(value) is None:
+        return None
+    return key.strip(), value
+
+
+def _protected_fact_lines(
+    lines: list[str], fingerprint=_log_fingerprint
+) -> list[tuple[int, str, str, str]]:
+    """``(index, key, value, line)`` of the lines the S5 rule protects: fact-shaped, not an error
+    line (errors are covered by error anchoring), and rare — its ``_log_fingerprint`` occurs at most
+    ``_FACT_PROTECT_FP_MAX`` times in the text, so repeated filler is not a fact. A pure CSV row
+    without an assignment is not fact-shaped. When the same normalised key appears on several
+    fact-shaped lines, only the LAST one is protected (newest wins). ``fingerprint`` lets callers
+    share a memoised ``_log_fingerprint`` (every line is fingerprinted once)."""
+    # Perf: shape/error detection runs once per distinct line; the rarity (fingerprint) pass
+    # only runs when a candidate exists and fingerprints each distinct line once.
+    eval_memo: dict[str, tuple[tuple[str, str] | None, bool]] = {}
+    fp_memo: dict[str, object] = {}
+    cands: list[tuple[int, str, str, object, str]] = []
+    cand_fps: set[object] = set()
+    for i, ln in enumerate(lines):
+        try:
+            parts, is_err = eval_memo[ln]
+        except KeyError:
+            parts = _fact_parts(ln)
+            is_err = parts is not None and _is_error_line(ln)
+            eval_memo[ln] = (parts, is_err)
+        if parts is None or is_err:
+            continue
+        try:
+            fp = fp_memo[ln]
+        except KeyError:
+            fp = fp_memo[ln] = fingerprint(ln)
+        cand_fps.add(fp)
+        cands.append((i, parts[0], parts[1], fp, ln))
+    if not cands:
+        return []
+    counts: dict[object, int] = {}
+    for ln in lines:
+        try:
+            fp = fp_memo[ln]
+        except KeyError:
+            fp = fp_memo[ln] = fingerprint(ln)
+        if fp is not None and fp in cand_fps:
+            counts[fp] = counts.get(fp, 0) + 1
+    kept = [c for c in cands if c[3] is None or counts.get(c[3], 0) <= _FACT_PROTECT_FP_MAX]
+    last_at_key: dict[str, int] = {}
+    for pos, c in enumerate(kept):
+        last_at_key[" ".join(c[1].casefold().split())] = pos
+    protected = set(last_at_key.values())
+    return [(i, k, v, ln) for pos, (i, k, v, _fp, ln) in enumerate(kept) if pos in protected]
+
+
+def _fact_protected_set(lines: list[str], fingerprint=_log_fingerprint) -> set[int]:
+    """Indices into ``lines`` of the protected fact lines. Larger inputs go through the
+    ``_protected_facts`` text memo so every stage that sees the same text shares one detection."""
+    if len(lines) >= 16:
+        return {i for i, _k, _v, _ln in _protected_facts("\n".join(lines))}
+    return {i for i, _k, _v, _ln in _protected_fact_lines(lines, fingerprint)}
+
+
+@functools.lru_cache(maxsize=64)
+def _protected_facts_cached(text: str) -> tuple[tuple[int, str, str, str], ...]:
+    return tuple(_protected_fact_lines(text.split("\n")))
+
+
+def _protected_facts(text: str) -> tuple[tuple[int, str, str, str], ...]:
+    if type(text) is str and len(text) <= _MEMO_MAX_CHARS:
+        return _protected_facts_cached(text)
+    return tuple(_protected_fact_lines(text.split("\n")))
+
+
+def _restore_fact_lines(before: str, after: str) -> str:
+    """A destructive stage may not delete a protected fact line: any it lost goes back, verbatim.
+    A fact line that IS the whole input (a single-line JSON payload) is not restored — putting it
+    back would undo the stage entirely."""
+    if after is before or after == before:
+        return after
+    protected = _protected_facts(before)
+    if not protected:
+        return after
+    missing = [ln for _i, _k, _v, ln in protected if ln != before and ln not in after]
+    return after if not missing else after + "\n" + "\n".join(missing)
+
+
+def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int | None) -> str:
+    """Floor in selection: protected fact lines the render left out are appended as whole original
+    lines — at most ``_FACT_FLOOR_MAX_LINES`` lines and ``_FACT_FLOOR_RATIO`` of the extract's
+    character budget (of the unprotected extract's length when there is no explicit budget).
+    Overflow prefers lines whose key or value occurs in ``query``, then the newest."""
+    missing = [f for f in facts if f[3] not in compressed]
+    if not missing:
+        return compressed
+    cap = int(_FACT_FLOOR_RATIO * (budget_chars or len(compressed)))
+    q = (query or "").casefold()
+
+    def _rank(f) -> tuple:
+        i, key, value, _ln = f
+        return (key.casefold() in q or value.casefold() in q, i)
+
+    chosen, used = [], 0
+    for f in sorted(missing, key=_rank, reverse=True):
+        ln = f[3]
+        if len(chosen) >= _FACT_FLOOR_MAX_LINES or used + len(ln) + 1 > cap:
+            continue
+        chosen.append(f)
+        used += len(ln) + 1
+    if not chosen:
+        return compressed
+    return compressed + "\n" + "\n".join(f[3] for f in sorted(chosen, key=lambda f: f[0]))
+
+
+def _count_fact_lines_dropped(facts, out_text: str) -> int:
+    """``fact_lines_dropped``: protected fact lines of the original whose whole line — or a line
+    holding both the key and the value — is not in the output."""
+    if not facts:
+        return 0
+    out_lines = out_text.split("\n")
+    dropped = 0
+    for _i, key, value, ln in facts:
+        if ln in out_text:
+            continue
+        if any(key in o and value in o for o in out_lines):
+            continue
+        dropped += 1
+    return dropped
+
+
 def structural_log_pass(lines: list[str]) -> list[str]:
     """The always-on STRUCTURAL log pass (1.10.0): progress removal, ``[×N]`` template collapse with the last instance kept, and per-cause stack folding. It is :func:`preprocess_logs` with no query: it never drops a distinct error line, an exception head, a ``Caused by`` / inner-exception message, ``... N more``, or the first frame outside the framework, and it is idempotent."""
     return preprocess_logs(_fold_build_noise(lines), "", structural=True)
@@ -1243,6 +1410,9 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
     # First pass: drop progress bars but remember whether we saw any.
     kept_src = [i for i, ln in enumerate(lines) if not _is_progress_bar(ln)]
     kept_lines = [lines[i] for i in kept_src]
+    # 1.10.0 (S5): indices into `lines` of the protected fact lines — they never fold (below).
+    # The memoised fingerprint() is shared so each line is still fingerprinted once.
+    fact_protected_src = _fact_protected_set(lines, fingerprint)
 
     query_match_source_indices: set[int] = set()
     if query_selectors:
@@ -1332,6 +1502,13 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
             # Volatile values can be the selector (for example "policy 17").
             # Keep the exact matching record outside numeric-template collapse.
             query_match_indices.add(len(out))
+            out.append(line)
+            out_src.append(kept_src[i])
+            i += 1
+            continue
+        if kept_src[i] in fact_protected_src:
+            # 1.10.0 (S5): a protected fact line is never collapsed — it stays verbatim. Only the
+            # newest of same-key facts is protected, so a superseded value still folds away.
             out.append(line)
             out_src.append(kept_src[i])
             i += 1
@@ -1666,6 +1843,12 @@ def _summarize_ndjson(stripped: str, query: str) -> str | None:
 
 
 def preprocess_json(text: str, query: str) -> str:
+    """Crush whole-document JSON. 1.10.0 (S5): protected fact lines inside the text are restored
+    verbatim — the crush may shorten them but may not delete them."""
+    return _restore_fact_lines(text, _crush_json_text(text, query))
+
+
+def _crush_json_text(text: str, query: str) -> str:
     stripped = text.strip()
     if not query_has_distinctive_selectors(query):
         try:
@@ -1745,11 +1928,14 @@ def preprocess_csv(
         return text
     selectors = _selector_patterns(terms)
     lines = text.split("\n")
+    # 1.10.0 (S5): a fact-shaped row is never a dropped row — a selector that fails
+    # to match it must not delete it (only the newest of same-key facts counts).
+    fact_protected = _fact_protected_set(lines)
     kept = [lines[0]]
     flags = [False] * len(lines)
     flags[0] = True
     for idx, line in enumerate(lines[1:], 1):
-        if any(selector.search(line) for selector in selectors):
+        if idx in fact_protected or any(selector.search(line) for selector in selectors):
             kept.append(line)
             flags[idx] = True
     if len(kept) == 1 or len(kept) == len(lines):
@@ -1793,7 +1979,13 @@ def preprocess_flat_records(text: str, query: str) -> str:
         if not term.startswith("script:")
     ]
     selectors = _selector_patterns(terms)
-    kept = [line for line in lines if any(rx.search(line) for rx in selectors)]
+    # 1.10.0 (S5): flat records are key/value facts — a row the selectors miss stays.
+    fact_protected = _fact_protected_set(lines)
+    kept = [
+        line
+        for index, line in enumerate(lines)
+        if index in fact_protected or any(rx.search(line) for rx in selectors)
+    ]
     if not kept or len(kept) == len(lines):
         return text
     return "\n".join(kept)
@@ -1902,7 +2094,12 @@ def preprocess_filler_comments(text: str, query: str) -> str:
     if not query_has_distinctive_selectors(query or ""):
         return text
     lines = text.split("\n")
-    kept = [ln for ln in lines if not _FILLER_COMMENT_RE.match(ln.strip())]
+    fact_protected = _fact_protected_set(lines)
+    kept = [
+        ln
+        for index, ln in enumerate(lines)
+        if index in fact_protected or not _FILLER_COMMENT_RE.match(ln.strip())
+    ]
     if len(kept) == len(lines):
         return text
     return "\n".join(kept)
@@ -2140,9 +2337,10 @@ def _fold_repeated_sentences(lines: list[str]) -> list[str]:
     sentence splitter. Lossless apart from exact whitespace between copies.
     """
     folded: list[str] = []
-    for line in lines:
+    fact_protected = _fact_protected_set(lines)
+    for index, line in enumerate(lines):
         t = " ".join(line.split())
-        if len(t) >= _REPEAT_LINE_MIN_CHARS:
+        if index not in fact_protected and len(t) >= _REPEAT_LINE_MIN_CHARS:
             u = t + " "
             p = (u + u).find(u, 1)
             if (
@@ -2695,6 +2893,7 @@ def _clear_memos() -> None:
         _estimate_tokens_cached, _evidence_blob,
         industrial._profile_input_cached, unicode_profile._search_units_cached,
         contract_gates._distinctive_query_terms_cached, contract_gates._source_blob,
+        _protected_facts_cached,
     ):
         fn.cache_clear()
     with _SCORED_MEMO_LOCK:
@@ -5799,12 +5998,14 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
 
 
 def _preprocess_json(text: str, query: str) -> str:
-    """Detect and crush JSON payloads in the text.
+    """Detect and crush JSON payloads in the text. 1.10.0 (S5): protected fact lines are restored
+    verbatim — the crush may shorten them but may not delete them."""
+    return _restore_fact_lines(text, _crush_embedded_json(text, query))
 
-    Finds JSON spans, crushes redundant array items, and splices the
-    crushed versions back into the text. Falls back to the original text
-    if no JSON is found or crushing doesn't help.
-    """
+
+def _crush_embedded_json(text: str, query: str) -> str:
+    """Find JSON spans, crush redundant array items, and splice the crushed versions back into the
+    text. Falls back to the original text if no JSON is found or crushing doesn't help."""
     payloads = _detect_json_payloads(text)
     if not payloads:
         return text
@@ -7215,6 +7416,7 @@ def _build_receipt(
     content_hint,
     degraded,
     derived_terms,
+    fact_lines_dropped,
     fail_open,
     industrial,
     kept,
@@ -7274,6 +7476,8 @@ def _build_receipt(
         "adapter": adapter_info,
         # v1.4.0: E3 — level-tagged error fingerprints kept/total (logs only).
         "log_error_fingerprints": log_error_retention,
+        # 1.10.0 (S5): protected fact lines absent from the output.
+        "fact_lines_dropped": fact_lines_dropped,
         "industrial": industrial.to_dict(),
     }
     receipt.update(
@@ -8776,6 +8980,7 @@ def _compress_context_impl(
     recursion_markers: Iterable[str] = (),
     content_hint: str | None = None,
     inline_short_gaps: bool = False,
+    selector_query: str | None = None,
     _ccr_defer: bool = False,
 ) -> CompressResult:
     """Query-aware extractive compression of ``context``.
@@ -8853,6 +9058,11 @@ def _compress_context_impl(
     if not anchor_lines and not derived_terms and caller_query:
         caller_query = _prune_query(caller_query, caller_text)
         query = caller_query
+    # 1.10.0 (S5): the destructive selector pre-filters (CSV rows, flat records, JSON crush, log
+    # template selection) and their distinctive-selector gates read ``selector_query`` when the
+    # caller provides one — terms that only occur in the producing tool call must not decide which
+    # rows survive. Scoring, selection and confidence still use ``query``.
+    sel_query = query if selector_query is None else selector_query
     reused_result = _reuse_probe_or_none(
         anchor_lines=anchor_lines, caller_query=caller_query, cache_prefix=cache_prefix, caller_text=caller_text, ccr=ccr,
         ccr_dir=ccr_dir, chosen_probe=chosen_probe, decision_cache=decision_cache, log_dir=log_dir,
@@ -8887,7 +9097,7 @@ def _compress_context_impl(
     # timestamps — as a table) must not run. An empty selector query makes the
     # adapter decline; the query-size limit is still enforced by passing the
     # real query when it is over the limit.
-    industrial_query = query or ""
+    industrial_query = sel_query or ""
     if no_table and len(industrial_query) <= (limits or IndustrialLimits()).max_query_chars:
         industrial_query = ""
     # v1.4.0 (E8 completion): adapter cuts carry the caller's marker; the
@@ -8943,12 +9153,15 @@ def _compress_context_impl(
         route_hint = "numbered_code"
         code_hint = True
         no_table = True
+    # 1.10.0 (S5): the protected fact lines of the working text, computed once before any stage
+    # may delete them — exemptions inside the destructive stages plus the selection floor below.
+    fact_lines = _protected_facts(text)
     # v1.4.0 (E5): diff and grep/rg output get their own adapters (whole hunks,
     # grouped matches) ahead of generic segmentation. The adapter's output is
     # the selection: scoring below must not undo it (see `adapter_info`).
     text, adapter_info = _select_format_adapter(
         adapter_gap=adapter_gap, caller_text=caller_text, content_hint=content_hint,
-        industrial=industrial, payload_industrial=payload_industrial, query=query,
+        industrial=industrial, payload_industrial=payload_industrial, query=sel_query,
         route_hint=route_hint, text=text,
     )
     if not text.strip():
@@ -8962,7 +9175,7 @@ def _compress_context_impl(
         adapter_info=adapter_info,
         code_hint=code_hint,
         no_table=no_table,
-        query=query,
+        query=sel_query,
         text=text,
     )
 
@@ -9018,7 +9231,7 @@ def _compress_context_impl(
         code_hint=code_hint,
         industrial=industrial,
         prose_brief=prose_brief,
-        query=query,
+        query=sel_query,
         route_hint=route_hint,
         text=text,
     )
@@ -9060,7 +9273,7 @@ def _compress_context_impl(
                 code_hint=code_hint,
                 industrial=industrial,
                 prose_brief=prose_brief,
-                query=query,
+                query=sel_query,
                 route_hint=route_hint,
                 text=text,
             )
@@ -9102,6 +9315,26 @@ def _compress_context_impl(
     if fail_open:
         risk = "high"
         compressed = caller_text
+
+    # 1.10.0 (S5): the selection floor — protected fact lines that survived preprocessing but missed
+    # the selection go back as whole original lines. A fact line that never reached `lines` (a stage
+    # outside the S5 exemptions removed it — e.g. the env-dump reducer stripping a secret-keyed
+    # assignment) is not restored: the floor fixes selection losses, never safety deletions.
+    # Never on a fail-open (the floor alone never decides the verdict): the cost gates below still
+    # judge the result, so an extract plus the floor that misses min_savings_ratio fails open under
+    # the existing rule.
+    if not fail_open and fact_lines:
+        line_set = set(lines)
+        floor_facts = [
+            f for f in fact_lines
+            if f[3] in line_set and not _is_trust_risk_line(f[3])
+        ]
+        if floor_facts:
+            budget_chars = int(budget_ratio * len(caller_text)) if budget_ratio else None
+            compressed = _apply_fact_floor(
+                compressed=compressed, facts=floor_facts, query=query or "",
+                budget_chars=budget_chars,
+            )
 
     # v1.4.0 (E3): for content routed as a log, report how many level-tagged
     # error fingerprints survive. The engine keeps one exemplar per
@@ -9178,6 +9411,13 @@ def _compress_context_impl(
         structural=structural_exit or structural_collapse_only or adapter_info is not None,
     )
     recall = _compute_confidence(basis=basis, compressed=compressed, fail_open=fail_open, original=text, recall=recall)
+    # 1.10.0 (S5): how many protected fact lines of the original did not survive. A drop caps the
+    # confidence; on an objective with no distinctive selectors each drop costs a further 0.1.
+    fact_lines_dropped = _count_fact_lines_dropped(fact_lines, result_text)
+    if fact_lines_dropped:
+        recall = min(recall, 0.98)
+        if not query_has_distinctive_selectors(caller_query):
+            recall = min(recall, max(0.0, 1.0 - 0.1 * fact_lines_dropped))
     __cr = CompressResult(
         compressed_text=result_text,
         original_tokens=original_tokens,
@@ -9198,12 +9438,14 @@ def _compress_context_impl(
         reasons=reasons,
         verifier=verifier,
         confidence_basis=basis,
+        fact_lines_dropped=fact_lines_dropped,
     )
 
     receipt, query_hash = _build_receipt(
         adapter_info=adapter_info, anchor_lines=anchor_lines, budget_ratio=budget_ratio,
         caller_text=caller_text, citations=citations, content_hint=content_hint, degraded=degraded,
-        derived_terms=derived_terms, fail_open=fail_open, industrial=industrial, kept=kept,
+        derived_terms=derived_terms, fact_lines_dropped=fact_lines_dropped, fail_open=fail_open,
+        industrial=industrial, kept=kept,
         log_error_retention=log_error_retention, policy=policy, query_as_given=query_as_given,
         requested_mode=requested_mode, result_text=result_text, risk=risk, savings=savings,
         scored=scored, selection=selection, strategy=strategy,
@@ -9270,6 +9512,7 @@ def compress_context(
     content_hint: str | None = None,
     inline_short_gaps: bool = False,
     redact_secrets: bool = False,
+    selector_query: str | None = None,
     _ccr_defer: bool = False,
 ) -> CompressResult:
     _pin_token = _PINNED_LINES.set(frozenset())
@@ -9285,7 +9528,8 @@ def compress_context(
         summary_timeout=summary_timeout, summary_allow_remote=summary_allow_remote,
         limits=limits, derive_query=derive_query, anchor_errors=anchor_errors,
         prose_brief=prose_brief, gap_marker=gap_marker, recursion_markers=recursion_markers,
-        content_hint=content_hint, inline_short_gaps=inline_short_gaps, _ccr_defer=_ccr_defer,
+        content_hint=content_hint, inline_short_gaps=inline_short_gaps,
+        selector_query=selector_query, _ccr_defer=_ccr_defer,
         )
     finally:
         _PINNED_LINES.reset(_pin_token)
@@ -9295,25 +9539,35 @@ def compress_context(
             result = replace(
                 result, compressed_text=redacted, reasons=[*result.reasons, "redacted_secrets"],
             )
-    return _with_schema_fields(result, context, query, redact_secrets)
+    return _with_schema_fields(result, context, query, redact_secrets, selector_query)
 
 
-def _stable_key(context: str, query: str) -> str:
-    """Same engine version, text and query: same key. Hashes, so the key leaks nothing."""
+def _stable_key(context: str, query: str, selector_query: Any = None) -> str:
+    """Same engine version, text and query: same key. Hashes, so the key leaks nothing.
+    ``selector_query`` joins the hash whenever it is not ``None``."""
     digest = hashlib.sha256()
-    for part in (ENGINE_VERSION, context, query):
+    parts = [ENGINE_VERSION, context, query]
+    if selector_query is not None:
+        parts.append(selector_query)
+    for part in parts:
         digest.update(str(part).encode("utf-8", errors="surrogatepass"))
         digest.update(b"\x00")
     return digest.hexdigest()[:16]
 
 
-def _with_schema_fields(result: CompressResult, context: str, query: Any, redact: bool = False) -> CompressResult:
-    """Result schema 2: ``stable_key`` and ``dropped`` (and both in the receipt, with ``confidence_basis``)."""
+def _with_schema_fields(
+    result: CompressResult,
+    context: str,
+    query: Any,
+    redact: bool = False,
+    selector_query: Any = None,
+) -> CompressResult:
+    """Result schema 2+: ``stable_key`` and ``dropped`` (and both in the receipt, with ``confidence_basis``)."""
     try:
         text = context if isinstance(context, str) else str(context)
         q = query if isinstance(query, str) else chr(10).join(str(item) for item in query)
         dropped = () if result.fail_open else _dropped_summary(text, result.compressed_text, redact)
-        key = _stable_key(text, q)
+        key = _stable_key(text, q, selector_query)
     except Exception:  # a summary never costs a result
         return result
     receipt = result.receipt
@@ -9341,6 +9595,14 @@ compress_context.__doc__ = (_compress_context_impl.__doc__ or "") + """
         A marker that declares a parameter named ``kind`` is also told what the dropped
         span is (one of ``tameru.markers.GAP_KINDS``), passed by keyword. A 2-argument
         marker is called exactly as before, and the default marker text never changes.
+
+    ``selector_query`` (1.10.0, opt-in, default ``None``)
+        The query the destructive selector pre-filters (CSV rows, flat records, JSON crush, log
+        template selection) and their distinctive-selector gates read, instead of ``query``.
+        Pass ``transcript.build_selector_query(...)`` — the task question without the producing
+        tool call's name and arguments — so a token that only occurs in the call's arguments
+        cannot decide which rows survive. Scoring, selection, and confidence still use ``query``.
+        ``None`` keeps previous behaviour. When set, it also joins the ``stable_key`` hash.
     """
 
 

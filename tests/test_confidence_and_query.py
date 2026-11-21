@@ -147,23 +147,25 @@ def test_build_query_keeps_identifiers_under_a_long_chinese_message():
     assert not any("test_auth" in t and "为" in t for t in terms)
 
 
-def test_result_schema_2_fields_and_dropped_is_stable():
+def test_result_schema_3_fields_and_dropped_is_stable():
     a = compress_context.compress_context(LOG, "order=9912", **OPTS)
     b = compress_context.compress_context(LOG, "order=9912", **OPTS)
-    assert RESULT_SCHEMA == 2 and a.result_schema == 2
+    assert RESULT_SCHEMA == 3 and a.result_schema == 3
     assert a.dropped == b.dropped and a.stable_key == b.stable_key and len(a.stable_key) == 16
     assert 1 <= len(a.dropped) <= 3
     assert all(isinstance(c, str) and isinstance(n, int) and isinstance(loc, str) for c, n, loc in a.dropped)
     assert a.dropped == tuple(sorted(a.dropped, key=lambda d: (-d[1], d[0])))
     assert a.receipt["dropped"] == [list(d) for d in a.dropped]
+    assert a.receipt["fact_lines_dropped"] == a.fact_lines_dropped == 0
     assert a.confidence_basis in QUERY_BASES
     c = compress_context.compress_context(LOG, "order=9913", **OPTS)
     assert c.stable_key != a.stable_key
     d = result_to_dict(a, preset="p@1")
-    assert d["result_schema"] == 2 and d["confidence_basis"] == a.confidence_basis
+    assert d["result_schema"] == 3 and d["confidence_basis"] == a.confidence_basis
     assert d["stable_key"] == a.stable_key and d["preset"] == "p@1" and isinstance(d["dropped"], list)
-    assert version_info()["result_schema"] == 2
-    assert "dropped" in dataclasses.asdict(a)
+    assert d["fact_lines_dropped"] == a.fact_lines_dropped
+    assert version_info()["result_schema"] == 3
+    assert "dropped" in dataclasses.asdict(a) and "fact_lines_dropped" in dataclasses.asdict(a)
 
 
 def test_auto_strategy_forwards_prose_brief_and_inline_gaps():

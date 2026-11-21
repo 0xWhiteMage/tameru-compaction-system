@@ -22,10 +22,21 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   derived confidence is capped below 0.7 and never judged by the terms it derived. DeepSeek-style tool-call rows that are confident at 0.7 and not failing open: 48% to 76%.
 - **Chinese and full-width text.** Han bigrams and trigrams with a stop set replace single characters; classifiers, fingerprints and term extraction match on NFKC text while the output keeps the raw bytes;
   a Chinese-only question that misses an English source fails open. A Chinese user message with an English tool call now gives confidence 0.94 (was 0.57) with all evidence kept.
+- **Rare fact lines survive, and losing one is reported.** A short `key=value`-shaped line that occurs rarely in a tool result — the host that failed, the limit that was
+  set, the identifier a question asks for — used to disappear three ways: selector pre-filters that keep only rows matching the query (often the tool call's own arguments),
+  log-template collapse that kept a stale same-key line, and final selection. Fact-shaped lines (an assignment after an optional timestamp and comment marker; not an error
+  line, not a table row; rare by line fingerprint; when a key repeats, the newest value wins) are now exempt from those destructive stages, the newest line of a collapsed
+  same-key group stays verbatim, and a small floor — at most 8 lines, at most 15% of the extract — carries them through selection whole. A new optional `selector_query`
+  argument lets a host pass the query minus the producing call's name and arguments (`tameru.transcript.build_selector_query` builds it): the destructive pre-filters then
+  match on the user's words instead of the tool's, while scoring, selection and confidence keep the full query. The result reports `fact_lines_dropped` — schema 3, in the
+  receipt too — and when it is positive confidence caps at 0.98, or at `max(0, 1 − 0.1 × dropped)` when the query has no distinctive selectors. On the round-2 engine
+  benchmark's development splits (dev + validation, replay-free development data, no model answers): fact-line gold kept among accepted calls rose from 82.7% to 93.0%;
+  on the round-1 development splits gold kept and saved ratio are unchanged within noise. Fact detection costs roughly one extra linear pass per call (about +10–50%
+  p50 on the quick latency classes, machine-dependent).
 - **A 2M-character numbered source with a task question took over nine minutes** (600K: 25 s); a quadratic YAML check is now linear (2M: about 1 s). Anchor probes are size-capped.
 - **One interface for every host.** `decide()` (one accept-or-decline function with closed reason codes and the Hermes and DeepSeek policies as data), versioned presets
   (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v2 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),
-  a shared `build_query`, query pruning to the terms the source contains, and the result schema 2 fields (`confidence_basis`, `stable_key`, `dropped`, `result_schema`, `preset`).
+  a shared `build_query`, query pruning to the terms the source contains, and the result schema fields (`confidence_basis`, `stable_key`, `dropped`, `result_schema`, `preset`; schema 3 adds `fact_lines_dropped`, above).
   `dropped` names what an extract left out (category, line count, first locator) so a host can say what to re-read.
   `pin_patterns` validation also refuses polynomial and exponential shapes (`a*a*a*b`, `.*x.*y`: any unbounded quantifier, more than four optional ones, more than six alternations; literal pins are unaffected); pin matching itself still scans the full block, as in 1.9.0.
 - **`redact_secrets`** (off by default): replaces matches of the engine's own credential patterns in the output with `[tameru:redacted]`; a fail-open still returns the original text, and the decision never changes. It also covers the `dropped` locators and the receipt copy.

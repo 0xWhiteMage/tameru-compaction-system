@@ -519,14 +519,19 @@ def _assign_line(r, fmt_i, key, key_zh, value, zh):
     return '{"level":"info","msg":"' + f"{key}={value}" + '"}'
 
 
-_BUILD_QUERY = None
+_TRANSCRIPT = None
 
 
 def _this_checkout_build_query():
     """``build_query`` of THIS checkout's tameru (1.10.0) even when another engine's src is on sys.path —
     e.g. the 1.9.0 descriptor worktree, whose transcript.py has no build_query."""
-    global _BUILD_QUERY
-    if _BUILD_QUERY is None:
+    return _this_checkout_transcript().build_query
+
+
+def _this_checkout_transcript():
+    """THIS checkout's ``tameru.transcript`` module (see ``_this_checkout_build_query``)."""
+    global _TRANSCRIPT
+    if _TRANSCRIPT is None:
         src = str(Path(__file__).resolve().parents[2] / "src")
         saved_path = list(sys.path)
         saved_mods = {k: v for k, v in sys.modules.items() if k == "tameru" or k.startswith("tameru.")}
@@ -536,25 +541,28 @@ def _this_checkout_build_query():
             sys.path.insert(0, src)
             import tameru.transcript as tt  # noqa: PLC0415
             assert str(Path(tt.__file__).resolve()).startswith(src), tt.__file__
-            _BUILD_QUERY = tt.build_query
+            _TRANSCRIPT = tt
         finally:
             sys.path[:] = saved_path
             for k in [k for k in sys.modules if k == "tameru" or k.startswith("tameru.")]:
                 sys.modules.pop(k, None)
             sys.modules.update(saved_mods)
-    return _BUILD_QUERY
+    return _TRANSCRIPT
 
 
-def _build_q(user_msg: str, tool: str, text: str) -> str:
-    """The engine's own ``build_query`` over a synthetic transcript [user task, assistant terminal
-    call running ``tool``, tool result = the case text] — how both plugins actually query the engine."""
+def _build_q(user_msg: str, tool: str, text: str, *, selector: bool = False) -> str:
+    """The engine's own ``build_query`` (or ``build_selector_query`` when ``selector``) over a
+    synthetic transcript [user task, assistant terminal call running ``tool``, tool result = the
+    case text] — how both plugins actually query the engine."""
     messages = [
         {"role": "user", "content": user_msg},
         {"role": "assistant", "content": "", "tool_calls": [
             {"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": {"command": tool}}}]},
         {"role": "tool", "tool_call_id": "c1", "content": text},
     ]
-    return _this_checkout_build_query()(messages, 2)
+    tt = _this_checkout_transcript()
+    fn = getattr(tt, "build_selector_query", None) if selector else tt.build_query
+    return (fn or tt.build_query)(messages, 2)
 
 
 def _queries(cid, lang, thing, tool, key=None, key_zh=None):
@@ -667,6 +675,13 @@ def _source_case(fid, spec, src, variant):
     case = {"id": cid, "source_case": f"r2-{fid}-{src:02d}", "content_type": spec["ctype"], "shape": f"r2-{fid}",
             "text": text, "gold": gold, "forbidden": forbidden,
             "language": lang, "queries": q,
+            # 1.10.0 (S5): the same transcripts through build_selector_query — run.py passes them as
+            # compress_context(..., selector_query=...) when the engine under test accepts the
+            # parameter, so destructive pre-filters cannot key on the producing call's terms.
+            "sel_queries": {
+                "build_specific": _build_q(q["task_specific"], tool, text, selector=True),
+                "build_vague": _build_q(q["task_vague"], tool, text, selector=True),
+            },
             "family": fid, "item_kind": kind}
     if fact:
         case["fact"] = fact

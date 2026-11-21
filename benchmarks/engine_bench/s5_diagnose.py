@@ -165,12 +165,13 @@ def _classify(eng, case, raw, query, each, events, cond) -> dict:
 def diagnose_cell(eng, case, profile, cond, *, trace: bool) -> dict:
     """One case x profile x condition."""
     text, query, gold = case["text"], case["queries"][cond], case["gold"]
+    sel_query = eng.selector_query(case, cond) if eng.selector_query else None
 
     def run_call():
         if eng.clear:
             eng.clear()
         try:
-            return eng.call(profile, text, query), False
+            return eng.call(profile, text, query, sel_query), False
         except Exception:
             return None, True
 
@@ -226,6 +227,8 @@ def load_engine(engine_src: Path, label: str) -> _Eng:
     eng = _Eng()
     eng.version, eng.cc, eng.contract_gates = version, cc, cg
     eng.call = run._call  # run.py's exact per-profile compress_context settings
+    # run.py's build_* selector-query rule: None keeps the call unchanged (e.g. 1.9.0).
+    eng.selector_query = getattr(run, "_selector_query_for", None)
     eng.RISK_ORDER, eng.HERMES_MAX_RISK = run._RISK_ORDER, run.HERMES_MAX_RISK
     eng.error_fingerprints = tameru.error_fingerprints
     eng.clear = getattr(cc, "_clear_memos", None)

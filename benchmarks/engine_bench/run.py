@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import inspect
 import json
 import sys
 import time
@@ -44,11 +45,25 @@ def _elision_marker(omitted: int, total: int) -> str:
     return f"{_MARKER_PREFIX} {omitted:,} of {total:,} chars omitted here by Hermes's context compressor.⟫"
 
 
-def _call(profile: str, text: str, query):
+def _call(profile: str, text: str, query, selector_query=None):
+    sel_kw = {} if selector_query is None else {"selector_query": selector_query}
     if profile == "deepseek":
-        return compress_context(text, query, min_savings_ratio=0.25, ccr=False, citations=False, strategy="extract")
+        return compress_context(text, query, min_savings_ratio=0.25, ccr=False, citations=False, strategy="extract", **sel_kw)
     return compress_context(text, query, ccr=False, citations=False, gap_marker=_elision_marker, inline_short_gaps=True,
-                            anchor_errors=True, prose_brief=True, recursion_markers=(TAMERU_TAG.strip(),), min_savings_ratio=0.10)
+                            anchor_errors=True, prose_brief=True, recursion_markers=(TAMERU_TAG.strip(),), min_savings_ratio=0.10, **sel_kw)
+
+
+_SELECTOR_OK = "selector_query" in inspect.signature(compress_context).parameters
+_BUILD_CONDS = ("build_specific", "build_vague")
+
+
+def _selector_query_for(case: dict, condition: str):
+    """The ``selector_query`` for an r2 ``build_*`` condition (``build_selector_query`` over the same
+    synthetic transcript), or ``None`` when the engine under test does not accept the parameter
+    (1.9.0, the stored 1.10.0 baseline) or the case carries none."""
+    if not _SELECTOR_OK or condition not in _BUILD_CONDS:
+        return None
+    return (case.get("sel_queries") or {}).get(condition)
 
 
 def _kept(strings, text):
@@ -59,7 +74,7 @@ def measure(case: dict, profile: str, condition: str, split: str) -> dict:
     text, query = case["text"], case["queries"][condition]
     t0 = time.perf_counter()
     try:
-        res = _call(profile, text, query)
+        res = _call(profile, text, query, _selector_query_for(case, condition))
         raised = False
     except Exception:  # a raise is a fail-open for the host
         res, raised = None, True
@@ -91,6 +106,9 @@ def measure(case: dict, profile: str, condition: str, split: str) -> dict:
         "gold_each": each, "all_gold_kept_raw": all(each_raw) if gold else None,
         "forbidden_kept": sum(_kept(forbidden, effective)), "forbidden_total": len(forbidden),
         "fingerprints_total": len(fp_in), "fingerprints_kept": len(fp_in.keys() & fp_out.keys()),
+        # 1.10.0 (S5): protected fact lines of the original absent from the output (None on engines
+        # without the field).
+        "fact_lines_dropped": getattr(res, "fact_lines_dropped", None) if res is not None else None,
         "wall_ms": round(wall_ms, 3),
     }
     if case.get("family") is not None:
