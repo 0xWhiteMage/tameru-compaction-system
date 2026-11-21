@@ -67,7 +67,6 @@ _REEXPORTED = (fold_lossless,)
 try:
     DEFAULT_CCR_DIR = Path.home() / ".tameru" / "cache" / "context-compress-ccr"
 except Exception:
-    import tempfile
     DEFAULT_CCR_DIR = Path(tempfile.gettempdir()) / ".tameru" / "cache" / "context-compress-ccr"
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
@@ -6050,17 +6049,6 @@ _STATE_SUMMARY_RE = re.compile(
     r"|\b(\d+\s+(?:of|out of)\s+\d+)\s+(?:services?\s+|nodes?\s+|pods?\s+|checks?\s+|targets?\s+)?(?:are\s+|is\s+)?(?:degraded|down|unhealthy|failed|failing|not\s+ready|unavailable|offline|unreachable|critical)\b",
     re.IGNORECASE,
 )
-
-
-def _summary_count_text(line: str) -> str:
-    """The matched count phrase (e.g. ``"20/40"`` or ``"3 of 12"``) of a summary
-    line, with internal whitespace collapsed. Returns ``""`` when the line does
-    not carry a summary count phrase."""
-    for m in _STATE_SUMMARY_RE.finditer(line):
-        phrase = m.group(1) or m.group(2)
-        if phrase:
-            return " ".join(phrase.split())
-    return ""
 
 
 def _summary_anchor_region(line: str, lines: list[str]) -> str | None:
