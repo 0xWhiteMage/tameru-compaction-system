@@ -10,6 +10,8 @@ zero-dep contract holds for default installs.
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -75,6 +77,27 @@ class ParaphraseDistractorTests(unittest.TestCase):
 
 
 class TierFallbackTests(unittest.TestCase):
+    def test_missing_dependency_dict_config_degrades_to_lexical(self):
+        ctx = FILLER + "\n\nNeedle-alpha carries the payload fact ALPHA-123.\n\n" + FILLER
+        expected = compress_context(ctx, "needle-alpha", ccr=False, citations=False)
+        with patch.dict(sys.modules, {"sentence_transformers": None}):
+            actual = compress_context(
+                ctx, "needle-alpha", ccr=False, citations=False, semantic_tier={}
+            )
+        self.assertEqual(actual.to_dict(), expected.to_dict())
+
+    def test_model_init_failure_dict_config_degrades_to_lexical(self):
+        ctx = FILLER + "\n\nNeedle-alpha carries the payload fact ALPHA-123.\n\n" + FILLER
+        expected = compress_context(ctx, "needle-alpha", ccr=False, citations=False)
+        constructor = Mock(side_effect=RuntimeError("model initialization failed"))
+        module = SimpleNamespace(SentenceTransformer=constructor, CrossEncoder=Mock())
+        with patch.dict(sys.modules, {"sentence_transformers": module}):
+            actual = compress_context(
+                ctx, "needle-alpha", ccr=False, citations=False, semantic_tier={}
+            )
+        constructor.assert_called_once()
+        self.assertEqual(actual.to_dict(), expected.to_dict())
+
     class _BrokenTier:
         available = True
 
