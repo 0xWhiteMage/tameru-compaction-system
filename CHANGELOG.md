@@ -50,6 +50,22 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   `dropped` names what an extract left out (category, line count, first locator) so a host can say what to re-read.
   `pin_patterns` validation also refuses polynomial and exponential shapes (`a*a*a*b`, `.*x.*y`: any unbounded quantifier, more than four optional ones, more than six alternations; literal pins are unaffected); pin matching itself still scans the full block, as in 1.9.0.
 - **`redact_secrets`** (off by default): replaces matches of the engine's own credential patterns in the output with `[tameru:redacted]`; a fail-open still returns the original text, and the decision never changes. It also covers the `dropped` locators and the receipt copy.
+- **A pure `plan()` and an EV accept rule, interface only — no host wires it and no measured claim attaches to it yet.**
+  `tameru/plan.py` plans one moment for a prune host or a compact host: it acts only on cache-broken events
+  (`trigger`, `cache_cold`, `prefix_rewritten`) or on a warm step inside a caller-set forecast horizon, honours a
+  hysteresis window `K` (the trigger overrides it), covers every stock-cut item (`extract` when the caller's
+  precomputed engine candidate passes the hard vetoes and the EV rule and fits the stock cut, `stub` otherwise —
+  never a partial replacement, never a touch on a non-cut item), and allocates a compact host's retained budget by
+  fact rows first, then EV per retained character, then recency; `superseded` commits only when the successor covers
+  the item's facts. The planner is deterministic, O(n log n), and holds no host constants — trigger formulas, stock
+  behaviour and candidates all arrive as inputs. `tameru/loss_profiles.json` + `tameru/loss.py` hold dated, sourced
+  loss profiles (default `replay-2026-11-21`; `p_needed` 0.25 flagged as an unverified assumption until S3/P4 measures
+  it, `p_recovered` 0.90 from the Hermes P2c replay, recovery 200 output tokens, `lambda_base` 100 in item-token units,
+  strength multipliers less/normal/more 10/1/0.1). `Policy.ev` (`EVPolicy`: price profile, loss profile, strength,
+  conservatism quantile, a calibrator hook reserved for S6) replaces the confidence check with
+  `p_hat·V − (1 − p_hat)·L > 0` — the caller passes `n_eff`, suffix tokens `S`, `item_tokens` and `cache_broken`;
+  with `p_hat` = 1 and `L` = 0 the rule is exactly `required_share`'s pay-back condition. New closed reason
+  `negative_ev`. `compress_context` output is unchanged (the golden corpus stands).
 - **Price profiles and the closed-form pay-back share, a pure helper; no host default changes.** `tameru/prices.json` holds dated, sourced cache price profiles (DeepSeek pro and flash, Anthropic Opus, Sonnet and Haiku 5.5 with 5-minute and 1-hour caches, generic OpenAI 30-minute and 12-hour, marked secondary) with each figure's verification status; `tameru/prices.py` gives `required_share` (a prune of Δ in front of a cached suffix S pays back iff Δ/S ≥ (w − r)/(r·(N + 1)); 0 on a cold cache) and `implied_later_requests`. The share 0.35 implies about 82 later requests on DeepSeek pro, not the 25 the old replay price assumed. See `docs/PRICES.md`; every figure from it is replay-only. No `compress_context` output changes.
 - **One list of the lines the engine writes itself** (`tameru/markers.py`); the red-team checker uses it, clearing 11 false fabrication flags (the forged-marker detection stays).
 - **Benchmarks:** `benchmarks/engine_bench` (294 cases, 207 source clusters, dev / validation / sealed split with a committed sealed hash), `benchmarks/latency.py` with the 1.9.0 baseline,

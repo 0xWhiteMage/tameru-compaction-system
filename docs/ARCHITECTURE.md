@@ -103,8 +103,22 @@ Additive modules that let a host keep its acceptance rule, option set and worker
 changes what `compress_context` returns for an existing call (`tests/golden/compress_context.json` is unchanged).
 
 - `decide.py`: `decide(result, policy)` returns `Decision(accept, reason, basis)` with the closed reasons `fail_open`, `sanitized`,
-  `risk`, `lost_fingerprint`, `no_gain`, `low_confidence`, `not_enough_tokens`, `ok`. `HERMES_POLICY` and `DSH_POLICY` express the
-  two 1.9.x host rules. Lines the engine's trust screen flags never count as a surviving error fingerprint.
+  `risk`, `lost_fingerprint`, `no_gain`, `low_confidence`, `not_enough_tokens`, `negative_ev`, `ok`. `HERMES_POLICY` and
+  `DSH_POLICY` express the two 1.9.x host rules. Lines the engine's trust screen flags never count as a surviving error
+  fingerprint. An optional `Policy.ev` (`EVPolicy`: price profile, loss profile, strength, conservatism quantile, reserved
+  calibrator) replaces the confidence check with the expected-value rule `p_hat·V − (1 − p_hat)·L > 0`; the hard vetoes run
+  first, unchanged.
+- `loss.py` + `loss_profiles.json`: dated, sourced loss profiles for the EV rule (`p_needed`, `p_recovered`,
+  `recovery_output_tokens`, `lambda_base`, strength multipliers), each figure flagged `unverified` where it is an
+  assumption. Plain data read with `pathlib`, same style as `prices.py`.
+- `plan.py`: `plan(PlanInput) -> Plan`, a pure planner (no I/O, no clock, deterministic, O(n log n), no host constants —
+  trigger formulas, stock actions and engine candidates all arrive as inputs). Gating: it acts on the cache-broken events
+  (`trigger`, `cache_cold`, `prefix_rewritten`), on a warm `step` only inside a caller-set forecast horizon, and never inside
+  the hysteresis window `K` unless the event is `trigger`. Prune mode covers every stock-cut item — `extract` when the
+  candidate passes vetoes and EV and fits the stock cut, `stub` otherwise — and never touches a non-cut item. Compact mode
+  allocates the retained budget over the stock-demote set by fact rows first, then EV per retained character, then recency,
+  and commits `superseded` only when the successor covers the item's facts. The output carries per-item action, reason and
+  EV numbers plus totals.
 - `presets.json` + `presets.py`: `tool-result@1` and `dsh-tool-result@1` are the exact option sets the two plugins pass today;
   `resolve_preset(name, overrides)` returns explicit keyword arguments. The file is plain data, read with `pathlib`.
 - `protocol.py`: `PROTOCOL_VERSION = 2`, the worker request fields with types, ranges and closed enums, `pin_patterns` limits and a
