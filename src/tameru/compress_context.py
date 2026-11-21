@@ -1011,9 +1011,11 @@ _ERROR_EXEMPLAR_MAX = 16
 # error line is the engine's core evidence, so a destructive selector pre-filter or adapter must
 # not delete an exemplar just because it matches neither user nor call terms: the same
 # exemption-and-restore treatment as S5 facts, but independent of fact-density rule B and with
-# no floor. Set once per compress call; read by ``_error_protected_set`` and the restores.
-_ERR_PROTECTED: "contextvars.ContextVar[frozenset]" = contextvars.ContextVar(
-    "tameru_err_protected", default=frozenset()
+# no floor. Set once per compress call; read by ``_error_protected_set`` and the restores. The
+# engine stores a position-ordered tuple: the restores append in original line order, never in
+# hash order (a frozenset of the same lines remains valid membership input for tests).
+_ERR_PROTECTED: "contextvars.ContextVar" = contextvars.ContextVar(
+    "tameru_err_protected", default=()
 )
 
 
@@ -1039,7 +1041,7 @@ def _protected_error_exemplars(text: str) -> tuple[str, ...]:
 def _error_protected_set(lines: list[str]) -> set[int]:
     """Indices of ``lines`` that are protected error exemplars (``_ERR_PROTECTED``)."""
     prot = _ERR_PROTECTED.get()
-    return {i for i, ln in enumerate(lines) if ln in prot} if prot else set()
+    return {i for i, ln in enumerate(lines) if ln in frozenset(prot)} if prot else set()
 _FRAME_HIT_SLOTS = 1
 _STRUCT_COLLAPSE_MIN = 12  # structural (query-less) pass: templates seen fewer times stay verbatim
 _FRAME_START_RE = re.compile(r"^\s*(?:at\s+\S|File\s+\"|from\s+\S+:\d+|#\d+\s+\S+\(\d+\):|#\d+\s+\{main\})")
@@ -1389,26 +1391,37 @@ def _fact_superseded_in(line: str, kept_lines: list[str]) -> bool:
     return any(o != line and _supersedes(o, line) for o in kept_lines)
 
 
-def _restore_facts(protected, after: str) -> str:
+def _missing_in_original_order(missing: list[tuple[int, int, str]]) -> list[str]:
+    """The restored lines, ordered by original index, then exemplar position, then text — never
+    by hash order, so the same call appends the same sequence on every run."""
+    return [ln for _i, _p, ln in sorted(missing, key=lambda m: (m[0], m[1], m[2]))]
+
+
+def _restore_facts(protected, after: str, before: str | None = None) -> str:
     """Append whole protected fact lines a stage deleted from ``after`` (the same mechanism
     ``_restore_fact_lines`` uses, taking the pre-computed protected set of the original text
     instead of re-detecting on a stage input). E6: protected error exemplars get the same
-    treatment, independent of fact density."""
+    treatment, independent of fact density. Missing lines go back in original line order:
+    ``before`` is the text the exemplar indices are read from (the caller's original); without
+    it exemplars keep their protection order, still deterministic."""
     err = _ERR_PROTECTED.get()
     if not protected and not err:
         return after
     kept = after.split("\n")
-    missing = [ln for _i, _k, _v, ln in protected
+    missing = [(i, -1, ln) for i, _k, _v, ln in protected
                if ln != after and ln not in after and not _fact_superseded_in(ln, kept)]
-    missing += [ln for ln in err
-                if ln != after and ln not in after and not _fact_superseded_in(ln, kept)]
-    return after if not missing else after + "\n" + "\n".join(missing)
+    if err:
+        index = {ln: i for i, ln in enumerate(before.split("\n"))} if before is not None else {}
+        for pos, ln in enumerate(err):
+            if ln != after and ln not in after and not _fact_superseded_in(ln, kept):
+                missing.append((index.get(ln, float("inf")), pos, ln))
+    return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
 
 
 def _restore_fact_lines(before: str, after: str) -> str:
-    """A destructive stage may not delete a protected fact line: any it lost goes back, verbatim.
-    A fact line that IS the whole input (a single-line JSON payload) is not restored — putting it
-    back would undo the stage entirely."""
+    """A destructive stage may not delete a protected fact line: any it lost goes back, verbatim,
+    in original line order. A fact line that IS the whole input (a single-line JSON payload) is
+    not restored — putting it back would undo the stage entirely."""
     if after is before or after == before:
         return after
     err = _ERR_PROTECTED.get()
@@ -1416,13 +1429,15 @@ def _restore_fact_lines(before: str, after: str) -> str:
     if not protected and not err:
         return after
     kept = after.split("\n")
-    missing = [ln for _i, _k, _v, ln in protected
+    index = {ln: i for i, ln in enumerate(before.split("\n"))} if err else {}
+    missing = [(i, -1, ln) for i, _k, _v, ln in protected
                if ln != before and ln not in after and not _fact_superseded_in(ln, kept)]
     # E6: an error exemplar the stage saw in ``before`` and lost goes back too —
-    # independent of fact density, same supersession guard.
-    missing += [ln for ln in err
-                if ln in before and ln not in after and not _fact_superseded_in(ln, kept)]
-    return after if not missing else after + "\n" + "\n".join(missing)
+    # independent of fact density, same supersession guard, same original order.
+    for pos, ln in enumerate(err):
+        if ln in before and ln not in after and not _fact_superseded_in(ln, kept):
+            missing.append((index.get(ln, float("inf")), pos, ln))
+    return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
 
 
 def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int | None) -> str:
@@ -9253,13 +9268,15 @@ def _compress_context_impl(
     # format adapters below may delete a line, so protection knows every fact before any stage can
     # drop one. Density (sparsity rule B) is decided once here; ``_FACT_OFF`` keeps the machinery
     # off through every later stage on a dense original.
-    fact_lines, fact_dense = _fact_summary(unwrap_tool_payload(original_text).inner)
+    protected_source = unwrap_tool_payload(original_text).inner
+    fact_lines, fact_dense = _fact_summary(protected_source)
     _FACT_OFF.set(fact_dense)
     # 1.10.0 (S5, E6): protected error exemplars — first line per error fingerprint of the same
     # original text, before any destructive stage — are exempt from the selector pre-filters and
-    # adapters below (independent of ``fact_dense``).
-    _ERR_PROTECTED.set(frozenset(
-        _protected_error_exemplars(unwrap_tool_payload(original_text).inner)
+    # adapters below (independent of ``fact_dense``). Kept as a position-ordered tuple so the
+    # restores append in original line order, deterministically.
+    _ERR_PROTECTED.set(tuple(
+        _protected_error_exemplars(protected_source)
     ))
     industrial, degraded, payload_industrial = _industrial_preflight(
         adapter_gap=adapter_gap, caller_text=caller_text, degraded=degraded,
@@ -9302,7 +9319,7 @@ def _compress_context_impl(
         no_table = True
     # 1.10.0 (S5, E5): the industrial and payload adapters above ran before detection could see
     # the original — any protected fact line they deleted goes back now, verbatim.
-    text = _restore_facts(fact_lines, text)
+    text = _restore_facts(fact_lines, text, before=protected_source)
     # v1.4.0 (E5): diff and grep/rg output get their own adapters (whole hunks,
     # grouped matches) ahead of generic segmentation. The adapter's output is
     # the selection: scoring below must not undo it (see `adapter_info`).
@@ -9317,7 +9334,7 @@ def _compress_context_impl(
     # its whole-record cut stands: splicing a single fact line back would corrupt the records,
     # so only the still line-structured outcomes get the line-level restore.
     if adapter_info is None or adapter_info.get("name") == "test_output":
-        text = _restore_facts(fact_lines, text)
+        text = _restore_facts(fact_lines, text, before=protected_source)
     if not text.strip():
         return CompressResult(
             compressed_text="", policy_name="noop", mode=requested_mode
@@ -9676,7 +9693,7 @@ def compress_context(
 ) -> CompressResult:
     _pin_token = _PINNED_LINES.set(frozenset())
     _fact_off_token = _FACT_OFF.set(False)
-    _err_token = _ERR_PROTECTED.set(frozenset())
+    _err_token = _ERR_PROTECTED.set(())
     try:
         result = _compress_context_impl(
         context, query,
