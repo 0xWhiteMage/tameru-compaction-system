@@ -5898,7 +5898,6 @@ def _strip_anchor_prefix(line: str) -> str:
 _WEAK_LINE_HINT_RE = re.compile(
     r"WARN|warn|Failed|exited with|status=|code=|HTTP/"
 )
-_WEAK_WARN_LEVEL_RE = re.compile(r"\b(?:WARN|WARNING)\b")
 _WEAK_STRUCT_LEVEL_RE = re.compile(
     r"(?i)\b(?:level|lvl|severity)\s*[\"']?\s*[=:]\s*[\"']?(?:warn|warning)\b"
 )
@@ -5936,7 +5935,7 @@ def _is_weak_failure_line(line: str) -> bool:
     if _WEAK_EXCLUDE_RE.search(line):
         return False
     if (
-        _WEAK_WARN_LEVEL_RE.search(line) or _WEAK_STRUCT_LEVEL_RE.search(line)
+        _WARN_LEVEL_RE.search(line) or _WEAK_STRUCT_LEVEL_RE.search(line)
     ) and _WEAK_FAILURE_WORD_RE.search(line):
         return True
     return bool(
@@ -5949,7 +5948,6 @@ def _is_weak_failure_line(line: str) -> bool:
 
 
 _ISO_LEVEL_TOKEN_RE = re.compile(r"\b(?:TRACE|DEBUG|INFO|NOTICE|WARN|WARNING)\b")
-_ISO_WARN_TOKEN_RE = re.compile(r"\b(?:WARN|WARNING)\b")
 _ISO_STRUCT_LEVEL_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)(?:trace|debug|info|notice|warn|warning)\b")
 _ISO_STRUCT_WARN_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)warn(?:ing)?\b")
 
@@ -5983,7 +5981,7 @@ def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
     for line in nonblank:
         if _ISO_LEVEL_TOKEN_RE.search(line) or _ISO_STRUCT_LEVEL_RE.search(line) or _REDIS_LINE_RE.match(line):
             level_count += 1
-        if _ISO_WARN_TOKEN_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line) or _redis_warn(line):
+        if _WARN_LEVEL_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line) or _redis_warn(line):
             warn_lines.append(line)
 
     if level_count * 100 < len(nonblank) * 90:
