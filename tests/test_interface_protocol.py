@@ -222,6 +222,8 @@ def _plan_body(**overrides):
         "cache": {"warm": False, "n_eff": 10},
         "policy": {"ev": {"price_profile": "deepseek-flash", "loss_profile": "replay-2026-11-21"}},
         "steps_since_last_act": 5,
+        "growth_tokens_per_step": 250.5,
+        "margin_steps": 6,
     }
     body.update(overrides)
     return body
@@ -245,6 +247,8 @@ def _plan_input(**overrides):
         "cache": CacheState(warm=False, n_eff=10.0),
         "policy": Policy(ev=EVPolicy(price_profile="deepseek-flash", loss_profile="replay-2026-11-21")),
         "steps_since_last_act": 5,
+        "growth_tokens_per_step": 250.5,
+        "margin_steps": 6,
     }
     kwargs.update(overrides)
     return PlanInput(**kwargs)
@@ -338,6 +342,10 @@ def test_plan_request_rejections():
     assert plan_code(_plan_body(H=-1)) == "bad_H"
     assert plan_code(_plan_body(steps_to_trigger=-2)) == "bad_steps"
     assert plan_code(_plan_body(retained_budget_chars=-1)) == "bad_retained_budget"
+    assert plan_code(_plan_body(growth_tokens_per_step=-1)) == "bad_growth"
+    assert plan_code(_plan_body(growth_tokens_per_step="x")) == "bad_growth"
+    assert plan_code(_plan_body(margin_steps=-1)) == "bad_steps"
+    assert plan_code(_plan_body(margin_steps=1.5)) == "bad_steps"
     assert plan_code(_plan_body(items="no")) == "bad_items"
     assert plan_code(_plan_body(items=[{}] * 2001)) == "bad_items"
     assert plan_code(_plan_body(cache={"warm": True})) == "bad_cache"

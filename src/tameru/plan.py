@@ -24,7 +24,7 @@ BROKEN_EVENTS = ("trigger", "cache_cold", "prefix_rewritten")
 HOST_MODES = ("prune", "compact")
 ACTIONS = ("keep", "extract", "stub", "brief", "header", "superseded")
 STOCK_ACTIONS = ("keep", "cut", "demote")
-GATES = ("acted", "not_trigger_step", "no_forecast", "hysteresis")
+GATES = ("acted", "not_trigger_step", "no_forecast", "hysteresis", "no_runway")
 _RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
@@ -86,6 +86,8 @@ class PlanInput:
     H: int = 0                            # forecast horizon in steps; 0 disables acting on warm steps
     steps_to_trigger: int | None = None   # the caller's distance estimate; the forecast hook compares it to H
     retained_budget_chars: int = 0        # compact mode: body chars the demoted set may keep in all
+    growth_tokens_per_step: float = 0.0   # mean tokens the prompt adds per step; 0 disables warm acts
+    margin_steps: int = 0                 # extra runway steps the act must leave beyond H
 
 
 @dataclass(frozen=True)
@@ -169,6 +171,30 @@ def _gate(inp: PlanInput) -> str | None:
     return None
 
 
+def _stand_down(inp: PlanInput, gate: str) -> Plan:
+    """The keep-everything plan for a moment the pass must not act on."""
+    actions = tuple(PlanAction(i.id, inp.event, "keep", gate) for i in inp.items)
+    return Plan(inp.event, inp.host_mode, False, gate, actions,
+                sum(i.chars for i in inp.items), _stock_chars(inp.items, inp.host_mode), 0.0, 0.0)
+
+
+def _projected_tokens_after(inp: PlanInput, planned: Plan) -> float:
+    """Prompt tokens after the plan commits: every rewritten item keeps the token share its
+    kept characters imply (extracts their compressed size, other rungs the stock remnant)."""
+    saved = 0.0
+    for item, action in zip(inp.items, planned.actions):
+        if item.chars <= 0:
+            continue
+        if action.action == "extract":
+            kept = item.candidate.compressed_chars
+        elif action.action == "keep":
+            kept = item.chars
+        else:
+            kept = min(item.stock_kept_chars, item.chars)
+        saved += item.tokens * (1.0 - kept / item.chars)
+    return inp.prompt_tokens - saved
+
+
 def plan(inp: PlanInput) -> Plan:
     """Plan one moment. Deterministic: the same input always yields the same plan."""
     if inp.event not in EVENTS:
@@ -177,9 +203,18 @@ def plan(inp: PlanInput) -> Plan:
         raise ValueError(f"host_mode must be one of {HOST_MODES}")
     gate = _gate(inp)
     if gate is not None:
-        actions = tuple(PlanAction(i.id, inp.event, "keep", gate) for i in inp.items)
-        return Plan(inp.event, inp.host_mode, False, gate, actions,
-                    sum(i.chars for i in inp.items), _stock_chars(inp.items, inp.host_mode), 0.0, 0.0)
+        return _stand_down(inp, gate)
+    if inp.event == "step":
+        # A warm forecast act needs a stock-demote set (compact) and a growth estimate, and it
+        # must leave H + margin_steps of runway after committing; prune mode has no warm act.
+        if inp.host_mode != "compact" or inp.growth_tokens_per_step <= 0:
+            return _stand_down(inp, "no_runway")
+        planned = _plan_compact(inp)
+        after = _projected_tokens_after(inp, planned)
+        runway = (inp.trigger_tokens - after) / inp.growth_tokens_per_step
+        if runway < inp.H + inp.margin_steps:
+            return _stand_down(inp, "no_runway")
+        return planned
     if inp.host_mode == "prune":
         return _plan_prune(inp)
     return _plan_compact(inp)

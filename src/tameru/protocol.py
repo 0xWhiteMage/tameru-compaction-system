@@ -76,6 +76,7 @@ PLAN_FIELDS = frozenset({
     "event", "host_mode", "prompt_tokens", "trigger_tokens",
     "items", "cache", "policy",
     "steps_since_last_act", "K", "H", "steps_to_trigger", "retained_budget_chars",
+    "growth_tokens_per_step", "margin_steps",
 })
 ITEM_FIELDS = frozenset({
     "id", "position", "tokens", "chars", "age_steps", "protected", "stock_action",
@@ -506,6 +507,10 @@ def validate_plan_request(request: Mapping[str, Any]) -> PlanInput:
             retained_budget_chars=_integer(
                 request.get("retained_budget_chars", 0), 0, MAX_PLAN_TOKENS, "bad_retained_budget"
             ),
+            growth_tokens_per_step=_number(
+                request.get("growth_tokens_per_step", 0), 0.0, MAX_PLAN_TOKENS, "bad_growth"
+            ),
+            margin_steps=_integer(request.get("margin_steps", 0), 0, MAX_PLAN_STEPS, "bad_steps"),
         )
     except (ValueError, TypeError):
         raise ProtocolError("bad_plan") from None

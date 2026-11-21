@@ -34,11 +34,14 @@ def item(i, *, stock_action="cut", candidate=GOOD, fact_lines=0, chars=40_000, t
 
 def inp(items, *, event="trigger", host_mode="prune", warm=False, n_eff=80,
         steps_since_last_act=None, K=3, H=0, steps_to_trigger=None, retained_budget_chars=0,
-        policy=EV_POLICY):
-    return PlanInput(event=event, host_mode=host_mode, prompt_tokens=200_000, trigger_tokens=180_000,
+        prompt_tokens=200_000, trigger_tokens=180_000, growth_tokens_per_step=0.0,
+        margin_steps=0, policy=EV_POLICY):
+    return PlanInput(event=event, host_mode=host_mode, prompt_tokens=prompt_tokens,
+                     trigger_tokens=trigger_tokens,
                      items=tuple(items), cache=CacheState(warm=warm, n_eff=n_eff), policy=policy,
                      steps_since_last_act=steps_since_last_act, K=K, H=H,
-                     steps_to_trigger=steps_to_trigger, retained_budget_chars=retained_budget_chars)
+                     steps_to_trigger=steps_to_trigger, retained_budget_chars=retained_budget_chars,
+                     growth_tokens_per_step=growth_tokens_per_step, margin_steps=margin_steps)
 
 
 def by_id(p):
@@ -62,10 +65,39 @@ def test_warm_step_does_not_act_without_forecast():
 
 
 def test_forecast_hook_acts_inside_horizon_only():
-    items = [item(0)]
-    assert not plan(inp(items, event="step", warm=True, H=4, steps_to_trigger=5)).acted
-    p = plan(inp(items, event="step", warm=True, H=4, steps_to_trigger=4))
+    items = [item(0, stock_action="demote")]
+    kw = dict(event="step", host_mode="compact", warm=True, H=4, steps_to_trigger=None,
+              prompt_tokens=100_000, trigger_tokens=180_000, growth_tokens_per_step=1000,
+              retained_budget_chars=50_000)
+    assert not plan(inp(items, **{**kw, "steps_to_trigger": 5})).acted
+    p = plan(inp(items, **{**kw, "steps_to_trigger": 4}))
     assert p.acted and p.gate == "acted" and all(a.event == "step" for a in p.actions)
+
+
+def test_warm_step_runway_boundary():
+    # after the act the plan must leave H + margin_steps of runway:
+    # (trigger - projected_after) / growth >= H + margin_steps
+    demote = item(0, stock_action="demote")     # extract keeps 2000 of 40_000 chars: saved ≈ 9500 tokens
+    kw = dict(event="step", host_mode="compact", warm=True, H=4, margin_steps=6,
+              steps_to_trigger=4, growth_tokens_per_step=1000, retained_budget_chars=50_000,
+              prompt_tokens=100_000)
+    p = plan(inp([demote], trigger_tokens=180_000, **kw))     # after ≈ 90_500 → runway 89.5 ≥ 10
+    assert p.acted and p.actions[0].action == "extract"
+    p = plan(inp([demote], trigger_tokens=95_000, **kw))      # runway 4.5 < 10
+    assert not p.acted and p.gate == "no_runway"
+    assert all(a.action == "keep" and a.reason == "no_runway" for a in p.actions)
+
+
+def test_warm_step_never_acts_without_growth_or_in_prune_mode():
+    demote = item(0, stock_action="demote")
+    kw = dict(event="step", warm=True, H=4, steps_to_trigger=4, margin_steps=0,
+              prompt_tokens=100_000, trigger_tokens=180_000, retained_budget_chars=50_000)
+    # growth 0: no runway estimate, no act
+    p = plan(inp([demote], host_mode="compact", **kw))
+    assert not p.acted and p.gate == "no_runway"
+    # prune mode has no stock cut set on a warm step: no act, even with growth
+    p = plan(inp([item(0)], host_mode="prune", growth_tokens_per_step=1000, **kw))
+    assert not p.acted and p.gate == "no_runway"
 
 
 def test_hysteresis_blocks_non_trigger_events():
@@ -139,16 +171,19 @@ def test_prune_chars_after_never_exceeds_stock():
         assert p.predicted_chars_after <= p.predicted_chars_stock
 
 
-def test_prune_ev_decline_falls_back_to_stub():
+def test_warm_step_ev_decline_falls_back_to_brief():
     # on a warm forecast step the rewrite prices the suffix after the item: V goes negative
     weak = replace(GOOD, tokens_saved=10_000, confidence=0.99)
-    items = [item(0, candidate=weak), item(1, stock_action="keep", tokens=50_000)]
-    p = plan(inp(items, event="step", warm=True, H=4, steps_to_trigger=1))
+    items = [item(0, stock_action="demote", candidate=weak), item(1, stock_action="keep", tokens=50_000)]
+    p = plan(inp(items, event="step", host_mode="compact", warm=True, H=4, steps_to_trigger=1,
+                 prompt_tokens=60_000, trigger_tokens=180_000, growth_tokens_per_step=1000,
+                 retained_budget_chars=50_000))
     a = p.actions[0]
-    assert a.action == "stub" and a.reason == "negative_ev"
+    assert a.action == "brief" and a.reason == "negative_ev"
     assert a.p_hat is not None and a.V is not None and a.V < 0 and a.L is not None
     # the same item at a cache-broken event pays back: S = 0
-    p = plan(inp(items, event="trigger", warm=True))
+    p = plan(inp(items, event="trigger", host_mode="compact", warm=True,
+                 retained_budget_chars=50_000))
     assert p.actions[0].action == "extract" and p.actions[0].reason == "ok"
 
 
