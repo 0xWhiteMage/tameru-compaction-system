@@ -47,7 +47,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
 
 from benchmarks.session_corpus.equivalence import _engine  # noqa: E402
-from benchmarks.engine_bench import corpus  # noqa: E402
+from benchmarks.engine_bench import corpus, ledger  # noqa: E402
 
 KINDS = ("s5_buried", "s5_superseded", "csv_args", "evidence")
 CONDITIONS = ("build_vague", "build_specific", "tool_call", "task_vague")
@@ -301,13 +301,24 @@ def main(argv=None) -> int:
     ap.add_argument("--label", required=True)
     ap.add_argument("--no-trace", action="store_true", help="plain run, no stage wrappers (1.9.0)")
     ap.add_argument("--split", action="append", choices=["dev", "validation", "sealed"],
-                    help="repeatable; default dev + validation; 'sealed' is refused")
+                    help="repeatable; default dev; 'validation' and 'sealed' are refused")
+    ap.add_argument("--setting", help="engine setting id in docs/SETTINGS-TRIED-LEDGER.json (required)")
+    ap.add_argument("--reference", help="commit hash of a clean worktree reference run")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--limit", type=int, default=None, help="debug: first N cases only")
     args = ap.parse_args(argv)
-    splits = args.split or ["dev", "validation"]
+    splits = args.split or ["dev"]
     if "sealed" in splits:
         print("refusing: the sealed split is never read by the diagnosis", file=sys.stderr)
+        return 2
+    if "validation" in splits:
+        print("refusing: round-2 validation is queried only through "
+              "benchmarks/engine_bench/thresholdout.py", file=sys.stderr)
+        return 2
+    try:
+        prov = ledger.resolve_provenance(args.setting, args.reference, required=True)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
         return 2
     eng = load_engine(Path(args.engine_src), args.label)
     assignment = corpus.r2_assignment()
@@ -316,7 +327,7 @@ def main(argv=None) -> int:
     if args.limit:
         cases = cases[: args.limit]
     rows = run_cells(eng, cases, trace=not args.no_trace)
-    data = {"engine": eng.version, "traced": not args.no_trace, "calls": len(rows),
+    data = {"engine": eng.version, "traced": not args.no_trace, "calls": len(rows), **prov,
             "splits": splits, "caches_cleared": CACHES_CLEARED if not args.no_trace else [],
             "neutrality": ("verified per call: unwrapped vs wrapped CompressResult byte-identical, else abort"
                            if not args.no_trace else None),

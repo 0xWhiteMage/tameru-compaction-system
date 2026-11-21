@@ -1,35 +1,278 @@
 {
-  "schema": 1,
-  "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each).",
-  "settings_tried": 26,
-  "validation_queries": {"engine": 0, "deepseek-plugin": 0, "hermes-plugin": 0},
-  "validation_query_budget": 20,
-  "settings": [
-    {"n": 1, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G-gate0.5", "setting": "policy every-step, gate 0.5", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 1"},
-    {"n": 2, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G-gate0.6", "setting": "policy every-step, gate 0.6", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 1"},
-    {"n": 3, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G-gate0.7", "setting": "policy every-step, gate 0.7", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 1"},
-    {"n": 4, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G-gate0.8", "setting": "policy every-step, gate 0.8", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 1"},
-    {"n": 5, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G-gate0.85", "setting": "policy every-step, gate 0.85", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 1"},
-    {"n": 6, "date": "2026-11-19", "target": "deepseek-plugin", "id": "T-gate0", "setting": "policy at-trigger, gate 0 (re-run after the round 2 defect fix, not a new setting)", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 1"},
-    {"n": 7, "date": "2026-11-19", "target": "deepseek-plugin", "id": "T-gate0.7", "setting": "policy at-trigger, gate 0.7 (re-run after the round 2 defect fix, not a new setting)", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 1"},
-    {"n": 8, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G1", "setting": "every-step, gate 0.85, share 0.35, activation 0.9", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 9, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G2", "setting": "every-step, gate 0.85, share 0.5, activation 0.75", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 10, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G3", "setting": "every-step, gate 0.85, share 0.65, activation 0.75", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 11, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G4", "setting": "every-step, gate 0.85, share 0.5, activation 0.9", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 12, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G5", "setting": "every-step, gate 0.85, share 0.65, activation 0.9", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 13, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G6", "setting": "every-step, gate 0.85, share 0.5, activation 1.0", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 14, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G7", "setting": "every-step, gate 0.85, share 0.65, activation 1.0", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 15, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G8", "setting": "every-step, gate 0.85, share 0.5, activation 0.9, min 12000", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 16, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G9", "setting": "every-step, gate 0.85, share 0.65, activation 0.9, min 12000", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 17, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G10", "setting": "every-step, gate 0.85, share 0.5, activation 0.9, protect 8", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 18, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G11", "setting": "every-step, gate 0.85, share 0.5, activation 0.9, cap 8", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 19, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G12", "setting": "every-step, gate 0.7, share 0.5, activation 0.9", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 20, "date": "2026-11-19", "target": "deepseek-plugin", "id": "G13", "setting": "every-step, gate 0.7, share 0.65, activation 1.0", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 21, "date": "2026-11-19", "target": "deepseek-plugin", "id": "T3", "setting": "at-trigger, gate 0.85", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 22, "date": "2026-11-19", "target": "deepseek-plugin", "id": "H1", "setting": "hybrid, gate 0.85, share 0.35", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 23, "date": "2026-11-19", "target": "deepseek-plugin", "id": "H2", "setting": "hybrid, gate 0.85, share 0.5", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 24, "date": "2026-11-19", "target": "deepseek-plugin", "id": "H3", "setting": "hybrid, gate 0.85, share 0.65", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 25, "date": "2026-11-19", "target": "deepseek-plugin", "id": "H4", "setting": "hybrid, gate 0.7, share 0.5", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"},
-    {"n": 26, "date": "2026-11-19", "target": "deepseek-plugin", "id": "H5", "setting": "hybrid, gate 0.85, share 0.5, protect 8", "split": "dev+validation", "source": "ANALYSIS-PLAN-1.10.md, round 2"}
-  ]
+ "schema": 1,
+ "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
+ "settings_tried": 28,
+ "validation_queries": {
+  "engine": 0,
+  "deepseek-plugin": 0,
+  "hermes-plugin": 0
+ },
+ "validation_query_budget": 20,
+ "settings": [
+  {
+   "n": 1,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G-gate0.5",
+   "setting": "policy every-step, gate 0.5",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  },
+  {
+   "n": 2,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G-gate0.6",
+   "setting": "policy every-step, gate 0.6",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  },
+  {
+   "n": 3,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G-gate0.7",
+   "setting": "policy every-step, gate 0.7",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  },
+  {
+   "n": 4,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G-gate0.8",
+   "setting": "policy every-step, gate 0.8",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  },
+  {
+   "n": 5,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G-gate0.85",
+   "setting": "policy every-step, gate 0.85",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  },
+  {
+   "n": 6,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "T-gate0",
+   "setting": "policy at-trigger, gate 0 (re-run after the round 2 defect fix, not a new setting)",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  },
+  {
+   "n": 7,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "T-gate0.7",
+   "setting": "policy at-trigger, gate 0.7 (re-run after the round 2 defect fix, not a new setting)",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  },
+  {
+   "n": 8,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G1",
+   "setting": "every-step, gate 0.85, share 0.35, activation 0.9",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 9,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G2",
+   "setting": "every-step, gate 0.85, share 0.5, activation 0.75",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 10,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G3",
+   "setting": "every-step, gate 0.85, share 0.65, activation 0.75",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 11,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G4",
+   "setting": "every-step, gate 0.85, share 0.5, activation 0.9",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 12,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G5",
+   "setting": "every-step, gate 0.85, share 0.65, activation 0.9",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 13,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G6",
+   "setting": "every-step, gate 0.85, share 0.5, activation 1.0",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 14,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G7",
+   "setting": "every-step, gate 0.85, share 0.65, activation 1.0",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 15,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G8",
+   "setting": "every-step, gate 0.85, share 0.5, activation 0.9, min 12000",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 16,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G9",
+   "setting": "every-step, gate 0.85, share 0.65, activation 0.9, min 12000",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 17,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G10",
+   "setting": "every-step, gate 0.85, share 0.5, activation 0.9, protect 8",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 18,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G11",
+   "setting": "every-step, gate 0.85, share 0.5, activation 0.9, cap 8",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 19,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G12",
+   "setting": "every-step, gate 0.7, share 0.5, activation 0.9",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 20,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "G13",
+   "setting": "every-step, gate 0.7, share 0.65, activation 1.0",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 21,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "T3",
+   "setting": "at-trigger, gate 0.85",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 22,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "H1",
+   "setting": "hybrid, gate 0.85, share 0.35",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 23,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "H2",
+   "setting": "hybrid, gate 0.85, share 0.5",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 24,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "H3",
+   "setting": "hybrid, gate 0.85, share 0.65",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 25,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "H4",
+   "setting": "hybrid, gate 0.7, share 0.5",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 26,
+   "date": "2026-11-19",
+   "target": "deepseek-plugin",
+   "id": "H5",
+   "setting": "hybrid, gate 0.85, share 0.5, protect 8",
+   "split": "dev+validation",
+   "source": "ANALYSIS-PLAN-1.10.md, round 2"
+  },
+  {
+   "n": 27,
+   "date": "2026-11-21",
+   "target": "engine",
+   "id": "E1",
+   "setting": "S5 floor + exemptions + selector_query gating and selecting on the user terms (7137d05)",
+   "split": "r2 dev+validation",
+   "source": "P3-2"
+  },
+  {
+   "n": 28,
+   "date": "2026-11-21",
+   "target": "engine",
+   "id": "E4",
+   "setting": "E1 with selector gating A and sparsity B",
+   "split": "r2 dev",
+   "source": "P3-3"
+  }
+ ],
+ "noise_seed": 20261121,
+ "validation_disclosures": [
+  {
+   "date": "2026-11-21",
+   "target": "engine",
+   "disclosure": "r2 validation read in full for the S5 diagnosis of the 1.10.0 baseline (no candidate)"
+  },
+  {
+   "date": "2026-11-21",
+   "target": "engine",
+   "disclosure": "r2 validation read in full for the evaluation of E1"
+  }
+ ]
 }

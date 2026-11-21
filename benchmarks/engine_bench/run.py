@@ -30,7 +30,7 @@ sys.path.insert(0, str(HERE.parents[1] / "src"))
 from tameru import ENGINE_VERSION, error_fingerprints  # noqa: E402
 from tameru.compress_context import compress_context  # noqa: E402
 
-from . import corpus, report  # noqa: E402
+from . import corpus, ledger, report  # noqa: E402
 
 PROFILES = ("deepseek", "hermes")
 CONDITIONS = ("task", "tool_call", "generic", "zh_user")
@@ -109,6 +109,8 @@ def measure(case: dict, profile: str, condition: str, split: str) -> dict:
         # 1.10.0 (S5): protected fact lines of the original absent from the output (None on engines
         # without the field).
         "fact_lines_dropped": getattr(res, "fact_lines_dropped", None) if res is not None else None,
+        # 1.10.0 (S5, E4): the text was fact-dense, the S5 machinery stayed off (receipt flag).
+        "fact_dense": (res.receipt or {}).get("fact_dense") if res is not None else None,
         "wall_ms": round(wall_ms, 3),
     }
     if case.get("family") is not None:
@@ -147,20 +149,32 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--round", dest="round_", type=int, choices=(1, 2), default=1,
                     help="benchmark round; 2 = the new gen_cases_r2 corpus and its own sealed guard")
-    ap.add_argument("--split", action="append", choices=["dev", "validation", "sealed"], help="repeatable; default dev + validation")
+    ap.add_argument("--split", action="append", choices=["dev", "validation", "sealed"],
+                    help="repeatable; default: dev for round 2, dev + validation for round 1")
     ap.add_argument("--sealed", action="store_true", help="allow reading sealed texts (one look per host; logged)")
     ap.add_argument("--candidate", help="candidate name, required with --sealed")
+    ap.add_argument("--setting", help="engine setting id in docs/SETTINGS-TRIED-LEDGER.json (required for round 2)")
+    ap.add_argument("--reference", help="commit hash of a clean worktree reference run (round 2 alternative to --setting)")
     ap.add_argument("--out", type=Path, help="write rows to this jsonl file")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
-    splits = args.split or ["dev", "validation"]
+    r2 = args.round_ == 2
+    if r2 and "validation" in (args.split or []):
+        print("refusing: round-2 validation is queried only through "
+              "benchmarks/engine_bench/thresholdout.py", file=sys.stderr)
+        return 2
+    splits = args.split or (["dev"] if r2 else ["dev", "validation"])
+    try:
+        prov = ledger.resolve_provenance(args.setting, args.reference, required=r2)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
     if "sealed" in splits and not args.sealed:
         print("refusing: the sealed split can only be read with --sealed (and --candidate)", file=sys.stderr)
         return 2
     if args.sealed and not args.candidate:
         print("--sealed requires --candidate NAME", file=sys.stderr)
         return 2
-    r2 = args.round_ == 2
     assignment = corpus.r2_assignment() if r2 else corpus.load_splits()
     if args.sealed:
         hash_file = corpus.SEALED_R2_HASH_FILE if r2 else corpus.SEALED_HASH_FILE
@@ -173,6 +187,8 @@ def main(argv=None) -> int:
     loader = corpus.load_cases_r2 if r2 else corpus.load_cases
     cases = loader(splits, sealed_ok=args.sealed)
     rows = run(cases, assignment, conditions=CONDITIONS_R2 if r2 else CONDITIONS)
+    for row in rows:
+        row.update(prov)
     if args.out:
         write_rows(rows, args.out)
     if not args.quiet:

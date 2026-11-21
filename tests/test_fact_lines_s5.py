@@ -79,14 +79,16 @@ def test_flat_record_rows_are_facts():
 
 
 def test_filler_comment_that_is_fact_shaped_survives():
-    text = "# filler noise\n# filler setting = 42\nbody a\nbody b\nbody c"
+    body = "\n".join(f"body line {i} of the report" for i in range(12))
+    text = "# filler noise\n# filler setting = 42\n" + body
     out = cc.preprocess_filler_comments(text, "order9 tail7")
     assert "setting = 42" in out and "filler noise" not in out
 
 
 def test_restore_fact_lines_appends_what_a_stage_deleted():
-    before = "first\nconfig_key = 7\nsecond"
-    assert cc._restore_fact_lines(before, "first\nsecond") == "first\nsecond\nconfig_key = 7"
+    body = "\n".join(f"body line {i}" for i in range(12))
+    before = body + "\nconfig_key = 7"
+    assert cc._restore_fact_lines(before, body) == body + "\nconfig_key = 7"
     assert cc._restore_fact_lines(before, before) == before
 
 
@@ -98,7 +100,8 @@ def test_preprocess_logs_keeps_newest_fact_verbatim():
 
 def test_fold_repeated_sentences_skips_fact_lines():
     fact = ("quota = 1234567890123456789012345 " * 4).rstrip()
-    lines = ["noise a", fact, "noise b"]
+    lines = [f"noise line {i} of the batch" for i in range(12)]
+    lines.insert(6, fact)
     assert cc._fold_repeated_sentences(lines) == lines
 
 
@@ -107,12 +110,12 @@ def test_fold_repeated_sentences_skips_fact_lines():
 
 def test_floor_restores_dropped_fact_lines():
     lines = [TICK for _ in range(400)]
-    facts = [f"cfg_{chr(97 + i)} = {1000 + i * 37}" for i in range(12)]
+    facts = [f"cfg_{chr(97 + i)} = {1000 + i * 37}" for i in range(6)]
     for i, f in enumerate(facts):
         lines.insert(10 + i, f)
     r = cc.compress_context("\n".join(lines), "find cfg_a value", budget_ratio=0.3, **OPTS)
     kept = [f for f in facts if f in r.compressed_text]
-    # floor: <= 8 appended + whatever selection kept; every protected fact is kept or counted
+    # floor: protected facts are kept or counted; E4 sparsity caps the set at 8 so all fit
     assert len(kept) + r.fact_lines_dropped == len(facts)
     assert r.confidence <= 0.98 or r.fact_lines_dropped == 0
 
@@ -124,11 +127,13 @@ def test_floor_never_on_fail_open():
 
 
 def test_fact_lines_dropped_and_confidence_cap():
-    lines = [TICK for _ in range(400)]
-    facts = [f"cfg_{chr(97 + i)} = {1000 + i * 37}" for i in range(20)]
+    # 8 protected facts spread over separate blocks: selection keeps the matching one, the
+    # floor's 15%-of-budget cap cannot fit the long rest — the missing ones count as dropped.
+    other = "2026-03-14 12:00:00 DEBUG cache flush completed for shard"
+    parts, facts = [], [f"cfg_{chr(97 + i)} = {'v' * 150}{1000 + i * 37}" for i in range(8)]
     for i, f in enumerate(facts):
-        lines.insert(10 + i, f)
-    r = cc.compress_context("\n".join(lines), "find cfg_a value", budget_ratio=0.3, **OPTS)
+        parts += [TICK if i % 2 == 0 else other] * 60 + ["", f, ""]
+    r = cc.compress_context("\n".join(parts), "find cfg_a value", budget_ratio=0.2, **OPTS)
     assert r.fact_lines_dropped > 0
     assert r.confidence <= 0.98
     assert r.receipt["fact_lines_dropped"] == r.fact_lines_dropped
@@ -183,7 +188,9 @@ def test_selector_query_gates_the_destructive_prefilters(monkeypatch):
     assert calls and calls[0] == full
 
 
-def test_selector_query_reaches_csv_prefilter(monkeypatch):
+def test_selector_query_gates_but_full_query_selects(monkeypatch):
+    """E4 rule A: ``selector_query`` only GATES the destructive pre-filters — when it carries
+    distinctive terms they run on the FULL query, so a row matching a producing-call term is kept."""
     seen = []
     orig = cc.preprocess_csv
 
@@ -193,9 +200,40 @@ def test_selector_query_reaches_csv_prefilter(monkeypatch):
 
     monkeypatch.setattr(cc, "preprocess_csv", spy)
     text = "host,port,status\n" + "\n".join(f"host-{i:02d},8{i:02d}0,up" for i in range(20))
-    cc.compress_context(
-        text, "terminal\nquery_metrics host-07\nshow host-99", selector_query="show host-99", **OPTS)
-    assert seen and all(q == "show host-99" for q in seen)
+    full = "terminal\nquery_metrics host-07\nshow host-99"
+    res = cc.compress_context(text, full, selector_query="show host-99", **OPTS)
+    assert seen and all(q == full for q in seen)
+    assert "host-07" in res.compressed_text          # kept via the call's term
+    assert "host-03" not in res.compressed_text      # matches neither user nor call term
+
+
+def test_selector_query_gates_the_log_prefilter():
+    """A log collapse must keep an exemplar line that only matches a producing-call term."""
+    rows = [f"2026-03-14 12:00:{i:02d} INFO worker tick batch={i}" for i in range(40)]
+    rows[10] = "2026-03-14 12:00:10 INFO backup_sweeper finished run_id=acme_ingest ok"
+    text = "\n".join(rows)
+    full = "terminal\npuppet agent --environment acme_ingest\nwhat error ended the run"
+    with_sel = cc.compress_context(text, full, selector_query="what error ended the run", **OPTS)
+    assert "acme_ingest" in with_sel.compressed_text
+
+
+def test_fact_dense_text_is_not_protected():
+    """E4 rule B: more than 8 fact candidates (or facts on a tenth of the lines) means the text
+    is fact-dense — the S5 machinery stays off and the receipt says so."""
+    text = "\n".join(f"cfgkey_{k} = some_value" for k in "abcdefghij")
+    facts, dense = cc._fact_summary(text)
+    assert dense is True and facts == ()
+    res = cc.compress_context(text, "what happened", **OPTS)
+    assert res.receipt["fact_dense"] is True
+    assert res.fact_lines_dropped == 0
+
+
+def test_buried_fact_in_filler_is_protected():
+    text = "\n".join([TICK] * 20 + ["cfg_x = 9"])
+    facts, dense = cc._fact_summary(text)
+    assert dense is False and len(facts) == 1
+    res = cc.compress_context(text, "what happened", **OPTS)
+    assert res.receipt["fact_dense"] is False
 
 
 def test_selector_query_in_stable_key():

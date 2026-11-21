@@ -49,8 +49,10 @@ def test_two_repeats_have_no_last_line():
         "INFO conn 10.0.1.1 took 1ms",
     ])
     assert len(out) == 1 and out[0].startswith("[×2] ")
-    facts = preprocess_logs(_lines(2))
-    assert facts == _lines(2)
+    # E4: sparse only — two facts among 20 plain lines are protected (a 2-line fact text is dense).
+    padded = _lines(2) + [f"INFO conn 10.0.0.0 took {i}ms" for i in range(20)]
+    out = preprocess_logs(padded)
+    assert all(ln in out for ln in _lines(2))
 
 
 def test_idempotent():

@@ -26,13 +26,17 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   set, the identifier a question asks for — used to disappear three ways: selector pre-filters that keep only rows matching the query (often the tool call's own arguments),
   log-template collapse that kept a stale same-key line, and final selection. Fact-shaped lines (an assignment after an optional timestamp and comment marker; not an error
   line, not a table row; rare by line fingerprint; when a key repeats, the newest value wins) are now exempt from those destructive stages, the newest line of a collapsed
-  same-key group stays verbatim, and a small floor — at most 8 lines, at most 15% of the extract — carries them through selection whole. A new optional `selector_query`
-  argument lets a host pass the query minus the producing call's name and arguments (`tameru.transcript.build_selector_query` builds it): the destructive pre-filters then
-  match on the user's words instead of the tool's, while scoring, selection and confidence keep the full query. The result reports `fact_lines_dropped` — schema 3, in the
-  receipt too — and when it is positive confidence caps at 0.98, or at `max(0, 1 − 0.1 × dropped)` when the query has no distinctive selectors. On the round-2 engine
-  benchmark's development splits (dev + validation, replay-free development data, no model answers): fact-line gold kept among accepted calls rose from 82.7% to 93.0%;
-  on the round-1 development splits gold kept and saved ratio are unchanged within noise. Fact detection costs roughly one extra linear pass per call (about +10–50%
-  p50 on the quick latency classes, machine-dependent).
+  same-key group stays verbatim, and a small floor — at most 8 lines, at most 15% of the extract — carries them through selection whole. The machinery applies only to
+  sparse fact-shaped content — at most 8 candidates, on no more than a tenth of the lines — so a fact-dense dump such as a git log or a YAML config keeps the old behaviour
+  exactly and is marked `fact_dense` in the receipt instead. A new optional `selector_query` argument lets a host pass the query minus the producing call's name and
+  arguments (`tameru.transcript.build_selector_query` builds it): the destructive pre-filters then run only when the user's part names something distinctive, and when they
+  run they keep lines matching the full query — a line that matches only a call's term is kept. Scoring, selection and confidence always use the full query. The result
+  reports `fact_lines_dropped` — schema 3, in the receipt too — and when it is positive confidence caps at 0.98, or at `max(0, 1 − 0.1 × dropped)` when the query has no
+  distinctive selectors. On the round-2 engine benchmark's dev split (replay-free development data, no model answers): English fact-line gold kept among accepted calls
+  under transcript-built vague queries rose from 32–67% to 100%; the remaining losses are cells where a query names nothing distinctive enough to filter on. On the round-1
+  development splits gold kept and saved ratio are unchanged within noise. Fact detection costs roughly one extra linear pass per call (about +27% p50 mean on the quick
+  latency classes, machine-dependent). Engine tuning decisions now read only the r2 dev split; r2 validation is queried through the ledger-enforced thresholdout oracle,
+  and the two earlier full-validation reads (the 1.10.0 diagnosis, the first S5 evaluation) are disclosed in `docs/SETTINGS-TRIED-LEDGER.json`.
 - **A 2M-character numbered source with a task question took over nine minutes** (600K: 25 s); a quadratic YAML check is now linear (2M: about 1 s). Anchor probes are size-capped.
 - **One interface for every host.** `decide()` (one accept-or-decline function with closed reason codes and the Hermes and DeepSeek policies as data), versioned presets
   (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v2 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),
