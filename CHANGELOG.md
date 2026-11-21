@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Fix: dictionary-configured semantic tiers fall back to lexical extraction when optional dependencies or model initialization fail, just as scorer failures do; regression tests cover both construction failures.
 - Cleanup: share one compiled WARN/WARNING token pattern across evidence, weak-failure and isolated-warning detection without changing matching behavior.
 - Cleanup: remove unused gutter and summary-count helpers, an unused host-prefix constant and a redundant import; public package exports are unchanged.
 - **One interface for every plugin.** `docs/PLUGIN-UI.md` specifies the bar, the icon meanings, the Off / Less / Normal / More strength names and the words shared by the Hermes and DeepSeek Harness plugins; `docs/ui-vocabulary.json` (English and Chinese, with a forbidden-words list that keeps cost and saving wording out) and `docs/ui-icons.json` (the star, lock, undo and size-arrow drawings) are the data each plugin copies and tests against. Reviewed by five design specialists over four rounds. No file under `src/` changes.

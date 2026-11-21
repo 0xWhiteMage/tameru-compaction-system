@@ -80,5 +80,8 @@ def resolve_tier(tier: Any = None) -> Any:
     if tier is None:
         return _DisabledTier()
     if isinstance(tier, dict):
-        return SemanticTier(**tier)
+        try:
+            return SemanticTier(**tier)
+        except Exception:  # optional model initialization must fall back to lexical
+            return _DisabledTier()
     return tier
