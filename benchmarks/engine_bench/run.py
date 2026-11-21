@@ -33,6 +33,7 @@ from . import corpus, report  # noqa: E402
 
 PROFILES = ("deepseek", "hermes")
 CONDITIONS = ("task", "tool_call", "generic", "zh_user")
+CONDITIONS_R2 = ("task_specific", "task_vague", "build_specific", "build_vague", "tool_call", "generic", "zh_user")
 _MARKER_PREFIX = "⟪HERMES-CONTEXT-COMPRESSION:"
 _RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 HERMES_MAX_RISK = "high"
@@ -77,7 +78,7 @@ def measure(case: dict, profile: str, condition: str, split: str) -> dict:
     each_raw, each = _kept(gold, raw), _kept(gold, effective)
     fp_out = error_fingerprints(effective, status_rows=False)
     chars_in = len(text)
-    return {
+    row = {
         "bench": "engine", "engine": ENGINE_VERSION, "split": split, "case": case["id"], "source_case": case["source_case"],
         "content_type": case["content_type"], "shape": case["shape"], "language": case["language"],
         "profile": profile, "query_condition": condition,
@@ -92,6 +93,10 @@ def measure(case: dict, profile: str, condition: str, split: str) -> dict:
         "fingerprints_total": len(fp_in), "fingerprints_kept": len(fp_in.keys() & fp_out.keys()),
         "wall_ms": round(wall_ms, 3),
     }
+    if case.get("family") is not None:
+        row["family"] = case["family"]
+        row["item_kind"] = case["item_kind"]
+    return row
 
 
 def run(cases: list[dict], splits: dict[str, str], profiles=PROFILES, conditions=CONDITIONS) -> list[dict]:
@@ -113,8 +118,8 @@ def write_rows(rows: list[dict], path: Path) -> None:
     path.write_text("".join(dumps(r) + "\n" for r in rows), encoding="utf-8", newline="\n")
 
 
-def _log_sealed_look(candidate: str, command: str) -> None:
-    path = HERE / "sealed_looks.json"
+def _log_sealed_look(candidate: str, command: str, path: Path = None) -> None:
+    path = path or (HERE / "sealed_looks.json")
     looks = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
     looks.append({"date": datetime.date.today().isoformat(), "engine": ENGINE_VERSION, "candidate": candidate, "command": command})
     path.write_text(json.dumps(looks, indent=1) + "\n", encoding="utf-8")
@@ -122,6 +127,8 @@ def _log_sealed_look(candidate: str, command: str) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--round", dest="round_", type=int, choices=(1, 2), default=1,
+                    help="benchmark round; 2 = the new gen_cases_r2 corpus and its own sealed guard")
     ap.add_argument("--split", action="append", choices=["dev", "validation", "sealed"], help="repeatable; default dev + validation")
     ap.add_argument("--sealed", action="store_true", help="allow reading sealed texts (one look per host; logged)")
     ap.add_argument("--candidate", help="candidate name, required with --sealed")
@@ -135,14 +142,19 @@ def main(argv=None) -> int:
     if args.sealed and not args.candidate:
         print("--sealed requires --candidate NAME", file=sys.stderr)
         return 2
-    assignment = corpus.load_splits()
+    r2 = args.round_ == 2
+    assignment = corpus.r2_assignment() if r2 else corpus.load_splits()
     if args.sealed:
-        if corpus.sealed_digest([c for c in corpus._build_all() if assignment[c["id"]] == "sealed"]) != corpus.SEALED_HASH_FILE.read_text().split()[0]:
-            print("refusing: sealed cases no longer match SEALED.sha256", file=sys.stderr)
+        hash_file = corpus.SEALED_R2_HASH_FILE if r2 else corpus.SEALED_HASH_FILE
+        builder = corpus._build_r2 if r2 else corpus._build_all
+        if corpus.sealed_digest([c for c in builder() if assignment[c["id"]] == "sealed"]) != hash_file.read_text().split()[0]:
+            print("refusing: sealed cases no longer match " + hash_file.name, file=sys.stderr)
             return 2
-        _log_sealed_look(args.candidate, "python -m benchmarks.engine_bench.run " + " ".join(argv if argv is not None else sys.argv[1:]))
-    cases = corpus.load_cases(splits, sealed_ok=args.sealed)
-    rows = run(cases, assignment)
+        _log_sealed_look(args.candidate, "python -m benchmarks.engine_bench.run " + " ".join(argv if argv is not None else sys.argv[1:]),
+                         corpus.SEALED_LOOKS_R2_FILE if r2 else None)
+    loader = corpus.load_cases_r2 if r2 else corpus.load_cases
+    cases = loader(splits, sealed_ok=args.sealed)
+    rows = run(cases, assignment, conditions=CONDITIONS_R2 if r2 else CONDITIONS)
     if args.out:
         write_rows(rows, args.out)
     if not args.quiet:

@@ -227,11 +227,36 @@ def selfcheck(rows) -> bool:
     return ok
 
 
+def kind_table(rows) -> str:
+    """Round-2 summary: gold kept% / fail-open% / saved% by item_kind x profile x condition x language."""
+    kinds = sorted({r.get("item_kind") for r in rows if r.get("item_kind")})
+    if not kinds:
+        return "\n== item_kind table ==\n(no item_kind rows in this file)"
+    out = ["\n== item_kind x profile x condition x language: gold kept% | fo% | saved% =="]
+    for k in kinds:
+        out.append(f"{k}:")
+        for p in sorted({r["profile"] for r in rows}):
+            for c in sorted({r["query_condition"] for r in rows}):
+                for lang in ("en", "zh", "mixed"):
+                    g = [r for r in rows if r.get("item_kind") == k and r["profile"] == p
+                         and r["query_condition"] == c and r["language"] == lang]
+                    if not g:
+                        continue
+                    kept = [r for r in g if r["gold_kept"] is not None]
+                    out.append(f"  {p:<8} {c:<14} {lang:<5} n={len(g):>4} "
+                               f"gold={_fmt(100 * sum(r['gold_kept'] for r in kept) / len(kept), 1) if kept else '-':>5}% "
+                               f"fo={_fmt(100 * sum(r['fail_open'] for r in g) / len(g), 1):>5}% "
+                               f"saved={_fmt(sum(r['saved_pct'] for r in g) / len(g), 1):>5}%")
+    return "\n".join(out)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="*")
     ap.add_argument("--compare", nargs=2, metavar=("A", "B"))
     ap.add_argument("--selfcheck", metavar="FILE")
+    ap.add_argument("--round", dest="round_", type=int, choices=(1, 2), default=1,
+                    help="2 also prints the item_kind x condition x language baseline table")
     args = ap.parse_args(argv)
     if args.selfcheck:
         ok = selfcheck(load(args.selfcheck))
@@ -245,6 +270,8 @@ def main(argv=None) -> int:
         print(f"# {f}")
         print(headline(rows))
         print(callouts(rows))
+        if args.round_ == 2:
+            print(kind_table(rows))
     return 0
 
 

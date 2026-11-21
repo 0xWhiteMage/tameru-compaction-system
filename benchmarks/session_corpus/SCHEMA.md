@@ -83,7 +83,8 @@ replay per arm, not here. Position strata (early / middle / late) are `step / st
 ## Lengths and windows
 
 * Triggers (tokens, 4 chars per token): DeepSeek `floor(min(0.8W, W - 8000 - 65536))` (128K 54,464; 200K 126,464; 252K 178,464;
-  500K 400,000; 1M 800,000); Hermes `0.75W`. Planning trigger = the larger of the two.
+  500K 400,000; 1M 800,000); Hermes `0.75W` (planning value only: Hermes' real trigger is `0.75W` below 512K and `0.50W`
+  from 512K up, i.e. 500,000 tokens at 1M; `0.75W` here only sizes sessions). Planning trigger = the larger of the two.
 * Each scenario has a length factor `f` in [1.6, 2.1]; `steps(W)` = the fewest steps whose planned characters reach
   `f x 4 x planning trigger(W)`, so the unpruned total is >= 1.6x both hosts' triggers at every window. Sessions at different
   windows are prefixes of one step list (paired by step count). At 1M a session is about 200-300 steps and 5-7M characters.

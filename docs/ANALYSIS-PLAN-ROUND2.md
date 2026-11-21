@@ -156,3 +156,24 @@ Every cost figure is **replay-only** until live probes per profile land within �
 
 The power table above shows that at the round-2 pass levels (α_r) the facts check needs 147 to 174 scenarios and the extract-retention check 8(a) needs 227 to 269, so a holdout of exactly 120 cannot decide 8(a). The maintainer chose to build every holdout at **about 270 scenarios in at least 24 families** (≥40 clusters per split still applies). "At least 120" in the text above remains the floor, not the target. No margin, bar or gate changes.
 
+### 2026-11-21: one shared holdout for both default builds; the round-2 engine_bench split
+
+- **Shared host holdout.** The session corpus holds one sealed holdout (275 scenarios in 25 families;
+  `benchmarks/session_corpus/SEALED-HOLDOUT.sha256` `38e14391b6c7c2f4a46c201b62ca15e86f9e76b491333b07f0eb4572c2e36115`; no look taken).
+  The maintainer chose that both default builds share it, instead of one holdout each (section 1, item 2). It is opened once, for both
+  candidates together, after both are frozen; each candidate's plugin commit, engine release and settings are recorded in
+  `benchmarks/session_corpus/holdout_looks.json` before the look. Each host is judged on its own gates at its own α_r (section 6), with
+  Holm's correction across the two hosts' primary endpoints (section 1, item 4). A host that fails moves to its next round with a new
+  sealed holdout (section 6); the other host's result stands.
+- **Round-2 engine_bench split.** The engine is confirmed on a new sealed split, `benchmarks/engine_bench/SEALED-R2.sha256`
+  `ed64e3812599aed39649e621c2f1968d48e3763cc7416c8279d24079d1a3ab53`: 380 cases in 220 clusters from 20 families in no other split (no round-1 engine_bench shape and none of the session
+  corpus's families), 260 en / 80 zh / 40 mixed, 160 evidence / 160 s5_buried / 40 csv_args / 20 s5_superseded, dealt by seed
+  `r2-deal-2026-11-21-f1` (attempt 4). Equivalence (descriptors under
+  1.9.0 and 1.10.0 only): classifier AUC sealed vs dev 0.4858 (≤0.65), acceptance gap 5.57 points (≤10), the 1.10.0-minus-1.9.0
+  saved-ratio difference has the same sign on sealed as on dev. The S5 retention gate's specific and vague styles are measured
+  with the engine's `build_query` over the tool call and the user message, as both plugins call the engine (conditions
+  `build_specific` and `build_vague`); `task_specific`, `task_vague`, `tool_call`, `generic` and `zh_user` are reported.
+  Registered before any round-2 engine change. The round-1 sealed split
+  (one look, 99db5bd) is development material from now on.
+
+No margin, bar or gate changes.

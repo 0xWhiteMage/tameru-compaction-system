@@ -127,3 +127,66 @@ def load_cases(splits=("dev", "validation"), *, sealed_ok: bool = False) -> list
         raise SealedAccessError("the sealed split may only be read through run.py --sealed (one look per host)")
     assignment = load_splits()
     return [c for c in _build_all() if assignment[c["id"]] in splits]
+
+
+# ---------------------------------------------------------------- round 2
+SPLITS_R2_FILE = HERE / "splits_r2.json"
+SEALED_R2_HASH_FILE = HERE / "SEALED-R2.sha256"
+SEALED_LOOKS_R2_FILE = HERE / "sealed_looks_r2.json"
+
+
+def _build_r2() -> list[dict]:
+    """All round-2 generated cases (gen_cases_r2); the r2 split file maps family -> split."""
+    from .gen_cases_r2 import generated_cases_r2
+
+    cases = generated_cases_r2()
+    seen = set()
+    for c in cases:
+        assert c["id"] not in seen, c["id"]
+        seen.add(c["id"])
+        missing = [g for g in c["gold"] if g not in c["text"]]
+        assert not missing, (c["id"], missing)
+    return sorted(cases, key=lambda c: c["id"])
+
+
+def load_splits_r2() -> dict:
+    """The round-2 split document: {deal: {seed, attempt, rule}, families: {fid: split}, counts}."""
+    return json.loads(SPLITS_R2_FILE.read_text(encoding="utf-8"))
+
+
+def r2_assignment() -> dict[str, str]:
+    fams = load_splits_r2()["families"]
+    return {c["id"]: fams[c["family"]] for c in _build_r2()}
+
+
+def load_cases_r2(splits=("dev", "validation"), *, sealed_ok: bool = False) -> list[dict]:
+    """Round-2 cases of the requested splits.  Sealed r2 texts need ``sealed_ok=True``."""
+    splits = set(splits)
+    if "sealed" in splits and not sealed_ok:
+        raise SealedAccessError("the sealed r2 split may only be read through run.py --round 2 --sealed --candidate NAME")
+    assignment = r2_assignment()
+    return [c for c in _build_r2() if assignment[c["id"]] in splits]
+
+
+def main(argv=None) -> int:
+    import argparse
+    from collections import Counter
+
+    p = argparse.ArgumentParser(description="engine_bench corpus counts")
+    p.add_argument("--round", dest="round_", type=int, choices=(1, 2), default=1)
+    a = p.parse_args(argv)
+    cases = _build_all() if a.round_ == 1 else _build_r2()
+    print(f"round {a.round_}: {len(cases)} cases, {len({c['source_case'] for c in cases})} clusters, "
+          f"{dict(Counter(c['language'] for c in cases))}")
+    if a.round_ == 2:
+        print(f"families: {len({c['family'] for c in cases})}, "
+              f"kinds: {dict(Counter(c['item_kind'] for c in cases))}")
+        if SPLITS_R2_FILE.exists():
+            fams = load_splits_r2()["families"]
+            per = Counter(fams[c["family"]] for c in cases)
+            print(f"splits: {dict(per)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
