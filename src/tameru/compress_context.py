@@ -38,6 +38,8 @@ from .agent_formats import (
     is_kubectl_status_line,
     preprocess_test_output,
     rejects_table,
+    _env_is_sensitive,
+    _env_match,
 )
 from .contract_gates import (
     GENERIC_WORDS,
@@ -52,7 +54,7 @@ from .gap_kind import call_gap_marker, gap_accepts_kind
 from .markers import REDACTED_MARKER, marker_name as _marker_name
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
-from .supersession import apply_supersession
+from .supersession import apply_supersession, _supersedes
 from .unicode_profile import (
     script_of,
     search_units,
@@ -1219,10 +1221,13 @@ _FACT_FLOOR_RATIO = 0.15
 
 
 def _fact_parts(line: str) -> tuple[str, str] | None:
-    """``(key, value)`` when ``line`` is fact-shaped, else ``None``."""
-    if "=" not in line and ":" not in line and "->" not in line:
+    """``(key, value)`` when ``line`` is fact-shaped, else ``None``. Shape is judged on the
+    NFKC view (full-width ``：``/``＝`` count as ``:``/``=``); callers keep the raw line, so the
+    output bytes are never normalised."""
+    probe = line if line.isascii() else unicodedata.normalize("NFKC", line)
+    if "=" not in probe and ":" not in probe and "->" not in probe:
         return None
-    rest = line[_lead_ts_end(line):]
+    rest = probe[_lead_ts_end(probe):]
     m = _FACT_ASSIGN_RE.match(rest)
     if m is not None:
         key, value = m.group("key"), m.group("value")
@@ -1256,7 +1261,17 @@ def _protected_fact_lines(
             parts, is_err = eval_memo[ln]
         except KeyError:
             parts = _fact_parts(ln)
-            is_err = parts is not None and _is_error_line(ln)
+            # 1.10.0 (S5, E5): a secret-bearing line is never protected — a credentials strip is
+            # a safety deletion the floor/restore must not resurrect. Covers both env-keyed
+            # assignments (``DB_PASSWORD=…``) the env-dump reducer removes and secret-shaped
+            # values inside fact-shaped prose (``config note: key AKIA… stored``).
+            probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
+            em = _env_match(probe)
+            is_err = parts is not None and (
+                _is_error_line(ln)
+                or _secret_scan(probe)
+                or (em is not None and _env_is_sensitive(em.group(1), em.group(2)))
+            )
             eval_memo[ln] = (parts, is_err)
         if parts is None or is_err:
             continue
@@ -1330,6 +1345,26 @@ def _protected_facts(text: str) -> tuple[tuple[int, str, str, str], ...]:
     return _fact_summary(text)[0]
 
 
+def _fact_superseded_in(line: str, kept_lines: list[str]) -> bool:
+    """``True`` when a line surviving in the output explicitly marks ``line`` stale
+    (``supersession._supersedes``: an is-now/obsolete/override marker plus shared distinctive
+    terms). A supersession deletion is deliberate — the floor and stage restores never put
+    the stale line back, the same way they never put back a safety deletion."""
+    return any(o != line and _supersedes(o, line) for o in kept_lines)
+
+
+def _restore_facts(protected, after: str) -> str:
+    """Append whole protected fact lines a stage deleted from ``after`` (the same mechanism
+    ``_restore_fact_lines`` uses, taking the pre-computed protected set of the original text
+    instead of re-detecting on a stage input)."""
+    if not protected:
+        return after
+    kept = after.split("\n")
+    missing = [ln for _i, _k, _v, ln in protected
+               if ln != after and ln not in after and not _fact_superseded_in(ln, kept)]
+    return after if not missing else after + "\n" + "\n".join(missing)
+
+
 def _restore_fact_lines(before: str, after: str) -> str:
     """A destructive stage may not delete a protected fact line: any it lost goes back, verbatim.
     A fact line that IS the whole input (a single-line JSON payload) is not restored — putting it
@@ -1341,7 +1376,9 @@ def _restore_fact_lines(before: str, after: str) -> str:
     protected = _protected_facts(before)
     if not protected:
         return after
-    missing = [ln for _i, _k, _v, ln in protected if ln != before and ln not in after]
+    kept = after.split("\n")
+    missing = [ln for _i, _k, _v, ln in protected
+               if ln != before and ln not in after and not _fact_superseded_in(ln, kept)]
     return after if not missing else after + "\n" + "\n".join(missing)
 
 
@@ -1349,8 +1386,13 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     """Floor in selection: protected fact lines the render left out are appended as whole original
     lines — at most ``_FACT_FLOOR_MAX_LINES`` lines and ``_FACT_FLOOR_RATIO`` of the extract's
     character budget (of the unprotected extract's length when there is no explicit budget).
-    Overflow prefers lines whose key or value occurs in ``query``, then the newest."""
-    missing = [f for f in facts if f[3] not in compressed]
+    Overflow prefers lines whose key or value occurs in ``query``, then the newest.
+    1.10.0 (S5, E5): the highest-priority missing line is kept even when it exceeds the character
+    cap — a floor that can fit nothing on a near-empty extract protects nothing; the line and
+    character caps still govern every further line."""
+    kept = compressed.split("\n")
+    missing = [f for f in facts
+               if f[3] not in compressed and not _fact_superseded_in(f[3], kept)]
     if not missing:
         return compressed
     cap = int(_FACT_FLOOR_RATIO * (budget_chars or len(compressed)))
@@ -1363,7 +1405,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     chosen, used = [], 0
     for f in sorted(missing, key=_rank, reverse=True):
         ln = f[3]
-        if len(chosen) >= _FACT_FLOOR_MAX_LINES or used + len(ln) + 1 > cap:
+        if chosen and (len(chosen) >= _FACT_FLOOR_MAX_LINES or used + len(ln) + 1 > cap):
             continue
         chosen.append(f)
         used += len(ln) + 1
@@ -9156,6 +9198,14 @@ def _compress_context_impl(
                 gap_marker, omitted, len(caller_text), kind))
         )
     )
+    original_text = _norm_newlines(caller_text)
+    # 1.10.0 (S5, E5): the protected fact lines and the density flag are computed on the caller's
+    # original text — the unwrapped payload when the caller wrapped it — BEFORE the industrial and
+    # format adapters below may delete a line, so protection knows every fact before any stage can
+    # drop one. Density (sparsity rule B) is decided once here; ``_FACT_OFF`` keeps the machinery
+    # off through every later stage on a dense original.
+    fact_lines, fact_dense = _fact_summary(unwrap_tool_payload(original_text).inner)
+    _FACT_OFF.set(fact_dense)
     industrial, degraded, payload_industrial = _industrial_preflight(
         adapter_gap=adapter_gap, caller_text=caller_text, degraded=degraded,
         degraded_view=degraded_view, industrial_query=industrial_query, limits=limits,
@@ -9172,7 +9222,6 @@ def _compress_context_impl(
         form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
         for form in (ln, strip_ansi(ln))
     ))
-    original_text = _norm_newlines(caller_text)
     industrial_text = industrial.text if industrial.applied else caller_text
     text = strip_ansi(_norm_newlines(industrial_text))
     # v1.4.0 (G9): keep the wrapper's scalar metadata (exit_code, error,
@@ -9196,12 +9245,9 @@ def _compress_context_impl(
         route_hint = "numbered_code"
         code_hint = True
         no_table = True
-    # 1.10.0 (S5): the protected fact lines of the working text, computed once before any stage
-    # may delete them — exemptions inside the destructive stages plus the selection floor below.
-    # E4: density is decided on THIS text only; ``_FACT_OFF`` keeps the machinery off in every
-    # later stage even when an intermediate slice of a dense original would look sparse.
-    fact_lines, fact_dense = _fact_summary(text)
-    _FACT_OFF.set(fact_dense)
+    # 1.10.0 (S5, E5): the industrial and payload adapters above ran before detection could see
+    # the original — any protected fact line they deleted goes back now, verbatim.
+    text = _restore_facts(fact_lines, text)
     # v1.4.0 (E5): diff and grep/rg output get their own adapters (whole hunks,
     # grouped matches) ahead of generic segmentation. The adapter's output is
     # the selection: scoring below must not undo it (see `adapter_info`).
@@ -9210,6 +9256,13 @@ def _compress_context_impl(
         industrial=industrial, payload_industrial=payload_industrial, query=gated_query,
         route_hint=route_hint, text=text,
     )
+    # 1.10.0 (S5, E5): the format-adapter path is also a destructive stage — a protected fact
+    # line it cut goes back here too, so it can reach selection and the floor. When a record
+    # adapter (diff hunks, grep groups, whole YAML documents, report formats) claimed the text
+    # its whole-record cut stands: splicing a single fact line back would corrupt the records,
+    # so only the still line-structured outcomes get the line-level restore.
+    if adapter_info is None or adapter_info.get("name") == "test_output":
+        text = _restore_facts(fact_lines, text)
     if not text.strip():
         return CompressResult(
             compressed_text="", policy_name="noop", mode=requested_mode

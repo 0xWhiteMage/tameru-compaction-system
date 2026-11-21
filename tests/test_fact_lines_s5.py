@@ -243,3 +243,50 @@ def test_selector_query_in_stable_key():
     assert plain.stable_key != with_sel.stable_key
     again = cc.compress_context(text, "what happened", selector_query="continue", **OPTS)
     assert again.stable_key == with_sel.stable_key
+
+
+# ----------------------------------------------------------------------------- E5
+
+
+@pytest.mark.parametrize("line", [
+    "超时阈值：30",          # full-width colon
+    "重试次数＝5",           # full-width equals
+    "配置项 缓存有效期：2338",
+    "# 最大深度＝12",        # comment marker + full-width equals
+])
+def test_fact_parts_full_width_punctuation(line):
+    """E5: shape is judged on the NFKC view — full-width ``：``/``＝`` count — while the
+    protected line itself keeps its raw bytes."""
+    key, value = cc._fact_parts(line)
+    assert key and value
+    assert _protected([TICK] * 12 + [line]) == [line]
+
+
+def test_industrial_adapter_cannot_delete_a_fact():
+    """E5: the industrial adapter's record selection runs before the fact summary could see
+    the working text — the protected fact line of the original is restored verbatim."""
+    rows = ["\t    acme-ingest-%02d  在线         0     0     0" % i for i in range(30)]
+    filler = ["worker node %02d heartbeat tick nominal" % i for i in range(60)]
+    text = "\n".join(
+        ["  pool: acme-relay", " state: ONLINE", "scan: scrub repaired 0B", "config:"]
+        + filler[:20] + rows + filler[20:] + ["重试次数 = 2545"]
+    )
+    query = "terminal\nzpool status acme-ingest\n看一下这个输出有没有问题"
+    ind = cc.industrial_preprocess(text, query)
+    assert ind.applied and "重试次数 = 2545" not in ind.text  # the stage does delete it
+    res = cc.compress_context(
+        text, query, selector_query="看一下这个输出有没有问题", **OPTS
+    )
+    assert res.receipt["fact_dense"] is False
+    assert "重试次数 = 2545" in res.compressed_text
+    assert res.fact_lines_dropped == 0
+
+
+def test_floor_minimum_keeps_top_priority_past_cap():
+    """E5: on a near-empty extract the highest-priority missing fact is kept even when it
+    exceeds the 15% character cap; the caps still govern every further line."""
+    facts = [(0, "cfg_x", "9", "cfg_x = 9"), (5, "cfg_y", "7", "cfg_y = 7")]
+    out = cc._apply_fact_floor(compressed="x" * 40, facts=facts, query="", budget_chars=None)
+    assert "cfg_y = 7" in out          # newest wins the guaranteed slot
+    assert "cfg_x = 9" not in out      # the cap still governs the rest
+    assert cc._apply_fact_floor(compressed="x" * 40, facts=[], query="", budget_chars=None) == "x" * 40
