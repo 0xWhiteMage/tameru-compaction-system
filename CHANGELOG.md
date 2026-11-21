@@ -45,7 +45,7 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   reads (the 1.10.0 diagnosis, the first S5 evaluation) are disclosed in `docs/SETTINGS-TRIED-LEDGER.json`.
 - **A 2M-character numbered source with a task question took over nine minutes** (600K: 25 s); a quadratic YAML check is now linear (2M: about 1 s). Anchor probes are size-capped.
 - **One interface for every host.** `decide()` (one accept-or-decline function with closed reason codes and the Hermes and DeepSeek policies as data), versioned presets
-  (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v2 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),
+  (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v3 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),
   a shared `build_query`, query pruning to the terms the source contains, and the result schema fields (`confidence_basis`, `stable_key`, `dropped`, `result_schema`, `preset`; schema 3 adds `fact_lines_dropped`, above).
   `dropped` names what an extract left out (category, line count, first locator) so a host can say what to re-read.
   `pin_patterns` validation also refuses polynomial and exponential shapes (`a*a*a*b`, `.*x.*y`: any unbounded quantifier, more than four optional ones, more than six alternations; literal pins are unaffected); pin matching itself still scans the full block, as in 1.9.0.
@@ -58,6 +58,9 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   never a partial replacement, never a touch on a non-cut item), and allocates a compact host's retained budget by
   fact rows first, then EV per retained character, then recency; `superseded` commits only when the successor covers
   the item's facts. The planner is deterministic, O(n log n), and holds no host constants — trigger formulas, stock
+  actions and candidates arrive as inputs. Worker protocol v3 carries it additively: `selector_query` on `compress`
+  requests (and the `derive_selector_query` flag a worker resolves from its query parts) plus a `plan` request
+  (closed `PlanInput` body, capped at 2,000 items, `plan_to_dict` reply); a v2 client works unchanged.
   behaviour and candidates all arrive as inputs. `tameru/loss_profiles.json` + `tameru/loss.py` hold dated, sourced
   loss profiles (default `replay-2026-11-21`; `p_needed` 0.25 flagged as an unverified assumption until S3/P4 measures
   it, `p_recovered` 0.90 from the Hermes P2c replay, recovery 200 output tokens, `lambda_base` 100 in item-token units,

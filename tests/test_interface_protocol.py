@@ -51,7 +51,9 @@ def test_v2_fields_and_closed_enums():
     assert code({"text": "t", "preset": "other@9"}) == "bad_preset"
     assert code({"text": "t", "content_hint": "yaml"}) == "bad_content_hint"
     assert code({"text": "t", "strategy": "summarise"}) == "bad_strategy"
-    assert code({"text": "t", "protocol": 3}) == "bad_protocol"
+    assert code({"text": "t", "protocol": 4}) == "bad_protocol"
+    assert code({"text": "t", "protocol": 2, "selector_query": "q"}) == "field_needs_protocol_3"
+    assert code({"text": "t", "protocol": 1, "derive_selector_query": True}) == "field_needs_protocol_3"
     assert code({"text": "t", "protocol": 1, "preset": "tool-result@1"}) == "field_needs_protocol_2"
     assert validate_request({"text": "t", "protocol": 1})["mode"] == "adaptive"
 
@@ -127,8 +129,12 @@ def test_errors_never_echo_request_text():
 
 def test_version_info_and_describe():
     info = protocol.version_info()
-    assert info == {"engine": ENGINE_VERSION, "protocol": 2, "result_schema": 3,
-                    "presets": ["dsh-tool-result@1", "tool-result@1"]}
+    assert info["engine"] == ENGINE_VERSION and info["protocol"] == 3 and info["result_schema"] == 3
+    assert info["presets"] == ["dsh-tool-result@1", "tool-result@1"]
+    assert info["capabilities"]["selector_query"] is True
+    assert info["capabilities"]["plan"]["max_items"] == protocol.MAX_PLAN_ITEMS
+    assert set(info["capabilities"]["plan"]["host_modes"]) == {"prune", "compact"}
+    assert info["capabilities"]["ev"]["strengths"] == ["less", "normal", "more"]
     json.dumps(info)
     res = compress_context("x\n" * 50, "x", ccr=False)
     assert protocol.describe(res, preset="p", decision=Decision(True, "ok")) == {
@@ -188,3 +194,168 @@ def test_a_literal_pin_deep_in_a_50k_block_is_still_found():
     text = "z" * 30_000 + "needle-42" + "z" * 20_000
     got = validate_request({"text": text, "query": "zzz", "pin_patterns": [{"literal": "needle-42"}, "needle-4"+"2"]})
     assert "needle-42" in compress_context(**got).compressed_text
+
+
+# ---------- protocol 3: selector_query and the plan request ----------
+
+from tameru.decide import EVPolicy, Policy
+from tameru.plan import Candidate, CacheState, PlanInput, PlanItem, plan
+
+
+def _plan_body(**overrides):
+    body = {
+        "op": "plan",
+        "protocol": 3,
+        "event": "trigger",
+        "host_mode": "prune",
+        "prompt_tokens": 100_000,
+        "trigger_tokens": 80_000,
+        "items": [
+            {"id": "a", "position": 0, "tokens": 5000, "chars": 20_000, "stock_action": "cut",
+             "stock_kept_chars": 200,
+             "candidate": {"compressed_chars": 150, "tokens_saved": 4000, "confidence": 0.95,
+                           "fail_open": False, "risk": "low", "fingerprints_ok": True}},
+            {"id": "b", "position": 1, "tokens": 3000, "chars": 12_000, "stock_action": "cut",
+             "stock_kept_chars": 200},
+            {"id": "c", "position": 2, "tokens": 1000, "chars": 4000, "stock_action": "keep"},
+        ],
+        "cache": {"warm": False, "n_eff": 10},
+        "policy": {"ev": {"price_profile": "deepseek-flash", "loss_profile": "replay-2026-11-21"}},
+        "steps_since_last_act": 5,
+    }
+    body.update(overrides)
+    return body
+
+
+def _plan_input(**overrides):
+    kwargs = {
+        "event": "trigger",
+        "host_mode": "prune",
+        "prompt_tokens": 100_000,
+        "trigger_tokens": 80_000,
+        "items": (
+            PlanItem(id="a", position=0, tokens=5000, chars=20_000, stock_action="cut",
+                     stock_kept_chars=200,
+                     candidate=Candidate(compressed_chars=150, tokens_saved=4000, confidence=0.95,
+                                         fail_open=False, risk="low", fingerprints_ok=True)),
+            PlanItem(id="b", position=1, tokens=3000, chars=12_000, stock_action="cut",
+                     stock_kept_chars=200),
+            PlanItem(id="c", position=2, tokens=1000, chars=4000, stock_action="keep"),
+        ),
+        "cache": CacheState(warm=False, n_eff=10.0),
+        "policy": Policy(ev=EVPolicy(price_profile="deepseek-flash", loss_profile="replay-2026-11-21")),
+        "steps_since_last_act": 5,
+    }
+    kwargs.update(overrides)
+    return PlanInput(**kwargs)
+
+
+def plan_code(request):
+    with pytest.raises(ProtocolError) as err:
+        protocol.validate_plan_request(request)
+    return err.value.code
+
+
+def test_v2_compress_requests_validate_identically_to_before():
+    request = {"text": "t", "query": "q", "protocol": 2, "preset": "dsh-tool-result@1",
+               "anchor_errors": True, "budget_ratio": 0.5}
+    got = validate_request(request)
+    assert got == {"context": "t", "query": "q", "strategy": "extract", "citations": False,
+                   "min_savings_ratio": 0.25, "anchor_errors": True, "mode": "adaptive",
+                   "budget_ratio": 0.5, "ccr": False}
+    assert "selector_query" not in got and "derive_selector_query" not in got
+
+
+def test_v3_selector_query_validates_and_passes_through():
+    got = validate_request({"text": "t", "query": "q", "selector_query": "sel", "protocol": 3})
+    assert got["selector_query"] == "sel"
+    got = validate_request({"text": "t", "selector_query": "s\ud800x", "protocol": 3})
+    assert got["selector_query"] == "s\ufffdx"
+
+
+def test_v3_selector_query_round_trip_equals_direct_call():
+    text = "metric,status\nweb-01,200\n" * 60 + "Error: db refused\n" + "web-02,200\n" * 20
+    via_protocol = compress_context(**validate_request(
+        {"text": text, "query": "what failed", "selector_query": "db refused", "protocol": 3}))
+    direct = compress_context(text, "what failed", selector_query="db refused", ccr=False)
+    assert via_protocol.compressed_text == direct.compressed_text
+    assert protocol.result_to_dict(via_protocol) == protocol.result_to_dict(direct)
+
+
+def test_derive_selector_query_flag_reaches_the_worker_for_parts_resolution():
+    got = validate_request({"text": "t", "derive_selector_query": True, "protocol": 3})
+    assert got.pop("derive_selector_query") is True        # the worker pops and resolves it
+    compress_context(**got)                                 # remaining kwargs are engine-legal
+
+
+def test_selector_query_rejections_are_type_only():
+    assert code({"text": "t", "selector_query": 7, "protocol": 3}) == "bad_selector_query"
+    assert code({"text": "t", "derive_selector_query": "yes", "protocol": 3}) == "bad_derive_selector_query"
+    assert code({"text": "t", "selector_query": "s", "derive_selector_query": True,
+                 "protocol": 3}) == "selector_and_derive"
+
+
+def test_plan_request_builds_the_same_planinput_and_plan_output():
+    got = protocol.validate_plan_request(_plan_body())
+    assert got == _plan_input()
+    assert protocol.plan_to_dict(plan(got)) == protocol.plan_to_dict(plan(_plan_input()))
+
+
+def test_plan_to_dict_shape():
+    reply = protocol.plan_to_dict(plan(_plan_input()))
+    assert set(reply) == {"event", "host_mode", "acted", "gate", "actions",
+                          "predicted_chars_after", "predicted_chars_stock", "predicted_V", "predicted_L"}
+    assert reply["acted"] is True and reply["gate"] == "acted"
+    assert [a["id"] for a in reply["actions"]] == ["a", "b", "c"]
+    assert set(reply["actions"][0]) == {"id", "event", "action", "reason", "p_hat", "V", "L"}
+    assert reply["actions"][0]["action"] == "extract" and reply["actions"][0]["V"] is not None
+    assert reply["actions"][1]["action"] == "stub"
+    json.dumps(reply)
+
+
+def test_plan_request_accepts_compact_mode_and_policy_fields():
+    body = _plan_body(host_mode="compact", retained_budget_chars=500)
+    body["policy"] = {"min_saved_ratio": 0.1, "max_risk": "medium", "require_fingerprints": True,
+                      "ev": {"price_profile": "deepseek-flash", "loss_profile": "replay-2026-11-21",
+                             "strength": "less", "quantile": 0.9}}
+    got = protocol.validate_plan_request(body)
+    assert got.host_mode == "compact" and got.retained_budget_chars == 500
+    assert got.policy.max_risk == "medium" and got.policy.ev.strength == "less"
+    assert got.policy.ev.quantile == 0.9 and got.policy.ev.calibrator is None
+
+
+def test_plan_request_rejections():
+    assert plan_code({"op": "plan"}) == "bad_event"
+    assert plan_code(_plan_body(event="daily")) == "bad_event"
+    assert plan_code(_plan_body(host_mode="rewrite")) == "bad_host_mode"
+    assert plan_code(_plan_body(protocol=2)) == "bad_protocol"
+    assert plan_code(_plan_body(protocol=3.5)) == "bad_protocol"
+    assert plan_code(_plan_body(prompt_tokens=-1)) == "bad_prompt_tokens"
+    assert plan_code(_plan_body(prompt_tokens=True)) == "bad_prompt_tokens"
+    assert plan_code(_plan_body(trigger_tokens="x")) == "bad_trigger_tokens"
+    assert plan_code(_plan_body(steps_since_last_act=-1)) == "bad_steps"
+    assert plan_code(_plan_body(K=-1)) == "bad_K"
+    assert plan_code(_plan_body(H=-1)) == "bad_H"
+    assert plan_code(_plan_body(steps_to_trigger=-2)) == "bad_steps"
+    assert plan_code(_plan_body(retained_budget_chars=-1)) == "bad_retained_budget"
+    assert plan_code(_plan_body(items="no")) == "bad_items"
+    assert plan_code(_plan_body(items=[{}] * 2001)) == "bad_items"
+    assert plan_code(_plan_body(cache={"warm": True})) == "bad_cache"
+    assert plan_code(_plan_body(cache={"warm": "y", "n_eff": 1})) == "bad_cache"
+    assert plan_code(_plan_body(cache={"warm": True, "n_eff": -1})) == "bad_cache"
+    assert plan_code(_plan_body(policy=None)) == "bad_policy"
+
+
+def test_plan_request_rejects_extra_and_nested_fields():
+    body = _plan_body(ccr=True)
+    assert plan_code(body) == "unknown_field"
+    body = _plan_body()
+    body["items"][0]["evil"] = 1
+    assert plan_code(body) == "bad_item"
+    body = _plan_body()
+    body["items"][0]["candidate"]["evil"] = 1
+    assert plan_code(body) == "bad_candidate"
+    body = _plan_body()
+    body["policy"]["log_dir"] = "/x"
+    assert plan_code(body) == "bad_policy"
+    body = _plan_body()

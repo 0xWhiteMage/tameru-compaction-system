@@ -121,8 +121,10 @@ changes what `compress_context` returns for an existing call (`tests/golden/comp
   EV numbers plus totals.
 - `presets.json` + `presets.py`: `tool-result@1` and `dsh-tool-result@1` are the exact option sets the two plugins pass today;
   `resolve_preset(name, overrides)` returns explicit keyword arguments. The file is plain data, read with `pathlib`.
-- `protocol.py`: `PROTOCOL_VERSION = 2`, the worker request fields with types, ranges and closed enums, `pin_patterns` limits and a
-  conservative backtracking check, `validate_request`, `result_to_dict`, `version_info`. Errors are fixed codes and never echo request text.
+- `protocol.py`: `PROTOCOL_VERSION = 3`, the worker request fields with types, ranges and closed enums, `pin_patterns` limits and a
+  conservative backtracking check, `validate_request`, `result_to_dict`, `version_info`. v3 adds `selector_query` and
+  `derive_selector_query` on `compress` plus the `plan` request (`validate_plan_request` → `PlanInput`, `plan_to_dict`
+  → reply); earlier clients validate unchanged. Errors are fixed codes and never echo request text.
 - `compress_context(redact_secrets=True)` replaces the engine's own credential patterns in the output with `[tameru:redacted]`
   (opt-in; a fail-open returns the original unredacted). A `gap_marker` that declares a parameter named `kind` is told what the
   dropped span is (`markers.GAP_KINDS`); 2-argument markers are called as before (`gap_kind.py`).
