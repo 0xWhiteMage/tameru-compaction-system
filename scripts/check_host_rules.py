@@ -50,8 +50,6 @@ HOME_CALLS = {"Path.home", "pathlib.Path.home", "os.path.expanduser", "os.path.e
 CREDENTIAL_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)", re.IGNORECASE)
 # environment variables the engine may read, and why (the summary route is opt-in and a host never enables it)
 ALLOWED_ENV = {"TAMERU_SUMMARY_ENDPOINT", "TAMERU_SUMMARY_ALLOW_REMOTE", "TAMERU_SUMMARY_MODELS", "TAMERU_SUMMARY_TIMEOUT"}
-# names a host's own code might be imported as: an engine that imports any of these is no longer harness-agnostic
-HOST_PREFIXES = ("hermes", "agent", "run_agent", "plugins", "dsh", "deepseek", "openai_agents", "langchain", "autogen", "crewai")
 BINARY_SUFFIXES = {".pyc", ".pyo", ".so", ".pyd", ".dll", ".dylib", ".exe", ".wasm", ".a", ".o", ".zip", ".whl", ".egg", ".jar", ".7z", ".rar"}
 ARCHIVE_SUFFIXES = (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
 MAGIC = (b"\x7fELF", b"MZ", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\x00asm")
