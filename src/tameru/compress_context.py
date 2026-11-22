@@ -7075,19 +7075,15 @@ def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
     if not matches:
         return _state_summary_lines(lines, max_regions)
 
-    fp_counts: dict[str, int] = {}
+    chosen = matches[:max_regions]
+    fp_counts = dict.fromkeys((_error_fp(line.strip()) for line in chosen), 0)
     for line in lines:
         fp = _error_fp(line.strip())
-        fp_counts[fp] = fp_counts.get(fp, 0) + 1
-
-    out: list[str] = []
-    for line in matches:
-        if fp_counts.get(_error_fp(line.strip()), 0) != 1:
-            return _state_summary_lines(lines, max_regions)
-        out.append(line)
-        if len(out) >= max_regions:
-            break
-    return out
+        if fp in fp_counts:
+            if fp_counts[fp]:
+                return _state_summary_lines(lines, max_regions)
+            fp_counts[fp] += 1
+    return chosen
 
 
 def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
