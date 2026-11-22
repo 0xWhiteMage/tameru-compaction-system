@@ -25,7 +25,7 @@ from .regex_cache import cached_compile
 from .coverage_reports import select_lcov
 from .junit_reports import select_junit
 from .structured_reports import select_report
-from .unicode_profile import graphemes, matching_shadow, search_units
+from .unicode_profile import _sample_nonblank_lines, graphemes, matching_shadow, search_units
 
 
 @dataclass(frozen=True)
@@ -195,7 +195,7 @@ def _with_gaps(
 
 
 def _looks_ndjson(text: str) -> bool:
-    lines = [line for line in text.splitlines() if line.strip()]
+    lines = _sample_nonblank_lines(text, 32)
     if len(lines) < 2:
         return False
     candidates = sum(line.lstrip().startswith(("{", "[")) for line in lines[:32])

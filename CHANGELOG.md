@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Refactor: bounded OCR/NDJSON line samples preserve Unicode splitlines behavior without collecting unused lines; OCR length checks stop after three graphemes, and complete profiles reuse their safety counts while truncated profiles still scan the full input.
+
 - Refactor: JSON briefs avoid unused prefix sums, repeated key-manifest serialization and discovery, identity list copies and duplicate minimum-size probes while preserving output.
 
 - **One interface for every plugin.** `docs/PLUGIN-UI.md` specifies the bar, the icon meanings, the Off / Less / Normal / More strength names and the words shared by the Hermes and DeepSeek Harness plugins; `docs/ui-vocabulary.json` (English and Chinese, with a forbidden-words list that keeps cost and saving wording out) and `docs/ui-icons.json` (the star, lock, undo and size-arrow drawings) are the data each plugin copies and tests against. Reviewed by five design specialists over four rounds. No file under `src/` changes.
