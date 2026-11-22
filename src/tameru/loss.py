@@ -49,7 +49,7 @@ class LossProfile:
 
 def _number(name: str, field_name: str, raw: dict[str, Any]) -> tuple[float, str, bool]:
     entry = raw.get(field_name)
-    if not isinstance(entry, dict) or not isinstance(entry.get("value"), (int, float)):
+    if not isinstance(entry, dict) or type(entry.get("value")) not in (int, float):
         raise ValueError(f"loss profile {name}: {field_name} needs a numeric value")
     try:
         value = float(entry["value"])

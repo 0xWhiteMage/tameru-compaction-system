@@ -59,6 +59,11 @@ def test_loss_rejects_nonfinite_values(value):
         loss._number("test", "lambda_base", {"lambda_base": {"value": value}})
 
 
+def test_loss_rejects_boolean_numbers():
+    with pytest.raises(ValueError):
+        loss._number("test", "p_needed", {"p_needed": {"value": True}})
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
