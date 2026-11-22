@@ -1408,13 +1408,13 @@ def _fact_lines_uncached(lines: list[str]) -> tuple[tuple[tuple[int, str, str, s
     return (() if dense else tuple(facts)), dense
 
 
-def _fact_lines_key(lines: list[str]) -> str:
-    """``content_key`` over pre-split lines (S7): digested in 4096-line slices — C-speed joins,
-    no full-size copy — where the old text memo's ``"\\n".join(lines)`` was a second 2 MiB copy
-    at 1M. ``\\n`` never occurs inside a line and each slice is length-prefixed, so the digest
-    is unambiguous."""
+def _lines_digest_key(lines: list[str], name: str) -> str:
+    """``content_key``-style digest over pre-split lines under analysis ``name`` (S7):
+    digested in 4096-line slices — C-speed joins, no full-size copy — where a text-keyed
+    memo's ``"\\n".join(lines)`` was a second 2 MiB copy at 1M. ``\\n`` never occurs inside
+    a line and each slice is length-prefixed, so the digest is unambiguous."""
     digest = hashlib.sha256()
-    for part in (ENGINE_VERSION, "fact_summary"):
+    for part in (ENGINE_VERSION, name):
         digest.update(part.encode("utf-8", "surrogatepass"))
         digest.update(b"\x00")
     digest.update(len(lines).to_bytes(8, "little"))
@@ -1423,6 +1423,10 @@ def _fact_lines_key(lines: list[str]) -> str:
         digest.update(len(encoded).to_bytes(4, "little"))
         digest.update(encoded)
     return digest.hexdigest()[:32]
+
+
+def _fact_lines_key(lines: list[str]) -> str:
+    return _lines_digest_key(lines, "fact_summary")
 
 
 def _fact_summary_lines(lines: list[str]) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
@@ -1566,7 +1570,7 @@ _STREAM_BREAK_MIN_LINES = 30
 _STREAM_BREAK_MAX_RARE = 2
 
 
-def _stream_break_lines_scan(text: str) -> tuple[tuple[int, str, str, str], ...]:
+def _stream_break_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ...]:
     """Floor extras: the break lines of a largely-templated stream.
 
     A command dump is mostly repeats — same row shape, same heartbeat, same
@@ -1604,19 +1608,37 @@ def _stream_break_lines_scan(text: str) -> tuple[tuple[int, str, str, str], ...]
     ``_SECRETS_RE`` budget leaves no room for per-line regexes, and a literal
     without a regex match merely under-protects, never over-restores.
     """
-    lines = _norm_newlines(text).split("\n")
-    nb = [(i, ln) for i, ln in enumerate(lines) if ln.strip()]
-    if len(nb) < _STREAM_BREAK_MIN_LINES:
+    nb_count = sum(1 for ln in lines if ln.strip())
+    if nb_count < _STREAM_BREAK_MIN_LINES:
         return ()
+    nb_i: list[int] = []
     fps: list[str | None] = []
     counts: dict[str, int] = {}
-    for _i, ln in nb:
+    # ``cand_uniq`` tracks the running unique candidates — non-templated lines plus
+    # fingerprints seen exactly once so far. Each remaining line can move it by at
+    # most one, so once ``cand_uniq - remaining`` exceeds a tenth of the non-blank
+    # count the text provably fails the 90%-repeated test below and the scan exits
+    # before building full-size per-line tables on a heterogeneous stream.
+    cand_uniq = 0
+    for i, ln in enumerate(lines):
+        if not ln.strip():
+            continue
+        nb_i.append(i)
         fp = _log_fingerprint(ln)
         fps.append(fp)
-        if fp is not None:
-            counts[fp] = counts.get(fp, 0) + 1
+        if fp is None:
+            cand_uniq += 1
+        else:
+            c = counts.get(fp, 0)
+            counts[fp] = c + 1
+            if c == 0:
+                cand_uniq += 1
+            elif c == 1:
+                cand_uniq -= 1
+        if (cand_uniq - (nb_count - len(nb_i))) * 10 > nb_count:
+            return ()
     repeated = sum(1 for fp in fps if fp is not None and counts[fp] >= 2)
-    if repeated * 10 < len(nb) * 9:
+    if repeated * 10 < nb_count * 9:
         return ()
 
     def _worthy(ln: str) -> bool:
@@ -1637,7 +1659,8 @@ def _stream_break_lines_scan(text: str) -> tuple[tuple[int, str, str, str], ...]
         return em is None or not _env_is_sensitive(em.group(1), em.group(2))
 
     out: list[tuple[int, str, str, str]] = []
-    i_last, last = nb[-1]
+    i_last = nb_i[-1]
+    last = lines[i_last]
     fp_last = fps[-1]
     if (
         fp_last is not None
@@ -1646,8 +1669,8 @@ def _stream_break_lines_scan(text: str) -> tuple[tuple[int, str, str, str], ...]
     ):
         out.append((i_last, last, last, last))
     rare = [
-        (i, ln)
-        for (i, ln), fp in zip(nb, fps)
+        (i, lines[i])
+        for i, fp in zip(nb_i, fps)
         if fp is not None and counts[fp] == 1
     ]
     if 1 <= len(rare) <= _STREAM_BREAK_MAX_RARE:
@@ -1658,18 +1681,20 @@ def _stream_break_lines_scan(text: str) -> tuple[tuple[int, str, str, str], ...]
     return tuple(sorted(out))
 
 
-@content_memo("stream_break_lines", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
-def _stream_break_lines_cached(text: str) -> tuple[tuple[int, str, str, str], ...]:
-    return _stream_break_lines_scan(text)
-
-
-def _stream_break_lines(text: str) -> tuple[tuple[int, str, str, str], ...]:
-    """``_stream_break_lines_scan`` over the caller's original text (memoised; the scan
-    fingerprints every non-blank line, so texts over the memo cap skip the cache rather
-    than pay a second pass)."""
-    if type(text) is str and len(text) <= _MEMO_MAX_CHARS:
-        return _stream_break_lines_cached(text)
-    return _stream_break_lines_scan(text)
+def _stream_break_lines(lines: list[str], n_chars: int) -> tuple[tuple[int, str, str, str], ...]:
+    """``_stream_break_lines_scan`` over the caller's pre-split, newline-normalised
+    lines (memoised like ``_fact_summary_lines`` — the impl shares its
+    ``protected_source`` split with the fact pass rather than paying a second
+    line-objects copy at 1M). Texts over the memo cap skip the cache rather than
+    pay a second fingerprint pass on a repeat call."""
+    if n_chars <= _MEMO_MAX_CHARS:
+        key = _lines_digest_key(lines, "stream_break_lines")
+        hit = _CONTENT.get(key)
+        if hit is _MISS:
+            hit = _stream_break_lines_scan(lines)
+            _CONTENT.set(key, hit)
+        return hit
+    return _stream_break_lines_scan(lines)
 
 
 def structural_log_pass(lines: list[str]) -> list[str]:
@@ -9473,12 +9498,21 @@ def _compress_context_impl(
     # drop one. Density (sparsity rule B) is decided once here; ``_FACT_OFF`` keeps the machinery
     # off through every later stage on a dense original.
     protected_source = unwrap_tool_payload(original_text).inner
-    fact_lines, fact_dense = _fact_summary(protected_source)
+    # One split shared by both protection passes (S7): the fact memo and the break
+    # scan each used to split the same text — a second line-objects copy at 1M.
+    protected_lines = protected_source.split("\n")
+    n_protected_chars = len(protected_source)
+    fact_lines, fact_dense = (
+        _fact_summary_lines(protected_lines)
+        if n_protected_chars <= _MEMO_MAX_CHARS
+        else _fact_lines_uncached(protected_lines)
+    )
     _FACT_OFF.set(fact_dense)
     # Stream-break lines (a trailing status/footer of a templated dump, its one or two
     # anomalous rows) get the same selection-floor protection as S5 facts: they are not
     # fact-shaped, so the floor pool below merges them in explicitly.
-    break_lines = _stream_break_lines(protected_source)
+    break_lines = _stream_break_lines(protected_lines, n_protected_chars)
+    del protected_lines
     # 1.10.0 (S5, E6): protected error exemplars — first line per error fingerprint of the same
     # original text, before any destructive stage — are exempt from the selector pre-filters and
     # adapters below (independent of ``fact_dense``). Kept as a position-ordered tuple so the
