@@ -116,6 +116,11 @@ _GUTTER_PIPE_RE = re.compile(r"^\s*\d+\|")
 NUMBERED_RATIO = 0.60
 
 
+def strip_gutter(line: str) -> str:
+    """``line`` without its line-number gutter (unchanged when it has none)."""
+    return GUTTER_RE.sub("", line, count=1)
+
+
 def numbered_gutter_ratio(lines: list[str]) -> float:
     nonblank = [ln for ln in lines if ln.strip()]
     if not nonblank:

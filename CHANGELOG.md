@@ -8,11 +8,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.10.0] - Unreleased
 
-- Documentation: clarify that the core imports the lightweight semantic resolver, model dependencies load only during tier construction, and unavailable dependencies raise `SemanticUnavailable` for direct construction.
-- Fix: dictionary-configured semantic tiers fall back to lexical extraction when optional dependencies or model initialization fail, just as scorer failures do; regression tests cover both construction failures.
-- Cleanup: share one compiled WARN/WARNING token pattern across evidence, weak-failure and isolated-warning detection without changing matching behavior.
-- Cleanup: remove unused gutter and summary-count helpers, an unused host-prefix constant and a redundant import; public package exports are unchanged.
-
 Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
 release, paired, cluster bootstrap); none of it is a measurement against a real model's bill. Plan and rules: [`docs/ANALYSIS-PLAN-1.10.md`](docs/ANALYSIS-PLAN-1.10.md).
 
