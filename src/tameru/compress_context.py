@@ -4860,7 +4860,7 @@ _KEY_LINE_MAX = 12  # a key found on more lines than this names a topic, not a l
 def _verification_critical_lines(original: str, keys: list[str]) -> list[str]:
     """The lines whose loss the verifier counts (1.10.0): error lines, and the lines that hold a query key the
     source contains and that are rare (at most ``_KEY_LINE_MAX`` lines). A line with only a number or a
-    ``key: value`` in it is not critical. Trust-risk lines never count; repeats of one template count once."""
+    ``key: value`` in it is not critical. Trust-risk lines never count; identical stripped lines count once."""
     lines = original.split("\n")
     flines = [ln.lower() for ln in lines] if original.isascii() else [_match_fold(ln) for ln in lines]
     key_hits: set[int] = set()
