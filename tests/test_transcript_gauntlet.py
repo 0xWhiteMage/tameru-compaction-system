@@ -84,3 +84,17 @@ def test_explicit_preservation_request_bypasses_pruning(monkeypatch):
     ]
     out, count = t.apply_extractive_tool_prune(messages, protect_last_tool=0)
     assert out is messages and count == 0
+
+
+def test_pruning_only_copies_modified_message(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(t, "compress_context", lambda *a, **k: SimpleNamespace(
+        compressed_text="short", fail_open=False
+    ))
+    messages = [{"role": "user", "content": "task"},
+                {"role": "tool", "content": "payload " * 200}]
+    out, count = t.apply_extractive_tool_prune(messages, protect_last_tool=0)
+    assert count == 1 and out == [messages[0], {"role": "tool", "content": "short"}]
+    assert out[0] is messages[0] and out[1] is not messages[1]
+    assert messages[1]["content"] == "payload " * 200

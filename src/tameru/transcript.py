@@ -679,7 +679,7 @@ def apply_extractive_tool_prune(
         except Exception:  # Fail-open boundary: retain the original payload.
             continue
         if out is None:
-            out = [dict(m) for m in messages]
+            out = list(messages)
         out[i] = {**msg, "content": new}
         changed += 1
     return (out if out is not None else messages), changed
