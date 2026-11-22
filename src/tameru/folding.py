@@ -293,7 +293,7 @@ _UNSAFE_RAW_RE = re.compile(
 def _dumps(obj: Any) -> str:
     # allow_nan=False: NaN/Infinity are not valid JSON, and the brief must be.
     out = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
-    if out.isascii():
+    if out.isascii() and "\x7f" not in out:
         return out
     return _UNSAFE_RAW_RE.sub(_escape_char, out)
 
