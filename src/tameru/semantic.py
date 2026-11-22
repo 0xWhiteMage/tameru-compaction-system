@@ -49,7 +49,7 @@ class SemanticTier:
         return [v.tolist() for v in vecs]
 
     def similarity(self, query_vec: Sequence[float], vecs: Sequence[Sequence[float]]) -> list[float]:
-        return [sum(a * b for a, b in zip(query_vec, v)) for v in vecs]
+        return [sum(a * b for a, b in zip(query_vec, v, strict=True)) for v in vecs]
 
     def score_against_query(self, query: str, texts: Sequence[str]) -> tuple[list[float], list[float]]:
         """Returns (query_vector, per-text cosine similarities)."""
