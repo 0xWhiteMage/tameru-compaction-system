@@ -66,8 +66,11 @@ class Policy:
             raise ValueError("max_risk must be low, medium or high")
         for name in ("min_confidence", "min_saved_ratio"):
             value = getattr(self, name)
-            if value is not None and not 0.0 <= float(value) <= 1.0:
-                raise ValueError(f"{name} must be within 0..1")
+            if value is not None:
+                value = float(value)
+                if not 0.0 <= value <= 1.0:
+                    raise ValueError(f"{name} must be within 0..1")
+                object.__setattr__(self, name, value)
         if self.min_tokens_saved is not None and int(self.min_tokens_saved) < 0:
             raise ValueError("min_tokens_saved must be >= 0")
         if self.ev is not None and not isinstance(self.ev, EVPolicy):

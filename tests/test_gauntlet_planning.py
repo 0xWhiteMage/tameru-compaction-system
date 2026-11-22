@@ -35,6 +35,12 @@ def test_ev_overflow_declines():
                     suffix_tokens=0, item_tokens=1000) is None
 
 
+def test_policy_normalizes_numeric_thresholds():
+    policy = Policy(min_confidence="0.7", min_saved_ratio="0.1")
+    assert decide(result(), policy).accept
+    assert policy.min_confidence == 0.7 and policy.min_saved_ratio == 0.1
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
