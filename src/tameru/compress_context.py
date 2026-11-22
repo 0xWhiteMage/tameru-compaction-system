@@ -4768,9 +4768,6 @@ def _entity_recall(original: str, compressed: str, query: str) -> float:
     return hit / len(keys)
 
 
-# Substring-scan work allowed per verification (characters examined).
-_RECALL_SCAN_BUDGET_CHARS = 40_000_000
-
 _CRITICAL_ERROR_RE = re.compile(
     r"\b(?:error|exception|traceback|fail|fatal|timeout|denied|invalid)\b", re.IGNORECASE
 )
@@ -4837,12 +4834,7 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
     # the per-line loop was O(lines x output) — 30 s of a 35 s run on a 650 KB
     # log (and ~10x worse again when the output holds a non-ASCII "[…]").
     compressed_lower = compressed.lower()
-    # Whole-line fast path: the engine emits original lines (optionally with a
-    # "[×N] " collapse prefix), so nearly every kept critical line is a line of
-    # the output and a set lookup answers it. Only lines the sets cannot place
-    # fall back to the substring scan, under a work budget so the scan stays
-    # linear on big outputs; with small outputs the budget never binds and the
-    # result is exactly "core is a substring of the compressed text".
+    # Collapse prefixes do not change a line's facts.
     out_lines: set[str] = set()
     for out_line in compressed_lower.split("\n"):
         out_line = out_line.strip()
@@ -4850,15 +4842,10 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
         bare = _COUNT_PREFIX_RE.sub("", out_line, count=1)
         if bare is not out_line:
             out_lines.add(bare)
-    scan_budget = _RECALL_SCAN_BUDGET_CHARS
     for line in critical:
         core = line.strip().lower()
         if core in out_lines:
             kept += 1
-        elif scan_budget > 0:
-            scan_budget -= len(compressed_lower)
-            if core in compressed_lower:
-                kept += 1
     return kept
 
 
