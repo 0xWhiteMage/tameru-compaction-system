@@ -7425,7 +7425,7 @@ def _resolve_objective(
                     if 1 <= len(hit_idx) <= rare_hit_limit:
                         for k in hit_idx:
                             line = originals[k]
-                            if line not in seen_rare_lines:
+                            if line not in seen_rare_lines and not _is_trust_risk_line(line):
                                 seen_rare_lines.add(line)
                                 rare_hits.append(line)
                 if rare_hits and len(rare_hits) <= _ANCHOR_MAX_LINES:
