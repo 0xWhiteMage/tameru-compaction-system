@@ -4660,7 +4660,7 @@ def _evidence_blob(text: str) -> str:
 
 def _key_in_blob(key: str, blob: str) -> bool:
     folded = _match_fold(key)
-    if folded.isalpha() and not _is_syllabic_ord(ord(folded[0])):
+    if folded.isalpha():
         return _compiled_term_pattern(r"(?<!\w)" + re.escape(folded) + r"(?!\w)").search(blob) is not None
     return folded in blob
 
