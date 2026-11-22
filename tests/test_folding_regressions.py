@@ -36,3 +36,11 @@ def test_carriage_returns_in_json_are_whitespace_not_redraws():
     assert stats["json_minified"]
     assert stats["cr_redraws"] == 0
     assert stats["saved_chars"] == len(raw) - len(out)
+
+
+def test_nested_ansi_past_pass_cap_preserves_original_text_and_stats():
+    nested = "\x1b[3" * 6 + "\x1b[0m" + "1m" * 6
+    raw = "old\rnew  \n" + nested + "visible"
+    out, stats = fold_lossless(raw)
+    assert out == raw
+    assert not any(stats.values())

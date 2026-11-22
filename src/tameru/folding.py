@@ -42,14 +42,13 @@ _ANSI_PASSES = 4
 _RUN_MARKER_RE = re.compile(r"\[×\d+ identical lines\]")
 
 
-def _strip_ansi_line(ln: str) -> tuple[str, int]:
+def _strip_ansi_line(ln: str) -> tuple[str, int] | None:
     """Strip ANSI sequences to a fixed point (idempotence).
 
     Removing one escape can splice the halves of another into a new one
     (``ESC[3 ESC[0m 1m`` -> ``ESC[31m``), so a single pass is not idempotent.
-    Passes are capped (adversarial nesting would be quadratic); if the cap is
-    hit, the remaining stray ESC bytes are dropped, which cannot create a new
-    sequence since every sequence starts with ESC.
+    Passes are capped (nested escapes could make work quadratic). Return None
+    if there are still sequences we have not classified.
     """
     total = 0
     for _ in range(_ANSI_PASSES):
@@ -58,11 +57,11 @@ def _strip_ansi_line(ln: str) -> tuple[str, int]:
         if not k:
             return ln, total
     if _ANSI_RE.search(ln):
-        ln = ln.replace("\x1b", "")
+        return None
     return ln, total
 
 
-def _fold_text_steps(text: str, stats: dict) -> list[str]:
+def _fold_text_steps(text: str, stats: dict) -> list[str] | None:
     """CR redraws, ANSI, trailing whitespace -> list of lines."""
     lines = text.split("\n")
     cr = 0
@@ -76,21 +75,22 @@ def _fold_text_steps(text: str, stats: dict) -> list[str]:
                 body = body.rsplit("\r", 1)[1]
                 cr += 1
             lines[i] = body
-    stats["cr_redraws"] = cr
+    ansi = 0
     if "\x1b" in text:
-        ansi = 0
         for i, ln in enumerate(lines):
             if "\x1b" in ln:
-                lines[i], k = _strip_ansi_line(ln)
+                stripped_ansi = _strip_ansi_line(ln)
+                if stripped_ansi is None:
+                    return None
+                lines[i], k = stripped_ansi
                 ansi += k
-        stats["ansi"] = ansi
     ws = 0
     for i, ln in enumerate(lines):
         stripped = ln.rstrip()
         if stripped != ln:
             lines[i] = stripped
             ws += 1
-    stats["trailing_ws"] = ws
+    stats.update(cr_redraws=cr, ansi=ansi, trailing_ws=ws)
     return lines
 
 
@@ -189,6 +189,8 @@ def fold_lossless(text: str) -> tuple[str, dict]:
             stats["saved_chars"] = len(text) - len(mini)
             return mini, stats
     lines = _fold_text_steps(text, stats)
+    if lines is None:
+        return text, stats
     folded = "\n".join(lines)
     mini = _json_minified(folded)
     if mini is not None:
