@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
-from ._fingerprint_patterns import _DIGITS_RE, _HEXRUN_RE, _UUID_RE
+from ._fingerprint_patterns import _DIGITS_RE
 from .agent_formats import (
     GUTTER_RE as _AGENT_GUTTER_RE,
     apply_agent_adapters,

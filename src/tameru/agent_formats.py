@@ -3748,8 +3748,6 @@ def _is_k8s_header(stripped: str) -> bool:
 
 
 def _classify_kubectl(lines):
-    import re
-
     keep = [False] * len(lines)
     tests = [0] * len(lines)
     suites = [0] * len(lines)
