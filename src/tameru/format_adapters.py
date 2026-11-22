@@ -723,14 +723,11 @@ _YAML_EMPTY_START_RE = re.compile(r"^---(?:[ \t]+(?:#.*)?)?$")
 _YAML_BLOCK_SCALAR_RE = re.compile(
     r"(?m)(?:^[ \t]*|[:?\-][ \t]+)[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#[^\n]*)?[ \t\r]*$"
 )
-_YAML_MAPPING_COMMENT_RE = re.compile(r":[ \t]+#")
+_YAML_MAPPING_COMMENT_RE = re.compile(r"""^[ ]*(?:-[ \t]+)?[^ \t#:'"\[\]{}][^:#'"\[\]{}]*:[ \t]+#""")
 
 
 def _ends_yaml_mapping_key(line: str) -> bool:
-    if line.rstrip().endswith(":"):
-        return True
-    comment = _YAML_MAPPING_COMMENT_RE.search(line)
-    return comment is not None and not line.lstrip().startswith("#")
+    return line.rstrip().endswith(":") or bool(_YAML_MAPPING_COMMENT_RE.match(line))
 
 
 def _adapt_yaml_documents(

@@ -93,3 +93,12 @@ def test_format_gauntlet_csv_declines_on_outlier_overflow():
     result = adapters.adapt_format(source, "", format_name="csv")
     assert not result.applied
     assert result.text == source
+
+
+def test_format_gauntlet_yaml_ignores_comment_text_inside_quoted_value():
+    unrelated = 'unrelated: "example: # not a comment"'
+    target = "settings:\n  endpoints:\n    active: needle-42"
+    source = f"{unrelated}\n{target}\nordinary: absent"
+    result = adapters.adapt_format(source, "needle-42", format_name="yaml")
+    assert result.applied
+    assert result.text == target
