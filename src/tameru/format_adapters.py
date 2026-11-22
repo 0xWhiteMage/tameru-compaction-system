@@ -864,11 +864,16 @@ def _adapt_yaml(
         if prefix_anchor.get(anchor_indent, -1) < anchor:
             prefix_anchor[anchor_indent] = anchor
         spans.append((anchor, max(anchor + 1, next_le[anchor])))
-    for anchor_indent, anchor in prefix_anchor.items():
+    if prefix_anchor:
+        anchor_indents = sorted(prefix_anchor)
+        latest = [prefix_anchor[depth] for depth in anchor_indents]
+        for position in range(len(latest) - 2, -1, -1):
+            latest[position] = max(latest[position], latest[position + 1])
         for index in colon_nonblank:
-            if index >= anchor:
+            if index >= latest[0]:
                 break
-            if indents[index] < anchor_indent:
+            deeper = bisect.bisect_right(anchor_indents, indents[index])
+            if deeper < len(latest) and index < latest[deeper]:
                 selected.add(index)
     spans.sort()
     merged_end = -1
