@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 _TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_/-]+")
-_DATE_RE = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
+_MIN_CONTENT_TERM_LENGTH = 4
 
 # Minimal stop set — enough for overlap filtering; not the engine's full one.
 _STOP = frozenset(
@@ -45,7 +45,7 @@ def _content_terms(text: str) -> set[str]:
     return {
         t
         for t in (w.casefold() for w in _TOKEN_RE.findall(text or ""))
-        if len(t) >= 4 and t not in _STOP
+        if len(t) >= _MIN_CONTENT_TERM_LENGTH and t not in _STOP
     }
 
 
@@ -107,7 +107,8 @@ _MAX_SUPERSESSION_TOKENS = 120
 def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]:
     """Drop kept blocks that a later kept block explicitly supersedes.
 
-    Only prunes; never adds. Runs after selection so it cannot rescue a
+    Mutates and returns the caller's ``kept`` set. Only prunes; never adds.
+    Runs after selection so it cannot rescue a
     distractor — it can only remove stale facts the selector already liked
     when a newer authoritative line survives too.
 
@@ -122,18 +123,22 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     texts = {i: scored[i].get("text", "") for i in kept_ids}
     texts = {i: text if isinstance(text, str) else "" for i, text in texts.items()}
     terms_by_id = {i: _content_terms(texts[i]) for i in kept_ids}
-    marker_ids = [
-        i
-        for i in kept_ids
-        if any(m in texts[i].casefold() for m in _SUPERSESSION_MARKERS)
-    ]
+    marker_ids = []
+    for i in kept_ids:
+        lowered = texts[i].casefold()
+        if any(m in lowered for m in _SUPERSESSION_MARKERS):
+            marker_ids.append(i)
     if not marker_ids:
         return kept
 
     # Inverted index over kept blocks (newer candidates included).
     postings: dict[str, list[int]] = {}
     for i in kept_ids:
+        if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
+            continue
         for t in terms_by_id[i]:
+            if t in _OVERLAP_STOP:
+                continue
             postings.setdefault(t, []).append(i)
 
     stale: set[int] = set()
@@ -150,12 +155,12 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
         counts: dict[int, int] = {}
         for t in n_terms:
             for other in postings.get(t, ()):
-                if other < new_id and len(terms_by_id[other]) <= _MAX_SUPERSESSION_TOKENS:
+                if other < new_id:
                     counts[other] = counts.get(other, 0) + 1
         for old_id, shared_n in counts.items():
             if old_id in stale:
                 continue
-            if shared_n >= 2 and _supersedes(texts[new_id], texts[old_id]):
+            if shared_n >= 2:
                 stale.add(old_id)
 
     if stale:
