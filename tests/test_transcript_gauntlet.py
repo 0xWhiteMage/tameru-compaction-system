@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from tameru import transcript as t
@@ -62,8 +64,6 @@ def test_malformed_rows_fail_open_even_without_timing_gate():
 
 @pytest.mark.parametrize("failure", [RuntimeError("compressor failed"), None, 42])
 def test_prune_retains_payload_on_compressor_failure(failure, monkeypatch):
-    from types import SimpleNamespace
-
     def compressor(*args, **kwargs):
         if isinstance(failure, Exception):
             raise failure
@@ -87,8 +87,6 @@ def test_explicit_preservation_request_bypasses_pruning(monkeypatch):
 
 
 def test_pruning_only_copies_modified_message(monkeypatch):
-    from types import SimpleNamespace
-
     monkeypatch.setattr(t, "compress_context", lambda *a, **k: SimpleNamespace(
         compressed_text="short", fail_open=False
     ))
@@ -182,3 +180,17 @@ def test_contradictory_boolean_answers_are_not_preservation_proof(expected):
     for post in ("enabled: true; enabled: false", "enabled: false; enabled: true"):
         assert not t._boolean_requirement_satisfied("enabled", expected, post)
     assert t._boolean_requirement_satisfied("enabled", expected, f"enabled: {expected}; enabled: {expected}")
+
+
+def test_full_query_does_not_decode_unused_arguments(monkeypatch):
+    def forbidden(*args):
+        pytest.fail("unused arguments were decoded")
+    monkeypatch.setattr(t, "_arg_leaves", forbidden)
+    messages = [{"role": "assistant", "tool_calls": [{"id": "a", "name": "read"}]},
+                {"role": "tool", "tool_call_id": "a"}]
+    assert t.task_query(messages, 1, max_chars=4) == ["read"]
+
+
+def test_truncated_query_does_not_reuse_stripped_whitespace_budget():
+    messages = [{"role": "user", "content": "later"}, {"role": "tool"}]
+    assert t.task_query(messages, 1, focus="abc def", max_chars=4) == ["abc"]
