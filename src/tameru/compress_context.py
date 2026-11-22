@@ -7127,7 +7127,7 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
         fp = _error_fp(line.strip())
         counts[fp] = counts.get(fp, 0) + 1
         if fp not in first_lines:
-            first_lines[fp] = line.strip().lower()
+            first_lines[fp] = line
 
     dominant = [fp for fp, count in counts.items() if count >= min_count]
     if not 1 <= len(dominant) <= 3:
@@ -7137,13 +7137,13 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
     if dominant_cover * 10 < len(nonblank) * 9:
         return []
 
-    rare = [line for line in nonblank if counts[_error_fp(line.strip())] == 1]
+    rare = [first_lines[fp] for fp, count in counts.items() if count == 1]
     if not 1 <= len(rare) <= 2:
         return []
 
     dominant_words: set[str] = set()
     for fp in dominant:
-        dominant_words.update(re.findall(r"[A-Za-z]{4,}", first_lines[fp]))
+        dominant_words.update(re.findall(r"[A-Za-z]{4,}", first_lines[fp].lower()))
 
     for line in rare:
         words = set(re.findall(r"[A-Za-z]{4,}", line.lower()))
