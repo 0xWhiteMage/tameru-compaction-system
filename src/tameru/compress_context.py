@@ -7437,14 +7437,12 @@ def _resolve_objective(
                         _strip_anchor_prefix(line.strip())[:_ANCHOR_LINE_CHARS]
                         for line in rare_topic_lines
                     ]
-                if anchor_lines and len(caller_text) > _ANCHOR_RETRY_MAX_CHARS:
-                    # 1.10.0: above the probe cap the comparison probes (two extra full runs) are skipped: the
-                    # anchored objective is used directly, so a large text pays for one run, not three.
-                    query = (query or "") + "\n" + "\n".join(anchor_lines)
-                elif anchor_lines:
+                if anchor_lines:
                     anchored_query = (query or "") + "\n" + "\n".join(anchor_lines)
+                    if len(caller_text) > _ANCHOR_RETRY_MAX_CHARS:
+                        return anchored_query, query_as_given, derived_terms, anchor_lines, None
                     # Probe both objectives side-effect free (no CCR archive, log or
-                    # decision cache); keep the anchored one only when it fails closed,
+                    # decision cache); keep the anchored one only when it compresses successfully,
                     # retains every error fingerprint and is smaller than the plain one.
                     probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
                     probe = dict(
