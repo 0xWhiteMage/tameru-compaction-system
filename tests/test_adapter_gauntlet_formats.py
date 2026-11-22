@@ -67,3 +67,12 @@ def test_format_gauntlet_pipe_table_treats_quotes_as_literal():
     assert result.applied
     assert target in result.text
     assert result.kept_records == 1
+
+
+def test_format_gauntlet_csv_treats_midfield_quote_as_literal():
+    target = 'needle-42,displayed as "production'
+    source = f"id,note\nordinary,backup\n{target}\nother,test"
+    result = adapters.adapt_format(source, "needle-42")
+    assert result.format == "csv"
+    assert result.applied
+    assert result.text == f"id,note\n{target}"

@@ -213,7 +213,7 @@ def _line_separator(text: str) -> str:
 _RECORD_SPECIAL_RE = re.compile('["\r\n]')
 
 
-def _split_delimited_records(text: str) -> list[str] | None:
+def _split_delimited_records(text: str, delimiter: str | None = None) -> list[str] | None:
     # Perf (v1.5.0): jump from one quote / line break to the next instead of
     # stepping through every character; the records are identical.
     records: list[str] = []
@@ -232,7 +232,8 @@ def _split_delimited_records(text: str) -> list[str] | None:
             if in_quotes and index + 1 < length and text[index + 1] == '"':
                 index += 2
                 continue
-            in_quotes = not in_quotes
+            if in_quotes or delimiter is None or index == start or text[index - 1] == delimiter:
+                in_quotes = not in_quotes
             index += 1
             continue
         if not in_quotes:
@@ -265,13 +266,22 @@ def _parse_delimited_record(record: str, delimiter: str, limits: FormatLimits) -
 
 
 def _detect_delimiter(text: str) -> str | None:
-    records = _split_delimited_records(text)
-    if not records or len(records) < 2:
-        return None
-    n = len(records)
-    idx = sorted(set(list(range(min(8, n))) + list(range(max(0, n - 8), n)) + [i * n // 17 for i in range(1, 17)]))
-    sample = [records[i] for i in idx]
+    has_quotes = '"' in text
+    shared_records = None
     for delimiter in ("\t", ","):
+        if delimiter not in text:
+            continue
+        if has_quotes:
+            records = _split_delimited_records(text, delimiter)
+        else:
+            if shared_records is None:
+                shared_records = _split_delimited_records(text)
+            records = shared_records
+        if not records or len(records) < 2:
+            continue
+        n = len(records)
+        idx = sorted(set(range(min(8, n))) | set(range(max(0, n - 8), n)) | {i * n // 17 for i in range(1, 17)})
+        sample = [records[i] for i in idx]
         parsed = [_parse_delimited_record(record, delimiter, FormatLimits()) for record in sample]
         if any(row is None for row in parsed):
             continue
@@ -429,7 +439,7 @@ def _adapt_delimited(
     format_name: str,
     gap_marker: Callable[[int, int], str] | None = None,
 ) -> FormatResult:
-    records = _split_delimited_records(text)
+    records = _split_delimited_records(text, delimiter)
     if records is None:
         return _decline(text, format_name, "unmatched quote", structurally_valid=False)
     if len(records) - 1 > limits.max_records:
@@ -472,7 +482,7 @@ def _adapt_delimited_outliers(
     format_name: str,
     gap_marker: Callable[[int, int], str] | None = None,
 ) -> FormatResult:
-    records = _split_delimited_records(text)
+    records = _split_delimited_records(text, delimiter)
     if records is None:
         return _decline(text, format_name, "unmatched quote", structurally_valid=False)
     if len(records) - 1 > limits.max_records:
