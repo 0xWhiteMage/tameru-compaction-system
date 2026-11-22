@@ -116,9 +116,15 @@ def clean_text(text: str) -> tuple[str, bool]:
 
 
 def _number(value: Any, low: float, high: float, code: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not (low <= float(value) <= high):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ProtocolError(code)
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError:   # an int too large for a float is out of every range
+        raise ProtocolError(code) from None
+    if not (low <= number <= high):
+        raise ProtocolError(code)
+    return number
 
 
 _BRACE_BODY = re.compile(r"\{(\d*)(,?)(\d*)\}")
