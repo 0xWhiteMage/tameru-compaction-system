@@ -4837,21 +4837,16 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
     # linear on big outputs; with small outputs the budget never binds and the
     # result is exactly "core is a substring of the compressed text".
     out_lines: set[str] = set()
-    out_prefixes: set[str] = set()
     for out_line in compressed_lower.split("\n"):
         out_line = out_line.strip()
         out_lines.add(out_line)
-        out_prefixes.add(out_line[:80])
         bare = _COUNT_PREFIX_RE.sub("", out_line, count=1)
         if bare is not out_line:
             out_lines.add(bare)
-            out_prefixes.add(bare[:80])
     scan_budget = _RECALL_SCAN_BUDGET_CHARS
     for line in critical:
-        # A critical line is "kept" if its core content (first 80 chars,
-        # lowercased) appears in the compressed text.
-        core = line.lower()[:80]
-        if core in out_lines or core in out_prefixes:
+        core = line.strip().lower()
+        if core in out_lines:
             kept += 1
         elif scan_budget > 0:
             scan_budget -= len(compressed_lower)
