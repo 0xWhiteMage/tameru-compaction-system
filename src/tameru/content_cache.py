@@ -23,6 +23,7 @@ from collections import OrderedDict
 from typing import Any
 
 _DEFAULT_MAX_BYTES = 64 << 20
+_MAX_ANALYSIS_COUNTS = 4096
 _MISS = object()
 
 
@@ -85,6 +86,8 @@ class ContentCache:
                 self.bytes -= old[1]
             self.analyses += 1
             self.analysis_counts[key] = self.analysis_counts.get(key, 0) + 1
+            if len(self.analysis_counts) > _MAX_ANALYSIS_COUNTS:
+                self.analysis_counts.pop(next(iter(self.analysis_counts)))
             if weight > self.max_bytes or self.max_bytes <= 0:
                 self.evictions += 1
                 return
