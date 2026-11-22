@@ -154,6 +154,8 @@ def script_of(char: str) -> str | None:
     if not char:
         return None
     codepoint = ord(char)
+    if codepoint < 0x80:
+        return "latin" if char.isalpha() else None
     ranges = (
         ("hebrew", 0x0590, 0x05FF),
         ("arabic", 0x0600, 0x08FF),
