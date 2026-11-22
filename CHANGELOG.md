@@ -13,6 +13,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Fix: dictionary-configured semantic tiers fall back to lexical extraction when optional dependencies or model initialization fail, just as scorer failures do; regression tests cover both construction failures.
 - Cleanup: share one compiled WARN/WARNING token pattern across evidence, weak-failure and isolated-warning detection without changing matching behavior.
 - Cleanup: remove unused gutter and summary-count helpers, an unused host-prefix constant and a redundant import; public package exports are unchanged.
+- Refactor: table outlier selection reuses each column for categorical and numeric analysis, counts low-cardinality values once, and reuses static table, scoring, bridge-name and transcript-word regexes without changing output.
+
+- Refactor: bounded OCR/NDJSON line samples preserve Unicode splitlines behavior without collecting unused lines; OCR length checks stop after three graphemes, and complete profiles reuse their safety counts while truncated profiles still scan the full input.
+
+- Refactor: JSON briefs avoid unused prefix sums, repeated key-manifest serialization and discovery, identity list copies and duplicate minimum-size probes while preserving output.
+
 
 Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
 release, paired, cluster bootstrap); none of it is a measurement against a real model's bill. Plan and rules: [`docs/ANALYSIS-PLAN-1.10.md`](docs/ANALYSIS-PLAN-1.10.md).
