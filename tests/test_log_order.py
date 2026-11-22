@@ -77,7 +77,9 @@ def test_restored_lines_keep_order_among_collapsed_exemplars():
     assert sum("slow response" in ln for ln in out) == 1
 
 
-def test_frame_run_error_line_is_restored_between_first_and_last_frame():
+def test_frame_run_with_an_error_word_in_a_class_name_folds_like_any_frame():
+    """1.10.0: a stack FRAME is a location, not an error line, so ``ExceptionHandler.handle`` is not restored
+    after the fold (it used to be, by the error-signal invariant); the first and last frame and the head stay."""
     lines = [
         "ERROR request crashed",
         "\tat org.app.Main.run(Main.java:10)",
@@ -92,10 +94,9 @@ def test_frame_run_error_line_is_restored_between_first_and_last_frame():
     ]
     out = preprocess_logs(lines)
     assert any("frames omitted" in ln for ln in out)
-    handler = out.index("\tat org.app.ExceptionHandler.handle(Handler.java:88)")
-    first = out.index("\tat org.app.Main.run(Main.java:10)")
-    last = out.index("\tat org.app.Main.main(Main.java:5)")
-    assert first < handler < last
+    assert "ERROR request crashed" in out
+    assert "\tat org.app.ExceptionHandler.handle(Handler.java:88)" not in out
+    assert out.index("\tat org.app.Main.run(Main.java:10)") < out.index("\tat org.app.Main.main(Main.java:5)")
 
 
 def test_preprocessing_is_idempotent_with_restored_lines():

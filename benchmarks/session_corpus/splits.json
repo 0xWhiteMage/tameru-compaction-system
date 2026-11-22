@@ -1,0 +1,119 @@
+{
+ "burned_round1": {
+  "families": {
+   "cargo-en": "cargo",
+   "gotest-zh": "gotest",
+   "jest-en": "jest",
+   "kubectl-zh": "kubectl",
+   "maven-en": "maven",
+   "metrics-zh": "metrics",
+   "pytest-zh": "pytest",
+   "sql-en": "sql"
+  },
+  "holdout_sha256": "ac9e77dd723d3755b8238c4a1e60d6947e798ddcc0ee489e9d2c10f2b5ca1489",
+  "note": "the burned round-1 DeepSeek holdout's families are dev material; reproduced here and pinned to dev"
+ },
+ "counts": {
+  "dev": {
+   "families": 12,
+   "scenarios": 132
+  },
+  "holdout": {
+   "families": 25,
+   "scenarios": 275
+  },
+  "validation": {
+   "families": 8,
+   "scenarios": 88
+  }
+ },
+ "deal": {
+  "attempt": 10,
+  "rule": "the 8 round-1 families are pinned to dev; the others, sorted by id, are shuffled by random.Random(sha256('deal:'+seed)) and dealt 4 to dev, 8 to validation, the rest to holdout",
+  "seed": "session-corpus-round2-deal-10"
+ },
+ "families": {
+  "ansible": "validation",
+  "apijson": "holdout",
+  "apt": "holdout",
+  "bazel": "validation",
+  "cargo": "dev",
+  "cmake": "validation",
+  "configdump": "holdout",
+  "csvexport": "holdout",
+  "docker": "holdout",
+  "dotnet": "holdout",
+  "eslint": "holdout",
+  "gcc": "dev",
+  "ghactions": "dev",
+  "gitdiff": "holdout",
+  "gitlog": "validation",
+  "gotest": "dev",
+  "gradle": "holdout",
+  "grep": "validation",
+  "helm": "holdout",
+  "javac": "holdout",
+  "jest": "dev",
+  "journald": "holdout",
+  "k8sevents": "holdout",
+  "kubectl": "dev",
+  "markdown": "holdout",
+  "maven": "dev",
+  "metrics": "dev",
+  "mypy": "holdout",
+  "nginx": "holdout",
+  "npm": "holdout",
+  "pglog": "validation",
+  "phpunit": "holdout",
+  "pip": "holdout",
+  "promtext": "holdout",
+  "pytest": "dev",
+  "rspec": "dev",
+  "sql": "dev",
+  "terraform": "holdout",
+  "trace-csharp": "holdout",
+  "trace-go": "holdout",
+  "trace-java": "holdout",
+  "trace-node": "validation",
+  "trace-python": "validation",
+  "tsc": "holdout",
+  "webpack": "dev"
+ },
+ "generator": "session-corpus-3",
+ "real_pools": {
+  "astropy/astropy": [
+   "dev"
+  ],
+  "django/django": [
+   "holdout"
+  ],
+  "matplotlib/matplotlib": [
+   "validation"
+  ],
+  "mwaskom/seaborn": [
+   "holdout"
+  ],
+  "pallets/flask": [
+   "dev"
+  ],
+  "pydata/xarray": [
+   "dev"
+  ],
+  "pylint-dev/pylint": [
+   "validation"
+  ],
+  "pytest-dev/pytest": [
+   "holdout"
+  ],
+  "scikit-learn/scikit-learn": [
+   "holdout"
+  ],
+  "sphinx-doc/sphinx": [
+   "validation"
+  ],
+  "sympy/sympy": [
+   "holdout"
+  ]
+ },
+ "scenarios_per_family": 11
+}

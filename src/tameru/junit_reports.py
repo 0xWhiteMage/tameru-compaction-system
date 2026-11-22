@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .structured_reports import ReportSelection
+from .gap_kind import call_gap_marker
 
 _HINT = re.compile(r'<(?:[^\s<>/:]+:)?testsuites?(?=[\s>/])')
 _QUIET_ATTRS = frozenset({'name', 'classname', 'time', 'file', 'line', 'assertions'})
@@ -184,7 +185,7 @@ def select_junit(text, matches, *, max_records, max_record_chars, max_fields, ga
         omitted = len(text) - len(body)
         header = f'[tameru:report junit kept {kept}/{total} testcase records; original totals unchanged]'
         if gap_marker is not None:
-            marker = str(gap_marker(omitted, len(text)))
+            marker = str(call_gap_marker(gap_marker, omitted, len(text), "records"))
             if getattr(gap_marker, 'inline_short', False) and len(marker) >= omitted:
                 return ReportSelection('junit', text, total, total, 'marker would exceed omitted content')
             header += '\n' + marker
