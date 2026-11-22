@@ -1588,6 +1588,7 @@ def _classify_ansible(lines: list[str]) -> tuple[list[bool], list[int], list[int
                 in_recap = True
                 seen_recap = False
             else:
+                in_recap = False
                 seen_statuses.clear()
             keep[i] = True
             continue

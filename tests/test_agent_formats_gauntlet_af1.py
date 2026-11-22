@@ -3,6 +3,12 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_ansible_repeated_plays():
+    lines = ["PLAY RECAP ***", "a : ok=1 changed=0 unreachable=0 failed=0",
+             "PLAY [next] ***", "TASK [x] ***", "ok: [a]", "ok: [b]"]
+    assert af._classify_ansible(lines)[0][-2:] == [True, False]
+
+
 def test_ansible_host_details():
     lines = ["TASK [x] ***", "ok: [a]", 'ok: [b] => {"msg": "disk failing"}', "ok: [c]"]
     assert af._classify_ansible(lines)[0] == [True, True, True, False]
