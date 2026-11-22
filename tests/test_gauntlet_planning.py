@@ -22,6 +22,14 @@ def test_ev_calibrator_failure_declines(calibrator):
                     n_eff=80, suffix_tokens=0, item_tokens=1000) is None
 
 
+@pytest.mark.parametrize("field", ["saved_tokens", "n_eff", "suffix_tokens", "item_tokens"])
+@pytest.mark.parametrize("value", [-1, float("nan"), float("inf"), "bad", None])
+def test_ev_invalid_costs_decline(field, value):
+    costs = dict(saved_tokens=900, n_eff=80, suffix_tokens=0, item_tokens=1000)
+    costs[field] = value
+    assert ev_terms(result(), EV, **costs) is None
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

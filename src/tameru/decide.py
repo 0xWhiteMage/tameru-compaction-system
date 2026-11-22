@@ -132,6 +132,15 @@ def ev_terms(
         return None
     if not isfinite(p_hat) or not 0.0 <= p_hat <= 1.0:
         return None
+    try:
+        saved_tokens, n_eff, suffix_tokens, item_tokens = (
+            float(value) for value in (saved_tokens, n_eff, suffix_tokens, item_tokens)
+        )
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if any(not isfinite(value) or value < 0
+           for value in (saved_tokens, n_eff, suffix_tokens, item_tokens)):
+        return None
     if getattr(result, "fact_lines_dropped", 0) and p_hat > 0.98:
         p_hat = 0.98
     from .loss import profile as _loss_profile
