@@ -273,7 +273,7 @@ def task_query(
             return
         text = _clean_query_text(raw, cap)[:cap]
         if normalise and text:
-            text = _split_cjk_edges(_nfkc(text))
+            text = _split_cjk_edges(_nfkc(text))[:cap]
         if not text:
             return
         room = max_chars - used - (1 if parts else 0)

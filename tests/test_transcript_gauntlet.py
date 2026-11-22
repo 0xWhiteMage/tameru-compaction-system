@@ -98,3 +98,8 @@ def test_pruning_only_copies_modified_message(monkeypatch):
     assert count == 1 and out == [messages[0], {"role": "tool", "content": "short"}]
     assert out[0] is messages[0] and out[1] is not messages[1]
     assert messages[1]["content"] == "payload " * 200
+
+
+def test_normalisation_cannot_expand_a_part_past_its_cap():
+    parts = t.task_query([{"role": "tool"}], 0, focus="㍿" * 600, normalise=True)
+    assert parts == ["株式会社" * 150]
