@@ -352,18 +352,16 @@ def _choice(value: Any, allowed: tuple[str, ...], code: str) -> str:
     return value
 
 
-def _bool_field(body: Mapping[str, Any], name: str, code: str) -> bool:
-    value = body.get(name)
-    if not isinstance(value, bool):
-        raise ProtocolError(code)
-    return value
-
-
-def _opt_bool(body: Mapping[str, Any], name: str, default: bool, code: str) -> bool:
+def _opt_bool(body: Mapping[str, Any], name: str, default: bool | None, code: str) -> bool:
     value = body.get(name, default)
     if not isinstance(value, bool):
         raise ProtocolError(code)
     return value
+
+
+def _bool_field(body: Mapping[str, Any], name: str, code: str) -> bool:
+    """A required boolean: a missing field is rejected like a non-boolean one."""
+    return _opt_bool(body, name, None, code)
 
 
 def _bounded_text(value: Any, cap: int, code: str) -> str:
