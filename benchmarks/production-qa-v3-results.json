@@ -9,7 +9,7 @@
       "failed_gates": [],
       "saved": 96.7,
       "fail_open": false,
-      "ms": 8.8,
+      "ms": 31.2,
       "chars": 175,
       "missing_gold": [],
       "leaked_forbid": []
@@ -20,7 +20,7 @@
       "failed_gates": [],
       "saved": 95.0,
       "fail_open": false,
-      "ms": 6.5,
+      "ms": 15.6,
       "chars": 266,
       "missing_gold": [],
       "leaked_forbid": []
@@ -31,7 +31,7 @@
       "failed_gates": [],
       "saved": 90.1,
       "fail_open": false,
-      "ms": 2.8,
+      "ms": 15.6,
       "chars": 166,
       "missing_gold": [],
       "leaked_forbid": []
@@ -42,7 +42,7 @@
       "failed_gates": [],
       "saved": 92.5,
       "fail_open": false,
-      "ms": 3.0,
+      "ms": 15.6,
       "chars": 138,
       "missing_gold": [],
       "leaked_forbid": []
@@ -53,7 +53,7 @@
       "failed_gates": [],
       "saved": 88.4,
       "fail_open": false,
-      "ms": 2.5,
+      "ms": 15.6,
       "chars": 195,
       "missing_gold": [],
       "leaked_forbid": []
@@ -64,7 +64,7 @@
       "failed_gates": [],
       "saved": 95.6,
       "fail_open": false,
-      "ms": 8.5,
+      "ms": 15.6,
       "chars": 295,
       "missing_gold": [],
       "leaked_forbid": []
@@ -75,7 +75,7 @@
       "failed_gates": [],
       "saved": 94.0,
       "fail_open": false,
-      "ms": 25.3,
+      "ms": 62.5,
       "chars": 487,
       "missing_gold": [],
       "leaked_forbid": []
@@ -86,7 +86,7 @@
       "failed_gates": [],
       "saved": 31.0,
       "fail_open": false,
-      "ms": 12.8,
+      "ms": 31.2,
       "chars": 3192,
       "missing_gold": [],
       "leaked_forbid": []
@@ -95,10 +95,10 @@
       "name": "jp_musubi",
       "ok": true,
       "failed_gates": [],
-      "saved": 46.8,
+      "saved": 46.6,
       "fail_open": false,
-      "ms": 32.1,
-      "chars": 5832,
+      "ms": 93.8,
+      "chars": 5699,
       "missing_gold": [],
       "leaked_forbid": []
     },
@@ -108,7 +108,7 @@
       "failed_gates": [],
       "saved": 90.9,
       "fail_open": false,
-      "ms": 4.0,
+      "ms": 0.0,
       "chars": 60,
       "missing_gold": [],
       "leaked_forbid": []
@@ -119,7 +119,7 @@
       "failed_gates": [],
       "saved": 88.6,
       "fail_open": false,
-      "ms": 5.6,
+      "ms": 15.6,
       "chars": 125,
       "missing_gold": [],
       "leaked_forbid": []
@@ -128,10 +128,10 @@
       "name": "travis_yaml",
       "ok": true,
       "failed_gates": [],
-      "saved": 76.0,
+      "saved": 47.7,
       "fail_open": false,
-      "ms": 8.3,
-      "chars": 624,
+      "ms": 15.6,
+      "chars": 1286,
       "missing_gold": [],
       "leaked_forbid": []
     },
@@ -141,7 +141,7 @@
       "failed_gates": [],
       "saved": 99.9,
       "fail_open": false,
-      "ms": 113.9,
+      "ms": 281.2,
       "chars": 276,
       "missing_gold": [],
       "leaked_forbid": []
@@ -152,7 +152,7 @@
       "failed_gates": [],
       "saved": 0.0,
       "fail_open": true,
-      "ms": 43.5,
+      "ms": 109.4,
       "chars": 61832,
       "missing_gold": [],
       "leaked_forbid": []
@@ -163,7 +163,7 @@
       "failed_gates": [],
       "saved": 87.3,
       "fail_open": false,
-      "ms": 3.1,
+      "ms": 15.6,
       "chars": 232,
       "missing_gold": [],
       "leaked_forbid": []
