@@ -6642,11 +6642,10 @@ _ANCHOR_LOGFMT_PAIR_RE = re.compile(r'(\w[\w.]*)=("(?:[^"\\]|\\.)*"|\S+)')
 
 def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
     stripped = line.strip()
-    current = -1
-    for idx, other in enumerate(lines):
-        if other.strip() == stripped:
-            current = idx
-            break
+    current = next((i for i, other in enumerate(lines) if other.strip() == stripped), -1)
+
+    def unique(marker: str) -> bool:
+        return not any(i != current and marker in other for i, other in enumerate(lines))
 
     extras: list[str] = []
 
@@ -6658,12 +6657,7 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
 
         if isinstance(obj, dict):
             for key, value in obj.items():
-                marker = f'"{key}"'
-                if not any(
-                    marker in lines[idx]
-                    for idx in range(len(lines))
-                    if idx != current and lines[idx].strip()
-                ):
+                if unique(f'"{key}"'):
                     extras.append(f"{key}={value}")
                 if len(extras) >= 4:
                     break
@@ -6674,11 +6668,7 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
         for key, value in pairs:
             if value.startswith('"') and value.endswith('"') and len(value) >= 2:
                 value = value[1:-1]
-            if not any(
-                f"{key}=" in lines[idx]
-                for idx in range(len(lines))
-                if idx != current and lines[idx].strip()
-            ):
+            if unique(f"{key}="):
                 extras.append(f"{key}={value}")
             if len(extras) >= 4:
                 break
