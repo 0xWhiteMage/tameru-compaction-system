@@ -1,7 +1,11 @@
+import csv
 import hashlib
+import io
 import json
+import random
 
 from tameru import folding
+from tameru.format_adapters import FormatLimits, _adapt_delimited_outliers
 
 
 def test_json_brief_matches_baseline_across_shapes_and_budgets():
@@ -38,3 +42,22 @@ def test_json_brief_serializes_its_key_manifest_once(monkeypatch):
     text = json.dumps([{"name": f"worker-{i}", "state": "ok"} for i in range(40)])
     assert folding._json_brief(text, budget_chars=800) is not None
     assert manifests == [["name", "state"]]
+
+
+def test_table_outliers_match_baseline_with_both_line_endings():
+    rng = random.Random(241)
+    outputs = []
+    for kind in range(30):
+        stream = io.StringIO()
+        writer = csv.writer(stream, lineterminator="\r\n" if kind % 2 else "\n")
+        writer.writerow(["name", "state", "latency", "util"])
+        for i in range(30):
+            writer.writerow([
+                f"worker-{i}", "bad" if i == kind % 30 else "ok",
+                str(rng.choice([1, 2, 3]) if i != kind % 30 else 50),
+                "95%" if i == (kind + 1) % 30 else "5%",
+            ])
+        for query in ("", "latency", "unrelated needle"):
+            outputs.append(_adapt_delimited_outliers(stream.getvalue(), query, FormatLimits(), ",", "csv").to_dict())
+    digest = hashlib.sha256(json.dumps(outputs, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    assert digest == "0b316c91b705c17eb91a4fc490df4a04fbbbb060fbe03850657326f9d6a1a63a"
