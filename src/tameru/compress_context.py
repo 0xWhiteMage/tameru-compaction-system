@@ -4661,7 +4661,7 @@ def _evidence_blob(text: str) -> str:
 def _key_in_blob(key: str, blob: str) -> bool:
     folded = _match_fold(key)
     if folded.isalpha():
-        return re.search(r"(?<!\w)" + re.escape(folded) + r"(?!\w)", blob) is not None
+        return _compiled_term_pattern(r"(?<!\w)" + re.escape(folded) + r"(?!\w)").search(blob) is not None
     return folded in blob
 
 
