@@ -6123,7 +6123,10 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
     for arr in arrays_to_crush:
         kept_items = []
         for item in arr:
-            item_str = json.dumps(item, ensure_ascii=False)
+            try:
+                item_str = json.dumps(item, ensure_ascii=False)
+            except RecursionError:
+                return None
             if any(selector.search(item_str) for selector in query_selectors):
                 kept_items.append(item)
         if not kept_items or len(kept_items) == len(arr):
@@ -6136,7 +6139,10 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
     if total_crushed == 0:
         return None
 
-    result = json.dumps(data, indent=2, ensure_ascii=False)
+    try:
+        result = json.dumps(data, indent=2, ensure_ascii=False)
+    except RecursionError:
+        return None
     # Only use the crushed version if it's actually shorter
     if len(result) < len(payload):
         return result
