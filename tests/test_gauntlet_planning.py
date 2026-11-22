@@ -10,6 +10,12 @@ from tameru.gap_kind import gap_accepts_kind
 from tameru.plan import CacheState, Candidate, PlanInput, PlanItem, plan
 
 
+@pytest.mark.parametrize("confidence", [float("nan"), float("inf"), -0.1, 1.1])
+def test_ev_rejects_invalid_probability_before_capping(confidence):
+    assert ev_terms(result(confidence=confidence, fact_lines_dropped=1), EV, 900,
+                    n_eff=80, suffix_tokens=0, item_tokens=1000) is None
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

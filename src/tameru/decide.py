@@ -127,6 +127,8 @@ def ev_terms(
     if p_hat is None:
         return None
     p_hat = float(p_hat)
+    if not isfinite(p_hat) or not 0.0 <= p_hat <= 1.0:
+        return None
     if getattr(result, "fact_lines_dropped", 0) and p_hat > 0.98:
         p_hat = 0.98
     from .loss import profile as _loss_profile
