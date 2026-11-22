@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
+from ._fingerprint_patterns import _DIGITS_RE
 from .agent_formats import (
     GUTTER_RE as _AGENT_GUTTER_RE,
     apply_agent_adapters,
@@ -866,11 +867,6 @@ _ERR_NEGATED_RE = re.compile(
     re.IGNORECASE,
 )
 _COUNT_PREFIX_RE = re.compile(r"^\s*\[(?:\u00d7\d+|last)\]\s*")
-_UUID_RE = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-)
-_HEXRUN_RE = re.compile(r"[0-9a-f]{6,}")
-_DIGITS_RE = re.compile(r"\d+")
 _FINGERPRINT_CAP = 160
 
 
@@ -4145,8 +4141,6 @@ def _counterfactual_overlap_ambiguity(
     query: str,
     link_terms: dict[int, set[str]] | None = None,
     semantic_tier: Any = None,
-    log_dir: str | Path | None = None,
-    pin_patterns: Optional[list[str]] = None,
 ) -> bool:
     """Detect a high-scoring kept distractor masking a dropped answer chain.
 
@@ -4535,7 +4529,7 @@ _PROSE_MIN_BLOCKS = 8
 
 def _prose_key(text: str) -> str:
     """Repeat key: NFKC-normalised, digit runs -> '#', lowercased, whitespace collapsed, first 2000 chars."""
-    return " ".join(re.sub(r"\d+", "#", unicodedata.normalize("NFKC", text[:2000]).lower()).split())
+    return " ".join(_DIGITS_RE.sub("#", unicodedata.normalize("NFKC", text[:2000]).lower()).split())
 
 
 def select_prose_brief(
@@ -6215,7 +6209,7 @@ def inspect_compressibility(text: str, query: str) -> dict[str, Any]:
     # Repetition ratio: fraction of duplicate lines (exact + normalised runs).
     from collections import Counter
 
-    norm = [re.sub(r"\d+", "#", ln) for ln in lines]
+    norm = [_DIGITS_RE.sub("#", ln) for ln in lines]
     counts = Counter(norm)
     dup_lines = sum(c for c in counts.values() if c > 1)
     repetition_ratio = dup_lines / len(lines)
@@ -6993,7 +6987,8 @@ _STATE_SUMMARY_RE = re.compile(
 )
 
 
-def _summary_anchor_region(line: str, lines: list[str]) -> str | None:
+def _summary_anchor_region(line: str) -> str | None:
+
     """Region text for a summary-tier exemplar: the summary line without timestamp/level.
 
     Returns ``None`` when the result is empty.
@@ -7038,7 +7033,7 @@ def _state_summary_lines(lines: list[str], max_regions: int) -> list[str]:
         return []
 
     for line in matches:
-        if _summary_anchor_region(line, lines) is None:
+        if _summary_anchor_region(line) is None:
             return []
 
     fp_counts: dict[str, int] = {}
@@ -7257,7 +7252,7 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             # Summary-tier anchor: keep the summary line with timestamp and level
             # removed (e.g. "health: summary 20/40 degraded"), so the count phrase
             # remains available as the anchor region.
-            region = _summary_anchor_region(line, lines)
+            region = _summary_anchor_region(line)
             seen_rows.add(i)
             if region:
                 regions.append(region[:_ANCHOR_LINE_CHARS])
