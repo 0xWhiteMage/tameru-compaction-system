@@ -446,8 +446,6 @@ def _plan_ev(body: Any) -> EVPolicy | None:
 
 
 def _plan_policy(body: Any) -> Policy:
-    if body is None:
-        raise ProtocolError("bad_policy")
     if not isinstance(body, Mapping) or set(body) - PLAN_POLICY_FIELDS:
         raise ProtocolError("bad_policy")
     fields: dict[str, Any] = {}
