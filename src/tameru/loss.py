@@ -13,6 +13,7 @@ with ``pathlib`` rather than ``importlib.resources``, as ``prices.py`` documents
 from __future__ import annotations
 
 import json
+from math import isfinite
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,7 +51,13 @@ def _number(name: str, field_name: str, raw: dict[str, Any]) -> tuple[float, str
     entry = raw.get(field_name)
     if not isinstance(entry, dict) or not isinstance(entry.get("value"), (int, float)):
         raise ValueError(f"loss profile {name}: {field_name} needs a numeric value")
-    return float(entry["value"]), str(entry.get("source", "")), bool(entry.get("unverified"))
+    try:
+        value = float(entry["value"])
+    except OverflowError:
+        raise ValueError(f"loss profile {name}: {field_name} must be finite") from None
+    if not isfinite(value):
+        raise ValueError(f"loss profile {name}: {field_name} must be finite")
+    return value, str(entry.get("source", "")), bool(entry.get("unverified"))
 
 
 def _build(name: str, raw: dict[str, Any]) -> LossProfile:

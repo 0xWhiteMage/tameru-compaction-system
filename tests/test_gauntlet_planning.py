@@ -53,6 +53,12 @@ def test_ev_quantile_is_normalized():
         replace(EV, quantile=float("nan"))
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), 10 ** 1000])
+def test_loss_rejects_nonfinite_values(value):
+    with pytest.raises(ValueError):
+        loss._number("test", "lambda_base", {"lambda_base": {"value": value}})
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
