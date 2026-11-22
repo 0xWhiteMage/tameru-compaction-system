@@ -88,6 +88,7 @@ class PlanInput:
     retained_budget_chars: int = 0        # compact mode: body chars the demoted set may keep in all
     growth_tokens_per_step: float = 0.0   # mean tokens the prompt adds per step; 0 disables warm acts
     margin_steps: int = 0                 # extra runway steps the act must leave beyond H
+    replace_compaction: bool = False      # compact+trigger: aim the prune at trigger − growth × margin
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ class Plan:
     predicted_chars_stock: int
     predicted_V: float
     predicted_L: float
+    reaches_target: bool = False          # replace_compaction only: the prune alone meets the runway target
 
 
 def _veto(item: PlanItem, policy: Policy) -> str | None:
@@ -217,6 +219,8 @@ def plan(inp: PlanInput) -> Plan:
         return planned
     if inp.host_mode == "prune":
         return _plan_prune(inp)
+    if inp.event == "trigger" and inp.replace_compaction:
+        return _plan_compact_replace(inp)
     return _plan_compact(inp)
 
 
@@ -275,14 +279,9 @@ def _plan_prune(inp: PlanInput) -> Plan:
                 _stock_chars(inp.items, inp.host_mode), V_total, L_total)
 
 
-def _plan_compact(inp: PlanInput) -> Plan:
-    """Allocate ``retained_budget_chars`` over the stock-demote set.
-
-    Order: fact rows first, then expected value per retained character, then recency (newest first),
-    then position for determinism. An item takes ``extract`` when its candidate passes the vetoes and
-    the EV rule and its compressed form fits the budget left; ``brief`` when the candidate is clean but
-    loses on EV or fit; ``header`` otherwise. ``superseded`` requires the successor to cover the facts.
-    """
+def _score_demote(inp: PlanInput):
+    """Veto- and EV-score every demote candidate; returns (scored, demote). ``scored`` maps item id
+    to ``(verdict, ev_per_char, p_hat, V, L)`` for candidates that passed the hard vetoes."""
     cache_broken = inp.event in BROKEN_EVENTS or not inp.cache.warm
     suffix = _suffix_after(inp.items)
     scored: dict[str, tuple[str, float, float | None, float | None, float | None]] = {}
@@ -298,11 +297,101 @@ def _plan_compact(inp: PlanInput) -> Plan:
                                            cache_broken=cache_broken)
         scored[item.id] = (verdict, (p_hat * V - (1 - p_hat) * L) / max(1, item.candidate.compressed_chars)
                            if p_hat is not None else float("-inf"), p_hat, V, L)
+    return scored, demote
 
+
+def _demote_rank(scored):
+    """The compact-mode grant order: fact rows first, then EV per retained character, then recency
+    (newest first), then position for determinism."""
     def rank(item: PlanItem) -> tuple:
         entry = scored.get(item.id)
         ev_per_char = entry[1] if entry else float("-inf")
         return (-(item.fact_lines > 0), -ev_per_char, item.age_steps, item.position, item.id)
+
+    return rank
+
+
+def _assemble_compact(inp: PlanInput, decisions: dict[str, PlanAction], *, reaches_target: bool = False) -> Plan:
+    """Turn per-item compact decisions into a ``Plan``: ``keep`` for untouched items, kept chars by rung."""
+    actions: list[PlanAction] = []
+    chars_after = 0
+    V_total = L_total = 0.0
+    for item in inp.items:
+        action = decisions.get(item.id)
+        if action is None:
+            chars_after += item.chars
+            actions.append(PlanAction(item.id, inp.event, "keep",
+                                      "protected" if item.protected else "not_demote"))
+            continue
+        if action.action == "extract":
+            chars_after += item.candidate.compressed_chars
+        else:
+            chars_after += min(item.stock_kept_chars, item.chars)
+        if action.V is not None:
+            V_total += action.V
+            L_total += action.L or 0.0
+        actions.append(action)
+    return Plan(inp.event, inp.host_mode, True, "acted", tuple(actions), chars_after,
+                _stock_chars(inp.items, inp.host_mode), V_total, L_total, reaches_target)
+
+
+def _plan_compact_replace(inp: PlanInput) -> Plan:
+    """Compact-mode trigger with ``replace_compaction``: grant extracts in the usual rank order only
+    while the projected prompt stays under ``trigger_tokens − growth × margin_steps``. Everything a
+    demote item cannot fund drops to ``header``. When the target is unreachable even with every
+    demotable row at its header remnant, fall back to the normal allocation with
+    ``reaches_target = False``."""
+    scored, demote = _score_demote(inp)
+    ordered = sorted(demote, key=_demote_rank(scored))
+    target = inp.trigger_tokens - inp.growth_tokens_per_step * inp.margin_steps
+
+    # Floor: the projected prompt when every demotable row falls to its stock remnant.
+    floor_after = float(inp.prompt_tokens)
+    for item in ordered:
+        if item.chars > 0:
+            floor_after -= item.tokens * (1.0 - min(item.stock_kept_chars, item.chars) / item.chars)
+    if floor_after > target:
+        return _plan_compact(inp)
+
+    slack = target - floor_after           # tokens the extracts may cost back over the remnant
+    room = inp.retained_budget_chars       # the host's retained-budget cap still applies
+    decisions: dict[str, PlanAction] = {}
+    for item in ordered:
+        if item.superseded_by is not None and item.facts_covered_by_successor:
+            decisions[item.id] = PlanAction(item.id, inp.event, "superseded",
+                                            f"superseded_by:{item.superseded_by}")
+            continue
+        entry = scored.get(item.id)
+        if entry is None:
+            decisions[item.id] = PlanAction(item.id, inp.event, "header",
+                                            _veto(item, inp.policy) or "no_candidate")
+            continue
+        verdict, _epc, p_hat, V, L = entry
+        kept = min(item.stock_kept_chars, item.chars)
+        cost = (item.tokens * max(0, item.candidate.compressed_chars - kept) / item.chars
+                if item.chars > 0 else 0.0)
+        if verdict == "ok" and item.candidate.compressed_chars <= room and cost <= slack:
+            room -= item.candidate.compressed_chars
+            slack -= cost
+            decisions[item.id] = PlanAction(item.id, inp.event, "extract", "ok", p_hat, V, L)
+        elif verdict == "ok":
+            reason = "over_budget" if item.candidate.compressed_chars > room else "no_runway"
+            decisions[item.id] = PlanAction(item.id, inp.event, "header", reason, p_hat, V, L)
+        else:
+            decisions[item.id] = PlanAction(item.id, inp.event, "header", verdict, p_hat, V, L)
+    return _assemble_compact(inp, decisions, reaches_target=True)
+
+
+def _plan_compact(inp: PlanInput, *, reaches_target: bool = False) -> Plan:
+    """Allocate ``retained_budget_chars`` over the stock-demote set.
+
+    Order: fact rows first, then expected value per retained character, then recency (newest first),
+    then position for determinism. An item takes ``extract`` when its candidate passes the vetoes and
+    the EV rule and its compressed form fits the budget left; ``brief`` when the candidate is clean but
+    loses on EV or fit; ``header`` otherwise. ``superseded`` requires the successor to cover the facts.
+    """
+    scored, demote = _score_demote(inp)
+    rank = _demote_rank(scored)
 
     room = inp.retained_budget_chars
     decisions: dict[str, PlanAction] = {}
@@ -324,23 +413,4 @@ def _plan_compact(inp: PlanInput) -> Plan:
         else:
             decisions[item.id] = PlanAction(item.id, inp.event, "brief", verdict, p_hat, V, L)
 
-    actions: list[PlanAction] = []
-    chars_after = 0
-    V_total = L_total = 0.0
-    for item in inp.items:
-        action = decisions.get(item.id)
-        if action is None:
-            chars_after += item.chars
-            actions.append(PlanAction(item.id, inp.event, "keep",
-                                      "protected" if item.protected else "not_demote"))
-            continue
-        if action.action == "extract":
-            chars_after += item.candidate.compressed_chars
-        else:
-            chars_after += min(item.stock_kept_chars, item.chars)
-        if action.V is not None:
-            V_total += action.V
-            L_total += action.L or 0.0
-        actions.append(action)
-    return Plan(inp.event, inp.host_mode, True, "acted", tuple(actions), chars_after,
-                _stock_chars(inp.items, inp.host_mode), V_total, L_total)
+    return _assemble_compact(inp, decisions, reaches_target=reaches_target)

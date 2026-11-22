@@ -76,7 +76,7 @@ PLAN_FIELDS = frozenset({
     "event", "host_mode", "prompt_tokens", "trigger_tokens",
     "items", "cache", "policy",
     "steps_since_last_act", "K", "H", "steps_to_trigger", "retained_budget_chars",
-    "growth_tokens_per_step", "margin_steps",
+    "growth_tokens_per_step", "margin_steps", "replace_compaction",
 })
 ITEM_FIELDS = frozenset({
     "id", "position", "tokens", "chars", "age_steps", "protected", "stock_action",
@@ -511,6 +511,7 @@ def validate_plan_request(request: Mapping[str, Any]) -> PlanInput:
                 request.get("growth_tokens_per_step", 0), 0.0, MAX_PLAN_TOKENS, "bad_growth"
             ),
             margin_steps=_integer(request.get("margin_steps", 0), 0, MAX_PLAN_STEPS, "bad_steps"),
+            replace_compaction=_opt_bool(request, "replace_compaction", False, "bad_replace_compaction"),
         )
     except (ValueError, TypeError):
         raise ProtocolError("bad_plan") from None
@@ -539,6 +540,7 @@ def plan_to_dict(plan: Plan) -> dict[str, Any]:
         "predicted_chars_stock": int(plan.predicted_chars_stock),
         "predicted_V": float(plan.predicted_V),
         "predicted_L": float(plan.predicted_L),
+        "reaches_target": bool(plan.reaches_target),
     }
 
 

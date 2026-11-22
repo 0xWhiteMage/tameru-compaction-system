@@ -71,8 +71,12 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   The warm-step forecast gains a runway gate (`PlanInput.growth_tokens_per_step`, `margin_steps`): a warm `step`
   acts only when the horizon admits it, growth is positive, the host is a compact host, and the plan's own
   projected prompt leaves `(trigger − projected_after)/growth ≥ H + margin_steps` of runway — otherwise it
-  stands down with `no_runway`; trigger, cold-cache and prefix-rewrite events are unchanged. New closed reason
-  `negative_ev`. `compress_context` output is unchanged (the golden corpus stands).
+  stands down with `no_runway`; trigger, cold-cache and prefix-rewrite events are unchanged. A compact host's
+  trigger event may also carry `replace_compaction`: the plan then aims at `trigger_tokens − growth × margin_steps`,
+  grants extracts in the usual order only while the projected prompt stays under that target (the rest go `header`),
+  and reports `reaches_target`; when the target is unreachable even with every demotable row at its stock remnant it
+  falls back to the normal allocation with `reaches_target` false. New closed reason `negative_ev`.
+  `compress_context` output is unchanged (the golden corpus stands).
 - **Price profiles and the closed-form pay-back share, a pure helper; no host default changes.** `tameru/prices.json` holds dated, sourced cache price profiles (DeepSeek pro and flash, Anthropic Opus, Sonnet and Haiku 5.5 with 5-minute and 1-hour caches, generic OpenAI 30-minute and 12-hour, marked secondary) with each figure's verification status; `tameru/prices.py` gives `required_share` (a prune of Δ in front of a cached suffix S pays back iff Δ/S ≥ (w − r)/(r·(N + 1)); 0 on a cold cache) and `implied_later_requests`. The share 0.35 implies about 82 later requests on DeepSeek pro, not the 25 the old replay price assumed. See `docs/PRICES.md`; every figure from it is replay-only. No `compress_context` output changes.
 - **One list of the lines the engine writes itself** (`tameru/markers.py`); the red-team checker uses it, clearing 11 false fabrication flags (the forged-marker detection stays).
 - **Benchmarks:** `benchmarks/engine_bench` (294 cases, 207 source clusters, dev / validation / sealed split with a committed sealed hash), `benchmarks/latency.py` with the 1.9.0 baseline,

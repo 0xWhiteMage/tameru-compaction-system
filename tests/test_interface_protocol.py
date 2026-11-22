@@ -224,6 +224,7 @@ def _plan_body(**overrides):
         "steps_since_last_act": 5,
         "growth_tokens_per_step": 250.5,
         "margin_steps": 6,
+        "replace_compaction": True,
     }
     body.update(overrides)
     return body
@@ -249,6 +250,7 @@ def _plan_input(**overrides):
         "steps_since_last_act": 5,
         "growth_tokens_per_step": 250.5,
         "margin_steps": 6,
+        "replace_compaction": True,
     }
     kwargs.update(overrides)
     return PlanInput(**kwargs)
@@ -308,7 +310,8 @@ def test_plan_request_builds_the_same_planinput_and_plan_output():
 def test_plan_to_dict_shape():
     reply = protocol.plan_to_dict(plan(_plan_input()))
     assert set(reply) == {"event", "host_mode", "acted", "gate", "actions",
-                          "predicted_chars_after", "predicted_chars_stock", "predicted_V", "predicted_L"}
+                          "predicted_chars_after", "predicted_chars_stock", "predicted_V",
+                          "predicted_L", "reaches_target"}
     assert reply["acted"] is True and reply["gate"] == "acted"
     assert [a["id"] for a in reply["actions"]] == ["a", "b", "c"]
     assert set(reply["actions"][0]) == {"id", "event", "action", "reason", "p_hat", "V", "L"}
@@ -342,6 +345,8 @@ def test_plan_request_rejections():
     assert plan_code(_plan_body(H=-1)) == "bad_H"
     assert plan_code(_plan_body(steps_to_trigger=-2)) == "bad_steps"
     assert plan_code(_plan_body(retained_budget_chars=-1)) == "bad_retained_budget"
+    assert plan_code(_plan_body(replace_compaction="yes")) == "bad_replace_compaction"
+    assert plan_code(_plan_body(replace_compaction=1)) == "bad_replace_compaction"
     assert plan_code(_plan_body(growth_tokens_per_step=-1)) == "bad_growth"
     assert plan_code(_plan_body(growth_tokens_per_step="x")) == "bad_growth"
     assert plan_code(_plan_body(margin_steps=-1)) == "bad_steps"

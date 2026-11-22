@@ -35,13 +35,14 @@ def item(i, *, stock_action="cut", candidate=GOOD, fact_lines=0, chars=40_000, t
 def inp(items, *, event="trigger", host_mode="prune", warm=False, n_eff=80,
         steps_since_last_act=None, K=3, H=0, steps_to_trigger=None, retained_budget_chars=0,
         prompt_tokens=200_000, trigger_tokens=180_000, growth_tokens_per_step=0.0,
-        margin_steps=0, policy=EV_POLICY):
+        margin_steps=0, replace_compaction=False, policy=EV_POLICY):
     return PlanInput(event=event, host_mode=host_mode, prompt_tokens=prompt_tokens,
                      trigger_tokens=trigger_tokens,
                      items=tuple(items), cache=CacheState(warm=warm, n_eff=n_eff), policy=policy,
                      steps_since_last_act=steps_since_last_act, K=K, H=H,
                      steps_to_trigger=steps_to_trigger, retained_budget_chars=retained_budget_chars,
-                     growth_tokens_per_step=growth_tokens_per_step, margin_steps=margin_steps)
+                     growth_tokens_per_step=growth_tokens_per_step, margin_steps=margin_steps,
+                     replace_compaction=replace_compaction)
 
 
 def by_id(p):
@@ -247,6 +248,55 @@ def test_compact_non_demote_items_untouched():
     assert all(a.action == "keep" for a in p.actions)
 
 
+# --- replace_compaction: a trigger-time deep prune aimed at a runway target ----------------------
+
+
+def replace_inp(items, budget=10_000, **kw):
+    kw.setdefault("replace_compaction", True)
+    return plan(inp(items, host_mode="compact", retained_budget_chars=budget, **kw))
+
+
+def test_replace_compaction_met_target_extracts_and_flags():
+    # 3 demote rows: remnant 200/40_000 → each saves ~9_950 tokens at header; floor 170_150.
+    items = [item(i, stock_action="demote", stock_kept_chars=200) for i in range(3)]
+    p = replace_inp(items, prompt_tokens=200_000, trigger_tokens=180_000,
+                    growth_tokens_per_step=1_000, margin_steps=5)   # target 175_000
+    assert p.acted and p.reaches_target
+    assert all(a.action == "extract" for a in p.actions)
+
+
+def test_replace_compaction_unreachable_falls_back_to_normal():
+    items = [item(i, stock_action="demote", stock_kept_chars=200, tokens=2_000)
+             for i in range(3)]                                    # floor ≈ 194_100
+    p = replace_inp(items, prompt_tokens=200_000, trigger_tokens=180_000,
+                    growth_tokens_per_step=1_000, margin_steps=10)  # target 170_000 < floor
+    normal = compact(items, budget=10_000)
+    assert p.acted and not p.reaches_target
+    assert p.actions == normal.actions                              # the same allocation, flagged
+
+
+def test_replace_compaction_fact_rows_keep_extracts_first():
+    # Slack funds exactly one extract (cost ≈ 450 tokens each); the fact row wins it over the
+    # higher-EV-per-char plain row, which drops to header.
+    plain = item(0, stock_action="demote", stock_kept_chars=200)
+    fact = item(1, stock_action="demote", stock_kept_chars=200, fact_lines=3,
+                candidate=replace(GOOD, tokens_saved=5_000))
+    p = replace_inp([plain, fact], prompt_tokens=200_000, trigger_tokens=190_000,
+                    growth_tokens_per_step=920, margin_steps=10)    # target 180_800, slack 700
+    acts = by_id(p)
+    assert p.reaches_target
+    assert acts["i1"].action == "extract"
+    assert acts["i0"].action == "header" and acts["i0"].reason == "no_runway"
+
+
+def test_replace_compaction_ignored_off_trigger_and_prune():
+    p = plan(inp([item(0)], host_mode="prune", replace_compaction=True))
+    assert p.acted and not p.reaches_target                         # prune path unchanged
+    p = plan(inp([item(0, stock_action="demote")], host_mode="compact", event="cache_cold",
+                 replace_compaction=True, retained_budget_chars=10_000))
+    assert p.acted and not p.reaches_target                         # cold event allocates normally
+
+
 # --- determinism and performance --------------------------------------------
 
 def big_items(n, seed=7):
@@ -274,7 +324,9 @@ def test_plan_is_deterministic():
 
 def test_plan_p95_at_1000_items():
     items = big_items(1_000)
-    inps = [inp(items, host_mode="compact", retained_budget_chars=200_000), inp(items)]
+    inps = [inp(items, host_mode="compact", retained_budget_chars=200_000), inp(items),
+            inp(items, host_mode="compact", retained_budget_chars=200_000, replace_compaction=True,
+                 growth_tokens_per_step=2_000, margin_steps=8)]
     times = []
     for _ in range(60):
         for x in inps:
