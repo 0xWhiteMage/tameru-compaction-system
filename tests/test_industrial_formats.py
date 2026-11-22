@@ -621,5 +621,63 @@ class JunitRecordTests(unittest.TestCase):
         self.assertNotEqual(adapt_format(plain, "alpha").format, "junit")
 
 
+class TabIndentedNotYamlTests(unittest.TestCase):
+    """1.10.0 (E7): YAML forbids tab indentation. A tab-indented table row that is neither a
+    mapping entry nor a sequence item means the text is not YAML — the subtree adapter would
+    delete rows it cannot parse (e.g. the FAULTED device row of `zpool status`)."""
+
+    @staticmethod
+    def _zpool_status() -> str:
+        rows = [f"\t\tc0t{i}d0      ONLINE    0     0     0" for i in range(40)]
+        rows[17] = "\t\tc0t17d0     FAULTED   0     0     0  too many errors"
+        return "\n".join([
+            "  pool: tank",
+            " state: ONLINE",
+            "  scan: scrub repaired 0B in 00:00:12 with 0 errors on Fri Jan  9 00:00:00 2026",
+            "config:",
+            "",
+            "\tNAME        STATE     READ WRITE CKSUM",
+            "\ttank        ONLINE       0     0     0",
+            "\t  mirror-0  ONLINE       0     0     0",
+            *rows,
+            "",
+            "errors: No known data errors",
+        ])
+
+    def test_zpool_tab_table_is_not_yaml(self):
+        self.assertNotEqual(detect_format(self._zpool_status()), "yaml")
+
+    def test_checkov_tab_children_stay_yaml(self):
+        text = "\n".join([
+            "results:",
+            "\tPASSED for resource: aws_s3_bucket.data",
+            "\tFile: /main.tf:1-10",
+            "\tGuide: https://docs.bridgecrew.io/docs/s3_13-logging",
+            "\tPASSED for resource: aws_s3_bucket.logs",
+            "\tFile: /main.tf:20-30",
+            "\tGuide: https://docs.bridgecrew.io/docs/s3_13-logging",
+        ])
+        self.assertEqual(detect_format(text), "yaml")
+
+    def test_space_indented_yaml_unchanged(self):
+        text = "services:\n  api:\n    host: prod-77\n    port: 8443\n  web:\n    host: prod-78\n"
+        self.assertEqual(detect_format(text), "yaml")
+
+    def test_faulted_row_survives_both_bench_profiles(self):
+        text = self._zpool_status()
+        query = "which device in pool tank is FAULTED"
+        deepseek = compress_context(
+            text, query, min_savings_ratio=0.25, ccr=False, citations=False, strategy="extract",
+        )
+        hermes = compress_context(
+            text, query, ccr=False, citations=False, gap_marker=lambda o, t: "",
+            inline_short_gaps=True, anchor_errors=True, prose_brief=True,
+            recursion_markers=("[tameru:",), min_savings_ratio=0.10,
+        )
+        for profile, res in (("deepseek", deepseek), ("hermes", hermes)):
+            with self.subTest(profile=profile):
+                self.assertIn("FAULTED", res.compressed_text)
+
+
 if __name__ == "__main__":
     unittest.main()
