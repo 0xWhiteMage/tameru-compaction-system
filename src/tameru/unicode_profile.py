@@ -64,50 +64,24 @@ def _in_ranges(codepoint: int, ranges: tuple[tuple[int, int], ...]) -> bool:
     return any(start <= codepoint <= end for start, end in ranges)
 
 
-def _is_variation_selector(char: str) -> bool:
-    return _in_ranges(ord(char), _VARIATION_RANGES)
-
-
-def _is_emoji_modifier(char: str) -> bool:
-    return _EMOJI_MODIFIER_RANGE[0] <= ord(char) <= _EMOJI_MODIFIER_RANGE[1]
-
-
-def _is_regional_indicator(char: str) -> bool:
-    return _REGIONAL_RANGE[0] <= ord(char) <= _REGIONAL_RANGE[1]
-
-
-# Perf (v1.5.0): the per-character predicates below are pure functions of one
-# character, and the grapheme walker asks them about every character of every
-# line (a 24 KB CJK log made `unicodedata.name` alone ~250k calls). Remembered
-# per character, bounded.
-@functools.lru_cache(maxsize=16384)
-def _is_extend(char: str) -> bool:
-    category = unicodedata.category(char)
-    codepoint = ord(char)
-    return (
-        category in {"Mn", "Mc", "Me"}
-        or _is_variation_selector(char)
-        or _is_emoji_modifier(char)
-        or codepoint == 0x20E3
-        or _TAG_RANGE[0] <= codepoint <= _TAG_RANGE[1]
-    )
-
-
-@functools.lru_cache(maxsize=16384)
-def _is_virama(char: str) -> bool:
-    name = unicodedata.name(char, "")
-    return "VIRAMA" in name or "HALANT" in name
-
-
 @functools.lru_cache(maxsize=16384)
 def _char_flags(char: str) -> tuple[bool, bool, bool, bool, bool]:
     """(extends a cluster, ZWJ/ZWNJ, virama, letter, regional indicator)."""
+    category = unicodedata.category(char)
+    codepoint = ord(char)
+    name = unicodedata.name(char, "")
+    extend = (
+        category in {"Mn", "Mc", "Me"}
+        or _in_ranges(codepoint, _VARIATION_RANGES)
+        or _EMOJI_MODIFIER_RANGE[0] <= codepoint <= _EMOJI_MODIFIER_RANGE[1]
+        or _TAG_RANGE[0] <= codepoint <= _TAG_RANGE[1]
+    )
     return (
-        _is_extend(char),
+        extend,
         char in {_ZWJ, _ZWNJ},
-        _is_virama(char),
-        unicodedata.category(char).startswith("L"),
-        _is_regional_indicator(char),
+        "VIRAMA" in name or "HALANT" in name,
+        category.startswith("L"),
+        _REGIONAL_RANGE[0] <= codepoint <= _REGIONAL_RANGE[1],
     )
 
 
