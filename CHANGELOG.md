@@ -102,6 +102,11 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
 - **Licence: MIT to Apache License 2.0.** `LICENSE` is the Apache-2.0 text and `NOTICE` carries the copyright line; the package metadata declares `Apache-2.0`. Copies of earlier releases remain available under the MIT licence they were published with.
 - Documentation: the README is rewritten around 1.9.0 for users, with a recording for each feature; the CLI demo is re-rendered to show one failure and a note on what was kept; `docs/industrial-compaction-v1.2.md` is now `docs/ARCHITECTURE.md`; three stale images are removed.
 
+### Package startup
+
+- `import tameru` defers loading format adapters, folding, and profiling code until first use, without changing the public exports.
+  Median bare-import time fell from 79.89 ms to 20.58 ms in a separate 60-run subprocess benchmark on Linux with Python 3.12.
+
 ## [1.9.0] - 2026-11-09
 
 - Released with `hermes-tameru-plugin` 1.9.0 (the two are versioned separately from here on; the plugin vendors this engine at its recorded commit). No engine output changed.
