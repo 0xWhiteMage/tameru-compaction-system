@@ -23,3 +23,11 @@ def test_format_gauntlet_yaml_outliers_keep_sequence_value():
     assert result.applied
     assert unusual in result.text
     assert result.kept_records == 2
+
+
+def test_format_gauntlet_yaml_commented_document_markers():
+    first = "--- # first\nkind: Job\nmetadata:\n  name: ordinary\nspec:\n  enabled: true"
+    target = "--- # second\nkind: Job\nmetadata:\n  name: needle-42\nspec:\n  enabled: false"
+    result = adapters.adapt_format(f"{first}\n{target}", "needle-42", format_name="yaml")
+    assert result.applied
+    assert result.text == target

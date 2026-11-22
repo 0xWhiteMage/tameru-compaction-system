@@ -691,6 +691,10 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
 
+_YAML_DOCUMENT_START_RE = re.compile(r"^---(?:[ \t]|$)")
+_YAML_EMPTY_START_RE = re.compile(r"^---[ \t]*(?:[ \t]+#.*)?$")
+
+
 def _adapt_yaml_documents(
     text: str, selectors: tuple[str, ...], limits: FormatLimits,
     gap_marker: Callable[[int, int], str] | None = None,
@@ -699,11 +703,11 @@ def _adapt_yaml_documents(
     if any(line.startswith("%") for line in lines):
         return _decline(text, "yaml", "document directives require the original stream")
     starts = [0]
-    starts.extend(i for i, line in enumerate(lines) if i and line.rstrip() == "---")
+    starts.extend(i for i, line in enumerate(lines) if i and _YAML_DOCUMENT_START_RE.match(line))
     bounds = [(start, starts[i + 1] if i + 1 < len(starts) else len(lines))
               for i, start in enumerate(starts)]
     bounds = [(start, end) for start, end in bounds
-              if any(line.strip() and line.rstrip() != "---" for line in lines[start:end])]
+              if any(line.strip() and not _YAML_EMPTY_START_RE.fullmatch(line) for line in lines[start:end])]
     if len(bounds) > limits.max_records:
         return _decline(text, "yaml", "document count exceeds format limit", total_records=len(bounds))
     documents = ["\n".join(lines[start:end]) for start, end in bounds]
@@ -855,7 +859,7 @@ def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
         return _decline(text, "yaml", "document directives require the original stream")
     starts = [0]
     for idx, line in enumerate(lines):
-        if line.rstrip() == "---" and starts[-1] != idx:
+        if _YAML_DOCUMENT_START_RE.match(line) and starts[-1] != idx:
             starts.append(idx)
 
     docs = []
@@ -864,7 +868,7 @@ def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
         nonblank = [
             line
             for line in lines[start:end]
-            if line.strip() and line.rstrip() != "---"
+            if line.strip() and not _YAML_EMPTY_START_RE.fullmatch(line)
         ]
         if nonblank:
             docs.append({"start": start, "end": end, "nonblank": nonblank})
@@ -1435,7 +1439,9 @@ def adapt_format(
     if resolved_format == 'yaml' and yaml_requires_original(value):
         return _decline(value, 'yaml', 'YAML anchors and aliases require the original document',
                         structurally_valid=False)
-    if resolved_format == "yaml" and any(line.rstrip() == "---" for line in value.splitlines()):
+    if resolved_format == "yaml" and "---" in value and any(
+        _YAML_DOCUMENT_START_RE.match(line) for line in value.splitlines()
+    ):
         if not selectors:
             return _adapt_yaml_documents_outliers(value, gap_marker)
         return _adapt_yaml_documents(value, selectors, limits or FormatLimits(), gap_marker)
