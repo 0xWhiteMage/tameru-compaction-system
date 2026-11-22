@@ -340,6 +340,12 @@ def _integer(value: Any, low: int, high: int, code: str) -> int:
     return value
 
 
+def _choice(value: Any, allowed: tuple[str, ...], code: str) -> str:
+    if not isinstance(value, str) or value not in allowed:
+        raise ProtocolError(code)
+    return value
+
+
 def _bool_field(body: Mapping[str, Any], name: str, code: str) -> bool:
     value = body.get(name)
     if not isinstance(value, bool):
@@ -397,7 +403,7 @@ def _plan_item(body: Any) -> PlanItem:
             chars=_integer(body.get("chars"), 0, MAX_PLAN_TOKENS, "bad_item"),
             age_steps=_integer(body.get("age_steps", 0), 0, MAX_PLAN_STEPS, "bad_item"),
             protected=_opt_bool(body, "protected", False, "bad_item"),
-            stock_action=body.get("stock_action", "keep"),
+            stock_action=_choice(body.get("stock_action", "keep"), STOCK_ACTIONS, "bad_item"),
             stock_kept_chars=_integer(body.get("stock_kept_chars", 0), 0, MAX_PLAN_TOKENS, "bad_item"),
             candidate=_plan_candidate(body.get("candidate")),
             fact_lines=_integer(body.get("fact_lines", 0), 0, MAX_PLAN_TOKENS, "bad_item"),
