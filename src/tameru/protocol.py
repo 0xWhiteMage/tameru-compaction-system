@@ -29,6 +29,7 @@ import re
 from typing import Any, Mapping
 
 from .compress_context import ENGINE_VERSION, RESULT_SCHEMA
+from .contract_gates import QUERY_BASES
 from .decide import _EV_STRENGTHS, EVPolicy, Policy
 from .loss import profile_names as loss_profile_names
 from .plan import (
@@ -86,6 +87,7 @@ ITEM_FIELDS = frozenset({
 CANDIDATE_FIELDS = frozenset({
     "compressed_chars", "tokens_saved", "confidence", "fail_open",
     "risk", "fingerprints_ok", "fact_lines_dropped",
+    "confidence_basis", "query_specific",
 })
 CACHE_FIELDS = frozenset({"warm", "n_eff"})
 PLAN_POLICY_FIELDS = frozenset({
@@ -301,8 +303,8 @@ def request_was_sanitized(request: Mapping[str, Any]) -> bool:
 
 def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None = None) -> dict[str, Any]:
     """The reply body for a ``compress`` request: the version 1 keys, plus ``result_schema``, the result schema 2
-    fields (``confidence_basis``, ``stable_key``, ``dropped``, ``preset``) and the schema 3 field
-    ``fact_lines_dropped``. Every v1 key keeps its meaning."""
+    fields (``confidence_basis``, ``stable_key``, ``dropped``, ``preset``), the schema 3 field
+    ``fact_lines_dropped`` and the schema 4 field ``query_specific``. Every v1 key keeps its meaning."""
     return {
         "text": result.compressed_text,
         "fail_open": bool(result.fail_open),
@@ -320,6 +322,7 @@ def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None =
         "dropped": [[str(c), int(n), str(loc)[:80]] for c, n, loc in (getattr(result, "dropped", None) or ())[:3]],
         "preset": preset if preset is not None else getattr(result, "preset", None),
         "fact_lines_dropped": int(getattr(result, "fact_lines_dropped", 0)),
+        "query_specific": getattr(result, "query_specific", None),
     }
 
 
@@ -360,6 +363,12 @@ def _plan_candidate(body: Any) -> Candidate | None:
     risk = body.get("risk", "high")
     if risk not in RISKS:
         raise ProtocolError("bad_candidate")
+    basis = body.get("confidence_basis")
+    if basis is not None and basis not in QUERY_BASES:
+        raise ProtocolError("bad_candidate")
+    specific = body.get("query_specific")
+    if specific is not None and not isinstance(specific, bool):
+        raise ProtocolError("bad_candidate")
     try:
         return Candidate(
             compressed_chars=_integer(body.get("compressed_chars"), 0, MAX_PLAN_TOKENS, "bad_candidate"),
@@ -369,6 +378,8 @@ def _plan_candidate(body: Any) -> Candidate | None:
             risk=risk,
             fingerprints_ok=_bool_field(body, "fingerprints_ok", "bad_candidate"),
             fact_lines_dropped=_integer(body.get("fact_lines_dropped", 0), 0, MAX_PLAN_TOKENS, "bad_candidate"),
+            confidence_basis=basis,
+            query_specific=specific,
         )
     except (ValueError, TypeError):
         raise ProtocolError("bad_candidate") from None

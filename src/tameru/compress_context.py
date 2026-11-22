@@ -7,6 +7,7 @@ the query signal is too weak to justify a cut.
 
 from __future__ import annotations
 
+import array
 import bisect
 import collections
 import contextvars
@@ -56,6 +57,7 @@ from .industrial import IndustrialLimits, IndustrialResult, industrial_preproces
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
 from .supersession import apply_supersession, _supersedes
 from .unicode_profile import (
+    count_token_units,
     script_of,
     search_units,
     token_units,
@@ -98,9 +100,9 @@ _HUGE_ERR_MARKERS = (
     "failed", "fatal", "panic", "stderr", "assert",
 )
 
-# Shape of CompressResult for hosts: 3 since 1.10.0 (fact_lines_dropped; schema 2 added
-# confidence_basis, stable_key, dropped, result_schema, preset).
-RESULT_SCHEMA = 3
+# Shape of CompressResult for hosts: 4 since 1.10.0 (query_specific; schema 3 added
+# fact_lines_dropped; schema 2 added confidence_basis, stable_key, dropped, result_schema, preset).
+RESULT_SCHEMA = 4
 CCR_TTL_SECONDS = 6 * 60 * 60
 CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
 FREEZE_MAX_DECISIONS = 4096
@@ -453,6 +455,8 @@ class CompressResult:
     preset: Optional[str] = None  # the named option set the call used, when the host says so
     # 1.10.0 (result schema 3), additive:
     fact_lines_dropped: int = 0  # protected fact lines of the original absent from the output
+    # 1.10.0 (result schema 4), additive:
+    query_specific: Optional[bool] = None  # the caller query names distinctive selectors (S6 calibrator input)
 
     def __post_init__(self) -> None:
         self.tokens_saved = max(0, self.original_tokens - self.kept_tokens)
@@ -527,11 +531,31 @@ def _estimate_tokens_cached(text: str) -> int:
     return _estimate_tokens(text)
 
 
+_COUNT_CHUNK_CHARS = 262_144  # bounded match lists (~4 MiB) while counting a huge text's tokens
+
+
+def _count_re_matches(pattern, text: str) -> int:
+    """``len(pattern.findall(text))`` without the whole-text match list (S7): ``findall`` runs
+    per ~256K slice cut at ``\\n`` — neither token pattern matches a newline, so the count is
+    identical — and each slice's list is bounded."""
+    n = pos = 0
+    end = len(text)
+    while pos < end:
+        stop = text.find("\n", pos + _COUNT_CHUNK_CHARS)
+        if stop < 0:
+            stop = end
+        n += len(pattern.findall(text, pos, stop))
+        pos = stop
+    return n
+
+
 def _estimate_tokens(text: str) -> int:
-    runs = sum(len(m) // 4 for m in _ASCII_SYMBOL_RUN_RE.findall(text)) if len(text) >= 16 else 0
+    # S7: count matches instead of materializing them — the 8M ``too_large`` estimate's findall
+    # lists were ~73 MiB. The ``translate`` copy runs only once the text is known non-ASCII.
+    runs = sum((m.end() - m.start()) // 4 for m in _ASCII_SYMBOL_RUN_RE.finditer(text)) if len(text) >= 16 else 0
     if text.isascii() or text.translate(_FAST_ACCOUNTING_DELETE).isascii():
-        return max(1, len(_TOKEN_RE.findall(text)) + runs)
-    return max(1, len(token_units(text)) + runs)
+        return max(1, _count_re_matches(_TOKEN_RE, text) + runs)
+    return max(1, count_token_units(text) + runs)
 
 
 def _norm_newlines(text: str) -> str:
@@ -1306,9 +1330,11 @@ def _protected_fact_lines(
     without an assignment is not fact-shaped. When the same normalised key appears on several
     fact-shaped lines, only the LAST one is protected (newest wins). ``fingerprint`` lets callers
     share a memoised ``_log_fingerprint`` (every line is fingerprinted once)."""
-    # Perf: shape/error detection runs once per distinct line; the rarity (fingerprint) pass
-    # only runs when a candidate exists and fingerprints each distinct line once.
-    eval_memo: dict[str, tuple[tuple[str, str] | None, bool]] = {}
+    # Perf: shape/error detection is memoised per distinct CANDIDATE line (a repeated
+    # non-candidate only re-runs the cheap shape test); the rarity (fingerprint) pass
+    # only runs when a candidate exists and fingerprints each distinct line once. S7: the
+    # memos hold candidates only — memoising every distinct line pinned ~2 MiB at 1M.
+    eval_memo: dict[str, tuple[tuple[str, str], bool]] = {}
     fp_memo: dict[str, object] = {}
     cands: list[tuple[int, str, str, object, str]] = []
     cand_fps: set[object] = set()
@@ -1317,19 +1343,21 @@ def _protected_fact_lines(
             parts, is_err = eval_memo[ln]
         except KeyError:
             parts = _fact_parts(ln)
+            if parts is None:
+                continue
             # 1.10.0 (S5, E5): a secret-bearing line is never protected — a credentials strip is
             # a safety deletion the floor/restore must not resurrect. Covers both env-keyed
             # assignments (``DB_PASSWORD=…``) the env-dump reducer removes and secret-shaped
             # values inside fact-shaped prose (``config note: key AKIA… stored``).
             probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
             em = _env_match(probe)
-            is_err = parts is not None and (
+            is_err = (
                 _is_error_line(ln)
                 or _secret_scan(probe)
                 or (em is not None and _env_is_sensitive(em.group(1), em.group(2)))
             )
             eval_memo[ln] = (parts, is_err)
-        if parts is None or is_err:
+        if is_err:
             continue
         try:
             fp = fp_memo[ln]
@@ -1344,7 +1372,7 @@ def _protected_fact_lines(
         try:
             fp = fp_memo[ln]
         except KeyError:
-            fp = fp_memo[ln] = fingerprint(ln)
+            fp = fingerprint(ln)   # non-candidates are counted, not memoised
         if fp is not None and fp in cand_fps:
             counts[fp] = counts.get(fp, 0) + 1
     kept = [c for c in cands if c[3] is None or counts.get(c[3], 0) <= _FACT_PROTECT_FP_MAX]
@@ -1365,12 +1393,12 @@ def _fact_dense(facts, nonblank: int) -> bool:
 
 def _fact_protected_set(lines: list[str], fingerprint=_log_fingerprint) -> set[int]:
     """Indices into ``lines`` of the protected fact lines — empty on a fact-dense text. Larger
-    inputs go through the ``_fact_summary`` text memo so every stage that sees the same text
+    inputs go through the ``_fact_summary`` memo so every stage that sees the same text
     shares one detection."""
     if _FACT_OFF.get():
         return set()
     if len(lines) >= 16:
-        return {i for i, _k, _v, _ln in _protected_facts("\n".join(lines))}
+        return {i for i, _k, _v, _ln in _protected_facts_lines(lines)}
     facts = _protected_fact_lines(lines, fingerprint)
     nonblank = sum(1 for ln in lines if ln.strip())
     if _fact_dense(facts, nonblank):
@@ -1378,22 +1406,55 @@ def _fact_protected_set(lines: list[str], fingerprint=_log_fingerprint) -> set[i
     return {i for i, _k, _v, _ln in facts}
 
 
-def _fact_summary_uncached(text: str) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
-    lines = text.split("\n")
+def _fact_lines_uncached(lines: list[str]) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
     facts = _protected_fact_lines(lines)
     nonblank = sum(1 for ln in lines if ln.strip())
-    return (() if _fact_dense(facts, nonblank) else tuple(facts)), _fact_dense(facts, nonblank)
+    dense = _fact_dense(facts, nonblank)
+    return (() if dense else tuple(facts)), dense
 
 
-@content_memo("fact_summary", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
-def _fact_summary_cached(text: str) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
-    return _fact_summary_uncached(text)
+def _fact_lines_key(lines: list[str]) -> str:
+    """``content_key`` over pre-split lines (S7): digested in 4096-line slices — C-speed joins,
+    no full-size copy — where the old text memo's ``"\\n".join(lines)`` was a second 2 MiB copy
+    at 1M. ``\\n`` never occurs inside a line and each slice is length-prefixed, so the digest
+    is unambiguous."""
+    digest = hashlib.sha256()
+    for part in (ENGINE_VERSION, "fact_summary"):
+        digest.update(part.encode("utf-8", "surrogatepass"))
+        digest.update(b"\x00")
+    digest.update(len(lines).to_bytes(8, "little"))
+    for i in range(0, len(lines), 4096):
+        encoded = "\n".join(lines[i : i + 4096]).encode("utf-8", "surrogatepass")
+        digest.update(len(encoded).to_bytes(4, "little"))
+        digest.update(encoded)
+    return digest.hexdigest()[:32]
+
+
+def _fact_summary_lines(lines: list[str]) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
+    """The ``_fact_summary`` memo keyed on the caller's own ``lines`` — same records, no join."""
+    key = _fact_lines_key(lines)
+    hit = _CONTENT.get(key)
+    if hit is _MISS:
+        hit = _fact_lines_uncached(lines)
+        _CONTENT.set(key, hit)
+    return hit
+
+
+def _protected_facts_lines(lines: list[str]) -> tuple[tuple[int, str, str, str], ...]:
+    """``_protected_facts`` for an already-split text (the join length gates the memo)."""
+    if sum(map(len, lines)) + len(lines) - 1 <= _MEMO_MAX_CHARS:
+        return _fact_summary_lines(lines)[0]
+    return _fact_lines_uncached(lines)[0]
+
+
+def _fact_summary_uncached(text: str) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
+    return _fact_lines_uncached(text.split("\n"))
 
 
 def _fact_summary(text: str) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
     """``(protected fact lines, fact_dense)`` for ``text``; a dense text reports no protected lines."""
     if type(text) is str and len(text) <= _MEMO_MAX_CHARS:
-        return _fact_summary_cached(text)
+        return _fact_summary_lines(text.split("\n"))
     return _fact_summary_uncached(text)
 
 
@@ -2971,16 +3032,44 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
 
 
 
+_SEG_BLOCK_TYPE_CODES: dict[str, int] = {}
+_SEG_BLOCK_TYPE_NAMES: list[str] = []
+
+
+def _seg_block_type_code(btype: str) -> int:
+    code = _SEG_BLOCK_TYPE_CODES.get(btype)
+    if code is None:
+        code = len(_SEG_BLOCK_TYPE_NAMES)
+        _SEG_BLOCK_TYPE_CODES[btype] = code
+        _SEG_BLOCK_TYPE_NAMES.append(btype)
+    return code
+
+
 def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]:
     text = chr(10).join(lines)
     if len(text) > _MEMO_MAX_CHARS:
         return tuple(segment_blocks(list(lines)))
     key = content_key(ENGINE_VERSION, "segment_blocks", text)
     hit = _CONTENT.get(key)
-    if hit is _MISS:
-        hit = tuple(segment_blocks(list(lines)))
-        _CONTENT.set(key, hit)
-    return hit
+    if hit is not _MISS:
+        lst = list(lines)
+        packed, names = hit
+        return tuple(
+            {
+                "id": i // 4, "start": packed[i], "end": packed[i + 1], "type": names[packed[i + 2]],
+                "text": "\n".join(lst[packed[i] : packed[i + 1] + 1]), "tokens": packed[i + 3],
+            }
+            for i in range(0, len(packed), 4)
+        )
+    blocks = segment_blocks(list(lines))
+    # S7: the record holds packed spans, not text — the dicts used to pin every segment's
+    # text (a 28 KB input's ~800 blocks weighed ~631 KB). ``id`` is the slot position; the
+    # text is rebuilt from the caller's identical lines on a hit.
+    packed = array.array("i")
+    for b in blocks:
+        packed.extend((b["start"], b["end"], _seg_block_type_code(b["type"]), b["tokens"]))
+    _CONTENT.set(key, (packed, _SEG_BLOCK_TYPE_NAMES))
+    return tuple(blocks)
 
 
 def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> list[str]:
@@ -3053,7 +3142,6 @@ def _clear_memos() -> None:
         _estimate_tokens_cached, _evidence_blob,
         industrial._profile_input_cached, unicode_profile._search_units_cached,
         contract_gates._distinctive_query_terms_cached, contract_gates._source_blob,
-        _fact_summary_cached,
     ):
         fn.cache_clear()
     _CONTENT.clear()
@@ -9735,6 +9823,9 @@ def compress_context(
     _ccr_defer: bool = False,
 ) -> CompressResult:
     full_text = str(context or "")
+    # the caller query's specificity feeds the S6 calibrator through every return path (result schema 4)
+    caller_query = query if isinstance(query, str) else "\n".join(str(item) for item in query)
+    q_specific = query_has_distinctive_selectors(caller_query)
     if len(full_text) > _HUGE_CHARS:
         if len(full_text) > _HUGE_MAX_CHARS:
             est = _estimate_tokens(full_text)
@@ -9742,7 +9833,7 @@ def compress_context(
                 compressed_text=full_text, original_tokens=est, kept_tokens=est,
                 tokens_saved_pct=0.0, policy_name="huge-too-large", mode=mode,
                 keep_ratio=1.0, fail_open=True, reasons=["too_large"],
-                confidence=0.0, confidence_basis="none",
+                confidence=0.0, confidence_basis="none", query_specific=q_specific,
             )
         sample = _huge_sample(full_text)
         res = compress_context(
@@ -9795,7 +9886,9 @@ def compress_context(
             result = replace(
                 result, compressed_text=redacted, reasons=[*result.reasons, "redacted_secrets"],
             )
-    return _with_schema_fields(result, context, query, redact_secrets, selector_query)
+    out = _with_schema_fields(result, context, query, redact_secrets, selector_query)
+    out.query_specific = q_specific
+    return out
 
 
 def _stable_key(context: str, query: str, selector_query: Any = None) -> str:

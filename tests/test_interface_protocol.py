@@ -129,7 +129,7 @@ def test_errors_never_echo_request_text():
 
 def test_version_info_and_describe():
     info = protocol.version_info()
-    assert info["engine"] == ENGINE_VERSION and info["protocol"] == 3 and info["result_schema"] == 3
+    assert info["engine"] == ENGINE_VERSION and info["protocol"] == 3 and info["result_schema"] == 4
     assert info["presets"] == ["dsh-tool-result@1", "tool-result@1"]
     assert info["capabilities"]["selector_query"] is True
     assert info["capabilities"]["plan"]["max_items"] == protocol.MAX_PLAN_ITEMS
@@ -138,7 +138,7 @@ def test_version_info_and_describe():
     json.dumps(info)
     res = compress_context("x\n" * 50, "x", ccr=False)
     assert protocol.describe(res, preset="p", decision=Decision(True, "ok")) == {
-        "result_schema": 3, "preset": "p", "decision": {"accept": True, "reason": "ok", "basis": None}}
+        "result_schema": 4, "preset": "p", "decision": {"accept": True, "reason": "ok", "basis": None}}
 
 
 def test_result_dict_keeps_the_v1_keys():
@@ -146,8 +146,8 @@ def test_result_dict_keeps_the_v1_keys():
     keys = set(protocol.result_to_dict(res))
     assert keys == {"text", "fail_open", "original_tokens", "kept_tokens", "tokens_saved_pct", "risk",
                     "confidence", "content_type", "reasons", "sanitized", "result_schema"} | {
-        "confidence_basis", "stable_key", "dropped", "preset", "fact_lines_dropped"}
-        # result schema 2 + 3, additive
+        "confidence_basis", "stable_key", "dropped", "preset", "fact_lines_dropped", "query_specific"}
+        # result schema 2 + 3 + 4, additive
 
 
 SLOW_SHAPES = ["a*b", "foo.*bar", "a+", "a*a*a*a*a*b", "(a|a)*b", "(a+)+", ".*.*.*x", "a*a*b", ".*x.*y", "a+b*", r"\d+\.\d+", "a?a?a?a?a?aaaaa",
@@ -372,3 +372,36 @@ def test_plan_request_rejects_extra_and_nested_fields():
     body["policy"]["log_dir"] = "/x"
     assert plan_code(body) == "bad_policy"
     body = _plan_body()
+
+
+def test_compress_response_carries_query_specific():
+    text = "metric,status\nweb-01,200\n" * 60 + "Error: db refused\n" + "web-02,200\n" * 20
+    res = compress_context(**validate_request(
+        {"text": text, "query": "what failed on db-9", "protocol": 3}))
+    body = protocol.result_to_dict(res)
+    assert body["query_specific"] is res.query_specific
+    assert isinstance(res.query_specific, bool)
+    # a vague query reports False; a selector-heavy one True — every path, including fail-open
+    vague = compress_context(**validate_request({"text": text, "query": "", "protocol": 3}))
+    assert isinstance(vague.query_specific, bool)
+    huge = compress_context("x" * 9_000_000, "q")
+    assert huge.fail_open and huge.query_specific is False
+
+
+def test_plan_candidate_accepts_schema4_fields_and_rejects_bad_ones():
+    body = _plan_body()
+    body["items"][0]["candidate"].update(confidence_basis="lexical", query_specific=True)
+    inp = protocol.validate_plan_request(body)
+    cand = next(i.candidate for i in inp.items if i.id == "a")
+    assert cand.confidence_basis == "lexical" and cand.query_specific is True
+
+    for patch in (
+        {"confidence_basis": "not-a-basis"},
+        {"confidence_basis": "lexical|vague"},   # a stratum key is not a basis
+        {"confidence_basis": 5},
+        {"query_specific": "yes"},
+        {"query_specific": 1},
+    ):
+        body = _plan_body()
+        body["items"][0]["candidate"].update(patch)
+        assert plan_code(body) == "bad_candidate", patch

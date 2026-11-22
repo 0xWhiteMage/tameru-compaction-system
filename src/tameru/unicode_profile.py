@@ -319,18 +319,17 @@ _ASCII_TOKEN_CLASS = tuple(
 )
 
 
-def token_units(text: str) -> list[str]:
-    """Return non-overlapping logical units for deterministic token estimates."""
-    units: list[str] = []
+def _token_units_gen(text: str):
+    """Yield the units ``token_units`` returns, without materializing the list (S7)."""
     run: list[str] = []
     run_script: str | None = None
 
-    def flush() -> None:
+    def flush() -> str | None:
         nonlocal run_script
-        if run:
-            units.append("".join(run))
-            run.clear()
+        unit = "".join(run) if run else None
+        run.clear()
         run_script = None
+        return unit
 
     ascii_class = _ASCII_TOKEN_CLASS
     for cluster in iter_graphemes(matching_shadow(text)):
@@ -341,7 +340,9 @@ def token_units(text: str) -> list[str]:
             kind = ascii_class[ord(cluster)]
             if kind == 1:
                 if run and run_script and run_script != "latin":
-                    flush()
+                    unit = flush()
+                    if unit is not None:
+                        yield unit
                 run.append(cluster)
                 run_script = run_script or "latin"
             elif kind == 2:
@@ -349,32 +350,53 @@ def token_units(text: str) -> list[str]:
             elif kind == 3 and run:
                 run.append(cluster)
             else:
-                flush()
+                unit = flush()
+                if unit is not None:
+                    yield unit
             continue
         if not cluster or cluster.isspace():
-            flush()
+            unit = flush()
+            if unit is not None:
+                yield unit
             continue
         representative = _representative(cluster)
         category = unicodedata.category(representative) if representative else ""
         script = script_of(representative)
         if category[:1] in {"L", "N", "M"}:
             if script in _NO_SPACE_SCRIPTS:
-                flush()
-                units.append(cluster)
+                unit = flush()
+                if unit is not None:
+                    yield unit
+                yield cluster
                 continue
             if run and script and run_script and script != run_script:
-                flush()
+                unit = flush()
+                if unit is not None:
+                    yield unit
             run.append(cluster)
             run_script = run_script or script
             continue
         if all(char in _WORD_JOINERS for char in cluster) and run:
             run.append(cluster)
             continue
-        flush()
+        unit = flush()
+        if unit is not None:
+            yield unit
         if any(unicodedata.category(char) == "So" for char in cluster):
-            units.append(cluster)
-    flush()
-    return units
+            yield cluster
+    unit = flush()
+    if unit is not None:
+        yield unit
+
+
+def token_units(text: str) -> list[str]:
+    """Return non-overlapping logical units for deterministic token estimates."""
+    return list(_token_units_gen(text))
+
+
+def count_token_units(text: str) -> int:
+    """``len(token_units(text))`` without materializing the list (S7)."""
+    return sum(1 for _ in _token_units_gen(text))
 
 
 def _looks_vertical_ocr(text: str) -> bool:

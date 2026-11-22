@@ -32,8 +32,10 @@ class EVPolicy:
     suffix rewrite it causes); ``L`` prices a wrong prune (the line turns out to be needed: a read-back, or the
     catastrophic path when read-back fails). ``quantile`` is the conservatism level a calibrator may target —
     0.5 means the point estimate; it is carried for S6 and does not change the raw-confidence path.
-    ``calibrator`` is an optional callable ``result -> float | None`` supplying ``p_hat`` (S6 fills it); without
-    one the raw confidence is used, capped at 0.98 when the result dropped fact lines."""
+    ``calibrator`` is an optional callable ``result -> float | None`` supplying ``p_hat`` (S6 fills it). Without
+    one, a result carrying ``confidence_basis`` and ``query_specific`` is priced by the shipped table's
+    ``calibration.p_hat`` at ``quantile``; otherwise the raw confidence is used. Any path's ``p_hat`` is capped
+    at 0.98 when the result dropped fact lines."""
 
     price_profile: str                # a name in prices.json
     loss_profile: str                 # a name in loss_profiles.json
@@ -122,7 +124,19 @@ def ev_terms(
     ``V = saved_tokens * r * (n_eff + 1) - S * (w - r)`` with ``S`` the suffix tokens the write makes the
     provider re-cache (0 on a cache-broken event — the rewrite happens anyway). A profile without an output
     price prices recovery output at the uncached input unit (``o = 1``)."""
-    p_hat = ev.calibrator(result) if ev.calibrator is not None else getattr(result, "confidence", None)
+    if ev.calibrator is not None:
+        p_hat = ev.calibrator(result)
+    else:
+        basis, specific = getattr(result, "confidence_basis", None), getattr(result, "query_specific", None)
+        if basis is not None and specific is not None:
+            # S6: the shipped per-stratum calibrator, over the result's own basis/query-style/fact-drop fields.
+            from .calibration import p_hat as _calibrated_p_hat
+            p_hat = _calibrated_p_hat(
+                basis, specific, getattr(result, "fact_lines_dropped", 0) or 0,
+                getattr(result, "confidence", None), quantile=ev.quantile,
+            )
+        else:
+            p_hat = getattr(result, "confidence", None)
     if p_hat is None:
         return None
     p_hat = float(p_hat)

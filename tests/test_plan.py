@@ -351,3 +351,57 @@ def test_plan_py_holds_no_host_constants():
 def test_action_and_event_vocabularies_are_closed():
     assert set(EVENTS) == {"trigger", "cache_cold", "prefix_rewritten", "step"}
     assert set(ACTIONS) == {"keep", "extract", "stub", "brief", "header", "superseded"}
+
+
+# --- S6: ev_terms resolves p_hat through the shipped calibrator -------------
+
+def _ev_result(**over):
+    from types import SimpleNamespace
+    base = dict(compressed_text="", fail_open=False, compression_risk="low", confidence=0.95,
+                fact_lines_dropped=0, confidence_basis=None, query_specific=None)
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def test_ev_terms_falls_back_to_raw_confidence_without_fields():
+    from tameru.decide import ev_terms
+    p_hat, V, L = ev_terms(_ev_result(), EV, 50_000, n_eff=80, suffix_tokens=100, item_tokens=10_000)
+    assert p_hat == 0.95
+    # ...and keeps the 0.98 fact-drop cap
+    p2, _, _ = ev_terms(_ev_result(confidence=1.0, fact_lines_dropped=2), EV, 50_000,
+                        n_eff=80, suffix_tokens=100, item_tokens=10_000)
+    assert p2 == 0.98
+
+
+def test_ev_terms_uses_the_shipped_calibrator_when_fields_exist():
+    from tameru.calibration import p_hat as cal_p_hat
+    from tameru.decide import ev_terms
+    result = _ev_result(confidence=0.95, confidence_basis="lexical", query_specific=True)
+    p_hat, V, L = ev_terms(result, EV, 50_000, n_eff=80, suffix_tokens=100, item_tokens=10_000)
+    assert p_hat == pytest.approx(cal_p_hat("lexical", True, 0, 0.95, quantile=EV.quantile))
+    # a fact drop collapses p_hat to 0 through the calibrator path, not the 0.98 cap
+    dropped = _ev_result(confidence=0.95, confidence_basis="lexical", query_specific=True,
+                         fact_lines_dropped=3)
+    p2, _, _ = ev_terms(dropped, EV, 50_000, n_eff=80, suffix_tokens=100, item_tokens=10_000)
+    assert p2 == 0.0
+
+
+def test_ev_terms_calibrator_callable_wins_over_fields():
+    from tameru.decide import ev_terms
+    ev = EVPolicy(EV.price_profile, EV.loss_profile, calibrator=lambda r: 0.42)
+    result = _ev_result(confidence=0.95, confidence_basis="lexical", query_specific=True)
+    p_hat, V, L = ev_terms(result, ev, 50_000, n_eff=80, suffix_tokens=100, item_tokens=10_000)
+    assert p_hat == 0.42
+
+
+def test_plan_action_p_hat_comes_from_calibration():
+    """A candidate carrying the schema-4 fields is priced by ``calibration.p_hat``."""
+    from tameru.calibration import p_hat as cal_p_hat
+    c = Candidate(compressed_chars=2000, tokens_saved=50_000, confidence=0.99, fail_open=False,
+                  risk="low", fingerprints_ok=True,
+                  confidence_basis="lexical", query_specific=True)
+    p = plan(inp([item(0, candidate=c)]))
+    action = by_id(p)["i0"]
+    assert action.p_hat == pytest.approx(
+        cal_p_hat("lexical", True, 0, 0.99, quantile=EV.quantile)
+    )

@@ -39,6 +39,8 @@ class Candidate:
     risk: str
     fingerprints_ok: bool                 # every error fingerprint of the original survives the extract
     fact_lines_dropped: int = 0
+    confidence_basis: str | None = None   # what the confidence rests on (contract_gates.QUERY_BASES); feeds the S6 calibrator
+    query_specific: bool | None = None    # the caller query names distinctive selectors; feeds the S6 calibrator
 
 
 @dataclass(frozen=True)
@@ -140,6 +142,7 @@ def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: fl
     result = SimpleNamespace(
         compressed_text="", fail_open=c.fail_open, compression_risk=c.risk, confidence=c.confidence,
         fact_lines_dropped=c.fact_lines_dropped, tokens_saved=c.tokens_saved,
+        confidence_basis=c.confidence_basis, query_specific=c.query_specific,
         original_tokens=item.tokens, kept_tokens=item.tokens - c.tokens_saved,
     )
     if policy.ev is not None:
