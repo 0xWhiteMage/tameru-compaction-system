@@ -4,6 +4,12 @@ from tameru import agent_formats as af
 
 
 @pytest.mark.parametrize("value", ["nan", "inf", "-1"])
+def test_ps_invalid_utilization(value):
+    lines = [f"user {i} {cpu} 1 100 10 ? S 12:00 0:00 app" for i, cpu in enumerate(["2", value, "3"])]
+    assert af._classify_ps_aux(lines)[0] == [True] * 3
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-1"])
 def test_top_invalid_utilization(value):
     lines = [f"{i} user 20 0 100 10 10 S {cpu} 1 0:00 app" for i, cpu in enumerate(["2", value, "3"])]
     assert af._classify_top(["PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND"] + lines)[0] == [True] * 4

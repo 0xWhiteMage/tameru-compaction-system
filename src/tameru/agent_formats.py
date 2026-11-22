@@ -1866,6 +1866,8 @@ def _classify_ps_aux(lines: list[str]) -> tuple[list[bool], list[int], list[int]
         except ValueError:
             keep[index] = True
             continue
+        if not (0 <= cpu < float("inf") and 0 <= mem < float("inf")):
+            return [True] * len(lines), [0] * len(lines), [0] * len(lines)
         parsed.append((index, cpu, mem, parts[7]))
 
     if parsed:
