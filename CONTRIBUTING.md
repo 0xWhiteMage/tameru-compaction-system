@@ -10,7 +10,7 @@ belongs, how to run everything, the rules every pull request must follow, and ho
 ```bash
 python -m pytest -q                              # the test suite (about two minutes)
 python scripts/check_host_rules.py               # the host restrictions
-python scripts/check_attribution.py --base origin/main   # your commits are linked to your GitHub profile
+python scripts/check_attribution.py --base origin/v1.10.0   # substitute your PR's target branch; accepts noreply addresses or local mappings in contributors/emails/
 ```
 
 ---
@@ -95,7 +95,7 @@ The optional `semantic` extra (`pip install -e ".[semantic]"`) is not needed for
 |---|---|---|
 | `python -m pytest -q` | The whole suite (about 2,000 tests, around two minutes). Add `-k name` or a file path for a quick loop. | every change |
 | `python scripts/check_host_rules.py` | [Host restrictions](docs/HOST-RESTRICTIONS.md). `--list` shows every finding. | every change |
-| `python scripts/check_attribution.py --base origin/main` | Your commits are credited to your GitHub profile. | before you push |
+| `python scripts/check_attribution.py --base origin/v1.10.0` | Accepts noreply addresses or local mappings in `contributors/emails/`; substitute your PR's target branch. | before you push |
 | `python benchmarks/compare.py --verify-against benchmarks/comparison-v<version>.json` | The engine's outputs, savings and retention still match the recorded report (timings are not compared). | any change that can alter output |
 | `TAMERU_WRITE_GOLDEN=1 python -m pytest tests/test_golden_compress_context.py` | Regenerates the golden hashes. **Only when the output is meant to change**, and review the diff of `tests/golden/compress_context.json` like code. | intended output changes |
 
@@ -182,10 +182,11 @@ Pushing fixes to the same branch is how you respond.
 
 ## How you are credited
 
-Your name stays on your work. Commits keep your authorship, merged pull requests make you a contributor on GitHub, and changelog
-entries from outside the maintainers end with `(#PR, thanks @you)`. GitHub only credits a commit whose author email is linked to an
-account, so CI runs an **attribution check**: if one of your commits uses an email GitHub cannot link, it tells you the one command to
-run (`python scripts/add_contributor.py <email> <github-login>`) or to switch to your noreply address. The design, borrowed from
+Your name stays on your work. Commits keep your authorship, and we aim to credit contributors in changelog entries and release
+notes. Changelog entries from outside the maintainers end with `(#PR, thanks @you)`. GitHub links commits only when the author email belongs to an
+account. CI runs an **attribution check**: an unrecognised author email prompts you to add a mapping for the project's tooling
+(`python scripts/add_contributor.py <email> <github-login>`) or switch to your noreply address. A mapping cannot verify an email
+with GitHub or change its contributor graph; GitHub does not read `.mailmap`. The design, borrowed from
 [Hermes Agent](https://github.com/NousResearch/hermes-agent/tree/main/contributors), is one small file per email so mappings never
 conflict. Details are in [`contributors/README.md`](contributors/README.md).
 

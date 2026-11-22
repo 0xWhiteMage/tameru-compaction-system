@@ -1,7 +1,8 @@
 # Contributors
 
-Everyone who contributes is credited by their GitHub profile in the contributor graph, in the changelog and in release notes.
-GitHub can only do that when a commit's author email is linked to an account. This folder is how we make sure it always is. The
+We aim to credit everyone who contributes by their GitHub profile in the changelog and release notes.
+GitHub links commits to an account through the author's email. This folder helps our attribution tooling identify contributors;
+it cannot verify an email with GitHub or change GitHub's contributor graph. The
 design is borrowed from [Hermes Agent](https://github.com/NousResearch/hermes-agent/tree/main/contributors), which does this best:
 **one tiny file per email**, so mappings never cause merge conflicts.
 
@@ -44,6 +45,14 @@ Commit that file in the same pull request.
 
 ## How contributions are shown
 
-- **Pull request merged**: GitHub shows you as the author, and as a contributor on the repository.
+- **Pull request merged**: GitHub links commits to your profile when their author email is associated with your account.
 - **Changelog**: each entry ends with `(#PR, thanks @login)` for changes from outside the maintainers.
 - **Release notes**: generated from merged pull requests, grouped by type, with every author named.
+
+## Historical AI-authored commits
+
+History includes 11 commits authored by `Claude <noreply@anthropic.com>`, predating the current AI-assisted-changes policy.
+Three record Benjamin Ang as committer; the other eight also record Claude as committer. Those records alone do not establish
+a responsible human for every commit, so the shared Claude identity is not mapped to a person. Original history is retained;
+new AI-assisted changes follow the human-authorship rule above. A display mapping would not verify an email with GitHub.
+History also contains 53 `Co-Authored-By: Claude` trailers, so the 11 author records do not represent all AI involvement.
