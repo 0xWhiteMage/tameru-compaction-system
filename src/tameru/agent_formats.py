@@ -1975,12 +1975,12 @@ def _classify_npm_audit(lines: list[str]) -> tuple[list[bool], list[int], list[i
         end = i - 1
         block = lines[start : end + 1]
 
-        is_low_block = False
-        for line in block:
-            match = _NPM_AUDIT_SEVERITY_RE.match(line.strip())
-            if match and match.group(1).lower() == "low":
-                is_low_block = True
-                break
+        severities = [
+            match.group(1).lower()
+            for line in block
+            if (match := _NPM_AUDIT_SEVERITY_RE.match(line.strip()))
+        ]
+        is_low_block = severities == ["low"]
 
         if is_low_block:
             for idx in range(start, end + 1):
