@@ -18,6 +18,7 @@ The following notice applies to the Fish Speech test input:
 This model is licensed under the Fish Audio Research License,
 Copyright © 39 AI, INC. All Rights Reserved.
 Modified by Benjamin Ang, 2026: excerpted from the Fish Speech README and contributor list, reformatted and truncated for use as a test input; derived text also appears in tests/golden/compress_context.json.
+These test inputs are not included in the wheel or source distribution.
 
 PHP test input
 
@@ -25,6 +26,7 @@ The following notices apply to fixtures/shape-yaml-travis.txt and the
 PHP-derived text in tests/golden/compress_context.json:
 This product includes PHP software, freely available from <http://www.php.net/software/>
 Copyright (c) 1999 - 2021 The PHP Group. All rights reserved.
+These test inputs are not included in the wheel or source distribution.
 
 See THIRD_PARTY_NOTICES.md in the source repository,
 https://github.com/0xWhiteMage/tameru-compaction-system,
