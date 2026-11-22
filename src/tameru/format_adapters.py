@@ -411,7 +411,8 @@ def _adapt_ndjson(
         try:
             if len(line) > limits.max_record_chars:
                 raise ValueError("record size limit exceeded")
-            json.loads(line, object_pairs_hook=checked_object, parse_constant=reject_constant)
+            if json.loads(line, object_pairs_hook=checked_object, parse_constant=reject_constant) is None:
+                raise ValueError("null record is not selectable")
         except (ValueError, RecursionError):
             return _decline(
                 text,

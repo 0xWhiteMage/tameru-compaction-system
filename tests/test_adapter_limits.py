@@ -36,3 +36,17 @@ def test_weak_query_yaml_document_outliers_obey_limits(limits):
     assert not result.applied
     assert result.text == text
     assert "limit" in result.reason
+
+
+def test_weak_query_yaml_document_outliers_accept_exact_limits():
+    documents = [f"name: worker-{i}\nstatus: healthy" for i in range(6)]
+    text = "\n---\n".join(documents)
+    result = adapt_format(text, "", FormatLimits(max_records=6, max_record_chars=len(documents[0]) + 4), format_name="yaml")
+    assert result.applied
+
+
+@pytest.mark.parametrize("kind,text,count,size", CASES)
+def test_empty_line_formats_are_unchanged_under_small_limits(kind, text, count, size):
+    result = adapt_format("", "needle", FormatLimits(max_records=1, max_record_chars=1), format_name=kind)
+    assert not result.applied
+    assert result.text == ""
