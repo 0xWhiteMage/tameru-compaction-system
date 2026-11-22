@@ -106,7 +106,7 @@ def text_of(content: Any) -> str:
 
 def last_user_text(messages: list[dict[str, Any]]) -> str:
     for msg in reversed(messages or []):
-        if msg.get("role") == "user":
+        if isinstance(msg, dict) and msg.get("role") == "user":
             return text_of(msg.get("content"))
     return ""
 
