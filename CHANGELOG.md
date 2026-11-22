@@ -11,6 +11,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
 release, paired, cluster bootstrap); none of it is a measurement against a real model's bill. Plan and rules: [`docs/ANALYSIS-PLAN-1.10.md`](docs/ANALYSIS-PLAN-1.10.md).
 
+- **Query-independent analyses are cached by content digest, not by the text itself (S7).** A byte-capped LRU
+  (`tameru.content_cache`, default 64 MB per process, `TAMERU_CACHE_MAX_BYTES` to size it) holds the compact analysis
+  records — content profile, fingerprints, protected facts, error exemplars, block segmentation — keyed by
+  `content_key = sha256(engine version, analysis, text)`. The text is never a dict key and never in a record, so a
+  long-lived host no longer pins up to six copies of a 1 MB input per cache; the scored-blocks memo is byte-capped
+  the same way. `tameru.cache_stats()` reports hits, misses, analyses, bytes, evictions and a per-content_key count;
+  protocol 3 adds an additive `stats` request (`{"op": "stats"}`). Inputs over 2,000,000 chars take a streaming
+  head/tail + error-line-sampler path (result carries `confidence_basis="partial"`, confidence capped at 0.5,
+  reason `huge_sampled`); over 8,000,000 chars the call fails open with the closed reason `too_large` and no
+  analysis. Development latency on the benchmark matrix (`benchmarks/latency.py`): the new 4M class runs p50 256-638 ms
+  against a 2 s budget; the 2M class drops from 840-3,435 ms (e638509) to 160-430 ms; smaller classes are
+  unchanged within noise, all 132 cells inside budget. Peak traced allocation per ~1.7M call is unchanged from
+  e638509 (engine-internal, ~22x input); retained memory after a call is ~0x input — the old memos pinned whole texts.
 - **Stack traces and build logs shrink under any question.** On a generic or tool-call-shaped question the engine used to skip its log folding, so Java and .NET
   traces saved 0 to 21%. A structural pass now always runs for log and trace routes: frames fold per exception cause (Java, .NET, Python, Go, JS, Ruby, PHP)
   keeping each head, cause message, `... N more` and the first frame outside the framework; repeated templates and build noise become counts. On the benchmark

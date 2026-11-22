@@ -6,6 +6,7 @@ shadow, while callers retain and return original substrings.
 from __future__ import annotations
 
 import functools
+from .content_cache import _engine_version, content_memo
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
@@ -273,7 +274,7 @@ def search_units(text: str) -> list[str]:
 _UNITS_MEMO_MAX_CHARS = 8192
 
 
-@functools.lru_cache(maxsize=256)
+@content_memo("search_units", version=_engine_version)
 def _search_units_cached(text: str) -> tuple[str, ...]:
     return tuple(_search_units(text))
 

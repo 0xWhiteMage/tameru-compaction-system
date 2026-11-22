@@ -80,6 +80,24 @@ except Exception:
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
 ENGINE_VERSION = "1.10.0"
+
+from .content_cache import CACHE as _CONTENT, ContentCache, _MISS, content_key, content_memo
+
+# S7: the scored-blocks memo is byte-capped too, under its own budget.
+_SCORED = ContentCache(max_bytes=16 << 20)
+
+# S7: inputs past ``_HUGE_CHARS`` take a streaming head/error-sampler/tail path
+# (``confidence_basis="partial"``); past ``_HUGE_MAX_CHARS`` the call fails open with
+# the closed reason ``too_large`` and no analysis.
+_HUGE_CHARS = 2_000_000
+_HUGE_MAX_CHARS = 8_000_000
+_HUGE_EDGE_CHARS = 393_216
+_HUGE_ERR_CHARS = 262_144
+_HUGE_ERR_MARKERS = (
+    "error", "traceback", "exception", "errno", "denied",
+    "failed", "fatal", "panic", "stderr", "assert",
+)
+
 # Shape of CompressResult for hosts: 3 since 1.10.0 (fact_lines_dropped; schema 2 added
 # confidence_basis, stable_key, dropped, result_schema, preset).
 RESULT_SCHEMA = 3
@@ -290,7 +308,7 @@ def _secret_scan(text: str) -> bool:
     return _SECRETS_RE.search(text) is not None or _SECRETS_EXTRA_RE.search(text) is not None
 
 
-@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+@content_memo("contains_secret", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _contains_secret_cached(text: str) -> bool:
     return _secret_scan(text)
 
@@ -504,7 +522,7 @@ def estimate_tokens(text: str) -> int:
     return _estimate_tokens(text)
 
 
-@functools.lru_cache(maxsize=_MEMO_ENTRIES * 2)
+@content_memo("estimate_tokens", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _estimate_tokens_cached(text: str) -> int:
     return _estimate_tokens(text)
 
@@ -974,7 +992,7 @@ def _error_fingerprints_scan(text: str) -> dict[str, str]:
     return found
 
 
-@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+@content_memo("error_fingerprints", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _error_fingerprints_cached(text: str) -> dict[str, str]:
     return _error_fingerprints_scan(text)
 
@@ -1367,7 +1385,7 @@ def _fact_summary_uncached(text: str) -> tuple[tuple[tuple[int, str, str, str], 
     return (() if _fact_dense(facts, nonblank) else tuple(facts)), _fact_dense(facts, nonblank)
 
 
-@functools.lru_cache(maxsize=64)
+@content_memo("fact_summary", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _fact_summary_cached(text: str) -> tuple[tuple[tuple[int, str, str, str], ...], bool]:
     return _fact_summary_uncached(text)
 
@@ -2953,9 +2971,16 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
 
 
 
-@functools.lru_cache(maxsize=_MEMO_ENTRIES)
 def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]:
-    return tuple(segment_blocks(list(lines)))
+    text = chr(10).join(lines)
+    if len(text) > _MEMO_MAX_CHARS:
+        return tuple(segment_blocks(list(lines)))
+    key = content_key(ENGINE_VERSION, "segment_blocks", text)
+    hit = _CONTENT.get(key)
+    if hit is _MISS:
+        hit = tuple(segment_blocks(list(lines)))
+        _CONTENT.set(key, hit)
+    return hit
 
 
 def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> list[str]:
@@ -2984,8 +3009,6 @@ def _segment_blocks_memo(lines: list[str]) -> list[dict[str, Any]]:
     return [dict(b) for b in _segment_blocks_cached(tuple(lines))]
 
 
-_SCORED_MEMO: "collections.OrderedDict[tuple, tuple[dict[str, Any], ...]]" = collections.OrderedDict()
-_SCORED_MEMO_LOCK = threading.Lock()
 
 
 def _score_blocks_memo(
@@ -3010,17 +3033,11 @@ def _score_blocks_memo(
         or not _MEMO_MIN_CHARS <= sum(map(len, score_lines)) <= _MEMO_MAX_CHARS
     ):
         return score_blocks(blocks, query, content_type=content_type)
-    key = (tuple(score_lines), query, content_type)
-    with _SCORED_MEMO_LOCK:
-        hit = _SCORED_MEMO.get(key)
-        if hit is not None:
-            _SCORED_MEMO.move_to_end(key)
-    if hit is None:
+    key = content_key(ENGINE_VERSION, "scored", chr(0).join(score_lines), (query, content_type))
+    hit = _SCORED.get(key)
+    if hit is _MISS:
         hit = tuple(score_blocks(blocks, query, content_type=content_type))
-        with _SCORED_MEMO_LOCK:
-            _SCORED_MEMO[key] = hit
-            while len(_SCORED_MEMO) > _MEMO_ENTRIES:
-                _SCORED_MEMO.popitem(last=False)
+        _SCORED.set(key, hit)
     return [dict(b) for b in hit]
 
 
@@ -3031,7 +3048,7 @@ def _clear_memos() -> None:
 
     for fn in (
         _contains_secret_cached, _error_fingerprints_cached, _extract_critical_lines_cached,
-        _preprocess_cached, _segment_blocks_cached, _brief_scan_cached,
+        _preprocess_cached, _brief_scan_cached,
         _block_link_terms_cached, _extract_entities_cached, _extract_terms_cached,
         _estimate_tokens_cached, _evidence_blob,
         industrial._profile_input_cached, unicode_profile._search_units_cached,
@@ -3039,8 +3056,13 @@ def _clear_memos() -> None:
         _fact_summary_cached,
     ):
         fn.cache_clear()
-    with _SCORED_MEMO_LOCK:
-        _SCORED_MEMO.clear()
+    _CONTENT.clear()
+    _SCORED.clear()
+
+
+def cache_stats() -> dict[str, Any]:
+    """Process-wide content/scored-cache counters (S7); keys are digests, never text."""
+    return {"content": _CONTENT.stats(), "scored": _SCORED.stats()}
 
 
 def _soft_has(text: str, needle: str) -> bool:
@@ -3885,7 +3907,7 @@ def _block_link_terms(text: str) -> frozenset[str]:
     return frozenset(_block_link_terms_scan(text))
 
 
-@functools.lru_cache(maxsize=4096)
+@content_memo("block_link_terms", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _block_link_terms_cached(text: str) -> frozenset[str]:
     return frozenset(_block_link_terms_scan(text))
 
@@ -4626,7 +4648,7 @@ def _match_fold(text: str) -> str:
     return text.lower() if text.isascii() else unicodedata.normalize("NFKC", text).lower()
 
 
-@functools.lru_cache(maxsize=4)
+@content_memo("evidence_blob", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _evidence_blob(text: str) -> str:
     """``_match_fold(text)`` without its trust-risk lines. Injection-shaped text is never evidence: a key that only
     an ``ignore previous instructions`` line holds is not present, and such a line never counts as kept."""
@@ -4761,7 +4783,7 @@ def _extract_critical_lines(text: str) -> list[str]:
     return _extract_critical_lines_scan(text)
 
 
-@functools.lru_cache(maxsize=_MEMO_ENTRIES)
+@content_memo("critical_lines", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _extract_critical_lines_cached(text: str) -> tuple[str, ...]:
     return tuple(_extract_critical_lines_scan(text))
 
@@ -9655,6 +9677,27 @@ def redact_secrets_in(text: str) -> str:
     return text
 
 
+def _huge_sample(text: str) -> str:
+    """Streaming head/tail + error-line sample for inputs over ``_HUGE_CHARS`` (S7).
+
+    One deterministic pass: fixed-size edges, every middle line matching a cheap
+    marker check, thinned evenly to ``_HUGE_ERR_CHARS`` when over budget."""
+    edge = _HUGE_EDGE_CHARS
+    head, tail = text[:edge], text[-edge:]
+    errs: list[str] = []
+    total = 0
+    for line in text[edge:len(text) - edge].splitlines():
+        low = line.lower()
+        if any(mark in low for mark in _HUGE_ERR_MARKERS):
+            errs.append(line)
+            total += len(line) + 1
+    if total > _HUGE_ERR_CHARS and errs:
+        step = max(1, round(total / _HUGE_ERR_CHARS))
+        errs = errs[::step]
+    mid = chr(10).join(errs)
+    return (chr(10) + chr(91) + chr(8230) + chr(93) + chr(10)).join(part for part in (head, mid, tail) if part)
+
+
 def compress_context(
     context: str,
     query: str | Iterable[str],
@@ -9691,6 +9734,39 @@ def compress_context(
     selector_query: str | None = None,
     _ccr_defer: bool = False,
 ) -> CompressResult:
+    full_text = str(context or "")
+    if len(full_text) > _HUGE_CHARS:
+        if len(full_text) > _HUGE_MAX_CHARS:
+            est = _estimate_tokens(full_text)
+            return CompressResult(
+                compressed_text=full_text, original_tokens=est, kept_tokens=est,
+                tokens_saved_pct=0.0, policy_name="huge-too-large", mode=mode,
+                keep_ratio=1.0, fail_open=True, reasons=["too_large"],
+                confidence=0.0, confidence_basis="none",
+            )
+        sample = _huge_sample(full_text)
+        res = compress_context(
+            sample, query, mode=mode, budget_ratio=budget_ratio, ccr=ccr,
+            cache_prefix=cache_prefix, citations=citations, ccr_dir=ccr_dir,
+            decision_cache=decision_cache, strategy=strategy,
+            ambiguity_fail_open=ambiguity_fail_open, reorder_best=reorder_best,
+            semantic_tier=semantic_tier, log_dir=log_dir, pin_patterns=pin_patterns,
+            pin_recent=pin_recent, min_savings_ratio=min_savings_ratio,
+            degraded_view=degraded_view, summary_endpoint=summary_endpoint,
+            summary_models=summary_models, summary_timeout=summary_timeout,
+            summary_allow_remote=summary_allow_remote, limits=limits,
+            derive_query=derive_query, anchor_errors=anchor_errors,
+            prose_brief=prose_brief, gap_marker=gap_marker,
+            recursion_markers=recursion_markers, content_hint=content_hint,
+            inline_short_gaps=inline_short_gaps, redact_secrets=redact_secrets,
+            selector_query=selector_query, _ccr_defer=_ccr_defer,
+        )
+        return dataclasses.replace(
+            res, original_tokens=_estimate_tokens(full_text),
+            confidence_basis="partial",
+            confidence=min(0.5, res.confidence) if res.confidence is not None else 0.5,
+            reasons=[*res.reasons, "huge_sampled"],
+        )
     _pin_token = _PINNED_LINES.set(frozenset())
     _fact_off_token = _FACT_OFF.set(False)
     _err_token = _ERR_PROTECTED.set(())

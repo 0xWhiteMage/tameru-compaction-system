@@ -22,6 +22,8 @@ from tameru import compress_context as cc
 from tameru import folding
 from tameru import format_adapters as fa
 from tameru.compress_context import compress_context
+from tameru import content_cache as cc_content_cache
+from tameru.content_cache import content_key
 
 KW = dict(ccr=False, citations=False)
 
@@ -418,10 +420,11 @@ def test_texts_above_the_memo_cap_are_not_remembered(monkeypatch):
     once = counter.calls
     cc.error_fingerprints(text)
     assert counter.calls == 2 * once
-    assert cc._error_fingerprints_cached.cache_info().currsize == 0
+    key = content_key(cc.ENGINE_VERSION, "error_fingerprints", text)
+    assert cc_content_cache.CACHE.get(key) is cc_content_cache._MISS
     monkeypatch.setattr(cc, "_MEMO_MAX_CHARS", len(text))
     cc.error_fingerprints(text)
-    assert cc._error_fingerprints_cached.cache_info().currsize == 1
+    assert cc_content_cache.CACHE.get(key) is not cc_content_cache._MISS
 
 
 def test_threads_sharing_the_memos_get_the_same_answers():

@@ -36,11 +36,11 @@ sys.path.insert(0, str(ROOT / "src"))
 import tameru  # noqa: E402
 from tameru import compress_context as cc  # noqa: E402
 
-SIZES = {"6-20K": 16_000, "50K": 50_000, "200K": 200_000, "2M": 2_000_000}
+SIZES = {"6-20K": 16_000, "50K": 50_000, "200K": 200_000, "2M": 2_000_000, "4M": 4_000_000}
 # (p50 ms, p95 ms) budgets for the next release.
-BUDGETS = {"6-20K": (60, 150), "50K": (200, 400), "200K": (800, 1500), "2M": (6000, 10000)}
-REPS = {"6-20K": 15, "50K": 15, "200K": 15, "2M": 5}
-QUICK_REPS = {"6-20K": 5, "50K": 5, "200K": 3, "2M": 0}
+BUDGETS = {"6-20K": (60, 150), "50K": (200, 400), "200K": (800, 1500), "2M": (6000, 10000), "4M": (2000, 2000)}
+REPS = {"6-20K": 15, "50K": 15, "200K": 15, "2M": 5, "4M": 3}
+QUICK_REPS = {"6-20K": 5, "50K": 5, "200K": 3, "2M": 0, "4M": 0}
 REGRESSION = 1.10
 CELL_TIMEOUT_S = 90  # guard for the 2M class (child process, killed on expiry)
 SEED = 20260101

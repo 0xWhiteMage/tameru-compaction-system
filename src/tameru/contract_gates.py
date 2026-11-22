@@ -6,6 +6,7 @@ Stdlib only. No I/O. Do not import compress_context.
 from __future__ import annotations
 
 import functools
+from .content_cache import _engine_version, content_memo
 import re
 from dataclasses import dataclass, field
 
@@ -213,7 +214,7 @@ def query_has_distinctive_selectors(query: str) -> bool:
     return bool(distinctive_query_terms(query))
 
 
-QUERY_BASES = ("lexical", "cross_lingual", "tool_call", "structural", "derived", "anchored", "none")
+QUERY_BASES = ("lexical", "cross_lingual", "tool_call", "structural", "derived", "anchored", "none", "partial")
 _OTHER_SCRIPTS = frozenset({"kana", "hangul", "arabic", "thai"})
 _TOOL_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}")
 
@@ -231,7 +232,7 @@ def nonlatin_units(query: str) -> list[str]:
     return units
 
 
-@functools.lru_cache(maxsize=4)
+@content_memo("source_blob", version=_engine_version)
 def _source_blob(source: str) -> str:
     return source.casefold() if source.isascii() else matching_shadow(source)
 

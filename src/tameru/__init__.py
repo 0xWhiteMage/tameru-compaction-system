@@ -33,6 +33,7 @@ _ENGINE_EXPORTS = frozenset(
     {
         "ENGINE_VERSION",
         "ToolPayload",
+        "cache_stats",
         "brief_context",
         "contains_secret",
         "error_fingerprints",

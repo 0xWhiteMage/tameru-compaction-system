@@ -467,6 +467,24 @@ def _plan_cache(body: Any) -> CacheState:
         raise ProtocolError("bad_cache") from None
 
 
+STATS_FIELDS = frozenset({"id", "op", "protocol"})
+
+
+def validate_stats_request(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Check a ``stats`` request (protocol 3, additive). The worker replies ``{"id", "stats"}``
+    carrying ``compress_context.cache_stats()``. Raises ``ProtocolError``."""
+    if not isinstance(request, Mapping):
+        raise ProtocolError("bad_request")
+    if set(request) - STATS_FIELDS:
+        raise ProtocolError("unknown_field")
+    if request.get("op") != "stats":
+        raise ProtocolError("bad_op")
+    declared = request.get("protocol", PROTOCOL_VERSION)
+    if isinstance(declared, bool) or declared != 3:
+        raise ProtocolError("bad_protocol")
+    return {}
+
+
 def validate_plan_request(request: Mapping[str, Any]) -> PlanInput:
     """Check a ``plan`` request (protocol 3) and return the ``PlanInput``. Raises ``ProtocolError``.
 
