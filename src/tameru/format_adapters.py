@@ -900,7 +900,7 @@ def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
                 values.append(rest.strip())
             else:
                 template.append((indent, "<item>"))
-                values.append("")
+                values.append(line.lstrip())
         return tuple(template), values
 
     for doc in docs:
