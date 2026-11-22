@@ -30,6 +30,11 @@ def test_ev_invalid_costs_decline(field, value):
     assert ev_terms(result(), EV, **costs) is None
 
 
+def test_ev_overflow_declines():
+    assert ev_terms(result(), EV, 1e308, n_eff=1e308,
+                    suffix_tokens=0, item_tokens=1000) is None
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

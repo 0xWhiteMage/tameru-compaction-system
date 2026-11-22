@@ -156,6 +156,8 @@ def ev_terms(
         loss.p_recovered * (item_tokens * w + loss.recovery_output_tokens * o)
         + (1 - loss.p_recovered) * loss.lambda_base * mult * item_tokens
     )
+    if not isfinite(V) or not isfinite(L):
+        return None
     return p_hat, V, L
 
 
