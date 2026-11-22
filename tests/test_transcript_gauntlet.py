@@ -145,3 +145,10 @@ def test_argument_traversal_has_a_total_node_budget():
     cycle = []
     cycle.append(cycle)
     assert t._string_leaves(cycle) == []
+
+
+def test_oversized_json_arguments_are_not_parsed(monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("oversized argument was parsed")
+    monkeypatch.setattr(t.json, "loads", forbidden)
+    assert t._arg_leaves('{"path":"' + "a" * 70000 + '"}') == []

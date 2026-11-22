@@ -54,6 +54,7 @@ _QUERY_PART_CHARS = 600
 _QUERY_ARG_CHARS = 240
 _QUERY_MAX_DEPTH = 8
 _QUERY_MAX_NODES = 4096
+_QUERY_ARG_JSON_CHARS = 65536
 
 # ``data:<mime>[;param]*,<payload>`` -- the payload charset is base64 plus
 # percent-encoding, so text that follows the URI is not swallowed. Every part is
@@ -183,6 +184,8 @@ def _tool_calls(message: dict[str, Any]) -> list[Any] | tuple[Any, ...]:
 def _arg_leaves(args: Any) -> list[str]:
     """String leaves of tool-call arguments given as a JSON string or a dict."""
     if isinstance(args, str):
+        if len(args) > _QUERY_ARG_JSON_CHARS:
+            return []
         try:
             parsed = json.loads(args)
         except (ValueError, RecursionError):
