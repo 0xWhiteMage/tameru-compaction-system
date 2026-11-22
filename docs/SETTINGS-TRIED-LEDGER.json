@@ -3,7 +3,7 @@
   "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
   "settings_tried": 42,
   "validation_queries": {
-    "engine": 5,
+    "engine": 10,
     "deepseek-plugin": 0,
     "hermes-plugin": 0
   },
@@ -449,6 +449,51 @@
       "setting": "E9",
       "gate": "s6_calibration",
       "query_index": 4,
+      "noise_seed": 20261121,
+      "checks": 8
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "s5_vague_en",
+      "query_index": 5,
+      "noise_seed": 20261121,
+      "checks": 4
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "s5_vague_zh",
+      "query_index": 6,
+      "noise_seed": 20261121,
+      "checks": 4
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "existing_gold",
+      "query_index": 7,
+      "noise_seed": 20261121,
+      "checks": 6
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "savings",
+      "query_index": 8,
+      "noise_seed": 20261121,
+      "checks": 8
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "s6_calibration",
+      "query_index": 9,
       "noise_seed": 20261121,
       "checks": 8
     }

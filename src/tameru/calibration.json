@@ -14,11 +14,11 @@
  "source": {
   "accepted_rows": 1439,
   "engine_commit": [
-   "6a40d6ff5091e69233d3b1ea83ba0c7aaaa821e4"
+   "9cedca4de1101c9f3aeaa71c709c463368a617cd"
   ],
   "families": 10,
-  "rows": "benchmarks/engine_bench/results/r2-candidate-e7-dev.jsonl",
-  "rows_sha256": "748a80761762c3ed9df3ab9818a15ed0868486f5d54deeb9b32f77a05e1a79bd",
+  "rows": "benchmarks/engine_bench/results/r2-candidate-e10-dev.jsonl",
+  "rows_sha256": "99b868fbd0cd72c93b0415ce79b37cf86ad1d7fd09da8762a3d05d0f44d4a520",
   "split": "dev"
  },
  "strata": {
