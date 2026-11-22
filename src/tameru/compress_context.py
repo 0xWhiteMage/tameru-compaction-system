@@ -5687,6 +5687,10 @@ def _clear_tool_payloads(text: str) -> str:
     return "\n".join(out)
 
 
+_SUMMARY_MAX_MODELS = 16
+_SUMMARY_MAX_MODEL_CHARS = 1024
+
+
 def _summarise_with_llm(
     text: str,
     query: str,
@@ -5754,13 +5758,21 @@ def _summarise_with_llm(
         return None
     if model_candidates is None:
         configured = os.environ.get("TAMERU_SUMMARY_MODELS", "")
-        models = tuple(m.strip() for m in configured.split(",") if m.strip())
-        if not models:
-            models = DEFAULT_SUMMARY_MODELS
-    elif isinstance(model_candidates, str):
-        models = tuple(m.strip() for m in model_candidates.split(",") if m.strip())
-    else:
-        models = tuple(str(m).strip() for m in model_candidates if str(m).strip())
+        model_candidates = configured if configured.strip() else DEFAULT_SUMMARY_MODELS
+    if isinstance(model_candidates, str):
+        model_candidates = model_candidates.split(",", _SUMMARY_MAX_MODELS)
+    models: list[str] = []
+    try:
+        for index, model in enumerate(model_candidates):
+            if index >= _SUMMARY_MAX_MODELS or not isinstance(model, str):
+                return None
+            if len(model) > _SUMMARY_MAX_MODEL_CHARS:
+                return None
+            model = model.strip()
+            if model:
+                models.append(model)
+    except Exception:  # caller-provided iterators must fail open
+        return None
     if not models:
         return None
     if timeout is None:
