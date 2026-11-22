@@ -456,6 +456,8 @@ def _read_hunk(lines: list[str], i: int) -> int:
     """
     m = _HUNK_HEADER_RE.match(lines[i])
     assert m is not None
+    if any(len(value) > 18 for value in m.groups() if value is not None):
+        raise ValueError("oversized hunk count")
     old = int(m.group(2)) if m.group(2) is not None else 1
     new = int(m.group(4)) if m.group(4) is not None else 1
     j = i + 1
@@ -471,7 +473,11 @@ def _read_hunk(lines: list[str], i: int) -> int:
             new -= 1
         elif first != "\\":
             break
+        if old < 0 or new < 0:
+            raise ValueError("inconsistent hunk counts")
         j += 1
+    if old or new:
+        raise ValueError("incomplete hunk")
     while j < n and lines[j].startswith("\\"):  # "\ No newline at end of file"
         j += 1
     return j
@@ -605,7 +611,10 @@ def adapt_unified_diff(
     if not detect_unified_diff(text):
         return None
     lines = text.split("\n")
-    preamble, files = _parse_diff(lines)
+    try:
+        preamble, files = _parse_diff(lines)
+    except ValueError:
+        return AdapterResult("diff", text, reason="malformed hunk; unchanged")
     if not files or not any(f.hunks for f in files):
         return None
     from .format_adapters import _query_selectors

@@ -3,6 +3,13 @@ import pytest
 from tameru import agent_formats as af
 
 
+@pytest.mark.parametrize("body", ["@@ -1,3 +1,3 @@\n a", "@@ -1,0 +1,1 @@\n a", "@@ -1 +1 @@\n?bad", "@@ -1," + "9" * 5000 + " +1 @@\n a"])
+def test_diff_malformed_hunks(body):
+    text = "--- a/x.py\n+++ b/x.py\n" + body
+    result = af.adapt_unified_diff(text, "needle")
+    assert result is not None and result.text == text
+
+
 def test_grep_oversized_line_number():
     assert af._grep_parse_line('file.py:' + '9' * 5000 + ':body') is None
     assert af._grep_parse_line('file.py:12:body') == ('m', 'file.py', 12, 'body')
