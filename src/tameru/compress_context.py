@@ -6273,16 +6273,15 @@ def _brief_scan(
     and query-hit exemplar lines (original order)."""
     lines = text.split("\n")
     nonblank = [0] * (len(lines) + 1)
-    for i, line in enumerate(lines):
-        nonblank[i + 1] = nonblank[i] + (1 if line.strip() else 0)
-
     # Candidate lines by priority class (indices, original order).
     err_idx: list[int] = []
     warn_idx: list[int] = []
     seen_err: set[str] = set()
     seen_warn: set[str] = set()
     for i, line in enumerate(lines):
-        if not line.strip():
+        has_text = bool(line.strip())
+        nonblank[i + 1] = nonblank[i] + has_text
+        if not has_text:
             continue
         if _is_error_line(line):
             fp = _error_fp(line)
@@ -6301,7 +6300,7 @@ def _brief_scan(
         ranked: list[tuple[int, int]] = []
         seen_hit: set[str] = set()
         for i, line in enumerate(lines):
-            if not line.strip():
+            if nonblank[i + 1] == nonblank[i]:
                 continue
             low = line[:_RX_LINE_CAP].casefold()
             hits = sum(1 for test in tests if test(low))
@@ -6439,7 +6438,7 @@ def brief_context(
         def add_head() -> None:
             used = 0
             for i in range(n):
-                if not lines[i].strip():
+                if not has_content(i, i + 1):
                     continue
                 c = len(eff(i)) + 1
                 if i > 0 and used + c > head_cap:
@@ -6453,7 +6452,7 @@ def brief_context(
             for i in range(n - 1, -1, -1):
                 if i in chosen_set and used:  # met the head
                     break
-                if not lines[i].strip():
+                if not has_content(i, i + 1):
                     continue
                 c = len(eff(i)) + 1
                 if used + c > tail_cap:
@@ -6480,12 +6479,12 @@ def brief_context(
             head_open = tail_open = True
             while (head_open or tail_open) and hi <= ti:
                 if head_open:
-                    while hi < n and (hi in chosen_set or not lines[hi].strip()):
+                    while hi < n and (hi in chosen_set or not has_content(hi, hi + 1)):
                         hi += 1
                     if hi >= n or not try_add(hi):
                         head_open = False
                 if tail_open:
-                    while ti >= 0 and (ti in chosen_set or not lines[ti].strip()):
+                    while ti >= 0 and (ti in chosen_set or not has_content(ti, ti + 1)):
                         ti -= 1
                     if ti < 0 or not try_add(ti):
                         tail_open = False
