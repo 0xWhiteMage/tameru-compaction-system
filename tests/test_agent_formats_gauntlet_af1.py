@@ -3,6 +3,13 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_rollout_resource_anchors():
+    lines = [f'Waiting for deployment "{name}" rollout to finish: {i} of 9' for name in ("a", "b") for i in range(8)]
+    keep = af._classify_rollout_wait(lines)[0]
+    assert [i for i, flag in enumerate(keep) if flag] == [0, 6, 7, 8, 14, 15]
+    assert af._classify_rollout_wait([])[0] == []
+
+
 def test_ansible_large_recap_counts():
     lines = ["PLAY RECAP ***", "a : ok=1 changed=0 unreachable=0 failed=0",
              "b : ok=1 changed=0 unreachable=" + "9" * 5000 + " failed=0"]

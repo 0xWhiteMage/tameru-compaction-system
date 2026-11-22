@@ -2239,12 +2239,17 @@ def _detect_rollout_wait(text: str) -> bool:
 
 def _classify_rollout_wait(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     keep = [True] * len(lines)
-    matching = [index for index, line in enumerate(lines) if _ROLLOUT_WAIT_RE.match(line)]
-    if len(matching) >= 6:
-        keep_indices = {matching[0], *matching[-2:]}
-        for index in matching:
-            if index not in keep_indices:
-                keep[index] = False
+    groups: dict[str, list[int]] = {}
+    for index, line in enumerate(lines):
+        match = _ROLLOUT_WAIT_RE.match(line)
+        if match:
+            groups.setdefault(match.group(), []).append(index)
+    for matching in groups.values():
+        if len(matching) >= 6:
+            keep_indices = {matching[0], *matching[-2:]}
+            for index in matching:
+                if index not in keep_indices:
+                    keep[index] = False
     return keep, [0] * len(lines), [0] * len(lines)
 
 
