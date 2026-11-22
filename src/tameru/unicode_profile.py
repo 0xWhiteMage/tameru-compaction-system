@@ -179,7 +179,8 @@ def script_of(char: str) -> str | None:
         ("ethiopic", 0x1200, 0x137F),
         ("khmer", 0x1780, 0x17FF),
         ("mongolian", 0x1800, 0x18AF),
-        ("han", 0x3400, 0x9FFF),
+        ("han", 0x3400, 0x4DBF),
+        ("han", 0x4E00, 0x9FFF),
         ("han", 0xF900, 0xFAFF),      # compatibility ideographs
         ("han", 0x20000, 0x2FA1F),    # Extension B and later, compatibility supplement
         ("kana", 0x3040, 0x30FF),

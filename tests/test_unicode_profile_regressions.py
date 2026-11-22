@@ -14,3 +14,10 @@ def test_non_joiner_does_not_attach_the_following_base():
 
 def test_khmer_coeng_keeps_the_subscript_consonant_atomic():
     assert graphemes("ក\u17d2រ") == ["ក\u17d2រ"]
+
+
+def test_i_ching_symbols_do_not_count_as_han():
+    assert script_of("\u4dbf") == "han"
+    assert script_of("\u4dc0") is None
+    assert script_of("\u4dff") is None
+    assert script_of("\u4e00") == "han"
