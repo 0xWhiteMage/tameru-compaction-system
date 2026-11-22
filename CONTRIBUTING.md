@@ -10,7 +10,7 @@ belongs, how to run everything, the rules every pull request must follow, and ho
 ```bash
 python -m pytest -q                              # the test suite (about two minutes)
 python scripts/check_host_rules.py               # the host restrictions
-python scripts/check_attribution.py --base origin/<your PR's base branch>   # mapping check: every author email is a noreply address or mapped in contributors/emails/
+python scripts/check_attribution.py --base origin/v1.10.0   # substitute your PR's target branch; accepts noreply addresses or local mappings in contributors/emails/
 ```
 
 ---
@@ -95,7 +95,7 @@ The optional `semantic` extra (`pip install -e ".[semantic]"`) is not needed for
 |---|---|---|
 | `python -m pytest -q` | The whole suite (about 2,000 tests, around two minutes). Add `-k name` or a file path for a quick loop. | every change |
 | `python scripts/check_host_rules.py` | [Host restrictions](docs/HOST-RESTRICTIONS.md). `--list` shows every finding. | every change |
-| `python scripts/check_attribution.py --base origin/main` | Your commits are credited to your GitHub profile. | before you push |
+| `python scripts/check_attribution.py --base origin/v1.10.0` | Accepts noreply addresses or local mappings in `contributors/emails/`; substitute your PR's target branch. | before you push |
 | `python benchmarks/compare.py --verify-against benchmarks/comparison-v<version>.json` | The engine's outputs, savings and retention still match the recorded report (timings are not compared). | any change that can alter output |
 | `TAMERU_WRITE_GOLDEN=1 python -m pytest tests/test_golden_compress_context.py` | Regenerates the golden hashes. **Only when the output is meant to change**, and review the diff of `tests/golden/compress_context.json` like code. | intended output changes |
 
