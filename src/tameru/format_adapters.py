@@ -1055,7 +1055,7 @@ def _split_sql_statements(text: str) -> list[str] | None:
                     index += 2
                     continue
                 quote = ""
-            elif char == "\\" and index + 1 < len(text):
+            elif char == "\\" and quote != "]" and index + 1 < len(text):
                 index += 2
                 continue
             index += 1
@@ -1069,8 +1069,8 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 2
             continue
         char = text[index]
-        if char in {"'", '"', "`"}:
-            quote = char
+        if char in {"'", '"', "`", "["}:
+            quote = "]" if char == "[" else char
             index += 1
             continue
         if char == "$":
