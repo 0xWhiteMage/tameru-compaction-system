@@ -399,6 +399,8 @@ def _notable_order(rows: list[dict], dumped: list[str], terms: list[str]) -> lis
         for k, c in lowcard.items():
             if k in row:
                 v = row[k]
+                if not (v is None or isinstance(v, (str, int, float, bool))):
+                    continue
                 key = (type(v).__name__, v)
                 if key != modes[k] and key in c:
                     rarest = c[key] if rarest is None else min(rarest, c[key])
