@@ -267,7 +267,7 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         options.update(resolve_preset(preset))
     options.setdefault("strategy", "extract")   # the 1.x worker defaults, under any preset
     options.setdefault("citations", False)
-    mode = request.get("mode", "adaptive")
+    mode = request.get("mode", options.get("mode", "adaptive"))
     if mode not in MODES:
         raise ProtocolError("bad_mode")
     options["mode"] = mode

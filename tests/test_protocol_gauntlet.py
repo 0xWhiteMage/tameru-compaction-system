@@ -41,3 +41,11 @@ def test_the_verbose_flag_is_refused_because_comments_hide_constructs():
     assert protocol.regex_risk("(?x)#[\n(a+)+b")
     assert protocol.regex_risk("(?ix:a)")
     assert not protocol.regex_risk("(?i)abc")
+
+
+def test_a_preset_mode_survives_when_the_request_names_no_mode(monkeypatch):
+    monkeypatch.setattr(protocol, "preset_names", lambda: ["fixed@1"])
+    monkeypatch.setattr(protocol, "resolve_preset", lambda name: {"mode": "fixed", "ccr": False})
+    assert validate_request({"text": "t", "preset": "fixed@1"})["mode"] == "fixed"
+    assert validate_request({"text": "t", "preset": "fixed@1", "mode": "compiler"})["mode"] == "compiler"
+    assert validate_request({"text": "t"})["mode"] == "adaptive"
