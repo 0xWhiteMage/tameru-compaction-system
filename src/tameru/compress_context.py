@@ -7471,7 +7471,7 @@ def _resolve_objective(
                         plain_lines = _output_lines(plain.compressed_text)
                         anchored_lines = _output_lines(anchored.compressed_text)
                         original_lines = caller_text.splitlines()
-                        template_counts = collections.Counter(mask_template(raw.strip().lower()) for raw in original_lines)
+                        template_counts = None
                         error_flags = [_is_error_line(line.strip()) for line in original_lines]
                         total = len(original_lines)
                         for index, raw in enumerate(original_lines):
@@ -7481,6 +7481,10 @@ def _resolve_objective(
                             if not any(error_flags[max(0, index - 2):min(total, index + 3)]):
                                 continue
                             if line in plain_lines and line not in anchored_lines:
+                                if template_counts is None:
+                                    template_counts = collections.Counter(
+                                        mask_template(original.strip().lower()) for original in original_lines
+                                    )
                                 if template_counts.get(mask_template(line.lower()), 0) >= 3:
                                     continue
                                 return False
