@@ -151,6 +151,14 @@ def test_planner_ev_still_enforces_token_savings_gate():
     assert plan(planning_input(Policy(ev=EV, min_tokens_saved=900))).actions[0].action == "extract"
 
 
+@pytest.mark.parametrize("ev", [None, EV])
+def test_planner_ratio_uses_candidate_characters(ev):
+    policy = Policy(ev=ev, min_saved_ratio=0.5)
+    planned = plan(planning_input(policy, chars=1000, compressed_chars=900))
+    assert planned.actions[0].reason == "no_gain"
+    assert plan(planning_input(policy, chars=1000, compressed_chars=100)).actions[0].action == "extract"
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

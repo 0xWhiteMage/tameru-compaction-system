@@ -140,7 +140,8 @@ def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: fl
     result = SimpleNamespace(
         compressed_text="", fail_open=c.fail_open, compression_risk=c.risk, confidence=c.confidence,
         fact_lines_dropped=c.fact_lines_dropped, tokens_saved=c.tokens_saved,
-        original_tokens=item.tokens, kept_tokens=item.tokens - c.tokens_saved,
+        # decide uses these counts only for the savings ratio; planner budgets are characters.
+        original_tokens=item.chars, kept_tokens=c.compressed_chars,
     )
     if policy.ev is not None:
         terms = ev_terms(result, policy.ev, c.tokens_saved, n_eff=n_eff, suffix_tokens=suffix_tokens,
