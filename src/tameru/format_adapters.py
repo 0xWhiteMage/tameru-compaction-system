@@ -69,6 +69,17 @@ def _decline(
     )
 
 
+def _record_limit_result(
+    text: str, format_name: str, records: list[str], limits: FormatLimits | None
+) -> FormatResult | None:
+    limits = limits or FormatLimits()
+    if len(records) > limits.max_records:
+        return _decline(text, format_name, "record limit exceeded", total_records=len(records))
+    if any(len(record) > limits.max_record_chars for record in records):
+        return _decline(text, format_name, "record size limit exceeded", total_records=len(records))
+    return None
+
+
 # v1.4.0 (E6): conversational filler. A reply made only of these words names
 # nothing in the document, so it must behave like an empty query everywhere —
 # including here, where the plain-word fallback below would otherwise turn
@@ -397,8 +408,22 @@ def _adapt_ndjson(
         return _decline(text, "ndjson", "record limit exceeded", total_records=len(lines))
     kept: list[str] = []
     flags: list[bool] = []
+
+    def checked_object(pairs):
+        if len(pairs) > limits.max_fields:
+            raise ValueError("field limit exceeded")
+        return dict(pairs)
+
+    def reject_constant(value):
+        raise ValueError("non-finite JSON constant")
+
     for line in lines:
-        if len(line) > limits.max_record_chars or _json_loads(line) is None:
+        try:
+            if len(line) > limits.max_record_chars:
+                raise ValueError("record size limit exceeded")
+            if json.loads(line, object_pairs_hook=checked_object, parse_constant=reject_constant) is None:
+                raise ValueError("null record is not selectable")
+        except (ValueError, RecursionError):
             return _decline(
                 text,
                 "ndjson",
@@ -616,29 +641,30 @@ def _selector_is_distinctive(selector: str) -> bool:
 def _adapt_markdown(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     lines = text.splitlines()
-    sections: list[tuple[list[str], list[str]]] = []
-    ancestors: dict[int, str] = {}
-    current_ancestors: list[str] = []
+    sections: list[tuple[list[tuple[int, str]], list[str], int]] = []
+    ancestors: dict[int, tuple[int, str]] = {}
+    current_ancestors: list[tuple[int, str]] = []
     current: list[str] = []
+    current_start = 0
     in_fence = False
     fence_marker = ""
 
     def flush() -> None:
         nonlocal current
         if current:
-            sections.append((list(current_ancestors), current))
+            sections.append((list(current_ancestors), current, current_start))
             current = []
 
-    for line in lines:
-        stripped = line.lstrip()
-        marker = stripped[:3]
-        if marker in {"```", "~~~"}:
+    for index, line in enumerate(lines):
+        fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            marker, rest = fence.groups()
             if not in_fence:
-                in_fence = True
-                fence_marker = marker
-            elif marker == fence_marker:
+                if marker[0] != "`" or "`" not in rest:
+                    in_fence = True
+                    fence_marker = marker
+            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker) and not rest.strip():
                 in_fence = False
             current.append(line)
             continue
@@ -648,34 +674,41 @@ def _adapt_markdown(
             level = len(heading.group(1))
             ancestors = {depth: value for depth, value in ancestors.items() if depth < level}
             current_ancestors = [ancestors[depth] for depth in sorted(ancestors)]
-            ancestors[level] = line
+            ancestors[level] = (index, line)
             current = [line]
+            current_start = index
         else:
             current.append(line)
     flush()
-    flags = [_contains_selector("\n".join(body), selectors) for _, body in sections]
+    if in_fence:
+        return _decline(text, "markdown", "unterminated code fence", structurally_valid=False)
+    records = ["\n".join(body) for _, body, _ in sections]
+    limited = _record_limit_result(text, "markdown", records, limits)
+    if limited is not None:
+        return limited
+    flags = [_contains_selector(record, selectors) for record in records]
     selected = [section for section, hit in zip(sections, flags) if hit]
     if not selected or len(selected) == len(sections):
         return _decline(text, "markdown", "no selective section match", total_records=len(sections))
     output: list[str] = []
-    seen_headings: set[str] = set()
+    seen_headings: set[int] = set()
     run_start = 0  # first section not yet emitted or accounted for as omitted
     selected_ids = [i for i, hit in enumerate(flags) if hit]
-    for position, (parents, body) in zip(selected_ids, selected):
+    for position, (parents, body, start) in zip(selected_ids, selected):
         if gap_marker is not None and position > run_start:
             dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, position))
             if dropped.strip():
                 output.append(str(call_gap_marker(gap_marker, len(dropped), len(text), "other")))
         run_start = position + 1
-        for heading in parents:
-            if heading not in seen_headings:
+        for heading_id, heading in parents:
+            if heading_id not in seen_headings:
                 output.append(heading)
-                seen_headings.add(heading)
+                seen_headings.add(heading_id)
         if output and output[-1].strip() and body and body[0].strip():
             output.append("")
         output.extend(body)
         if body and body[0].startswith("#"):
-            seen_headings.add(body[0])
+            seen_headings.add(start)
     if gap_marker is not None and run_start < len(sections):
         dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, len(sections)))
         if dropped.strip():
@@ -745,10 +778,12 @@ def _adapt_yaml(
     over two minutes). The same selection is now computed from monotone stacks and a next-line table, in
     O(lines + matches log lines); ``tests/test_perf_regressions.py`` pins it against the previous
     implementation on randomised documents."""
-    del limits
     lines = text.splitlines()
     n = len(lines)
     nonblank = [index for index, line in enumerate(lines) if line.strip()]
+    limited = _record_limit_result(text, "yaml", [lines[index] for index in nonblank], limits)
+    if limited is not None:
+        return limited
     matches = [index for index in nonblank if _contains_selector(lines[index], selectors)]
     has_document_separator = any(line.rstrip() == "---" for line in lines)
     indents = [_indent(line) for line in lines]
@@ -852,7 +887,7 @@ def _adapt_yaml(
     )
 
 
-def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
+def _adapt_yaml_documents_outliers(text, gap_marker, limits: FormatLimits) -> FormatResult:
     lines = text.splitlines()
     starts = [0]
     for idx, line in enumerate(lines):
@@ -871,6 +906,11 @@ def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
             docs.append({"start": start, "end": end, "nonblank": nonblank})
 
     total_docs = len(docs)
+    limited = _record_limit_result(
+        text, "yaml", ["\n".join(lines[doc["start"]:doc["end"]]) for doc in docs], limits
+    )
+    if limited is not None:
+        return limited
     if total_docs < 5:
         return _decline(
             text,
@@ -992,17 +1032,23 @@ def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
 def _adapt_xml(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     upper = text.upper()
     if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
         return _decline(text, "xml", "DTD/entity declarations are not processed", structurally_valid=False)
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 3:
         return _decline(text, "xml", "no line-oriented child records")
+    children = lines[1:-1]
+    limited = _record_limit_result(text, "xml", children, limits)
+    if limited is not None:
+        return limited
+    try:
+        ET.fromstring(text)
+    except (ET.ParseError, UnicodeError, RecursionError):
+        return _decline(text, "xml", "malformed XML; original preserved", structurally_valid=False)
     root = re.match(r"^\s*<([A-Za-z_][\w.:-]*)(?:\s[^>]*)?>\s*$", lines[0])
     if root is None or not re.match(rf"^\s*</{re.escape(root.group(1))}>\s*$", lines[-1]):
         return _decline(text, "xml", "root is not line-oriented")
-    children = lines[1:-1]
     for child in children:
         try:
             ET.fromstring(child)
@@ -1127,7 +1173,6 @@ def _adapt_sql(
 def _adapt_ini(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     lines = text.splitlines()
     starts = [index for index, line in enumerate(lines) if re.match(r"^\s*\[[^\]]+\]\s*$", line)]
     if len(starts) < 2:
@@ -1136,7 +1181,13 @@ def _adapt_ini(
     for position, start in enumerate(starts):
         end = starts[position + 1] if position + 1 < len(starts) else len(lines)
         sections.append("\n".join(lines[start:end]).strip("\n"))
+    limited = _record_limit_result(text, "ini", sections, limits)
+    if limited is not None:
+        return limited
     flags = [_contains_selector(section, selectors) for section in sections]
+    if not any(flags):
+        return _decline(text, "ini", "no selective section match", total_records=len(sections))
+    flags = [hit or lines[start].strip() == "[DEFAULT]" for start, hit in zip(starts, flags)]
     kept = [section for section, hit in zip(sections, flags) if hit]
     if not kept or len(kept) == len(sections):
         return _decline(text, "ini", "no selective section match", total_records=len(sections))
@@ -1144,7 +1195,7 @@ def _adapt_ini(
     return FormatResult(
         format="ini",
         applied=True,
-        text="\n\n".join(body),
+        text="\n".join([*lines[:starts[0]], "\n\n".join(body)]),
         total_records=len(sections),
         kept_records=len(kept),
         reason="exact matching INI/TOML sections",
@@ -1159,22 +1210,43 @@ _HTML_CHILD_RE = re.compile(r"^\s*<([A-Za-z][\w:-]*)(?:\s[^>]*)?>.*</\1>\s*$", r
 def _adapt_html(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     lines = [line for line in text.splitlines() if line.strip()]
     opening: list[str] = []
     closing: list[str] = []
     children: list[str] = []
+    wrappers: list[str] = []
     for line in lines:
         if _HTML_OPEN_WRAPPER_RE.match(line):
+            if children or closing:
+                return _decline(text, "html", "wrappers are out of order", structurally_valid=False)
+            lowered = line.strip().lower()
+            if lowered.startswith("<!doctype"):
+                if opening:
+                    return _decline(text, "html", "doctype is out of order", structurally_valid=False)
+            else:
+                tag = "html" if lowered.startswith("<html") else "body"
+                if (tag == "html" and wrappers) or (tag == "body" and wrappers not in ([], ["html"])):
+                    return _decline(text, "html", "wrappers are not nested", structurally_valid=False)
+                wrappers.append(tag)
             opening.append(line)
         elif _HTML_CLOSE_WRAPPER_RE.match(line):
+            tag = line.strip()[2:-1].lower()
+            if not wrappers or wrappers.pop() != tag:
+                return _decline(text, "html", "wrappers are not balanced", structurally_valid=False)
             closing.append(line)
         elif _HTML_CHILD_RE.match(line):
+            if not wrappers or closing:
+                return _decline(text, "html", "child is outside wrappers", structurally_valid=False)
             children.append(line)
         else:
             return _decline(text, "html", "child spans multiple lines")
+    if wrappers:
+        return _decline(text, "html", "wrappers are not balanced", structurally_valid=False)
     if not opening or not closing or not children:
         return _decline(text, "html", "missing line-oriented wrappers or children")
+    limited = _record_limit_result(text, "html", children, limits)
+    if limited is not None:
+        return limited
     flags = [_contains_selector(child, selectors) for child in children]
     kept = [child for child, hit in zip(children, flags) if hit]
     if not kept or len(kept) == len(children):
@@ -1193,8 +1265,10 @@ def _adapt_html(
 def _adapt_vertical(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     blocks = [block for block in re.split(r"(?:\r?\n){2,}", text) if block.strip()]
+    limited = _record_limit_result(text, "vertical", blocks, limits)
+    if limited is not None:
+        return limited
     flags = [_contains_selector("".join(block.splitlines()), selectors) for block in blocks]
     kept = [block for block, hit in zip(blocks, flags) if hit]
     if not kept or len(kept) == len(blocks):
@@ -1419,7 +1493,7 @@ def adapt_format(
                         structurally_valid=False)
     if resolved_format == "yaml" and any(line.rstrip() == "---" for line in value.splitlines()):
         if not selectors:
-            return _adapt_yaml_documents_outliers(value, gap_marker)
+            return _adapt_yaml_documents_outliers(value, gap_marker, limits or FormatLimits())
         return _adapt_yaml_documents(value, selectors, limits or FormatLimits(), gap_marker)
     if not selectors:
         return _decline(value, resolved_format, "query has no distinctive selectors")

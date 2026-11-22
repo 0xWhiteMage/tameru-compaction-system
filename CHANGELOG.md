@@ -24,6 +24,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Refactor: report routing skips irrelevant selector setup, ordinary adapters build selectors only after report selection declines, Markdown table gaps use their known list result directly, and JSON answer checks reuse the casefolded query.
 
 - Refactor: fingerprinting paths share private UUID, lowercase-hex and Unicode digit patterns; repeated digit substitutions reuse the same primitive, and summary/ambiguity helpers no longer accept unused private arguments.
+- Fix: ordinary NDJSON validation enforces nested object field limits and rejects NaN/Infinity even when report routing is disabled, while preserving selected record bytes.
+
+- Fix: Markdown sections, YAML line records and document outliers, XML/HTML children, INI sections and vertical OCR blocks honor caller record-count and record-size limits before selecting output.
+
+- Fix: INI/TOML selection preserves global preambles and inherited INI defaults; XML and HTML selection declines malformed roots, children and wrapper nesting without misclassifying valid multiline XML.
+
+- Fix: Markdown extraction respects fence lengths and closing syntax, preserves repeated ancestor headings in distinct sections, and leaves unterminated fences unchanged.
+
 
 
 Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
