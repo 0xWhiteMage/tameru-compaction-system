@@ -1,5 +1,4 @@
 import importlib
-import itertools
 
 import pytest
 
@@ -11,7 +10,13 @@ def broken_models():
     raise ValueError("malformed model iterable")
 
 
-@pytest.mark.parametrize("models", [broken_models(), itertools.repeat("model"), [None],
+def excessive_models():
+    for _ in range(100):
+        yield "model"
+    raise AssertionError("candidate bound was not enforced")
+
+
+@pytest.mark.parametrize("models", [broken_models(), excessive_models(), [None],
                                     ["x" * 1025], 42, []])
 def test_bad_model_configuration_fails_open(models, monkeypatch):
     def no_network(*args, **kwargs):
