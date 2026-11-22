@@ -1040,6 +1040,8 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 1
             continue
         if block_comment:
+            if text.startswith("/*", index):
+                return None  # SQL dialects disagree on nested block comments.
             if text.startswith("*/", index):
                 block_comment = False
                 index += 2
