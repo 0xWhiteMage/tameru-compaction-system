@@ -833,8 +833,8 @@ def adapt_grep_lines(
                 if selector_hits * 5 < total_matches * 4:
                     remaining.append(selector)
             other_matcher = _Matcher(tuple(remaining)) if remaining else _Matcher(())
-            seen_texts: set[str] = set()
             for path, recs in per_file.items():
+                seen_texts: set[str] = set()
                 selected: set[int] = set()
                 for i, r in enumerate(recs):
                     if (
