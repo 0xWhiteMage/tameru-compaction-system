@@ -6687,6 +6687,8 @@ def _strip_structured_anchor(line):
     if line.lstrip().startswith("{"):
         try:
             record = loads_for_rewrite(line)
+        except RecursionError:
+            return None
         except ValueError:
             record = None
         if isinstance(record, dict):
