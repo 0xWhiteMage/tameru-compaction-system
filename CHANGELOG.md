@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Fix: ordinary NDJSON validation enforces nested object field limits and rejects NaN/Infinity even when report routing is disabled, while preserving selected record bytes.
+
 - Fix: Markdown sections, YAML line records and document outliers, XML/HTML children, INI sections and vertical OCR blocks honor caller record-count and record-size limits before selecting output.
 
 - Fix: INI/TOML selection preserves global preambles and inherited INI defaults; XML and HTML selection declines malformed roots, children and wrapper nesting without misclassifying valid multiline XML.
