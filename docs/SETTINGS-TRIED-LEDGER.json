@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
-  "settings_tried": 44,
+  "settings_tried": 45,
   "validation_queries": {
     "engine": 10,
     "deepseek-plugin": 0,
@@ -404,6 +404,16 @@
       "setting": "E11 + outcome protection: outcome/landmark lines (completion summaries, REPL prompt tails, numbered section records + evidence bodies, table headers, err-adjacent kvs, lone assignments, unfingerprinted failure lines + context) with template-dedup caps and a 256-char floor minimum. Protected via _OUTCOME_PROTECTED source set: destructive preprocess stages (flat_records, csv, filler_comments, log folds incl. structural pass and count-attach) keep them verbatim, post-adapter _restore_facts re-adds lines the industrial/payload adapters deleted, and the selection floor still requires line_set membership (no safety-deletion resurrection)",
       "split": "r2 dev",
       "source": "r2 sealed look failures: gold outcome/landmark lines not in the protection vocabulary (burned into dev per protocol)"
+    },
+    {
+      "n": 45,
+      "date": "2026-11-25",
+      "target": "engine",
+      "id": "E13",
+      "setting": "E12 + bounded protection economics: (a) displace-dont-inflate floor - appended protected lines are paid for by evicting lowest-scored rendered lines (only pure-score keeps are eviction candidates; needle/exemplar/pinned/marker/floor-pool lines never are; an already-failing extract is never rescued); (b) unique-text verbatim exemption - a protected text repeated in the stream is carried by the [xN]/[last] marker instead of every copy staying verbatim (restores still cover full deletion); (c) saturated-core fallback - a scored keep-set at >=92% blocks with <12% query signal returns the _important ranked core instead of declining (>=8 blocks; small docs keep honest fail-open); (d) outcome vocabulary expansion: state-valued kv stanzas + head openers, evidence datarows (priced/port/zero-rate/weak ranked err-near first), table borders, tail rows, warn-shaped failures ranked template-unique first keeping first+last, minority-delimiter kvs, multi-word/CJK keys; worthiness rejects test-runner noise shapes (ExperimentalWarning et al.) and uses assignment-shaped credential checks; kept exemplar blocks report the error exemplar reason regardless of primary reason",
+      "split": "r3 dev",
+      "source": "r3 dev dry-run on E12: 53/62 - gold misses on new evidence shapes and fail-open amplification where a small floor append flips a borderline extract",
+      "outcome": "r3 dev dry-run: 63/63 PASS vs 1.10.0 baseline (all retention, savings, fail-open, calibration cells). Suite 2644 green; golden regenerated for intended changes. NOT promoted - incumbent default preserved pending sealed look."
     }
   ],
   "noise_seed": 20261121,

@@ -1,0 +1,549 @@
+{
+ "dry_run": true,
+ "alpha": 0.00625,
+ "boot": 10000,
+ "seed": 20261124,
+ "checks": [
+  {
+   "gate": "integrity: candidate vs itself is exactly 0",
+   "pass": true,
+   "worst": 0.0
+  },
+  {
+   "gate": "S5 vague|en|deepseek",
+   "pass": true,
+   "share": 100.0,
+   "lower": 100.0,
+   "n": 42,
+   "clusters": 30
+  },
+  {
+   "gate": "S5 vague|en|hermes",
+   "pass": true,
+   "share": 100.0,
+   "lower": 100.0,
+   "n": 42,
+   "clusters": 30
+  },
+  {
+   "gate": "S5 vague|zh|deepseek",
+   "pass": true,
+   "share": 100.0,
+   "lower": 100.0,
+   "n": 24,
+   "clusters": 12
+  },
+  {
+   "gate": "S5 vague|zh|hermes",
+   "pass": true,
+   "share": 100.0,
+   "lower": 100.0,
+   "n": 24,
+   "clusters": 12
+  },
+  {
+   "gate": "S5 existing gold|deepseek|tool_call",
+   "pass": false,
+   "share": 93.75,
+   "n": 48
+  },
+  {
+   "gate": "S5 existing gold|deepseek|generic",
+   "pass": true,
+   "share": 100.0,
+   "n": 48
+  },
+  {
+   "gate": "S5 existing gold|deepseek|zh_user",
+   "pass": false,
+   "share": 91.6667,
+   "n": 12
+  },
+  {
+   "gate": "S5 existing gold|hermes|tool_call",
+   "pass": false,
+   "share": 93.75,
+   "n": 48
+  },
+  {
+   "gate": "S5 existing gold|hermes|generic",
+   "pass": true,
+   "share": 100.0,
+   "n": 48
+  },
+  {
+   "gate": "S5 existing gold|hermes|zh_user",
+   "pass": false,
+   "share": 91.6667,
+   "n": 12
+  },
+  {
+   "gate": "S5 savings|deepseek|build_specific",
+   "pass": true,
+   "mean_diff": -4.9901,
+   "lower": -9.3631,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|deepseek|build_vague",
+   "pass": false,
+   "mean_diff": -14.0792,
+   "lower": -21.4815,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|deepseek|generic",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|deepseek|task_specific",
+   "pass": true,
+   "mean_diff": -1.007,
+   "lower": -2.7247,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|deepseek|task_vague",
+   "pass": true,
+   "mean_diff": -0.9524,
+   "lower": -2.404,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|deepseek|tool_call",
+   "pass": true,
+   "mean_diff": -1.8537,
+   "lower": -3.8589,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|deepseek|zh_user",
+   "pass": false,
+   "mean_diff": -2.2204,
+   "lower": -6.2658,
+   "n": 36
+  },
+  {
+   "gate": "S5 savings|hermes|build_specific",
+   "pass": true,
+   "mean_diff": -5.3014,
+   "lower": -9.4923,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|hermes|build_vague",
+   "pass": false,
+   "mean_diff": -14.632,
+   "lower": -21.813,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|hermes|generic",
+   "pass": true,
+   "mean_diff": -0.0708,
+   "lower": -0.2702,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|hermes|task_specific",
+   "pass": true,
+   "mean_diff": -1.3399,
+   "lower": -3.0837,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|hermes|task_vague",
+   "pass": true,
+   "mean_diff": -0.9804,
+   "lower": -2.4328,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|hermes|tool_call",
+   "pass": false,
+   "mean_diff": -2.683,
+   "lower": -5.0168,
+   "n": 114
+  },
+  {
+   "gate": "S5 savings|hermes|zh_user",
+   "pass": false,
+   "mean_diff": -2.2204,
+   "lower": -6.2658,
+   "n": 36
+  },
+  {
+   "gate": "gate9 facts|deepseek|build_specific",
+   "pass": true,
+   "mean_diff": 8.3333,
+   "lower": 0.4386,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|deepseek|build_specific",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|deepseek|build_vague",
+   "pass": true,
+   "mean_diff": 27.193,
+   "lower": 14.4068,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|deepseek|build_vague",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|deepseek|generic",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|deepseek|generic",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|deepseek|task_specific",
+   "pass": true,
+   "mean_diff": 6.5789,
+   "lower": 0.4425,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|deepseek|task_specific",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|deepseek|task_vague",
+   "pass": true,
+   "mean_diff": 7.0175,
+   "lower": 1.7094,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|deepseek|task_vague",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|deepseek|tool_call",
+   "pass": true,
+   "mean_diff": 26.7544,
+   "lower": 13.4454,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|deepseek|tool_call",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|deepseek|zh_user",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 36
+  },
+  {
+   "gate": "gate9 fingerprints|deepseek|zh_user",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 2
+  },
+  {
+   "gate": "gate9 facts|hermes|build_specific",
+   "pass": true,
+   "mean_diff": 8.3333,
+   "lower": 0.4386,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|hermes|build_specific",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|hermes|build_vague",
+   "pass": true,
+   "mean_diff": 18.4211,
+   "lower": 7.8261,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|hermes|build_vague",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|hermes|generic",
+   "pass": true,
+   "mean_diff": 0.4386,
+   "lower": 0.0,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|hermes|generic",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|hermes|task_specific",
+   "pass": true,
+   "mean_diff": 6.5789,
+   "lower": 0.4425,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|hermes|task_specific",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|hermes|task_vague",
+   "pass": true,
+   "mean_diff": 6.5789,
+   "lower": 1.6949,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|hermes|task_vague",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|hermes|tool_call",
+   "pass": true,
+   "mean_diff": 18.4211,
+   "lower": 7.619,
+   "n": 114
+  },
+  {
+   "gate": "gate9 fingerprints|hermes|tool_call",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 8
+  },
+  {
+   "gate": "gate9 facts|hermes|zh_user",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 36
+  },
+  {
+   "gate": "gate9 fingerprints|hermes|zh_user",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 2
+  },
+  {
+   "gate": "gate9 chinese (zh_user - task_vague)|deepseek",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 36
+  },
+  {
+   "gate": "gate9 chinese (zh_user - task_vague)|hermes",
+   "pass": true,
+   "mean_diff": 0.0,
+   "lower": 0.0,
+   "n": 36
+  },
+  {
+   "gate": "S6 ECE|lexical|specific",
+   "pass": true,
+   "ece": 0.0161,
+   "n": 245,
+   "observed": 0.9837,
+   "mean_p": 0.9998
+  },
+  {
+   "gate": "S6 ECE|lexical|vague",
+   "pass": true,
+   "ece": 0.0002,
+   "n": 69,
+   "observed": 1.0,
+   "mean_p": 0.9998
+  },
+  {
+   "gate": "S6 ECE|structural|specific",
+   "pass": true,
+   "ece": 0.0453,
+   "n": 132,
+   "observed": 0.9545,
+   "mean_p": 0.9998
+  },
+  {
+   "gate": "S6 ECE|tool_call|specific",
+   "pass": true,
+   "ece": 0.0318,
+   "n": 406,
+   "observed": 0.9557,
+   "mean_p": 0.9875
+  },
+  {
+   "gate": "S6 AUROC vs fact drop",
+   "pass": true,
+   "auroc": 1.0,
+   "positives": 4
+  },
+  {
+   "gate": "S6 p < 0.99 and raw confidence < 1.0 when a fact line was dropped",
+   "pass": true,
+   "rows": 4
+  },
+  {
+   "gate": "S6 no vague/structural p >= 0.99 outside a lifted stratum",
+   "pass": true,
+   "rows": 0
+  }
+ ],
+ "s6": {
+  "method": "family-beta-v1",
+  "source": {
+   "accepted_rows": 1439,
+   "engine_commit": [
+    "9cedca4de1101c9f3aeaa71c709c463368a617cd"
+   ],
+   "families": 10,
+   "rows": "benchmarks/engine_bench/results/r2-candidate-e10-dev.jsonl",
+   "rows_sha256": "99b868fbd0cd72c93b0415ce79b37cf86ad1d7fd09da8762a3d05d0f44d4a520",
+   "split": "dev"
+  },
+  "metrics": {
+   "rows": 933,
+   "observed": 0.97,
+   "mean_p": 0.9944,
+   "ece": 0.0244,
+   "strata": {
+    "anchored|vague": {
+     "n": 10,
+     "families": 1,
+     "gated": false,
+     "fact_drop_rows": 0,
+     "observed": 1.0,
+     "mean_p": 0.9997,
+     "ece": 0.0003,
+     "slope": null
+    },
+    "lexical|specific": {
+     "n": 245,
+     "families": 6,
+     "gated": true,
+     "fact_drop_rows": 0,
+     "observed": 0.9837,
+     "mean_p": 0.9998,
+     "ece": 0.0161,
+     "slope": null
+    },
+    "lexical|vague": {
+     "n": 69,
+     "families": 5,
+     "gated": true,
+     "fact_drop_rows": 0,
+     "observed": 1.0,
+     "mean_p": 0.9998,
+     "ece": 0.0002,
+     "slope": null
+    },
+    "none|vague": {
+     "n": 34,
+     "families": 3,
+     "gated": false,
+     "fact_drop_rows": 0,
+     "observed": 1.0,
+     "mean_p": 0.9998,
+     "ece": 0.0002,
+     "slope": null
+    },
+    "structural|specific": {
+     "n": 132,
+     "families": 6,
+     "gated": true,
+     "fact_drop_rows": 0,
+     "observed": 0.9545,
+     "mean_p": 0.9998,
+     "ece": 0.0453,
+     "slope": null
+    },
+    "structural|vague": {
+     "n": 37,
+     "families": 1,
+     "gated": false,
+     "fact_drop_rows": 0,
+     "observed": 1.0,
+     "mean_p": 0.9996,
+     "ece": 0.0004,
+     "slope": null
+    },
+    "tool_call|specific": {
+     "n": 406,
+     "families": 6,
+     "gated": true,
+     "fact_drop_rows": 4,
+     "observed": 0.9557,
+     "mean_p": 0.9875,
+     "ece": 0.0318,
+     "slope": null
+    }
+   },
+   "languages": {
+    "en": {
+     "n": 596,
+     "observed": 0.9748,
+     "mean_p": 0.9986
+    },
+    "mixed": {
+     "n": 127,
+     "observed": 0.8976,
+     "mean_p": 0.9675
+    },
+    "zh": {
+     "n": 210,
+     "observed": 1.0,
+     "mean_p": 0.9988
+    }
+   },
+   "auroc_vs_fact_drop": 1.0,
+   "fact_drop_positives": 4,
+   "p_ge_099_vague_or_structural": 0,
+   "gated_failures": []
+  }
+ }
+}

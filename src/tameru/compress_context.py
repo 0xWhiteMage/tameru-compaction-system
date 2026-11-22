@@ -1091,9 +1091,22 @@ _OUTCOME_PROTECTED: "contextvars.ContextVar" = contextvars.ContextVar(
 
 
 def _outcome_protected_set(lines: list[str]) -> set[int]:
-    """Indices of ``lines`` that are protected outcome/landmark lines."""
+    """Indices of ``lines`` that are protected outcome/landmark lines.
+
+    E13: only a text unique in ``lines`` gets the verbatim exemption. A
+    repeated protected text is carried by the fold's ``[×N]`` / ``[last]``
+    marker (same bytes, so substring retention holds) and a stage that
+    deletes every copy still restores it through ``_OUTCOME_PROTECTED`` —
+    exempting all 20 identical table headers was pure cost.
+    """
     prot = _OUTCOME_PROTECTED.get()
-    return {i for i, ln in enumerate(lines) if ln in prot} if prot else set()
+    if not prot:
+        return set()
+    counts: dict[str, int] = {}
+    for ln in lines:
+        if ln in prot:
+            counts[ln] = counts.get(ln, 0) + 1
+    return {i for i, ln in enumerate(lines) if ln in prot and counts[ln] == 1}
 _FRAME_HIT_SLOTS = 1
 _STRUCT_COLLAPSE_MIN = 12  # structural (query-less) pass: templates seen fewer times stay verbatim
 _FRAME_START_RE = re.compile(r"^\s*(?:at\s+\S|File\s+\"|from\s+\S+:\d+|#\d+\s+\S+\(\d+\):|#\d+\s+\{main\})")
@@ -1539,14 +1552,22 @@ def _restore_fact_lines(before: str, after: str) -> str:
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
 
 
-def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int | None) -> str:
+def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int | None,
+                      scored=None, kept_ids=None, min_savings_ratio=None,
+                      original_text=None, adapter_info=None) -> str:
     """Floor in selection: protected fact lines the render left out are appended as whole original
     lines — at most ``_FACT_FLOOR_MAX_LINES`` lines and ``_FACT_FLOOR_RATIO`` of the extract's
     character budget (of the unprotected extract's length when there is no explicit budget).
     Overflow prefers lines whose key or value occurs in ``query``, then the newest.
     1.10.0 (S5, E5): the highest-priority missing line is kept even when it exceeds the character
     cap — a floor that can fit nothing on a near-empty extract protects nothing; the line and
-    character caps still govern every further line."""
+    character caps still govern every further line.
+    E13: when ``scored``/``kept_ids``/``min_savings_ratio``/``original_text`` are provided the floor
+    displaces rather than inflates — a grow that would push the extract past the savings bound is
+    paid for by evicting the lowest-scored rendered lines first, so a borderline extract keeps its
+    verdict instead of amplifying a small restore into a fail-open. Marker/adaptor lines (render
+    output that never was an original line) are never eviction candidates; when nothing evictable
+    remains the append stands and the cost gate decides, exactly as before."""
     kept = compressed.split("\n")
     missing = [f for f in facts
                if f[3] not in compressed and not _fact_superseded_in(f[3], kept)]
@@ -1561,9 +1582,21 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     )
     q = (query or "").casefold()
 
+    mset = {f[0]: f for f in missing}
+
     def _rank(f) -> tuple:
-        i, key, value, _ln = f
-        return (key.casefold() in q or value.casefold() in q, i)
+        i, key, value, ln = f
+        # Error-shaped lines and the rows they annotate rank first — an error
+        # and the entry it suspends are the evidence pair; a bare summary or
+        # tail row is lower priority than the record the error belongs to.
+        err = _OUTCOME_ERR_NEAR_RE.search(ln)
+        # The context convention is the row BEFORE the failure — a row sitting
+        # after an error is just the next stream entry, not its evidence.
+        adj_err = err is None and any(
+            j in mset and _OUTCOME_ERR_NEAR_RE.search(mset[j][3])
+            for j in (i + 1, i + 2)
+        )
+        return (key.casefold() in q or value.casefold() in q, bool(err), adj_err, i)
 
     chosen, used = [], 0
     for f in sorted(missing, key=_rank, reverse=True):
@@ -1574,7 +1607,60 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         used += len(ln) + 1
     if not chosen:
         return compressed
-    return compressed + "\n" + "\n".join(f[3] for f in sorted(chosen, key=lambda f: f[0]))
+    appended = "\n".join(f[3] for f in sorted(chosen, key=lambda f: f[0]))
+    out = compressed + "\n" + appended
+    if scored is None or kept_ids is None or min_savings_ratio is None or original_text is None:
+        return out
+    head_tok = estimate_tokens(original_text) * (1.0 - float(min_savings_ratio))
+    need_tok = estimate_tokens(out) - head_tok
+    need_chr = len(out) - len(original_text) * (1.0 - float(min_savings_ratio)) if adapter_info is not None else 0.0
+    # The floor pays for its own growth, never more: eviction covers the
+    # appended size whether or not the bound already holds — protected lines
+    # occupy the existing budget rather than inflating the extract. An extract
+    # that already missed the bound still misses it when the candidates run
+    # out: the verdict is unchanged.
+    evict_budget = estimate_tokens(appended) + len(chosen)
+    line_score: dict[str, float] = {}
+    for b in scored:
+        # Only lines from pure-score keeps are eviction candidates. A block
+        # kept for a non-score reason — query hits, an error exemplar, a pin —
+        # holds its lines for that reason regardless of its raw score (a
+        # needle-hit block can score low and still be the answer).
+        if b["id"] in kept_ids and not (
+            b.get("entity_hits") or b.get("term_hits")
+            or b.get("error_exemplar") or b.get("pinned")
+        ):
+            for ln in b["text"].split("\n"):
+                prev = line_score.get(ln)
+                if prev is None or b["score"] < prev:
+                    line_score[ln] = b["score"]
+    rendered = compressed.split("\n")
+    pool_texts = {f[3] for f in facts}
+    cand = sorted(
+        (
+            i for i, ln in enumerate(rendered)
+            if ln in line_score
+            and ln not in pool_texts
+            and not _OUTCOME_ERR_NEAR_RE.search(ln)
+            and not _is_trust_risk_line(ln)
+        ),
+        key=lambda i: (line_score[rendered[i]], i),
+    )
+    drop: set[int] = set()
+    spent = 0
+    for i in cand:
+        if spent >= evict_budget:
+            break
+        ln = rendered[i]
+        drop.add(i)
+        cost = estimate_tokens(ln) + 1
+        spent += cost
+        need_tok -= cost
+        need_chr -= len(ln) + 1
+    if drop:
+        compressed = "\n".join(ln for i, ln in enumerate(rendered) if i not in drop)
+        out = compressed + "\n" + appended
+    return out
 
 
 def _count_fact_lines_dropped(facts, out_text: str) -> int:
@@ -1749,6 +1835,7 @@ _OUTCOME_SUMMARY_RE = re.compile(
     r"|(?:Stopped|Started|Stopping|Starting)\b.*\b(?:service|daemon|unit|target|scope|slice)\b.*"
     r"|The\s+[\w -]{2,60}\s+was\s+\w+ed\b.*"
     r"|.*\bpromiscuous mode\b.*"
+    r"|\w[\w-]*\s+done\b.*"
     r")\s*$",
     re.IGNORECASE,
 )
@@ -1757,14 +1844,47 @@ _OUTCOME_SECTION_RE = re.compile(r"^\s*(?:[\w.-]+\[\d+\]|(?:Event|Record|Entry|I
 _OUTCOME_KV_RE = re.compile(r"^\s*[a-z][\w.-]{1,39}[:=]\S{1,80}\s*$")
 _OUTCOME_ERR_NEAR_RE = re.compile(
     r"(?i)(?:\(error\)|\bERROR\b|\berror[ s:]|fail(?:ed|ure)?"
-    r"|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt)\b)"
+    r"|\bwarn(?:ing)?[ s:]|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt)\b)"
 )
-_OUTCOME_LONE_KV_RE = re.compile(r"^\s*\S{1,40}\s*(?::|=|->)\s*\S{1,80}\s*$")
+_OUTCOME_LONE_KV_RE = re.compile(r"^\s*\S[^:=>]{1,40}\s*(?::|=|->)\s*\S{1,80}\s*$")
+# Credential material only when a keyword binds a value ("password=hunter2",
+# "Authorization: Bearer x"); prose that merely names it ("Failed password
+# for invalid user") is an auth event, not a secret — a bare substring check
+# cannot tell them apart and starves the floor.
+_OUTCOME_CRED_RE = re.compile(
+    r"(?i)(?:password|passwd|secret|api[-_]?key|access[-_]?token|auth[-_]?token|"
+    r"bearer|token|private|signing|basic|db[-_]?pass|mysqlpwd|mysql[-_]?pwd|"
+    r"pgpassword|rediscli[-_]?auth)\s*[:=]"
+)
 # A run of 8+ box/block-drawing glyphs at line start is a download/progress
 # bar ("   ━━━━ 119.0/119.0 kB"), never failure context — _is_progress_bar
 # misses shapes that carry no % or /.
 _OUTCOME_BAR_RE = re.compile(r"^\s*[─-╿▀-▟═]{8,}")
 _OUTCOME_LONE_KV_COMMENT_RE = re.compile(r"^\s*#\s*\S[^:=]{1,30}:\s*\S{1,80}\s*$")
+# A `key: value` line whose value is a failure/state word is an evidence record
+# field ("State: DECOMMISSIONED", "Health: DOWN") — it plus its stanza opener
+# ("Name: 10.3.1.8:7868") are the record's landmark lines.
+_OUTCOME_STATEKV_RE = re.compile(
+    r"^\s*[A-Z][\w .-]{1,30}:\s*(?:down|dead|decommission\w*|failed?|error\w*|"
+    r"unhealthy|offline|corrupt\w*|fault\w*|stale|lost|broken|partiallyfailed)\b",
+    re.IGNORECASE,
+)
+_OUTCOME_STANZA_OPENER_RE = re.compile(r"^\s*(?:Name|Node|Address|Service|Device|Brick|Member|Peer)\s*:\s*\S")
+_OUTCOME_STANZA_FIELD_RE = re.compile(r"^\s*\w[\w .-]{1,30}:")
+# A data row carrying money, a port/protocol or an unusual state under a table
+# header is the row the error happened on ("{port}/tcp open svc 1.2",
+# "aws_db_instance.x 730 hours $868.0") — bounded to one per kept table.
+_OUTCOME_DATAROW_RE = re.compile(
+    r"(?:\$\d|\d+/(?:tcp|udp|sctp)\b|0(?:\.0+)?\s*(?:[KMG]i?bits|pkts|pps)\b"
+    r"|\b(?:down|dead|decommission\w*|failed?|error\w*|unhealthy|offline|weak|"
+    r"vulnerab\w*|insecure|non-?complian\w*)\b)",
+    re.IGNORECASE,
+)
+# A pure box-drawing run adjacent to a total/summary line is a table border,
+# not a progress bar — the bar guard above only excluded it because pip bars
+# share the glyph set.
+_OUTCOME_BORDER_RE = re.compile(r"^\s*[─═━_]{8,}\s*$")
+_OUTCOME_TOTAL_RE = re.compile(r"(?:total|overall|合计|汇总|小计|总计)", re.IGNORECASE)
 _OUTCOME_TABLE_HEADS = frozenset(
     "state proto recv-q send-q local peer pid user %cpu %mem vsz rss tty stat start time "
     "command name device filesystem size used avail use% mounted iface mtu rx-ok tx-ok "
@@ -1780,12 +1900,12 @@ def _outcome_worthy(ln: str, *, allow_short: bool = False) -> bool:
     length gate for them only."""
     if not allow_short and not _template_long_enough(ln):
         return False
-    if _is_trust_risk_line(ln) or _is_sink_noise(ln):
+    if _is_trust_risk_line(ln) or _is_sink_noise(ln) or _TEST_FILE_NOISE_RE.search(ln):
         return False
     probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
     if any(lit in probe for lit in _SECRET_LITERALS):
         return False
-    if any(lit in probe.lower() for lit in _SECRET_FOLDED_LITERALS):
+    if _OUTCOME_CRED_RE.search(probe):
         return False
     em = _env_match(probe)
     return em is None or not _env_is_sensitive(em.group(1), em.group(2))
@@ -1811,19 +1931,19 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
     section_hits: list[tuple[int, str]] = []
     tables: list[tuple[int, str]] = []
     kvs: list[tuple[int, str]] = []
-    fails: list[tuple[int, str]] = []
-    fail_fps: set[str] = set()
+    fail_lines: list[tuple[int, str, str]] = []
     lone_kvs: list[tuple[int, str]] = []
+    state_kvs: list[tuple[int, str]] = []
+    datarows: list[tuple[int, str]] = []
+    borders: list[tuple[int, str]] = []
     is_err = [False] * len(lines)
     for pos, i in enumerate(nb_i):
         ln = lines[i]
         if _OUTCOME_ERR_NEAR_RE.search(ln):
             is_err[i] = True
             fp = _log_fingerprint(ln) or ln
-            if fp not in fail_fps and len(fails) < _OUTCOME_FAIL_MAX:
-                fail_fps.add(fp)
-                fails.append((i, ln))
-                continue
+            fail_lines.append((i, ln, fp))
+            continue
         if _OUTCOME_SUMMARY_RE.match(ln):
             # Repeated progress lines ("Successfully applied N migrations"
             # every step) are a status stream, not an outcome — counted per
@@ -1857,6 +1977,18 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         if len(kvs) < 2 and err_near[i] and _OUTCOME_KV_RE.match(ln):
             kvs.append((i, ln))
             continue
+        if _OUTCOME_STATEKV_RE.match(ln):
+            state_kvs.append((i, ln))
+            continue
+        if len(ln.split()) >= 3 and _OUTCOME_DATAROW_RE.search(ln):
+            datarows.append((i, ln))
+            continue
+        if len(borders) < 1 and _OUTCOME_BORDER_RE.match(ln):
+            prev = next((lines[j] for j in reversed(nb_i[:pos])), "")
+            nxt = next((lines[j] for j in nb_i[pos + 1:pos + 2]), "")
+            if _OUTCOME_TOTAL_RE.search(prev) or _OUTCOME_TOTAL_RE.search(nxt) or _OUTCOME_SUMMARY_RE.match(prev.strip()) or _OUTCOME_SUMMARY_RE.match(nxt.strip()):
+                borders.append((i, ln))
+                continue
         if len(lone_kvs) < _OUTCOME_LONE_KV_MAX and (
             _OUTCOME_LONE_KV_RE.match(ln) or _OUTCOME_LONE_KV_COMMENT_RE.match(ln)
         ):
@@ -1873,13 +2005,51 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
     summary_list = [
         v for fp, v in summaries.items() if summary_counts[fp] <= 2
     ]
-    if len(lines) and len(lone_kvs):
-        kv_like = sum(
-            1 for i in nb_i
-            if _OUTCOME_LONE_KV_RE.match(lines[i]) or _OUTCOME_LONE_KV_COMMENT_RE.match(lines[i])
-        )
+    if len(nb_i) and lone_kvs:
+        def _kv_delim(ln: str) -> str:
+            if _OUTCOME_LONE_KV_COMMENT_RE.match(ln):
+                return "#"
+            if "->" in ln:
+                return "->"
+            if "=" in ln:
+                return "="
+            return ":"
+
+        shares = {"#": 0, "->": 0, "=": 0, ":": 0}
+        kv_like = 0
+        for i in nb_i:
+            ln = lines[i]
+            if _OUTCOME_LONE_KV_RE.match(ln) or _OUTCOME_LONE_KV_COMMENT_RE.match(ln):
+                kv_like += 1
+                shares[_kv_delim(ln)] += 1
         if kv_like / len(nb_i) > 0.30:
-            lone_kvs = []
+            # In a kv-dense stream a singleton matching the dominant delimiter
+            # is just another field; a minority-delimiter or comment line still
+            # reads as a landmark ("queue_depth=388" amid "key: value" fields).
+            dom = max(shares.values())
+            lone_kvs = [
+                t for t in lone_kvs
+                if _kv_delim(t[1]) == "#" or shares[_kv_delim(t[1])] * 2 <= dom
+            ]
+    # Failure exemplars rank by template rarity — a one-off failure ("invalid
+    # user admin" amid routine "for root" rejects) is the evidence. Each
+    # surviving template keeps its first and last occurrence: the exemplar
+    # plus the most recent instance, which is where buried gold lands.
+    fails: list[tuple[int, str]] = []
+    if fail_lines:
+        fpc: dict[str, int] = {}
+        first_per: dict[str, tuple[int, str]] = {}
+        last_per: dict[str, tuple[int, str]] = {}
+        for i, ln, fp in fail_lines:
+            fpc[fp] = fpc.get(fp, 0) + 1
+            first_per.setdefault(fp, (i, ln))
+            last_per[fp] = (i, ln)
+        have: set[int] = set()
+        for fp in sorted(first_per, key=lambda f: (fpc[f], -first_per[f][0]))[:_OUTCOME_FAIL_MAX]:
+            for cand in (first_per[fp], last_per[fp]):
+                if cand[0] not in have and len(fails) < _OUTCOME_FAIL_MAX + 2:
+                    fails.append(cand)
+                    have.add(cand[0])
     # The line immediately before a failure line is the step whose check
     # produced it ("Then the payment is captured" above "Assertion Failed:") —
     # failure context a score cannot see, protected like the failure itself.
@@ -1904,6 +2074,42 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
                 errctx.append((j, lines[j]))
             if len(errctx) >= 2:
                 break
+    # A state-valued kv field ("State: DECOMMISSIONED") belongs to a stanza
+    # whose head ("Name: 10.3.1.8:7868") is the record's landmark — walk back
+    # through the contiguous non-indented field block and take the LAST head
+    # opener (secondary fields like "Hostname:" are skipped by the opener RE).
+    stanza_openers: list[tuple[int, str]] = []
+    for i, _ln in state_kvs[:2]:
+        head = None
+        for j in range(i - 1, max(-1, i - 9), -1):
+            pj = lines[j]
+            if not pj.strip() or pj[:1].isspace() or not _OUTCOME_STANZA_FIELD_RE.match(pj):
+                break
+            if _OUTCOME_STANZA_OPENER_RE.match(pj):
+                head = (j, pj)
+                break
+        if head is not None:
+            stanza_openers.append(head)
+    # The last columned line of the input is the report's final record — the
+    # tail position is where the outcome lands ("Live datanodes (923):" lists
+    # end on their last entry). A last line whose template IS the stream
+    # (uniform access logs) is just another request — the structural fold's
+    # [last] marker already carries it.
+    tail_row: list[tuple[int, str]] = []
+    if nb_i:
+        lt = lines[nb_i[-1]]
+        fp = _log_fingerprint(lt) or lt
+        if (
+            len(lt.split()) >= 3 and not _is_progress_bar(lt)
+            and not _OUTCOME_BAR_RE.match(lt)
+            and sum(1 for i in nb_i if (_log_fingerprint(lines[i]) or lines[i]) == fp) * 2 <= len(nb_i)
+        ):
+            tail_row.append((nb_i[-1], lt))
+    # Datarows rank error-neighbouring rows first — the row the error happened
+    # on is the evidence, not the first row of the table.
+    datarows = sorted(
+        datarows, key=lambda t: (not err_near[t[0]], -t[0])
+    )[:2]
     # Numbered records ("Event[90]:" + indented body) repeat by the dozen, so
     # positional caps pick the wrong ones. A record earns protection from its
     # content: a body carrying an error/status evidence line, or the outcome
@@ -1953,10 +2159,12 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         | {ln for _i, ln in section_body}
         | {ln for _i, ln in fails}
         | {ln for _i, ln in lone_kvs}
+        | {ln for _i, ln in borders}
     )
     merged = (
         summary_list + prompt_list + ranked_sections + tables + kvs
         + section_body + fails + lone_kvs + errctx
+        + state_kvs[:3] + stanza_openers + datarows + borders + tail_row
     )
     for i, ln in sorted(merged):
         if ln not in seen and _outcome_worthy(ln, allow_short=ln in shorts):
@@ -4867,12 +5075,16 @@ def select_adaptive(
         for b in blocks
         if b.get("error_exemplar") and not b.get("trust_risk")
     }
-    if needle_only and hits:
-        use = rare if rare else hits
-        safe_use = {bid for bid in use if not blocks[bid].get("trust_risk")}
-        if not safe_use:
-            return _ret({b["id"] for b in blocks}, True, "high", "needle-all-trust")
-        use = safe_use
+    # Discrimination guard: when the hit set is most of the document the
+    # needle found no needle — a selector matching nearly every block gave
+    # no signal a tight set can be built on. Keep going and the keep-set
+    # saturates into a fail-open; fall through to scored selection, which
+    # picks within the same blocks under the savings bound.
+    needle_use = {bid for bid in (rare if rare else hits) if not blocks[bid].get("trust_risk")}
+    if needle_only and hits and not needle_use:
+        return _ret({b["id"] for b in blocks}, True, "high", "needle-all-trust")
+    if needle_only and needle_use and len(needle_use) / len(blocks) <= 0.6:
+        use = needle_use
         kept = set(use) | err_keep
         if not blocks[0].get("trust_risk") or blocks[0].get("pinned"):
             skip_lead = (
@@ -5013,7 +5225,31 @@ def select_adaptive(
             kept.add(blocks[-1]["id"])
         kept = _stitch_neighbors(blocks, kept)
         keep_ratio = sum(blocks[i]["tokens"] for i in kept) / max(1, sum(b["tokens"] for b in blocks))
-    if keep_ratio > 0.92 and signal < 0.12:
+    if keep_ratio > 0.92 and signal < 0.12 and len(blocks) >= 8:
+        # The floor/closure saturated: nearly everything scored keepable —
+        # often selector-driven hits flooding a uniform table dump. When the
+        # ranked core is still a tight set, it IS the compression the savings
+        # bound wants; only when even the core is broad does the honest answer
+        # stay fail-open. Small documents keep the old verdict — declining a
+        # few-block input costs little and the full text stays truthful.
+        core = set(important) | err_keep
+        if (
+            (blocks[0].get("reason") != "stale error" or len(core) == 0)
+            and (not blocks[0].get("trust_risk") or blocks[0].get("pinned"))
+        ):
+            core.add(blocks[0]["id"])
+        if (
+            not _is_sink_noise(blocks[-1]["text"])
+            and not blocks[-1].get("trust_risk")
+        ):
+            core.add(blocks[-1]["id"])
+        core = _stitch_neighbors(blocks, core)
+        core_ratio = sum(blocks[i]["tokens"] for i in core) / max(1, sum(b["tokens"] for b in blocks))
+        if core and core_ratio <= 0.92:
+            kept, keep_ratio, path = core, core_ratio, "saturated-core"
+        else:
+            return _ret({b["id"] for b in blocks}, True, "high", "saturated-failopen")
+    elif keep_ratio > 0.92 and signal < 0.12:
         return _ret({b["id"] for b in blocks}, True, "high", "saturated-failopen")
     if _counterfactual_overlap_ambiguity(
         blocks, kept, query=query, link_terms=link_terms_map, semantic_tier=semantic_tier
@@ -8308,6 +8544,12 @@ def _collect_reasons(
 ):
     """Human-readable reasons for the result, and the risk after the degraded-view adjustment. Returns ``(reasons, risk)``."""
     reasons = sorted({scored[i]["reason"] for i in kept if i < len(scored)})
+    # A kept exemplar-flagged block means the exemplar mechanism contributed to
+    # retention even when the block's primary reason was something else (for
+    # example a query-term hit) — the relabel at score time only covers
+    # context/log-error/critical-lines reasons.
+    if any(scored[i].get("error_exemplar") for i in kept if i < len(scored)):
+        reasons.append("error exemplar")
     if source_pin_loss:
         reasons.append("original pinned blocks could not be preserved")
     if industrial.applied:
@@ -10060,7 +10302,9 @@ def _compress_context_impl(
             budget_chars = int(budget_ratio * len(caller_text)) if budget_ratio else None
             compressed = _apply_fact_floor(
                 compressed=compressed, facts=floor_pool, query=query or "",
-                budget_chars=budget_chars,
+                budget_chars=budget_chars, scored=scored, kept_ids=kept,
+                min_savings_ratio=min_savings_ratio, original_text=original_text,
+                adapter_info=adapter_info,
             )
 
     # v1.4.0 (E3): for content routed as a log, report how many level-tagged
