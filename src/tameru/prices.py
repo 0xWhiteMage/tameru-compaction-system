@@ -130,8 +130,8 @@ def required_share(p: PriceProfile, n_eff: float, cold: bool = False) -> float:
     so any prune is free (share 0)."""
     if cold:
         return 0.0
-    if n_eff < 0:
-        raise ValueError("n_eff must be >= 0")
+    if not isfinite(n_eff) or n_eff < 0:
+        raise ValueError("n_eff must be finite and >= 0")
     return (p.w - p.r) / (p.r * (n_eff + 1.0))
 
 

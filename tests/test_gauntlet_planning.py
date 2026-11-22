@@ -110,6 +110,12 @@ def test_price_tiers_need_not_be_sorted():
     assert profile.tier_multiplier(100) == 1
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_required_share_rejects_nonfinite_forecasts(value):
+    with pytest.raises(ValueError):
+        prices.required_share(prices.profile("deepseek-v4-pro"), value)
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
