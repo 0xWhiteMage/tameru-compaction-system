@@ -115,15 +115,17 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     term→id index proposes candidate pairs (shared vocabulary), so cost is
     near-linear in total tokens rather than O(k²) pair enumeration.
     """
-    kept_ids = sorted(i for i in kept if 0 <= i < len(scored))
+    kept_ids = sorted(i for i in kept if isinstance(i, int) and 0 <= i < len(scored))
     if len(kept_ids) < 2:
         return kept
 
-    terms_by_id = {i: _content_terms(scored[i]["text"]) for i in kept_ids}
+    texts = {i: scored[i].get("text", "") for i in kept_ids}
+    texts = {i: text if isinstance(text, str) else "" for i, text in texts.items()}
+    terms_by_id = {i: _content_terms(texts[i]) for i in kept_ids}
     marker_ids = [
         i
         for i in kept_ids
-        if any(m in scored[i]["text"].casefold() for m in _SUPERSESSION_MARKERS)
+        if any(m in texts[i].casefold() for m in _SUPERSESSION_MARKERS)
     ]
     if not marker_ids:
         return kept
@@ -153,7 +155,7 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
         for old_id, shared_n in counts.items():
             if old_id in stale:
                 continue
-            if shared_n >= 2 and _supersedes(scored[new_id]["text"], scored[old_id]["text"]):
+            if shared_n >= 2 and _supersedes(texts[new_id], texts[old_id]):
                 stale.add(old_id)
 
     if stale:
