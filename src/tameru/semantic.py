@@ -69,6 +69,8 @@ class _DisabledTier:
     available = False
 
     def __getattr__(self, name):
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
         def _raise(*a: Any, **k: Any):
             raise SemanticUnavailable("semantic tier disabled")
 
