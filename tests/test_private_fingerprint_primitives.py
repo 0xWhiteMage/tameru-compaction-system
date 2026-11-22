@@ -2,11 +2,10 @@ import inspect
 import re
 
 from tameru import folding
+from tameru._fingerprint_patterns import _HEXRUN_RE, _UUID_RE
 from tameru.agent_formats import _ENV_DIGITS_RE
 from tameru.compress_context import (
     _DIGITS_RE,
-    _HEXRUN_RE,
-    _UUID_RE,
     _counterfactual_overlap_ambiguity,
     _summary_anchor_region,
 )
