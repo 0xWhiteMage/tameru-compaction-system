@@ -856,8 +856,12 @@ def adapt_grep_lines(
                 if selector_hits * 5 < total_matches * 4:
                     remaining.append(selector)
             other_matcher = _Matcher(tuple(remaining)) if remaining else _Matcher(())
+            has_definition = any(
+                matcher.hit(body) and (_GREP_DEFINITION_RE.match(body) or _GREP_ASSIGNMENT_RE.match(body))
+                for body in match_texts
+            )
+            seen_texts: set[str] = set()
             for path, recs in per_file.items():
-                seen_texts: set[str] = set()
                 selected: set[int] = set()
                 for i, r in enumerate(recs):
                     if (
@@ -886,6 +890,10 @@ def adapt_grep_lines(
                         distinct_kept += 1
                     else:
                         seen_texts.add(key)
+                if not selected and not has_definition:
+                    first_match = next((i for i, r in enumerate(recs) if r.kind == "m"), None)
+                    if first_match is not None:
+                        selected.add(first_match)
                 saturated_keep[path] = selected
 
     any_hit = [False]
