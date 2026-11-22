@@ -99,6 +99,12 @@ def check_r2_minimums(doc: dict) -> list[str]:
         bad.append(f"dev families {n['dev']} < 8")
     if n["validation"] < 8:
         bad.append(f"validation families {n['validation']} < 8")
+    # A spent look burns its sealed families into dev (the "burn" block records
+    # the look, hash and moved families); between looks there is no sealed
+    # holdout to check. Fresh deals carry no "burn" key, so the sealed floors
+    # still gate any newly dealt corpus.
+    if doc.get("burn"):
+        return bad
     if n["sealed"] < 16:
         bad.append(f"sealed families {n['sealed']} < 16")
     st = r2_sealed_stats(doc)

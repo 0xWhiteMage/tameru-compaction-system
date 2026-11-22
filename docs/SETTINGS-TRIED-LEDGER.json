@@ -1,510 +1,519 @@
 {
- "schema": 1,
- "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
- "settings_tried": 43,
- "validation_queries": {
-  "engine": 10,
-  "deepseek-plugin": 0,
-  "hermes-plugin": 0
- },
- "validation_query_budget": 20,
- "settings": [
-  {
-   "n": 1,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G-gate0.5",
-   "setting": "policy every-step, gate 0.5",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 1"
+  "schema": 1,
+  "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
+  "settings_tried": 44,
+  "validation_queries": {
+    "engine": 10,
+    "deepseek-plugin": 0,
+    "hermes-plugin": 0
   },
-  {
-   "n": 2,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G-gate0.6",
-   "setting": "policy every-step, gate 0.6",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 1"
-  },
-  {
-   "n": 3,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G-gate0.7",
-   "setting": "policy every-step, gate 0.7",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 1"
-  },
-  {
-   "n": 4,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G-gate0.8",
-   "setting": "policy every-step, gate 0.8",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 1"
-  },
-  {
-   "n": 5,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G-gate0.85",
-   "setting": "policy every-step, gate 0.85",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 1"
-  },
-  {
-   "n": 6,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "T-gate0",
-   "setting": "policy at-trigger, gate 0 (re-run after the round 2 defect fix, not a new setting)",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 1"
-  },
-  {
-   "n": 7,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "T-gate0.7",
-   "setting": "policy at-trigger, gate 0.7 (re-run after the round 2 defect fix, not a new setting)",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 1"
-  },
-  {
-   "n": 8,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G1",
-   "setting": "every-step, gate 0.85, share 0.35, activation 0.9",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 9,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G2",
-   "setting": "every-step, gate 0.85, share 0.5, activation 0.75",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 10,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G3",
-   "setting": "every-step, gate 0.85, share 0.65, activation 0.75",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 11,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G4",
-   "setting": "every-step, gate 0.85, share 0.5, activation 0.9",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 12,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G5",
-   "setting": "every-step, gate 0.85, share 0.65, activation 0.9",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 13,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G6",
-   "setting": "every-step, gate 0.85, share 0.5, activation 1.0",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 14,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G7",
-   "setting": "every-step, gate 0.85, share 0.65, activation 1.0",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 15,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G8",
-   "setting": "every-step, gate 0.85, share 0.5, activation 0.9, min 12000",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 16,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G9",
-   "setting": "every-step, gate 0.85, share 0.65, activation 0.9, min 12000",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 17,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G10",
-   "setting": "every-step, gate 0.85, share 0.5, activation 0.9, protect 8",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 18,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G11",
-   "setting": "every-step, gate 0.85, share 0.5, activation 0.9, cap 8",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 19,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G12",
-   "setting": "every-step, gate 0.7, share 0.5, activation 0.9",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 20,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "G13",
-   "setting": "every-step, gate 0.7, share 0.65, activation 1.0",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 21,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "T3",
-   "setting": "at-trigger, gate 0.85",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 22,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "H1",
-   "setting": "hybrid, gate 0.85, share 0.35",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 23,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "H2",
-   "setting": "hybrid, gate 0.85, share 0.5",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 24,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "H3",
-   "setting": "hybrid, gate 0.85, share 0.65",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 25,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "H4",
-   "setting": "hybrid, gate 0.7, share 0.5",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 26,
-   "date": "2026-11-19",
-   "target": "deepseek-plugin",
-   "id": "H5",
-   "setting": "hybrid, gate 0.85, share 0.5, protect 8",
-   "split": "dev+validation",
-   "source": "ANALYSIS-PLAN-1.10.md, round 2"
-  },
-  {
-   "n": 27,
-   "date": "2026-11-21",
-   "target": "engine",
-   "id": "E1",
-   "setting": "S5 floor + exemptions + selector_query gating and selecting on the user terms (7137d05)",
-   "split": "r2 dev+validation",
-   "source": "P3-2"
-  },
-  {
-   "n": 28,
-   "date": "2026-11-21",
-   "target": "engine",
-   "id": "E4",
-   "setting": "E1 with selector gating A and sparsity B",
-   "split": "r2 dev",
-   "source": "P3-3"
-  },
-  {
-   "n": 29,
-   "date": "2026-11-21",
-   "target": "engine",
-   "id": "E5",
-   "setting": "E4 + facts detected before industrial/format adapters and exempt from them + one-line floor minimum + NFKC detection",
-   "split": "r2 dev",
-   "source": "P3-5"
-  },
-  {
-   "n": 30,
-   "date": "2026-11-21",
-   "target": "engine",
-   "id": "E6",
-   "setting": "E5 + error exemplars exempt from destructive pre-filters and adapters",
-   "split": "r2 dev",
-   "source": "P3-6"
-  },
-  {
-   "n": 31,
-   "date": "2026-11-22",
-   "target": "deepseek-plugin",
-   "id": "P1",
-   "setting": "policy plan, EV strength normal, priceProfile deepseek-v4-pro, K 3 (engine plan() at the trigger covers the stock cut set; stub = stock cut)",
-   "split": "corpus dev",
-   "source": "P3-10b"
-  },
-  {
-   "n": 32,
-   "date": "2026-11-22",
-   "target": "hermes-plugin",
-   "id": "HP1",
-   "setting": "policy_mode plan, EV strength normal (balanced preference), priceProfile anthropic-sonnet-5.5-5m, K 3, H 0 (engine plan() compact mode at Hermes cache-broken moments only)",
-   "split": "corpus dev",
-   "source": "P3-11"
-  },
-  {
-   "n": 33,
-   "date": "2026-11-22",
-   "target": "hermes-plugin",
-   "id": "HP2",
-   "setting": "HP1 + forecast exception: warm-step plan() acts at the proactive-prune checkpoint when H 3, margin_steps 6, K 3, runway gate passes (compact mode, same vetoes/EV)",
-   "split": "corpus dev",
-   "source": "P3-12"
-  },
-  {
-   "n": 34,
-   "date": "2026-11-22",
-   "target": "hermes-plugin",
-   "id": "HP3-m12",
-   "setting": "plan_replace_compaction: at the compaction moment a trigger plan() with replace_compaction aims the deep prune at trigger - growth x margin_steps (margin 12); the prune replaces the compaction only when reaches_target",
-   "split": "corpus dev",
-   "source": "P3-13"
-  },
-  {
-   "n": 35,
-   "date": "2026-11-22",
-   "target": "hermes-plugin",
-   "id": "HP3-m24",
-   "setting": "plan_replace_compaction: at the compaction moment a trigger plan() with replace_compaction aims the deep prune at trigger - growth x margin_steps (margin 24); the prune replaces the compaction only when reaches_target",
-   "split": "corpus dev",
-   "source": "P3-13"
-  },
-  {
-   "n": 36,
-   "date": "2026-11-22",
-   "target": "hermes-plugin",
-   "id": "HP4",
-   "setting": "HP1 + plan_deep_tail: at the compaction moment the plan's demotable set also covers the protected tail's older tool results (all but the most recent step's pending round); compaction unchanged, deeper reset",
-   "split": "corpus dev",
-   "source": "P3-14"
-  },
-  {
-   "n": 37,
-   "date": "2026-11-22",
-   "target": "hermes-plugin",
-   "id": "HP5",
-   "setting": "HP4 + plan_native_warm_prunes off: the per-request proactive warm-cache prune is declined under policy plan (returns no-change; Hermes reaches should_compress); pass 2, overflow and the deep tail unchanged",
-   "split": "corpus dev",
-   "source": "P3-15"
-  },
-  {
-   "n": 38,
-   "date": "2026-11-22",
-   "target": "engine",
-   "id": "E7-tab",
-   "setting": "E6 + format detection: text with any tab-indented line is never YAML (tabs cannot indent YAML)",
-   "split": "r2 dev",
-   "source": "P3-18 (exploration; not adopted: checkov savings -8.8 points, 24 fewer accepted rows)"
-  },
-  {
-   "n": 39,
-   "date": "2026-11-22",
-   "target": "engine",
-   "id": "E7",
-   "setting": "E6 + format detection: text with a tab-indented line that is neither a mapping entry nor a sequence item is never YAML",
-   "split": "r2 dev",
-   "source": "P3-18"
-  },
-  {
-   "n": 40,
-   "date": "2026-11-22",
-   "target": "engine",
-   "id": "E8",
-   "setting": "E7 + merged upstream PRs #3-#9 (semantic-tier dict fallback to lexical; adapter record limits and structural integrity for markdown/INI/XML/HTML/YAML/NDJSON; selection and regex reuse; shared fingerprint primitives; lazy package exports)",
-   "split": "r2 dev",
-   "source": "upstream PR merges into v1.10.0"
-  },
-  {
-   "n": 41,
-   "date": "2026-11-22",
-   "target": "engine",
-   "id": "E9",
-   "setting": "E8 + S7 memory cleanup (count-without-list token estimate, candidate-only fact memos, segment-block records packed as spans without text) + S6 result schema 4 (query_specific; EVPolicy default calibrator through the shipped table)",
-   "split": "r2 dev",
-   "source": "P3-18b"
-  },
-  {
-   "n": 42,
-   "date": "2026-11-22",
-   "target": "engine",
-   "id": "E10",
-   "setting": "E9 + stream-break floor: on template-uniform texts (>=90% repeated fingerprints, >=30 non-blank lines) the rare last line and up to 2 unique-template rows get selection-floor protection alongside facts",
-   "split": "r2 dev",
-   "source": "existing_gold diagnosis + fix (kafka tail summaries, pstable anomalous rows)"
-  },
-  {
-   "n": 43,
-   "date": "2026-11-22",
-   "target": "engine",
-   "id": "E11",
-   "setting": "E10 + huge-input fix: the >2M sampled pass skips only the own-elision-line guard via a private flag, and a declined sampled pass returns the whole original (fail_open contract) instead of the sample",
-   "split": "r2 dev",
-   "source": "redteam fail_open_identity violations on >2M scale cases"
-  }
- ],
- "noise_seed": 20261121,
- "validation_disclosures": [
-  {
-   "date": "2026-11-21",
-   "target": "engine",
-   "disclosure": "r2 validation read in full for the S5 diagnosis of the 1.10.0 baseline (no candidate)"
-  },
-  {
-   "date": "2026-11-21",
-   "target": "engine",
-   "disclosure": "r2 validation read in full for the evaluation of E1"
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "disclosure": "r2 validation rows generated for E9 (2fdd41c) to feed the five registered thresholdout gates; results consumed only through the noisy queries"
-  }
- ],
- "validation_query_log": [
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E9",
-   "gate": "s5_vague_en",
-   "query_index": 0,
-   "noise_seed": 20261121,
-   "checks": 4
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E9",
-   "gate": "s5_vague_zh",
-   "query_index": 1,
-   "noise_seed": 20261121,
-   "checks": 4
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E9",
-   "gate": "existing_gold",
-   "query_index": 2,
-   "noise_seed": 20261121,
-   "checks": 6
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E9",
-   "gate": "savings",
-   "query_index": 3,
-   "noise_seed": 20261121,
-   "checks": 8
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E9",
-   "gate": "s6_calibration",
-   "query_index": 4,
-   "noise_seed": 20261121,
-   "checks": 8
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E10",
-   "gate": "s5_vague_en",
-   "query_index": 5,
-   "noise_seed": 20261121,
-   "checks": 4
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E10",
-   "gate": "s5_vague_zh",
-   "query_index": 6,
-   "noise_seed": 20261121,
-   "checks": 4
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E10",
-   "gate": "existing_gold",
-   "query_index": 7,
-   "noise_seed": 20261121,
-   "checks": 6
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E10",
-   "gate": "savings",
-   "query_index": 8,
-   "noise_seed": 20261121,
-   "checks": 8
-  },
-  {
-   "date": "2026-11-22",
-   "target": "engine",
-   "setting": "E10",
-   "gate": "s6_calibration",
-   "query_index": 9,
-   "noise_seed": 20261121,
-   "checks": 8
-  }
- ]
+  "validation_query_budget": 20,
+  "settings": [
+    {
+      "n": 1,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G-gate0.5",
+      "setting": "policy every-step, gate 0.5",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 1"
+    },
+    {
+      "n": 2,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G-gate0.6",
+      "setting": "policy every-step, gate 0.6",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 1"
+    },
+    {
+      "n": 3,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G-gate0.7",
+      "setting": "policy every-step, gate 0.7",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 1"
+    },
+    {
+      "n": 4,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G-gate0.8",
+      "setting": "policy every-step, gate 0.8",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 1"
+    },
+    {
+      "n": 5,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G-gate0.85",
+      "setting": "policy every-step, gate 0.85",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 1"
+    },
+    {
+      "n": 6,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "T-gate0",
+      "setting": "policy at-trigger, gate 0 (re-run after the round 2 defect fix, not a new setting)",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 1"
+    },
+    {
+      "n": 7,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "T-gate0.7",
+      "setting": "policy at-trigger, gate 0.7 (re-run after the round 2 defect fix, not a new setting)",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 1"
+    },
+    {
+      "n": 8,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G1",
+      "setting": "every-step, gate 0.85, share 0.35, activation 0.9",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 9,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G2",
+      "setting": "every-step, gate 0.85, share 0.5, activation 0.75",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 10,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G3",
+      "setting": "every-step, gate 0.85, share 0.65, activation 0.75",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 11,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G4",
+      "setting": "every-step, gate 0.85, share 0.5, activation 0.9",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 12,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G5",
+      "setting": "every-step, gate 0.85, share 0.65, activation 0.9",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 13,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G6",
+      "setting": "every-step, gate 0.85, share 0.5, activation 1.0",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 14,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G7",
+      "setting": "every-step, gate 0.85, share 0.65, activation 1.0",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 15,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G8",
+      "setting": "every-step, gate 0.85, share 0.5, activation 0.9, min 12000",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 16,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G9",
+      "setting": "every-step, gate 0.85, share 0.65, activation 0.9, min 12000",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 17,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G10",
+      "setting": "every-step, gate 0.85, share 0.5, activation 0.9, protect 8",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 18,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G11",
+      "setting": "every-step, gate 0.85, share 0.5, activation 0.9, cap 8",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 19,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G12",
+      "setting": "every-step, gate 0.7, share 0.5, activation 0.9",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 20,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "G13",
+      "setting": "every-step, gate 0.7, share 0.65, activation 1.0",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 21,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "T3",
+      "setting": "at-trigger, gate 0.85",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 22,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "H1",
+      "setting": "hybrid, gate 0.85, share 0.35",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 23,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "H2",
+      "setting": "hybrid, gate 0.85, share 0.5",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 24,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "H3",
+      "setting": "hybrid, gate 0.85, share 0.65",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 25,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "H4",
+      "setting": "hybrid, gate 0.7, share 0.5",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 26,
+      "date": "2026-11-19",
+      "target": "deepseek-plugin",
+      "id": "H5",
+      "setting": "hybrid, gate 0.85, share 0.5, protect 8",
+      "split": "dev+validation",
+      "source": "ANALYSIS-PLAN-1.10.md, round 2"
+    },
+    {
+      "n": 27,
+      "date": "2026-11-21",
+      "target": "engine",
+      "id": "E1",
+      "setting": "S5 floor + exemptions + selector_query gating and selecting on the user terms (7137d05)",
+      "split": "r2 dev+validation",
+      "source": "P3-2"
+    },
+    {
+      "n": 28,
+      "date": "2026-11-21",
+      "target": "engine",
+      "id": "E4",
+      "setting": "E1 with selector gating A and sparsity B",
+      "split": "r2 dev",
+      "source": "P3-3"
+    },
+    {
+      "n": 29,
+      "date": "2026-11-21",
+      "target": "engine",
+      "id": "E5",
+      "setting": "E4 + facts detected before industrial/format adapters and exempt from them + one-line floor minimum + NFKC detection",
+      "split": "r2 dev",
+      "source": "P3-5"
+    },
+    {
+      "n": 30,
+      "date": "2026-11-21",
+      "target": "engine",
+      "id": "E6",
+      "setting": "E5 + error exemplars exempt from destructive pre-filters and adapters",
+      "split": "r2 dev",
+      "source": "P3-6"
+    },
+    {
+      "n": 31,
+      "date": "2026-11-22",
+      "target": "deepseek-plugin",
+      "id": "P1",
+      "setting": "policy plan, EV strength normal, priceProfile deepseek-v4-pro, K 3 (engine plan() at the trigger covers the stock cut set; stub = stock cut)",
+      "split": "corpus dev",
+      "source": "P3-10b"
+    },
+    {
+      "n": 32,
+      "date": "2026-11-22",
+      "target": "hermes-plugin",
+      "id": "HP1",
+      "setting": "policy_mode plan, EV strength normal (balanced preference), priceProfile anthropic-sonnet-5.5-5m, K 3, H 0 (engine plan() compact mode at Hermes cache-broken moments only)",
+      "split": "corpus dev",
+      "source": "P3-11"
+    },
+    {
+      "n": 33,
+      "date": "2026-11-22",
+      "target": "hermes-plugin",
+      "id": "HP2",
+      "setting": "HP1 + forecast exception: warm-step plan() acts at the proactive-prune checkpoint when H 3, margin_steps 6, K 3, runway gate passes (compact mode, same vetoes/EV)",
+      "split": "corpus dev",
+      "source": "P3-12"
+    },
+    {
+      "n": 34,
+      "date": "2026-11-22",
+      "target": "hermes-plugin",
+      "id": "HP3-m12",
+      "setting": "plan_replace_compaction: at the compaction moment a trigger plan() with replace_compaction aims the deep prune at trigger - growth x margin_steps (margin 12); the prune replaces the compaction only when reaches_target",
+      "split": "corpus dev",
+      "source": "P3-13"
+    },
+    {
+      "n": 35,
+      "date": "2026-11-22",
+      "target": "hermes-plugin",
+      "id": "HP3-m24",
+      "setting": "plan_replace_compaction: at the compaction moment a trigger plan() with replace_compaction aims the deep prune at trigger - growth x margin_steps (margin 24); the prune replaces the compaction only when reaches_target",
+      "split": "corpus dev",
+      "source": "P3-13"
+    },
+    {
+      "n": 36,
+      "date": "2026-11-22",
+      "target": "hermes-plugin",
+      "id": "HP4",
+      "setting": "HP1 + plan_deep_tail: at the compaction moment the plan's demotable set also covers the protected tail's older tool results (all but the most recent step's pending round); compaction unchanged, deeper reset",
+      "split": "corpus dev",
+      "source": "P3-14"
+    },
+    {
+      "n": 37,
+      "date": "2026-11-22",
+      "target": "hermes-plugin",
+      "id": "HP5",
+      "setting": "HP4 + plan_native_warm_prunes off: the per-request proactive warm-cache prune is declined under policy plan (returns no-change; Hermes reaches should_compress); pass 2, overflow and the deep tail unchanged",
+      "split": "corpus dev",
+      "source": "P3-15"
+    },
+    {
+      "n": 38,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E7-tab",
+      "setting": "E6 + format detection: text with any tab-indented line is never YAML (tabs cannot indent YAML)",
+      "split": "r2 dev",
+      "source": "P3-18 (exploration; not adopted: checkov savings -8.8 points, 24 fewer accepted rows)"
+    },
+    {
+      "n": 39,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E7",
+      "setting": "E6 + format detection: text with a tab-indented line that is neither a mapping entry nor a sequence item is never YAML",
+      "split": "r2 dev",
+      "source": "P3-18"
+    },
+    {
+      "n": 40,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E8",
+      "setting": "E7 + merged upstream PRs #3-#9 (semantic-tier dict fallback to lexical; adapter record limits and structural integrity for markdown/INI/XML/HTML/YAML/NDJSON; selection and regex reuse; shared fingerprint primitives; lazy package exports)",
+      "split": "r2 dev",
+      "source": "upstream PR merges into v1.10.0"
+    },
+    {
+      "n": 41,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E9",
+      "setting": "E8 + S7 memory cleanup (count-without-list token estimate, candidate-only fact memos, segment-block records packed as spans without text) + S6 result schema 4 (query_specific; EVPolicy default calibrator through the shipped table)",
+      "split": "r2 dev",
+      "source": "P3-18b"
+    },
+    {
+      "n": 42,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E10",
+      "setting": "E9 + stream-break floor: on template-uniform texts (>=90% repeated fingerprints, >=30 non-blank lines) the rare last line and up to 2 unique-template rows get selection-floor protection alongside facts",
+      "split": "r2 dev",
+      "source": "existing_gold diagnosis + fix (kafka tail summaries, pstable anomalous rows)"
+    },
+    {
+      "n": 43,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E11",
+      "setting": "E10 + huge-input fix: the >2M sampled pass skips only the own-elision-line guard via a private flag, and a declined sampled pass returns the whole original (fail_open contract) instead of the sample",
+      "split": "r2 dev",
+      "source": "redteam fail_open_identity violations on >2M scale cases"
+    },
+    {
+      "n": 44,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E12",
+      "setting": "E11 + outcome protection: outcome/landmark lines (completion summaries, REPL prompt tails, numbered section records + evidence bodies, table headers, err-adjacent kvs, lone assignments, unfingerprinted failure lines + context) with template-dedup caps and a 256-char floor minimum. Protected via _OUTCOME_PROTECTED source set: destructive preprocess stages (flat_records, csv, filler_comments, log folds incl. structural pass and count-attach) keep them verbatim, post-adapter _restore_facts re-adds lines the industrial/payload adapters deleted, and the selection floor still requires line_set membership (no safety-deletion resurrection)",
+      "split": "r2 dev",
+      "source": "r2 sealed look failures: gold outcome/landmark lines not in the protection vocabulary (burned into dev per protocol)"
+    }
+  ],
+  "noise_seed": 20261121,
+  "validation_disclosures": [
+    {
+      "date": "2026-11-21",
+      "target": "engine",
+      "disclosure": "r2 validation read in full for the S5 diagnosis of the 1.10.0 baseline (no candidate)"
+    },
+    {
+      "date": "2026-11-21",
+      "target": "engine",
+      "disclosure": "r2 validation read in full for the evaluation of E1"
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "disclosure": "r2 validation rows generated for E9 (2fdd41c) to feed the five registered thresholdout gates; results consumed only through the noisy queries"
+    }
+  ],
+  "validation_query_log": [
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E9",
+      "gate": "s5_vague_en",
+      "query_index": 0,
+      "noise_seed": 20261121,
+      "checks": 4
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E9",
+      "gate": "s5_vague_zh",
+      "query_index": 1,
+      "noise_seed": 20261121,
+      "checks": 4
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E9",
+      "gate": "existing_gold",
+      "query_index": 2,
+      "noise_seed": 20261121,
+      "checks": 6
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E9",
+      "gate": "savings",
+      "query_index": 3,
+      "noise_seed": 20261121,
+      "checks": 8
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E9",
+      "gate": "s6_calibration",
+      "query_index": 4,
+      "noise_seed": 20261121,
+      "checks": 8
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "s5_vague_en",
+      "query_index": 5,
+      "noise_seed": 20261121,
+      "checks": 4
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "s5_vague_zh",
+      "query_index": 6,
+      "noise_seed": 20261121,
+      "checks": 4
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "existing_gold",
+      "query_index": 7,
+      "noise_seed": 20261121,
+      "checks": 6
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "savings",
+      "query_index": 8,
+      "noise_seed": 20261121,
+      "checks": 8
+    },
+    {
+      "date": "2026-11-22",
+      "target": "engine",
+      "setting": "E10",
+      "gate": "s6_calibration",
+      "query_index": 9,
+      "noise_seed": 20261121,
+      "checks": 8
+    }
+  ]
 }

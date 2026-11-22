@@ -1079,6 +1079,21 @@ def _error_protected_set(lines: list[str]) -> set[int]:
     """Indices of ``lines`` that are protected error exemplars (``_ERR_PROTECTED``)."""
     prot = _ERR_PROTECTED.get()
     return {i for i, ln in enumerate(lines) if ln in frozenset(prot)} if prot else set()
+
+
+# 1.10.0 (E12): the protected outcome/landmark lines of the caller's original text —
+# the same exemption contract as ``_ERR_PROTECTED`` (a destructive selector
+# pre-filter or adapter must not delete outcome evidence), populated from
+# ``_outcome_lines`` once per call and consulted through ``_outcome_protected_set``.
+_OUTCOME_PROTECTED: "contextvars.ContextVar" = contextvars.ContextVar(
+    "tameru_outcome_protected", default=frozenset()
+)
+
+
+def _outcome_protected_set(lines: list[str]) -> set[int]:
+    """Indices of ``lines`` that are protected outcome/landmark lines."""
+    prot = _OUTCOME_PROTECTED.get()
+    return {i for i, ln in enumerate(lines) if ln in prot} if prot else set()
 _FRAME_HIT_SLOTS = 1
 _STRUCT_COLLAPSE_MIN = 12  # structural (query-less) pass: templates seen fewer times stay verbatim
 _FRAME_START_RE = re.compile(r"^\s*(?:at\s+\S|File\s+\"|from\s+\S+:\d+|#\d+\s+\S+\(\d+\):|#\d+\s+\{main\})")
@@ -1293,6 +1308,7 @@ _FACT_VALUE_ALNUM_RE = re.compile(r"[^\W_]")
 _FACT_PROTECT_FP_MAX = 2  # rarity: a fingerprint seen more times is filler, not a fact
 _FACT_FLOOR_MAX_LINES = 8
 _FACT_FLOOR_RATIO = 0.15
+_FLOOR_MIN_CHARS = 256
 
 
 def _fact_parts(line: str) -> tuple[str, str] | None:
@@ -1483,14 +1499,16 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
     ``before`` is the text the exemplar indices are read from (the caller's original); without
     it exemplars keep their protection order, still deterministic."""
     err = _ERR_PROTECTED.get()
-    if not protected and not err:
+    out = _OUTCOME_PROTECTED.get()
+    if not protected and not err and not out:
         return after
     kept = after.split("\n")
     missing = [(i, -1, ln) for i, _k, _v, ln in protected
                if ln != after and ln not in after and not _fact_superseded_in(ln, kept)]
-    if err:
+    extra = list(err) + sorted(out.difference(err))
+    if extra:
         index = {ln: i for i, ln in enumerate(before.split("\n"))} if before is not None else {}
-        for pos, ln in enumerate(err):
+        for pos, ln in enumerate(extra):
             if ln != after and ln not in after and not _fact_superseded_in(ln, kept):
                 missing.append((index.get(ln, float("inf")), pos, ln))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
@@ -1503,16 +1521,19 @@ def _restore_fact_lines(before: str, after: str) -> str:
     if after is before or after == before:
         return after
     err = _ERR_PROTECTED.get()
+    out = _OUTCOME_PROTECTED.get()
     protected = () if _FACT_OFF.get() else _protected_facts(before)
-    if not protected and not err:
+    if not protected and not err and not out:
         return after
     kept = after.split("\n")
-    index = {ln: i for i, ln in enumerate(before.split("\n"))} if err else {}
+    extra = list(err) + sorted(out.difference(err))
+    index = {ln: i for i, ln in enumerate(before.split("\n"))} if extra else {}
     missing = [(i, -1, ln) for i, _k, _v, ln in protected
                if ln != before and ln not in after and not _fact_superseded_in(ln, kept)]
     # E6: an error exemplar the stage saw in ``before`` and lost goes back too —
     # independent of fact density, same supersession guard, same original order.
-    for pos, ln in enumerate(err):
+    # E12: protected outcome lines get the same treatment.
+    for pos, ln in enumerate(extra):
         if ln in before and ln not in after and not _fact_superseded_in(ln, kept):
             missing.append((index.get(ln, float("inf")), pos, ln))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
@@ -1531,7 +1552,13 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
                if f[3] not in compressed and not _fact_superseded_in(f[3], kept)]
     if not missing:
         return compressed
-    cap = int(_FACT_FLOOR_RATIO * (budget_chars or len(compressed)))
+    # The ratio budget can fit nothing on a near-empty extract — a floor that
+    # protects nothing protects no one. The absolute minimum keeps the budget
+    # meaningful on a one-or-two-line extract without unbounding it.
+    cap = max(
+        int(_FACT_FLOOR_RATIO * (budget_chars or len(compressed))),
+        _FLOOR_MIN_CHARS,
+    )
     q = (query or "").casefold()
 
     def _rank(f) -> tuple:
@@ -1697,6 +1724,262 @@ def _stream_break_lines(lines: list[str], n_chars: int) -> tuple[tuple[int, str,
     return _stream_break_lines_scan(lines)
 
 
+# 1.10.0 (E12): outcome/landmark lines for the selection floor. The sealed round-2
+# look showed evidence families whose gold lines are neither fact-shaped nor
+# error-shaped nor stream-breaks: completion summaries ("Successfully validated
+# 798 migrations", "1 scenario passed, 1 failed"), REPL prompt lines
+# ("acme_billing> db.x.find()"), table headers, numbered section headers
+# ("Event[90]:") and bare key:value status lines sitting next to a kept error.
+# A scored selection cannot tell these apart from noise under a miss query, so
+# they get the same bounded, floor-only protection as break lines.
+_OUTCOME_MAX_LINES = 12
+_OUTCOME_SECTION_BODY_MAX = 6
+_OUTCOME_FAIL_MAX = 6
+_OUTCOME_LONE_KV_MAX = 3
+
+_OUTCOME_SUMMARY_RE = re.compile(
+    r"^\s*(?:"
+    r"Successfully\s+\w+.*"
+    r"|\d[\d,]*\s+(?:scenario|test|check|migration|example|step|spec|assertion)s?\b.*"
+    r"\b(?:passed|failed|skipped|undefined|pending|error)\b.*"
+    r"|\d[\d,]*\s+requests?\s+in\s+[\d.]+\s*[smh]\b.*"
+    r"|Socket errors:.*"
+    r"|Verify return code:.*"
+    r"|Processed a total of \d.*"
+    r"|(?:Stopped|Started|Stopping|Starting)\b.*\b(?:service|daemon|unit|target|scope|slice)\b.*"
+    r"|The\s+[\w -]{2,60}\s+was\s+\w+ed\b.*"
+    r"|.*\bpromiscuous mode\b.*"
+    r")\s*$",
+    re.IGNORECASE,
+)
+_OUTCOME_PROMPT_RE = re.compile(r"^\s*([A-Za-z_][\w.-]{1,24})[>$#]\s+\S")
+_OUTCOME_SECTION_RE = re.compile(r"^\s*(?:[\w.-]+\[\d+\]|(?:Event|Record|Entry|Item|Block|Frame|Packet)\s+#?\d+)\s*:\s*$")
+_OUTCOME_KV_RE = re.compile(r"^\s*[a-z][\w.-]{1,39}[:=]\S{1,80}\s*$")
+_OUTCOME_ERR_NEAR_RE = re.compile(
+    r"(?i)(?:\(error\)|\bERROR\b|\berror[ s:]|fail(?:ed|ure)?"
+    r"|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt)\b)"
+)
+_OUTCOME_LONE_KV_RE = re.compile(r"^\s*\S{1,40}\s*(?::|=|->)\s*\S{1,80}\s*$")
+# A run of 8+ box/block-drawing glyphs at line start is a download/progress
+# bar ("   ━━━━ 119.0/119.0 kB"), never failure context — _is_progress_bar
+# misses shapes that carry no % or /.
+_OUTCOME_BAR_RE = re.compile(r"^\s*[─-╿▀-▟═]{8,}")
+_OUTCOME_LONE_KV_COMMENT_RE = re.compile(r"^\s*#\s*\S[^:=]{1,30}:\s*\S{1,80}\s*$")
+_OUTCOME_TABLE_HEADS = frozenset(
+    "state proto recv-q send-q local peer pid user %cpu %mem vsz rss tty stat start time "
+    "command name device filesystem size used avail use% mounted iface mtu rx-ok tx-ok "
+    "chain target prot pkts bytes source destination flags options address port".split()
+)
+
+
+def _outcome_worthy(ln: str, *, allow_short: bool = False) -> bool:
+    """Same worthiness guards as the stream-break floor: substantive, not
+    injection-shaped, not sink filler, never credential material. Landmark
+    lines are short by nature — a numbered header ("Event[90]:") or a column
+    row is long enough when its class matched, so ``allow_short`` skips the
+    length gate for them only."""
+    if not allow_short and not _template_long_enough(ln):
+        return False
+    if _is_trust_risk_line(ln) or _is_sink_noise(ln):
+        return False
+    probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
+    if any(lit in probe for lit in _SECRET_LITERALS):
+        return False
+    if any(lit in probe.lower() for lit in _SECRET_FOLDED_LITERALS):
+        return False
+    em = _env_match(probe)
+    return em is None or not _env_is_sensitive(em.group(1), em.group(2))
+
+
+def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ...]:
+    """The outcome/landmark candidates of ``lines`` — at most one small set per
+    class so the floor's line budget is not spent on a single shape. Returns the
+    fact-line ``(index, key, value, line)`` shape; key/value are the line itself.
+    """
+    nb_i = [i for i, ln in enumerate(lines) if ln.strip()]
+    if len(nb_i) < 10:
+        return ()
+    err_near = [False] * len(lines)
+    for i in nb_i:
+        if _OUTCOME_ERR_NEAR_RE.search(lines[i]):
+            for j in range(max(0, i - 2), min(len(lines), i + 3)):
+                err_near[j] = True
+    summaries: dict[str, tuple[int, str]] = {}
+    summary_counts: dict[str, int] = {}
+    prompts: dict[str, tuple[int, str]] = {}
+    prompt_counts: dict[str, int] = {}
+    section_hits: list[tuple[int, str]] = []
+    tables: list[tuple[int, str]] = []
+    kvs: list[tuple[int, str]] = []
+    fails: list[tuple[int, str]] = []
+    fail_fps: set[str] = set()
+    lone_kvs: list[tuple[int, str]] = []
+    is_err = [False] * len(lines)
+    for pos, i in enumerate(nb_i):
+        ln = lines[i]
+        if _OUTCOME_ERR_NEAR_RE.search(ln):
+            is_err[i] = True
+            fp = _log_fingerprint(ln) or ln
+            if fp not in fail_fps and len(fails) < _OUTCOME_FAIL_MAX:
+                fail_fps.add(fp)
+                fails.append((i, ln))
+                continue
+        if _OUTCOME_SUMMARY_RE.match(ln):
+            # Repeated progress lines ("Successfully applied N migrations"
+            # every step) are a status stream, not an outcome — counted per
+            # shape below and dropped; only a shape seen once or twice reports
+            # an outcome ("Successfully validated 798 migrations").
+            sfp = _log_fingerprint(ln) or ln
+            summaries[sfp] = (i, ln)
+            summary_counts[sfp] = summary_counts.get(sfp, 0) + 1
+            if len(summaries) > 4:
+                summaries.pop(next(iter(summaries)))
+            continue
+        pm = _OUTCOME_PROMPT_RE.match(ln)
+        if pm:
+            # Prompts dedupe on the COMMAND shape (the part after the prompt
+            # marker, digit-bearing tokens masked), so twenty ".stats()" calls
+            # are one template and the single ".find()" / "exit" stand out.
+            cfp = re.sub(r"\w*\d\w*", "#", ln[pm.end(1):])
+            prompts[cfp] = (i, ln)
+            prompt_counts[cfp] = prompt_counts.get(cfp, 0) + 1
+            continue
+        if _OUTCOME_SECTION_RE.match(ln):
+            section_hits.append((i, ln))
+            continue
+        if len(tables) < 2:
+            first = ln.strip().split(None, 1)[0].lower().rstrip(":")
+            if first in _OUTCOME_TABLE_HEADS and len(ln.split()) >= 3:
+                nxt = next((lines[j] for j in nb_i[pos + 1:pos + 3] if j > i), "")
+                if len(nxt.split()) >= 3:
+                    tables.append((i, ln))
+                    continue
+        if len(kvs) < 2 and err_near[i] and _OUTCOME_KV_RE.match(ln):
+            kvs.append((i, ln))
+            continue
+        if len(lone_kvs) < _OUTCOME_LONE_KV_MAX and (
+            _OUTCOME_LONE_KV_RE.match(ln) or _OUTCOME_LONE_KV_COMMENT_RE.match(ln)
+        ):
+            lone_kvs.append((i, ln))
+            continue
+    # Rare commands first (the one ".find()" or "exit" among routine ".stats()"
+    # calls is the evidence), then the latest of each — the tail is where the
+    # session outcome lives.
+    prompt_list = [
+        v for _cfp, v in sorted(
+            prompts.items(), key=lambda kv: (prompt_counts[kv[0]], -kv[1][0])
+        )[:3]
+    ]
+    summary_list = [
+        v for fp, v in summaries.items() if summary_counts[fp] <= 2
+    ]
+    if len(lines) and len(lone_kvs):
+        kv_like = sum(
+            1 for i in nb_i
+            if _OUTCOME_LONE_KV_RE.match(lines[i]) or _OUTCOME_LONE_KV_COMMENT_RE.match(lines[i])
+        )
+        if kv_like / len(nb_i) > 0.30:
+            lone_kvs = []
+    # The line immediately before a failure line is the step whose check
+    # produced it ("Then the payment is captured" above "Assertion Failed:") —
+    # failure context a score cannot see, protected like the failure itself.
+    # A context line whose template IS the stream (more than half the input)
+    # is a coincidental neighbour — the failing step a repeated but minority
+    # template (a LISTEN row in a socket table) still reads as context.
+    errctx: list[tuple[int, str]] = []
+    if fails:
+        fp_counts: dict[str, int] = {}
+        for i in nb_i:
+            cfp = _log_fingerprint(lines[i]) or lines[i]
+            fp_counts[cfp] = fp_counts.get(cfp, 0) + 1
+        for i, _ln in fails:
+            j = i - 1
+            while j >= 0 and not lines[j].strip():
+                j -= 1
+            if (
+                j >= 0 and not is_err[j] and not _is_progress_bar(lines[j])
+                and not _OUTCOME_BAR_RE.match(lines[j])
+                and fp_counts.get(_log_fingerprint(lines[j]) or lines[j], 0) * 2 <= len(nb_i)
+            ):
+                errctx.append((j, lines[j]))
+            if len(errctx) >= 2:
+                break
+    # Numbered records ("Event[90]:" + indented body) repeat by the dozen, so
+    # positional caps pick the wrong ones. A record earns protection from its
+    # content: a body carrying an error/status evidence line, or the outcome
+    # line itself — and the last record always earns it (the tail is where the
+    # final state lives). Inside a kept record only the evidence lines are
+    # protected — error/status values, summary lines, and description content
+    # indented deeper than the boilerplate fields — never the field rows.
+    def _section_record(i: int) -> list[tuple[int, str]]:
+        rec: list[tuple[int, str]] = []
+        for j in range(i + 1, len(lines)):
+            ln = lines[j]
+            if _OUTCOME_SECTION_RE.match(ln) or (ln.strip() and not ln[:1].isspace()):
+                break
+            if ln.strip():
+                rec.append((j, ln))
+        return rec
+
+    ranked_sections: list[tuple[int, str]] = []
+    section_body: list[tuple[int, str]] = []
+    recs = [(i, ln, _section_record(i)) for i, ln in section_hits]
+
+    def _record_evidence(rec: list[tuple[int, str]]) -> list[tuple[int, str]]:
+        ind = min((len(ln) - len(ln.lstrip()) for _j, ln in rec), default=0)
+        return [
+            (j, ln) for j, ln in rec
+            if _OUTCOME_ERR_NEAR_RE.search(ln)
+            or _OUTCOME_SUMMARY_RE.match(ln)
+            or len(ln) - len(ln.lstrip()) > ind
+        ][:_OUTCOME_SECTION_BODY_MAX]
+
+    err_sections = [(i, ln, rec) for i, ln, rec in recs
+                    if any(_OUTCOME_ERR_NEAR_RE.search(b) for _j, b in rec)]
+    for i, ln, rec in err_sections[:2]:
+        ranked_sections.append((i, ln))
+        section_body.extend(_record_evidence(rec))
+    if recs and (not ranked_sections or ranked_sections[-1][0] != recs[-1][0]):
+        i, ln, rec = recs[-1]
+        if len(ranked_sections) < 3:
+            ranked_sections.append((i, ln))
+            section_body.extend(_record_evidence(rec))
+
+    out = []
+    seen = set()
+    shorts = (
+        {ln for _i, ln in ranked_sections}
+        | {ln for _i, ln in tables}
+        | {ln for _i, ln in section_body}
+        | {ln for _i, ln in fails}
+        | {ln for _i, ln in lone_kvs}
+    )
+    merged = (
+        summary_list + prompt_list + ranked_sections + tables + kvs
+        + section_body + fails + lone_kvs + errctx
+    )
+    for i, ln in sorted(merged):
+        if ln not in seen and _outcome_worthy(ln, allow_short=ln in shorts):
+            out.append((i, ln, ln, ln))
+            seen.add(ln)
+        if len(out) >= _OUTCOME_MAX_LINES:
+            break
+    return tuple(out)
+
+
+def _outcome_lines(lines: list[str], n_chars: int) -> tuple[tuple[int, str, str, str], ...]:
+    """Memoised ``_outcome_lines_scan`` over the shared ``protected_source``
+    split — same cache contract as ``_stream_break_lines``."""
+    if n_chars <= _MEMO_MAX_CHARS:
+        key = _lines_digest_key(lines, "outcome_lines")
+        hit = _CONTENT.get(key)
+        if hit is _MISS:
+            hit = _outcome_lines_scan(lines)
+            _CONTENT.set(key, hit)
+        return hit
+    return _outcome_lines_scan(lines)
+
+
 def structural_log_pass(lines: list[str]) -> list[str]:
     """The always-on STRUCTURAL log pass (1.10.0): progress removal, ``[×N]`` template collapse with the last instance kept, and per-cause stack folding. It is :func:`preprocess_logs` with no query: it never drops a distinct error line, an exception head, a ``Caused by`` / inner-exception message, ``... N more``, or the first frame outside the framework, and it is idempotent."""
     return preprocess_logs(_fold_build_noise(lines), "", structural=True)
@@ -1756,7 +2039,7 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
     kept_lines = [lines[i] for i in kept_src]
     # 1.10.0 (S5): indices into `lines` of the protected fact lines — they never fold (below).
     # The memoised fingerprint() is shared so each line is still fingerprinted once.
-    fact_protected_src = _fact_protected_set(lines, fingerprint)
+    fact_protected_src = _fact_protected_set(lines, fingerprint) | _outcome_protected_set(lines)
 
     query_match_source_indices: set[int] = set()
     if query_selectors:
@@ -1817,6 +2100,7 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
 
     seen: dict[str, int] = {}
     exemplar_idx: dict[str, int] = {}
+    protected_out_indices: set[int] = set()  # E12: verbatim out slots the count pass must not rewrite
     last_seen: dict[str, str] = {}  # v1.4.0 (E10): last instance of each template
 
     short_counts: dict[str, int] = {}
@@ -1853,6 +2137,7 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
         if kept_src[i] in fact_protected_src:
             # 1.10.0 (S5): a protected fact line is never collapsed — it stays verbatim. Only the
             # newest of same-key facts is protected, so a superseded value still folds away.
+            protected_out_indices.add(len(out))
             out.append(line)
             out_src.append(kept_src[i])
             i += 1
@@ -1878,7 +2163,7 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
     counted_out: list[str] = []
     counted_src: list[int] = []
     for idx, ln in enumerate(out):
-        if idx in query_match_indices:
+        if idx in query_match_indices or idx in protected_out_indices:
             counted_out.append(ln)
             counted_src.append(out_src[idx])
             continue
@@ -2275,7 +2560,10 @@ def preprocess_csv(
     # 1.10.0 (S5): a fact-shaped row is never a dropped row — a selector that fails
     # to match it must not delete it (only the newest of same-key facts counts).
     # 1.10.0 (S5, E6): neither is a protected error exemplar.
-    fact_protected = _fact_protected_set(lines) | _error_protected_set(lines)
+    fact_protected = (
+        _fact_protected_set(lines) | _error_protected_set(lines)
+        | _outcome_protected_set(lines)
+    )
     kept = [lines[0]]
     flags = [False] * len(lines)
     flags[0] = True
@@ -2326,7 +2614,10 @@ def preprocess_flat_records(text: str, query: str) -> str:
     selectors = _selector_patterns(terms)
     # 1.10.0 (S5): flat records are key/value facts — a row the selectors miss stays.
     # 1.10.0 (S5, E6): so does a protected error exemplar.
-    fact_protected = _fact_protected_set(lines) | _error_protected_set(lines)
+    fact_protected = (
+        _fact_protected_set(lines) | _error_protected_set(lines)
+        | _outcome_protected_set(lines)
+    )
     kept = [
         line
         for index, line in enumerate(lines)
@@ -2440,7 +2731,10 @@ def preprocess_filler_comments(text: str, query: str) -> str:
     if not query_has_distinctive_selectors(query or ""):
         return text
     lines = text.split("\n")
-    fact_protected = _fact_protected_set(lines) | _error_protected_set(lines)
+    fact_protected = (
+        _fact_protected_set(lines) | _error_protected_set(lines)
+        | _outcome_protected_set(lines)
+    )
     kept = [
         ln
         for index, ln in enumerate(lines)
@@ -2628,9 +2922,9 @@ def preprocess(
         # 1.10.0 (S5, E4): the call's fact-density is part of the memo key — a fact-dense
         # compress_context call must get (and leave) machinery-off output for the same text.
         # 1.10.0 (S5, E6): so is the protected error-exemplar set — it changes what the
-        # destructive pre-filters keep.
+        # destructive pre-filters keep. (E12): so is the outcome-protected set.
         lines, kind = _preprocess_cached(text, query, content_hint, _FACT_OFF.get(),
-                                         _ERR_PROTECTED.get())
+                                         _ERR_PROTECTED.get(), _OUTCOME_PROTECTED.get())
         return list(lines), kind
     return _preprocess_scan(text, query, content_hint)
 
@@ -2638,7 +2932,7 @@ def preprocess(
 @functools.lru_cache(maxsize=_MEMO_ENTRIES)
 def _preprocess_cached(
     text: str, query: str, content_hint: str | None, _facts_off: bool = False,
-    _err_prot=frozenset(),
+    _err_prot=frozenset(), _out_prot=frozenset(),
 ) -> tuple[tuple[str, ...], str]:
     lines, kind = _preprocess_scan(text, query, content_hint)
     return tuple(lines), kind
@@ -2689,7 +2983,7 @@ def _fold_repeated_sentences(lines: list[str]) -> list[str]:
     sentence splitter. Lossless apart from exact whitespace between copies.
     """
     folded: list[str] = []
-    fact_protected = _fact_protected_set(lines)
+    fact_protected = _fact_protected_set(lines) | _outcome_protected_set(lines)
     for index, line in enumerate(lines):
         t = " ".join(line.split())
         if index not in fact_protected and len(t) >= _REPEAT_LINE_MIN_CHARS:
@@ -9513,6 +9807,7 @@ def _compress_context_impl(
     # anomalous rows) get the same selection-floor protection as S5 facts: they are not
     # fact-shaped, so the floor pool below merges them in explicitly.
     break_lines = _stream_break_lines(protected_lines, n_protected_chars)
+    outcome_lines = _outcome_lines(protected_lines, n_protected_chars)
     del protected_lines
     # 1.10.0 (S5, E6): protected error exemplars — first line per error fingerprint of the same
     # original text, before any destructive stage — are exempt from the selector pre-filters and
@@ -9521,6 +9816,10 @@ def _compress_context_impl(
     _ERR_PROTECTED.set(tuple(
         _protected_error_exemplars(protected_source)
     ))
+    # 1.10.0 (E12): outcome/landmark lines get the same stage exemption — the
+    # selector pre-filters, flat-records, filler-comments and log folds below
+    # consult ``_outcome_protected_set`` and keep a protected line verbatim.
+    _OUTCOME_PROTECTED.set(frozenset(f[3] for f in outcome_lines))
     industrial, degraded, payload_industrial = _industrial_preflight(
         adapter_gap=adapter_gap, caller_text=caller_text, degraded=degraded,
         degraded_view=degraded_view, industrial_query=industrial_query, limits=limits,
@@ -9741,7 +10040,7 @@ def _compress_context_impl(
     # Never on a fail-open (the floor alone never decides the verdict): the cost gates below still
     # judge the result, so an extract plus the floor that misses min_savings_ratio fails open under
     # the existing rule.
-    if not fail_open and (fact_lines or break_lines):
+    if not fail_open and (fact_lines or break_lines or outcome_lines):
         line_set = set(lines)
         floor_facts = [
             f for f in fact_lines
@@ -9750,6 +10049,11 @@ def _compress_context_impl(
         floor_seen = {f[3] for f in floor_facts}
         floor_pool = floor_facts + [
             f for f in break_lines
+            if f[3] in line_set and f[3] not in floor_seen
+        ]
+        floor_seen.update(f[3] for f in floor_pool)
+        floor_pool += [
+            f for f in outcome_lines
             if f[3] in line_set and f[3] not in floor_seen
         ]
         if floor_pool:
@@ -10012,6 +10316,7 @@ def compress_context(
     _pin_token = _PINNED_LINES.set(frozenset())
     _fact_off_token = _FACT_OFF.set(False)
     _err_token = _ERR_PROTECTED.set(())
+    _out_token = _OUTCOME_PROTECTED.set(frozenset())
     try:
         result = _compress_context_impl(
         context, query,
@@ -10032,6 +10337,7 @@ def compress_context(
         _PINNED_LINES.reset(_pin_token)
         _FACT_OFF.reset(_fact_off_token)
         _ERR_PROTECTED.reset(_err_token)
+        _OUTCOME_PROTECTED.reset(_out_token)
     if redact_secrets and not result.fail_open:
         redacted = redact_secrets_in(result.compressed_text)
         if redacted is not result.compressed_text and redacted != result.compressed_text:

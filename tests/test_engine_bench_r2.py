@@ -48,7 +48,10 @@ def test_family_purity_across_splits(r2_cases, r2_doc):
         per_cluster[c["source_case"]].add(fams[c["family"]])
     assert all(len(v) == 1 for v in per_family.values())
     assert all(len(v) == 1 for v in per_cluster.values())
-    assert set(fams.values()) == {"dev", "validation", "sealed"}
+    # A spent look burns its sealed families into dev (ANALYSIS-PLAN protocol), so
+    # "sealed" may be absent between looks; dev and validation must always be present.
+    assert set(fams.values()) <= {"dev", "validation", "sealed"}
+    assert {"dev", "validation"} <= set(fams.values())
 
 
 def test_non_overlap_with_round1_and_session_corpus():
@@ -71,10 +74,12 @@ def test_split_minimums_from_metadata(r2_doc):
     assert counts["dev"]["families"] >= 8
     assert counts["validation"]["families"] >= 8
     st = split.r2_sealed_stats(r2_doc)
-    assert st["cases"] >= 160 and st["clusters"] >= 40
-    assert st["buried_en_clusters"] >= 30 and st["buried_zh_clusters"] >= 30
-    assert st["csv_args_clusters"] >= 20 and st["superseded_clusters"] >= 10 and st["evidence_clusters"] >= 40
-    assert st["s5_facts"] >= 120
+    if not r2_doc.get("burn"):
+        # No sealed holdout exists between a spent look and the next deal.
+        assert st["cases"] >= 160 and st["clusters"] >= 40
+        assert st["buried_en_clusters"] >= 30 and st["buried_zh_clusters"] >= 30
+        assert st["csv_args_clusters"] >= 20 and st["superseded_clusters"] >= 10 and st["evidence_clusters"] >= 40
+        assert st["s5_facts"] >= 120
 
 
 def test_language_share(r2_cases):
