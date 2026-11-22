@@ -4902,7 +4902,7 @@ def _verification_critical_lines(original: str, keys: list[str]) -> list[str]:
             continue
         if _is_trust_risk_line(scan):
             continue
-        shape = _DIGITS_RE.sub("#", flines[i].strip()[:80])
+        shape = flines[i].strip()
         if shape in seen:
             continue
         seen.add(shape)
