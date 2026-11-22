@@ -16,6 +16,12 @@ def test_ev_rejects_invalid_probability_before_capping(confidence):
                     n_eff=80, suffix_tokens=0, item_tokens=1000) is None
 
 
+@pytest.mark.parametrize("calibrator", [lambda r: "invalid", lambda r: 1 / 0])
+def test_ev_calibrator_failure_declines(calibrator):
+    assert ev_terms(result(), replace(EV, calibrator=calibrator), 900,
+                    n_eff=80, suffix_tokens=0, item_tokens=1000) is None
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

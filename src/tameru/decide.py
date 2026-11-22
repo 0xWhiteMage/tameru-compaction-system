@@ -123,10 +123,13 @@ def ev_terms(
     ``V = saved_tokens * r * (n_eff + 1) - S * (w - r)`` with ``S`` the suffix tokens the write makes the
     provider re-cache (0 on a cache-broken event — the rewrite happens anyway). A profile without an output
     price prices recovery output at the uncached input unit (``o = 1``)."""
-    p_hat = ev.calibrator(result) if ev.calibrator is not None else getattr(result, "confidence", None)
-    if p_hat is None:
+    try:
+        p_hat = ev.calibrator(result) if ev.calibrator is not None else getattr(result, "confidence", None)
+        if p_hat is None:
+            return None
+        p_hat = float(p_hat)
+    except Exception:  # fail-open boundary for a caller-supplied calibrator
         return None
-    p_hat = float(p_hat)
     if not isfinite(p_hat) or not 0.0 <= p_hat <= 1.0:
         return None
     if getattr(result, "fact_lines_dropped", 0) and p_hat > 0.98:
