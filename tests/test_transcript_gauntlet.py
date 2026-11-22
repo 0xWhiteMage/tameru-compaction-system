@@ -152,3 +152,10 @@ def test_oversized_json_arguments_are_not_parsed(monkeypatch):
         pytest.fail("oversized argument was parsed")
     monkeypatch.setattr(t.json, "loads", forbidden)
     assert t._arg_leaves('{"path":"' + "a" * 70000 + '"}') == []
+
+
+def test_full_query_budget_does_not_scan_lower_priority_sources():
+    def forbidden(message):
+        pytest.fail("full query inspected a lower-priority source")
+    messages = [{"role": "user", "content": "task"}, {"role": "tool"}]
+    assert t.task_query(messages, 1, focus="focus", max_chars=5, skip_user=forbidden) == ["focus"]

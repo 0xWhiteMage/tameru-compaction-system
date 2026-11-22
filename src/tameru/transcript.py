@@ -309,12 +309,15 @@ def task_query(
         seen.add(key)
         parts.append(text)
         used += len(text) + (1 if len(parts) > 1 else 0)
+        full = used >= max_chars
 
     if isinstance(focus, str):
         add(focus)
     elif focus:
         add(text_of(focus))
 
+    if full:
+        return parts
     msg = messages[idx] if isinstance(idx, int) and 0 <= idx < len(messages) else None
     call_id = str((msg or {}).get("tool_call_id") or "") if isinstance(msg, dict) else ""
     if include_call and call_id:
@@ -325,6 +328,8 @@ def task_query(
         for leaf in _arg_leaves(args):
             add(leaf, _QUERY_ARG_CHARS)
 
+    if full:
+        return parts
     if isinstance(idx, int):
         for i in range(max(idx + 1, 0), len(messages)):
             follow = messages[i]
@@ -337,6 +342,8 @@ def task_query(
                         add(leaf, _QUERY_ARG_CHARS)
                 break
 
+    if full:
+        return parts
     def real_user_text(m: Any) -> str:
         """Text of a user message that counts (non-blank, not skipped), else ``""``."""
         if not isinstance(m, dict) or m.get("role") != "user":
@@ -352,6 +359,8 @@ def task_query(
     # accepted, not once per user message on every call.
     last_user = next((t for t in map(real_user_text, reversed(messages)) if t), "")
     add(last_user)
+    if full:
+        return parts
     add(next((t for t in map(real_user_text, messages) if t), ""))
     return parts
 
