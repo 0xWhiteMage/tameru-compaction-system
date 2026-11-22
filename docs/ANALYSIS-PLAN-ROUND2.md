@@ -264,3 +264,21 @@ No exception touches a statistical endpoint, margin, α or the validation-query 
   the model's digest are recorded next to every S3 result. The endpoint is a reporting parameter, not a tunable.
 
 No margin, bar or gate changes.
+
+### 2026-11-23: the r=2 engine look failed; the r2 sealed holdout is burned
+
+- **The look.** `sealed_looks_r2.json` records the single r2 look (candidate `engine-e11` at setting E11,
+  baseline `engine-1.10.0-r2` on the e638509 worktree). `results/release-gates-r2-sealed-e11.json`: 55 of 66
+  checks pass at alpha = 0.0125. The 11 failures: S5 existing gold in 6 profile|condition cells (81.9-94.4% vs
+  the 99.5 bound — the 1.10.0 baseline sits at 78.1-94.4% on the same cells and the candidate is equal or better
+  in 13 of 14; the bound is unmeetable by either engine on this corpus), gate9 fingerprints deepseek|
+  build_specific (mean +7.25, bootstrap lower -4.48), and S6 calibration (4 strata over ECE 0.05 — the
+  dev-fit table is overconfident on sealed families — plus AUROC 0.88 vs 0.9).
+- **Burn.** Sealed hash `ed64e3812599aed3…` (benchmarks/engine_bench/SEALED-R2.sha256) is burned: its 20
+  families move into dev (`splits_r2.json` carries a `burn` record and the counts now read 570/30 dev), are never
+  used for confirmation again, and are excluded from the round-3 holdout.
+- **Next look.** The engine moves to r = 3 (alpha = 0.00625). A round-3 holdout must be built (about 270
+  scenarios in at least 24 families, >=40 clusters per split), pass the registered equivalence check before
+  sealing, and its hash is appended here before the look — the same protocol round 2 used.
+
+No margin, bar or gate changes.
