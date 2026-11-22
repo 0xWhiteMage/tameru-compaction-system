@@ -1,0 +1,296 @@
+{
+ "leave_family_out": {
+  "rows": 1023,
+  "observed": 0.9863,
+  "mean_p": 0.9856,
+  "ece": 0.0007,
+  "strata": {
+   "anchored|vague": {
+    "n": 8,
+    "families": 1,
+    "gated": false,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.989,
+    "ece": 0.011,
+    "slope": null
+   },
+   "lexical|specific": {
+    "n": 252,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.9997,
+    "ece": 0.0003,
+    "slope": null
+   },
+   "lexical|vague": {
+    "n": 79,
+    "families": 5,
+    "gated": true,
+    "fact_drop_rows": 4,
+    "observed": 0.9494,
+    "mean_p": 0.9491,
+    "ece": 0.0003,
+    "slope": null
+   },
+   "none|vague": {
+    "n": 90,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 4,
+    "observed": 0.9556,
+    "mean_p": 0.9553,
+    "ece": 0.0003,
+    "slope": null
+   },
+   "structural|specific": {
+    "n": 132,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.9997,
+    "ece": 0.0003,
+    "slope": null
+   },
+   "structural|vague": {
+    "n": 33,
+    "families": 1,
+    "gated": false,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.989,
+    "ece": 0.011,
+    "slope": null
+   },
+   "tool_call|specific": {
+    "n": 429,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 6,
+    "observed": 0.986,
+    "mean_p": 0.9857,
+    "ece": 0.0003,
+    "slope": null
+   }
+  },
+  "languages": {
+   "en": {
+    "n": 677,
+    "observed": 0.9852,
+    "mean_p": 0.9844
+   },
+   "mixed": {
+    "n": 124,
+    "observed": 0.9677,
+    "mean_p": 0.9671
+   },
+   "zh": {
+    "n": 222,
+    "observed": 1.0,
+    "mean_p": 0.9995
+   }
+  },
+  "auroc_vs_fact_drop": 1.0,
+  "fact_drop_positives": 14,
+  "p_ge_099_vague_or_structural": 0,
+  "gated_failures": []
+ },
+ "in_sample": {
+  "rows": 1023,
+  "observed": 0.9863,
+  "mean_p": 0.986,
+  "ece": 0.0003,
+  "strata": {
+   "anchored|vague": {
+    "n": 8,
+    "families": 1,
+    "gated": false,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.9993,
+    "ece": 0.0007,
+    "slope": null
+   },
+   "lexical|specific": {
+    "n": 252,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.9998,
+    "ece": 0.0002,
+    "slope": null
+   },
+   "lexical|vague": {
+    "n": 79,
+    "families": 5,
+    "gated": true,
+    "fact_drop_rows": 4,
+    "observed": 0.9494,
+    "mean_p": 0.9491,
+    "ece": 0.0003,
+    "slope": null
+   },
+   "none|vague": {
+    "n": 90,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 4,
+    "observed": 0.9556,
+    "mean_p": 0.9553,
+    "ece": 0.0002,
+    "slope": null
+   },
+   "structural|specific": {
+    "n": 132,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.9998,
+    "ece": 0.0002,
+    "slope": null
+   },
+   "structural|vague": {
+    "n": 33,
+    "families": 1,
+    "gated": false,
+    "fact_drop_rows": 0,
+    "observed": 1.0,
+    "mean_p": 0.9993,
+    "ece": 0.0007,
+    "slope": null
+   },
+   "tool_call|specific": {
+    "n": 429,
+    "families": 6,
+    "gated": true,
+    "fact_drop_rows": 6,
+    "observed": 0.986,
+    "mean_p": 0.9858,
+    "ece": 0.0002,
+    "slope": null
+   }
+  },
+  "languages": {
+   "en": {
+    "n": 677,
+    "observed": 0.9852,
+    "mean_p": 0.985
+   },
+   "mixed": {
+    "n": 124,
+    "observed": 0.9677,
+    "mean_p": 0.9675
+   },
+   "zh": {
+    "n": 222,
+    "observed": 1.0,
+    "mean_p": 0.9997
+   }
+  },
+  "auroc_vs_fact_drop": 1.0,
+  "fact_drop_positives": 14,
+  "p_ge_099_vague_or_structural": 0,
+  "gated_failures": []
+ },
+ "table": {
+  "schema": 1,
+  "method": "family-beta-v1",
+  "label": "accepted extract kept every gold line and dropped no protected fact line",
+  "prior": {
+   "mean": 0.999,
+   "strength": 2.0
+  },
+  "cap": {
+   "value": 0.989,
+   "applies_to": "style vague or basis structural",
+   "lifted_when": "the stratum's Beta 5th percentile >= 0.99"
+  },
+  "strata": {
+   "anchored|vague": {
+    "alpha": 2.998,
+    "beta": 0.002,
+    "families": 1,
+    "rows": 8,
+    "losses": 0,
+    "lifts_cap": true,
+    "iso": [],
+    "auroc_lb": null
+   },
+   "lexical|specific": {
+    "alpha": 7.998,
+    "beta": 0.002,
+    "families": 6,
+    "rows": 252,
+    "losses": 0,
+    "lifts_cap": true,
+    "iso": [],
+    "auroc_lb": null
+   },
+   "lexical|vague": {
+    "alpha": 6.998,
+    "beta": 0.002,
+    "families": 5,
+    "rows": 75,
+    "losses": 0,
+    "lifts_cap": true,
+    "iso": [],
+    "auroc_lb": null
+   },
+   "none|vague": {
+    "alpha": 7.998,
+    "beta": 0.002,
+    "families": 6,
+    "rows": 86,
+    "losses": 0,
+    "lifts_cap": true,
+    "iso": [],
+    "auroc_lb": null
+   },
+   "structural|specific": {
+    "alpha": 7.998,
+    "beta": 0.002,
+    "families": 6,
+    "rows": 132,
+    "losses": 0,
+    "lifts_cap": true,
+    "iso": [],
+    "auroc_lb": null
+   },
+   "structural|vague": {
+    "alpha": 2.998,
+    "beta": 0.002,
+    "families": 1,
+    "rows": 33,
+    "losses": 0,
+    "lifts_cap": true,
+    "iso": [],
+    "auroc_lb": null
+   },
+   "tool_call|specific": {
+    "alpha": 7.998,
+    "beta": 0.002,
+    "families": 6,
+    "rows": 423,
+    "losses": 0,
+    "lifts_cap": true,
+    "iso": [],
+    "auroc_lb": null
+   }
+  },
+  "source": {
+   "rows": "benchmarks/engine_bench/results/r3-candidate-e13-dev.jsonl",
+   "rows_sha256": "0e3cc92bb10cb95f533e6cce17889eee5390fee1ae63594c92afc4f9ce483483",
+   "split": "dev",
+   "accepted_rows": 1023,
+   "families": 6,
+   "engine_commit": [
+    "cb126c53f9897f7af51d07914c51398aefc3dc71"
+   ]
+  }
+ }
+}

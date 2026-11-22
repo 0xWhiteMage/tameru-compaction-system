@@ -12,17 +12,17 @@
  },
  "schema": 1,
  "source": {
-  "accepted_rows": 1439,
+  "accepted_rows": 1023,
   "engine_commit": [
-   "9cedca4de1101c9f3aeaa71c709c463368a617cd"
+   "cb126c53f9897f7af51d07914c51398aefc3dc71"
   ],
-  "families": 10,
-  "rows": "benchmarks/engine_bench/results/r2-candidate-e10-dev.jsonl",
-  "rows_sha256": "99b868fbd0cd72c93b0415ce79b37cf86ad1d7fd09da8762a3d05d0f44d4a520",
+  "families": 6,
+  "rows": "benchmarks/engine_bench/results/r3-candidate-e13-dev.jsonl",
+  "rows_sha256": "0e3cc92bb10cb95f533e6cce17889eee5390fee1ae63594c92afc4f9ce483483",
   "split": "dev"
  },
  "strata": {
-  "anchored|specific": {
+  "anchored|vague": {
    "alpha": 2.998,
    "auroc_lb": null,
    "beta": 0.002,
@@ -32,85 +32,65 @@
    "losses": 0,
    "rows": 8
   },
-  "anchored|vague": {
-   "alpha": 5.998,
-   "auroc_lb": null,
-   "beta": 0.002,
-   "families": 4,
-   "iso": [],
-   "lifts_cap": true,
-   "losses": 0,
-   "rows": 49
-  },
   "lexical|specific": {
-   "alpha": 10.998,
+   "alpha": 7.998,
    "auroc_lb": null,
    "beta": 0.002,
-   "families": 9,
+   "families": 6,
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 373
+   "rows": 252
   },
   "lexical|vague": {
-   "alpha": 9.998,
+   "alpha": 6.998,
    "auroc_lb": null,
    "beta": 0.002,
-   "families": 8,
+   "families": 5,
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 147
+   "rows": 75
   },
   "none|vague": {
-   "alpha": 9.998,
+   "alpha": 7.998,
    "auroc_lb": null,
    "beta": 0.002,
-   "families": 8,
+   "families": 6,
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 67
+   "rows": 86
   },
   "structural|specific": {
-   "alpha": 9.998,
+   "alpha": 7.998,
    "auroc_lb": null,
    "beta": 0.002,
-   "families": 8,
+   "families": 6,
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 160
+   "rows": 132
   },
   "structural|vague": {
-   "alpha": 4.998,
+   "alpha": 2.998,
    "auroc_lb": null,
    "beta": 0.002,
-   "families": 3,
+   "families": 1,
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 122
+   "rows": 33
   },
   "tool_call|specific": {
-   "alpha": 11.96769697,
-   "auroc_lb": null,
-   "beta": 0.03230303,
-   "families": 10,
-   "iso": [],
-   "lifts_cap": false,
-   "losses": 1,
-   "rows": 386
-  },
-  "tool_call|vague": {
-   "alpha": 4.998,
+   "alpha": 7.998,
    "auroc_lb": null,
    "beta": 0.002,
-   "families": 3,
+   "families": 6,
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 57
+   "rows": 423
   }
  }
 }

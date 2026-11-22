@@ -1,4 +1,4 @@
-DRY RUN on dev rows: candidate ['cb126c53f9897f7af51d07914c51398aefc3dc71'] vs baseline ['8d332d86d5f650210409ada263f1a4eb31e06c08']; 114 cases, 66 clusters; alpha 0.00625, 10000 resamples
+DRY RUN on dev rows: candidate ['7936eabb6c99ed365aa916538c4ce447d686cff6'] vs baseline ['8d332d86d5f650210409ada263f1a4eb31e06c08']; 114 cases, 66 clusters; alpha 0.00625, 10000 resamples
   PASS  integrity: candidate vs itself is exactly 0  (worst=0.0)
   PASS  S5 vague|en|deepseek  (share=100.0, lower=100.0, n=42, clusters=30)
   PASS  S5 vague|en|hermes  (share=100.0, lower=100.0, n=42, clusters=30)
@@ -55,10 +55,10 @@ DRY RUN on dev rows: candidate ['cb126c53f9897f7af51d07914c51398aefc3dc71'] vs b
   PASS  gate9 chinese (zh_user - task_vague)|deepseek  (mean_diff=0.0, lower=0.0, n=36)
   PASS  gate9 chinese (zh_user - task_vague)|hermes  (mean_diff=0.0, lower=0.0, n=36)
   PASS  S6 ECE|lexical|specific  (ece=0.0002, n=252, observed=1.0, mean_p=0.9998)
-  PASS  S6 ECE|lexical|vague  (ece=0.0002, n=79, observed=0.9494, mean_p=0.9492)
-  PASS  S6 ECE|none|vague  (ece=0.0002, n=90, observed=0.9556, mean_p=0.9554)
+  PASS  S6 ECE|lexical|vague  (ece=0.0003, n=79, observed=0.9494, mean_p=0.9491)
+  PASS  S6 ECE|none|vague  (ece=0.0002, n=90, observed=0.9556, mean_p=0.9553)
   PASS  S6 ECE|structural|specific  (ece=0.0002, n=132, observed=1.0, mean_p=0.9998)
-  PASS  S6 ECE|tool_call|specific  (ece=0.0027, n=429, observed=0.986, mean_p=0.9834)
+  PASS  S6 ECE|tool_call|specific  (ece=0.0002, n=429, observed=0.986, mean_p=0.9858)
   PASS  S6 AUROC vs fact drop  (auroc=1.0, positives=14)
   PASS  S6 p < 0.99 and raw confidence < 1.0 when a fact line was dropped  (rows=14)
   PASS  S6 no vague/structural p >= 0.99 outside a lifted stratum  (rows=0)
