@@ -28,6 +28,7 @@ from dataclasses import asdict, dataclass
 from typing import Callable
 
 from .contract_gates import query_has_distinctive_selectors
+from .gap_kind import call_gap_marker
 from .regex_cache import cached_compile
 from .unicode_profile import matching_shadow
 
@@ -55,10 +56,12 @@ def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}{'es' if noun.endswith(('ch', 's')) else 's'}"
 
 
-def _marker(gap_marker: GapMarker | None, omitted_chars: int, total: int, default: str) -> str:
+def _marker(
+    gap_marker: GapMarker | None, omitted_chars: int, total: int, default: str, kind: str = "other",
+) -> str:
     if gap_marker is None:
         return default
-    return str(gap_marker(omitted_chars, total))
+    return str(call_gap_marker(gap_marker, omitted_chars, total, kind))
 
 
 def _inlines(gap_marker: GapMarker | None, marker: str, dropped: str) -> bool:
@@ -689,6 +692,7 @@ def adapt_unified_diff(
                 omitted_chars,
                 len(text),
                 f"[… {_plural(len(untouched_run), 'file')} without a match: bodies omitted …]",
+                "files",
             )
         )
         untouched_run.clear()
@@ -719,6 +723,7 @@ def adapt_unified_diff(
                     omitted,
                     len(text),
                     f"[… {_plural(len(run), 'hunk')} omitted …]",
+                    "hunks",
                 )
             )
             run.clear()
@@ -875,7 +880,7 @@ def adapt_grep_lines(
             n_match = sum(1 for r in cross if r.kind == "m")
             if n_match:
                 omitted = len("\n".join(r.raw for r in cross))
-                out.append("  " + _marker(gap_marker, omitted, len(text), ""))
+                out.append("  " + _marker(gap_marker, omitted, len(text), "", "matches"))
             cross = []
 
         for path, recs in per_file.items():
@@ -932,6 +937,7 @@ def adapt_grep_lines(
                         omitted,
                         len(text),
                         f"[… {_plural(n_match, 'match')} omitted …]",
+                        "matches",
                     )
                     lines_ = [line_of(r) for r in run]
                     if _inlines(gap_marker, marker, "\n".join(lines_)):
@@ -3330,7 +3336,12 @@ def _render_kept(
         if gap_marker is not None:
             dropped = "\n".join(lines[i] for i in run)
             if omitted and dropped.strip():
-                marker = str(gap_marker(omitted, total))
+                gap_kind = (
+                    "tests" if n_tests else "suites" if n_suites
+                    else "captured" if captured is not None and any(captured[i] for i in run)
+                    else "other"
+                )
+                marker = str(call_gap_marker(gap_marker, omitted, total, gap_kind))
                 if _inlines(gap_marker, marker, dropped):
                     out.extend(lines[i] for i in run)
                 else:

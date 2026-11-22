@@ -95,6 +95,12 @@ def test_filler_query_never_makes_a_high_risk_deep_cut(kind, query):
     text = DOCUMENTS[kind]
     result = compress_context(text, query, ccr=False, citations=False)
     assert not (result.compression_risk == "high" and result.tokens_saved_pct > 90)
+    if kind == "log":
+        # 1.10.0: an empty objective on a log returns the structural fold (repeats counted); no error line is
+        # cut, so the risk is not "high".
+        assert not result.fail_open and result.compression_risk != "high"
+        assert all(line in result.compressed_text for line in text.split("\n") if " ERROR " in line)
+        return
     # Stronger: it behaves like an empty query, so nothing is cut at all.
     assert result.fail_open
     assert result.compressed_text == text
@@ -104,6 +110,9 @@ def test_filler_query_never_makes_a_high_risk_deep_cut(kind, query):
 def test_other_filler_spellings_are_filler_too(query):
     for kind in ("csv", "log", "markdown"):
         result = compress_context(DOCUMENTS[kind], query, ccr=False, citations=False)
+        if kind == "log":  # 1.10.0: filler on a log returns the structural fold, same as an empty query
+            assert result.compressed_text == compress_context(DOCUMENTS[kind], "", ccr=False, citations=False).compressed_text
+            continue
         assert result.fail_open, (kind, query)
 
 
