@@ -2219,15 +2219,21 @@ def _classify_curl_verbose(lines: list[str]) -> tuple[list[bool], list[int], lis
         if _CURL_TLS_NOISE_RE.match(line):
             keep[index] = False
 
-    response_headers = [
-        index
-        for index, line in enumerate(lines)
-        if re.match(r"^< [!#$%&'*+.^_`|~0-9A-Za-z-]+:", line)
-    ]
-    if len(response_headers) > 6:
-        for index in response_headers:
-            if not _CURL_KEY_HEADER_RE.match(lines[index]):
-                keep[index] = False
+    response_headers: list[int] = []
+
+    def flush_headers() -> None:
+        if len(response_headers) > 6:
+            for index in response_headers:
+                if not _CURL_KEY_HEADER_RE.match(lines[index]):
+                    keep[index] = False
+        response_headers.clear()
+
+    for index, line in enumerate(lines):
+        if _CURL_STATUS_RE.match(line):
+            flush_headers()
+        elif re.match(r"^< [!#$%&'*+.^_`|~0-9A-Za-z-]+:", line):
+            response_headers.append(index)
+    flush_headers()
 
     return keep, [0] * len(lines), [0] * len(lines)
 
