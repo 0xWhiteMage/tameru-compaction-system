@@ -302,3 +302,28 @@ No margin, bar or gate changes.
   engine query budget.
 
 No margin, bar or gate changes.
+
+### 2026-11-25: the r=3 engine look failed; the r3 sealed holdout is burned
+
+- **The look.** `sealed_looks_r3.json` records the single r3 look (candidate `engine-e13` at setting E13,
+  baseline `engine-1.10.0-r3` on the 8d332d8 worktree). `results/release-gates-r3-sealed-e13.json`: 54 of 65
+  checks pass at alpha = 0.00625. The 11 failures:
+  - S5 existing gold in 4 profile|condition cells (tool_call 93.2%, zh_user 89.6% vs the 99.5 bound). The
+    1.10.0 baseline sits at 89.1/85.4% on the same cells — the candidate is strictly better everywhere and
+    the bound is again unmeetable by either engine; the misses concentrate in three families the outcome
+    scan never learned (lsblk 18, nodetool 14, mtrep 4 tool_call/zh_user rows).
+  - gate9 fingerprints deepseek|build_specific, deepseek|build_vague, deepseek|task_vague (mean -2.4/-4.9,
+    lower -10.0/-14.6, n=41): all losses in the sslscan family, deepseek profile only; hermes loses 0.
+  - S6 ECE in 3 strata (none|vague 0.0675, structural|specific 0.0548, tool_call|vague 0.0769): the r3
+    dev-fit table is still overconfident on sealed families — same transfer gap as r2.
+  - S6 AUROC vs fact drop scored None with 0 positives: the candidate dropped zero protected fact lines on
+    the sealed split, so the discrimination check has no positive class. Recorded as a check failure by the
+    gate's own bookkeeping.
+- **Burn.** Sealed hash `c64902931bf51237…` (benchmarks/engine_bench/SEALED-R3.sha256) is burned: its 24
+  families move into dev (`splits_r3.json` carries a `burn` record), are never used for confirmation again,
+  and are excluded from the round-4 holdout.
+- **Next look.** The engine moves to r = 4 (alpha = 0.003125). A round-4 holdout must be built (about 270
+  scenarios in at least 24 families, >=40 clusters per split), pass the registered equivalence check before
+  sealing, and its hash is appended here before the look — the same protocol round 3 used.
+
+No margin, bar or gate changes.

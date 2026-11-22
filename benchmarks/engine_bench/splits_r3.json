@@ -1,19 +1,19 @@
 {
  "counts": {
   "dev": {
-   "cases": 114,
-   "clusters": 66,
-   "families": 6
-  },
-  "sealed": {
-   "cases": 456,
-   "clusters": 264,
-   "families": 24
+   "cases": 570,
+   "clusters": 330,
+   "families": 30
   },
   "validation": {
    "cases": 114,
    "clusters": 66,
    "families": 6
+  },
+  "sealed": {
+   "cases": 0,
+   "clusters": 0,
+   "families": 0
   }
  },
  "deal": {
@@ -23,40 +23,75 @@
  },
  "families": {
   "authlog": "validation",
-  "cephs": "sealed",
-  "chronyc": "sealed",
+  "cephs": "dev",
+  "chronyc": "dev",
   "coredumpctl": "validation",
-  "etcdctl": "sealed",
+  "etcdctl": "dev",
   "fiorun": "dev",
-  "glusterv": "sealed",
+  "glusterv": "dev",
   "hdfsrep": "dev",
   "infracost": "dev",
   "iperf": "validation",
-  "ipneigh": "sealed",
-  "iproute": "sealed",
-  "kubebench": "sealed",
-  "lsblk": "sealed",
+  "ipneigh": "dev",
+  "iproute": "dev",
+  "kubebench": "dev",
+  "lsblk": "dev",
   "lynis": "validation",
-  "memtier": "sealed",
-  "minio": "sealed",
-  "monit": "sealed",
-  "mtrep": "sealed",
-  "nftables": "sealed",
+  "memtier": "dev",
+  "minio": "dev",
+  "monit": "dev",
+  "mtrep": "dev",
+  "nftables": "dev",
   "nmap": "dev",
-  "nodetool": "sealed",
+  "nodetool": "dev",
   "ntpq": "validation",
-  "oscap": "sealed",
-  "pgbench": "sealed",
-  "pm2list": "sealed",
+  "oscap": "dev",
+  "pgbench": "dev",
+  "pm2list": "dev",
   "postfixq": "dev",
-  "rabbitmq": "sealed",
-  "restic": "sealed",
-  "rsyncst": "sealed",
-  "sslscan": "sealed",
-  "supervisord": "sealed",
+  "rabbitmq": "dev",
+  "restic": "dev",
+  "rsyncst": "dev",
+  "sslscan": "dev",
+  "supervisord": "dev",
   "systimers": "dev",
-  "tfsec": "sealed",
+  "tfsec": "dev",
   "trino": "validation",
-  "velero": "sealed"
- }
+  "velero": "dev"
+ },
+ "burn": [
+  {
+   "date": "2026-11-25",
+   "hash": "c64902931bf51237e1d5176e2865af3306c69ae12ca09dac6247f3522895da79",
+   "look": "sealed_looks_r3.json",
+   "result": "benchmarks/engine_bench/results/release-gates-r3-sealed-e13.json",
+   "families": [
+    "cephs",
+    "chronyc",
+    "etcdctl",
+    "glusterv",
+    "ipneigh",
+    "iproute",
+    "kubebench",
+    "lsblk",
+    "memtier",
+    "minio",
+    "monit",
+    "mtrep",
+    "nftables",
+    "nodetool",
+    "oscap",
+    "pgbench",
+    "pm2list",
+    "rabbitmq",
+    "restic",
+    "rsyncst",
+    "sslscan",
+    "supervisord",
+    "tfsec",
+    "velero"
+   ],
+   "note": "r=3 look failed (54/65); per ANALYSIS-PLAN-ROUND2 the failed round sealed set moves into dev, is never used for confirmation again, and is excluded from the round-4 holdout."
+  }
+ ]
 }
