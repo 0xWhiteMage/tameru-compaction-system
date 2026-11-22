@@ -1,0 +1,51 @@
+version = 1
+
+# The last matching annotation wins; file headers take priority over "closest".
+[[annotations]]
+path = ["**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Benjamin Ang"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["benchmarks/squeez_eval.py"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Benjamin Ang", "Copyright 2026 KR Labs"]
+SPDX-License-Identifier = "Apache-2.0"
+
+# Keep lint from opening sealed test or benchmark material.
+[[annotations]]
+path = ["tests/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Benjamin Ang"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["benchmarks/engine_bench/**", "benchmarks/session_corpus/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "NOASSERTION"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["fixtures/shape-jp-musubi.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "NOASSERTION"
+SPDX-License-Identifier = "LicenseRef-Unresolved-Musubi-Tuner"
+
+[[annotations]]
+path = ["fixtures/shape-ko-readme.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright © 39 AI, INC. All Rights Reserved."
+SPDX-License-Identifier = "LicenseRef-Fish-Audio-Research"
+
+[[annotations]]
+path = ["fixtures/shape-yaml-travis.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright (c) 1999 - 2021 The PHP Group. All rights reserved."
+SPDX-License-Identifier = "PHP-3.01"
+
+[[annotations]]
+path = ["fixtures/shape-git-log.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright (c) 2025 Nous Research"
+SPDX-License-Identifier = "MIT"

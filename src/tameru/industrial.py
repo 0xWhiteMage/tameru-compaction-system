@@ -143,13 +143,16 @@ def _profile_input(text: str, limits: IndustrialLimits | None = None) -> InputPr
     sample, truncated = _profile_sample(value, resolved.max_profile_chars)
     unicode = profile_text(sample)
     if not limit_reason:
-        controls, overrides, malformed = unicode_safety_counts(value)
-        unicode = replace(
-            unicode,
-            bidi_controls=controls,
-            bidi_overrides=overrides,
-            malformed_surrogates=malformed,
-        )
+        if truncated:
+            controls, overrides, malformed = unicode_safety_counts(value)
+            unicode = replace(
+                unicode,
+                bidi_controls=controls,
+                bidi_overrides=overrides,
+                malformed_surrogates=malformed,
+            )
+        else:
+            controls, overrides = unicode.bidi_controls, unicode.bidi_overrides
         if controls > resolved.max_bidi_controls:
             limit_reason = (
                 f"bidi control limit exceeded: {controls} > "
