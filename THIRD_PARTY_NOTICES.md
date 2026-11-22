@@ -46,6 +46,7 @@ This product includes PHP software, freely available from <http://www.php.net/so
 Copyright (c) 1999 - 2021 The PHP Group. All rights reserved.
 
 The reserved paths `benchmarks/engine_bench/**` and `benchmarks/session_corpus/**` were deliberately not inspected; their Apache-2.0 annotation is a default, not verified authorship or licence, and their copyright metadata is `NOASSERTION`.
+The `tests/**` override also supplies default Apache-2.0/Benjamin Ang annotations without full inspection; these are not verified authorship or licence findings, and the golden-file exception above records its reported third-party content separately.
 
 ## Data used but not redistributed
 
