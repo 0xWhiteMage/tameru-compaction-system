@@ -32,3 +32,9 @@ def test_invalid_loop_window_fails_safe(stuck_run):
     assert t.trajectory_gate([{"role": "assistant"}], stuck_run=stuck_run) == (
         False, "invalid-stuck-run"
     )
+
+
+def test_unidentifiable_trailing_call_cannot_be_assumed_answered():
+    assistant = {"role": "assistant", "tool_calls": [{"function": {"name": "read"}}]}
+    assert t.trajectory_gate([assistant]) == (False, "unidentifiable-tool-calls")
+    assert t.trajectory_gate([assistant, {"role": "assistant", "content": "done"}]) == (True, "ok")

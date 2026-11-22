@@ -610,6 +610,14 @@ def trajectory_gate(
         for m in messages
     ):
         return False, "malformed-transcript"
+    trailing_assistant = next(
+        (m for m in reversed(messages) if m.get("role") == "assistant"), None
+    )
+    if trailing_assistant and any(
+        not _call_id_variants(call)
+        for call in trailing_assistant.get("tool_calls") or []
+    ):
+        return False, "unidentifiable-tool-calls"
     if _pending_tool_calls(messages):
         return False, "pending-tool-calls"
     assistant = [m for m in messages if m.get("role") == "assistant"]
