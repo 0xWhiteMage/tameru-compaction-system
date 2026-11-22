@@ -29,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "src"))
 from tameru import ENGINE_VERSION, error_fingerprints  # noqa: E402
 from tameru.compress_context import compress_context  # noqa: E402
+from tameru.contract_gates import query_has_distinctive_selectors  # noqa: E402
 
 from . import corpus, ledger, report  # noqa: E402
 
@@ -111,6 +112,12 @@ def measure(case: dict, profile: str, condition: str, split: str) -> dict:
         "fact_lines_dropped": getattr(res, "fact_lines_dropped", None) if res is not None else None,
         # 1.10.0 (S5, E4): the text was fact-dense, the S5 machinery stayed off (receipt flag).
         "fact_dense": (res.receipt or {}).get("fact_dense") if res is not None else None,
+        # S6 calibration features: what the confidence rests on, the engine's own specific/vague reading of the
+        # objective (distinctive selectors, as its fact-drop confidence rule uses it) and the selection path.
+        "confidence_basis": getattr(res, "confidence_basis", None) if res is not None else None,
+        "query_specific": query_has_distinctive_selectors(query if isinstance(query, str) else " ".join(query)),
+        "selection": (res.receipt or {}).get("selection") if res is not None else None,
+        "industrial_applied": ((res.receipt or {}).get("industrial") or {}).get("applied") if res is not None else None,
         "wall_ms": round(wall_ms, 3),
     }
     if case.get("family") is not None:
