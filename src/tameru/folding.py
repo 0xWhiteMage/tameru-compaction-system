@@ -120,6 +120,7 @@ def _fold_runs(lines: list[str], stats: dict) -> list[str]:
 
 
 _JSON_STRING_OR_WS_RE = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*")|[ \t\r\n]+')
+_BARE_CR_RE = re.compile(r"\r(?=[^\r\n])")
 
 
 def _json_minified(text: str) -> str | None:
@@ -181,6 +182,12 @@ def fold_lossless(text: str) -> tuple[str, dict]:
     }
     if not text:
         return text, stats
+    if _BARE_CR_RE.search(text):
+        mini = _json_minified(text)
+        if mini is not None:
+            stats["json_minified"] = True
+            stats["saved_chars"] = len(text) - len(mini)
+            return mini, stats
     lines = _fold_text_steps(text, stats)
     folded = "\n".join(lines)
     mini = _json_minified(folded)

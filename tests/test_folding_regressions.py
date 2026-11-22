@@ -27,3 +27,12 @@ def test_folding_does_not_minify_nonfinite_json_constants():
         out, stats = fold_lossless(raw)
         assert out == raw
         assert not stats["json_minified"]
+
+
+def test_carriage_returns_in_json_are_whitespace_not_redraws():
+    raw = '{\r  "a": "keep",\r  "b": 2\r}'
+    out, stats = fold_lossless(raw)
+    assert out == '{"a":"keep","b":2}'
+    assert stats["json_minified"]
+    assert stats["cr_redraws"] == 0
+    assert stats["saved_chars"] == len(raw) - len(out)
