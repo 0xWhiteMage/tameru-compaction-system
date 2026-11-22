@@ -955,6 +955,10 @@ def _adapt_xml(
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 3:
         return _decline(text, "xml", "no line-oriented child records")
+    try:
+        ET.fromstring(text)
+    except (ET.ParseError, UnicodeError, RecursionError):
+        return _decline(text, "xml", "malformed XML; original preserved", structurally_valid=False)
     root = re.match(r"^\s*<([A-Za-z_][\w.:-]*)(?:\s[^>]*)?>\s*$", lines[0])
     if root is None or not re.match(rf"^\s*</{re.escape(root.group(1))}>\s*$", lines[-1]):
         return _decline(text, "xml", "root is not line-oriented")
@@ -1093,6 +1097,9 @@ def _adapt_ini(
         end = starts[position + 1] if position + 1 < len(starts) else len(lines)
         sections.append("\n".join(lines[start:end]).strip("\n"))
     flags = [_contains_selector(section, selectors) for section in sections]
+    if not any(flags):
+        return _decline(text, "ini", "no selective section match", total_records=len(sections))
+    flags = [hit or lines[start].strip() == "[DEFAULT]" for start, hit in zip(starts, flags)]
     kept = [section for section, hit in zip(sections, flags) if hit]
     if not kept or len(kept) == len(sections):
         return _decline(text, "ini", "no selective section match", total_records=len(sections))
@@ -1100,7 +1107,7 @@ def _adapt_ini(
     return FormatResult(
         format="ini",
         applied=True,
-        text="\n\n".join(body),
+        text="\n".join([*lines[:starts[0]], "\n\n".join(body)]),
         total_records=len(sections),
         kept_records=len(kept),
         reason="exact matching INI/TOML sections",
@@ -1120,15 +1127,34 @@ def _adapt_html(
     opening: list[str] = []
     closing: list[str] = []
     children: list[str] = []
+    wrappers: list[str] = []
     for line in lines:
         if _HTML_OPEN_WRAPPER_RE.match(line):
+            if children or closing:
+                return _decline(text, "html", "wrappers are out of order", structurally_valid=False)
+            lowered = line.strip().lower()
+            if lowered.startswith("<!doctype"):
+                if opening:
+                    return _decline(text, "html", "doctype is out of order", structurally_valid=False)
+            else:
+                tag = "html" if lowered.startswith("<html") else "body"
+                if (tag == "html" and wrappers) or (tag == "body" and wrappers not in ([], ["html"])):
+                    return _decline(text, "html", "wrappers are not nested", structurally_valid=False)
+                wrappers.append(tag)
             opening.append(line)
         elif _HTML_CLOSE_WRAPPER_RE.match(line):
+            tag = line.strip()[2:-1].lower()
+            if not wrappers or wrappers.pop() != tag:
+                return _decline(text, "html", "wrappers are not balanced", structurally_valid=False)
             closing.append(line)
         elif _HTML_CHILD_RE.match(line):
+            if not wrappers or closing:
+                return _decline(text, "html", "child is outside wrappers", structurally_valid=False)
             children.append(line)
         else:
             return _decline(text, "html", "child spans multiple lines")
+    if wrappers:
+        return _decline(text, "html", "wrappers are not balanced", structurally_valid=False)
     if not opening or not closing or not children:
         return _decline(text, "html", "missing line-oriented wrappers or children")
     flags = [_contains_selector(child, selectors) for child in children]
