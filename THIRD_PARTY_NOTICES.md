@@ -5,13 +5,37 @@ External projects retain their own licences; their mention does not relicense th
 
 ## Code included: Squeez
 
-Portions of `benchmarks/squeez_eval.py` (metric functions and naive baselines) are copied verbatim from
+Portions of `benchmarks/squeez_eval.py` (metric functions and naive baselines) are copied with minor modifications from
 [KRLabsOrg/squeez](https://github.com/KRLabsOrg/squeez), commit
 `aa0bd37c4d32ade33f98e4b278801e4f139fbd9e`: `squeez/training/evaluate.py`,
 `squeez/data/canonical.py` and `scripts/evaluate_baselines.py`.
-Copyright KR Labs. Licensed under [Apache-2.0](https://github.com/KRLabsOrg/squeez/blob/aa0bd37c4d32ade33f98e4b278801e4f139fbd9e/LICENSE).
-Squeez has no upstream NOTICE file at that revision. The benchmark portions are not part of the installed Tameru package.
+Copyright 2026 KR Labs, as stated in the pinned LICENSE. Licensed under [Apache-2.0](https://github.com/KRLabsOrg/squeez/blob/aa0bd37c4d32ade33f98e4b278801e4f139fbd9e/LICENSE).
+Modified by Benjamin Ang, 2026: extracted from three upstream files into one alongside Tameru-specific code;
+the `compute_empty_accuracy` docstring's return-value description was removed.
+Squeez has no upstream NOTICE file at that revision. These portions are not included in the wheel or source distribution.
 The licence text is supplied in `LICENSE` and `LICENSES/Apache-2.0.txt`; attribution is also in `NOTICE`.
+
+## Fixtures
+
+The third-party materials below are included only as test inputs and are not relicensed under Apache-2.0.
+All ten files in `fixtures/` were inspected. The Musubi excerpt's holder remains `NOASSERTION`;
+`LicenseRef-NoLicense-Musubi-Tuner` records its unresolved status, not a grant of permission to redistribute unlicensed text.
+
+| File | Source | Holder | Licence |
+|---|---|---|---|
+| `fixtures/shape-jp-musubi.txt` | [Musubi Tuner, docs/ideogram4.md](https://github.com/kohya-ss/musubi-tuner/blob/f8a1b03794a49239a3539015075f5123d6c07d66/docs/ideogram4.md), excerpt with formatting changes | Not verified | `LicenseRef-NoLicense-Musubi-Tuner`: no licence found; LICENSE, LICENSE.md, LICENSE.txt and COPYING were absent at that revision; no licence is granted |
+| `fixtures/shape-ko-readme.txt` | [Fish Speech README](https://github.com/fishaudio/fish-speech/blob/0f8a12e8a651062fdee9c33a894bdccd3a8513f1/README.md) and contributor-list text; despite its filename, much of the excerpt is English | 39 AI, INC., per upstream licence notice | [Fish Audio Community License 1.0](https://github.com/fishaudio/fish-speech/blob/0f8a12e8a651062fdee9c33a894bdccd3a8513f1/LICENSE), custom, `LicenseRef-Fish-Audio-Community-1.0` |
+| `fixtures/shape-yaml-travis.txt` | [php/php-src .travis.yml](https://github.com/php/php-src/blob/004cb827501d1ddaf98daacb185a53e0816f78a7/.travis.yml), exact match ignoring surrounding whitespace | Copyright (c) 1999 - 2021 The PHP Group. All rights reserved. | [PHP-3.01](https://github.com/php/php-src/blob/004cb827501d1ddaf98daacb185a53e0816f78a7/LICENSE), the matching PHP-7.4 revision's licence, not current HEAD's BSD licence |
+| `fixtures/shape-git-log.txt` | [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/commit/8f97ae9aec), commit subjects, including locally anonymised repository references | Copyright (c) 2025 Nous Research, per upstream licence | [MIT](https://github.com/NousResearch/hermes-agent/blob/8f97ae9aec/LICENSE) |
+| `tests/golden/compress_context.json` | Also contains Musubi, Fish Speech and PHP fixture-derived text (nine occurrences reported by the provenance reviewer); not opened or edited for this audit | Benjamin Ang and the known Fish Speech/PHP holders; Musubi holder unverified | Apache-2.0 AND PHP-3.01 AND LicenseRef-Fish-Audio-Community-1.0 AND LicenseRef-NoLicense-Musubi-Tuner; Hermes text was not verified in this file, so MIT is not asserted |
+
+`fixtures/example-config-engine.txt`, `fixtures/industrial-multilingual.json`, `fixtures/shape-npm-log.txt`, `fixtures/shape-sql-acmecorp.txt`, `fixtures/shape-vitest-log.txt` and `fixtures/manifest.json`: no third-party source identified; treated as project-authored test data.
+
+These Fish Audio Materials are licensed under the Fish Audio Community License, Version 1.0.
+Copyright © 39 AI, INC. All Rights Reserved.
+Built with Fish Audio (test-input attribution only, not a claim that Tameru runs a Fish Audio model).
+The custom licence includes commercial/hosted-service restrictions and attribution obligations; see the full text in
+`LICENSES/LicenseRef-Fish-Audio-Community-1.0.txt`. Unverified fixture permissions remain an owner follow-up.
 
 ## Data used but not redistributed
 
@@ -41,6 +65,8 @@ These direct-dependency notices are not an inventory of all transitive dependenc
 - [cross-encoder/ms-marco-MiniLM-L-6-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L-6-v2):
   Apache-2.0 ([model-card metadata](https://huggingface.co/api/models/cross-encoder/ms-marco-MiniLM-L-6-v2)).
   The cross-encoder is optional, not enabled by default.
+  The old `ms-marco-MiniLM-L-6-v2` identifier now resolves to `cross-encoder/ms-marco-MiniLM-L6-v2`;
+  the resolved model metadata still declares Apache-2.0.
 
 Callers may supply other models and are responsible for checking their licences and use restrictions.
 
@@ -50,6 +76,9 @@ Callers may supply other models and are responsible for checking their licences 
 Its Laya checkpoint is [convaiinnovations/laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual),
 labelled Apache-2.0 in [current model-card metadata](https://huggingface.co/api/models/convaiinnovations/laya-multilingual).
 That metadata was checked independently of the historical benchmark revision; no weights are redistributed here.
+`headroom-ai` 0.40.0 declares Apache-2.0 in its [versioned PyPI metadata](https://pypi.org/pypi/headroom-ai/0.40.0/json);
+see also [Headroom's licence](https://github.com/headroomlabs-ai/headroom/blob/ce0460cfa8598dc939243dbc7aec4b2d35f4e44a/LICENSE).
+LCC is MIT; see its pinned licence in the design table below. Neither dependency is vendored here.
 
 ## Price data
 
@@ -71,7 +100,7 @@ The script does not record which font produced the committed GIF. Users renderin
 ## Design acknowledgements
 
 The contributor-mapping model acknowledges [Hermes Agent](https://github.com/NousResearch/hermes-agent),
-MIT ([upstream licence](https://github.com/NousResearch/hermes-agent/blob/main/LICENSE)); approach acknowledged.
+MIT ([upstream licence](https://github.com/NousResearch/hermes-agent/blob/8263a83f25129db65e2dffd01dbfa9d80fccf716/LICENSE)); approach acknowledged.
 
 `docs/RESEARCH.md` describes the following projects as sources of "ported" approaches.
 Apart from the Squeez code identified above, this inventory does not establish verbatim copying from these projects.
@@ -79,15 +108,15 @@ The licences below describe upstream projects, not an assertion that their code 
 
 | Project | Acknowledgement | Upstream licence source |
 |---|---|---|
-| [lucasmartins-ai/lcc](https://github.com/lucasmartins-ai/lcc) | Approach acknowledged: typed-edge closure and conservative trimming | [MIT](https://github.com/lucasmartins-ai/lcc/blob/main/LICENSE) |
-| [tamaratran/fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction) | Approach acknowledged: recent-message preservation and fallback | [MIT](https://github.com/tamaratran/fast-jev-compaction/blob/main/LICENSE) |
-| [Waxmell114514/jev-compaction](https://github.com/Waxmell114514/jev-compaction) | Approach acknowledged: threshold replay | [MIT](https://github.com/Waxmell114514/jev-compaction/blob/main/LICENSE) |
-| [yoza10635/dsh-argp](https://github.com/yoza10635/dsh-argp) | Approach acknowledged: budgeting and paginated recall | [MIT](https://github.com/yoza10635/dsh-argp/blob/main/LICENSE) |
-| [yangyu666/dsh-jev-prune](https://github.com/yangyu666/dsh-jev-prune) | Approach acknowledged: selection receipts | [MIT](https://github.com/yangyu666/dsh-jev-prune/blob/main/LICENSE) |
-| [wjw66/dsh-jev-pre-compaction](https://github.com/wjw66/dsh-jev-pre-compaction) | Approach acknowledged: secrets screening before storage | Licence not verified: no licence file retrieved at this URL |
-| [anneheartrecord/claude-code-docs](https://github.com/anneheartrecord/claude-code-docs) | Approach acknowledged: recursion guard and progressive compaction | [MIT](https://github.com/anneheartrecord/claude-code-docs/blob/main/LICENSE) |
-| [codexstar69/pi-lcm](https://github.com/codexstar69/pi-lcm) | Approach acknowledged: recall tooling | [MIT](https://github.com/codexstar69/pi-lcm/blob/main/LICENSE) |
-| [tianjianl/selfcompact](https://github.com/tianjianl/selfcompact) | Approach acknowledged: trajectory gating | [MIT](https://github.com/tianjianl/selfcompact/blob/main/LICENSE) |
+| [lucasmartins-ai/lcc](https://github.com/lucasmartins-ai/lcc) | Approach acknowledged: typed-edge closure and conservative trimming | [MIT](https://github.com/lucasmartins-ai/lcc/blob/3a7880c256e8a4b27946fc645de239e0b9235962/LICENSE) |
+| [tamaratran/fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction) | Approach acknowledged: recent-message preservation and fallback | [MIT](https://github.com/tamaratran/fast-jev-compaction/blob/e3f262a7f4d42bd8dd32ced30d26176f7cb545b0/LICENSE) |
+| [Waxmell114514/jev-compaction](https://github.com/Waxmell114514/jev-compaction) | Approach acknowledged: threshold replay | [MIT](https://github.com/Waxmell114514/jev-compaction/blob/c0bcba22295fd3b54b4909957df77f7c563e34d7/LICENSE) |
+| [yoza10635/dsh-argp](https://github.com/yoza10635/dsh-argp) | Approach acknowledged: budgeting and paginated recall | [MIT](https://github.com/yoza10635/dsh-argp/blob/b74b7367b39620fb87833bbbacaae2e7efc67fd1/LICENSE) |
+| [yangyu666/dsh-jev-prune](https://github.com/yangyu666/dsh-jev-prune) | Approach acknowledged: selection receipts | [MIT](https://github.com/yangyu666/dsh-jev-prune/blob/c00e6b8382449bb437a4a8bf5ed579f807362ccd/LICENSE) |
+| [wjw66/deepseek-harness-jev-pre-compaction](https://github.com/wjw66/deepseek-harness-jev-pre-compaction) | Approach acknowledged: secrets screening before storage | [MIT](https://github.com/wjw66/deepseek-harness-jev-pre-compaction/blob/b0b37f03fcae0c3b0b4116a9a9c3385588372d5c/LICENSE) |
+| [anneheartrecord/claude-code-docs](https://github.com/anneheartrecord/claude-code-docs) | Approach acknowledged: recursion guard and progressive compaction | [MIT](https://github.com/anneheartrecord/claude-code-docs/blob/bbc6de5c04d851f758f47232a27ac14a0e277170/LICENSE) |
+| [codexstar69/pi-lcm](https://github.com/codexstar69/pi-lcm) | Approach acknowledged: recall tooling | [MIT](https://github.com/codexstar69/pi-lcm/blob/17dea775aee0716ef19f6851ec5211613b47752d/LICENSE) |
+| [tianjianl/selfcompact](https://github.com/tianjianl/selfcompact) | Approach acknowledged: trajectory gating | [MIT](https://github.com/tianjianl/selfcompact/blob/12958172dacb77e71883d189b40638f693cd20de/LICENSE) |
 
 The research digest also acknowledges paper-level approaches from PAACE, TPC, Compactor and SelfCompact.
 These are design acknowledgements, not claims of copied implementations or grants of rights to paper text.
