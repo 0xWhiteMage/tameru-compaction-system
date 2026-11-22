@@ -9,7 +9,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [1.10.0] - Unreleased
 
 - Documentation: clarify that the core imports the lightweight semantic resolver, model dependencies load only during tier construction, and unavailable dependencies raise `SemanticUnavailable` for direct construction.
-- Semantic ambiguity detection scores the dropped candidates and kept winner in one call, avoiding a duplicate query encoding while retaining the same similarity threshold and lexical fallback.
 - Fix: dictionary-configured semantic tiers fall back to lexical extraction when optional dependencies or model initialization fail, just as scorer failures do; regression tests cover both construction failures.
 - Cleanup: share one compiled WARN/WARNING token pattern across evidence, weak-failure and isolated-warning detection without changing matching behavior.
 - Cleanup: remove unused gutter and summary-count helpers, an unused host-prefix constant and a redundant import; public package exports are unchanged.

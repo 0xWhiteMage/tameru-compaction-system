@@ -4306,10 +4306,8 @@ def _counterfactual_overlap_ambiguity(
             if len(cands) < 2:
                 return False
             capped = sorted(cands, key=lambda b: -b["score"])[:32]
-            _, scores = tier.score_against_query(
-                query, [c["text"] for c in capped] + [winner["text"]]
-            )
-            sims, win_sim = scores[:-1], scores[-1]
+            _, sims = tier.score_against_query(query, [c["text"] for c in capped])
+            win_sim = tier.score_against_query(query, [winner["text"]])[1][0]
             near = [c for c, sm in zip(capped, sims) if abs(sm - win_sim) < 0.05]
             return len(near) >= 2
         except Exception:  # tier failure must NEVER break compression
