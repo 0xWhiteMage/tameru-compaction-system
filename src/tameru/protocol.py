@@ -111,8 +111,17 @@ _SURROGATE = re.compile("[\ud800-\udfff]")
 
 def clean_text(text: str) -> tuple[str, bool]:
     """Lone surrogates (valid in JavaScript strings, not encodable as UTF-8) become U+FFFD."""
-    cleaned, count = _SURROGATE.subn("\ufffd", text)
-    return cleaned, count > 0
+    if not _has_lone_surrogate(text):
+        return text, False
+    return _SURROGATE.sub("\ufffd", text), True
+
+
+def _has_lone_surrogate(text: str) -> bool:
+    try:
+        text.encode("utf-8")   # the common clean case: a C-speed check, far faster than a regex scan
+    except UnicodeEncodeError:
+        return True
+    return False
 
 
 def _number(value: Any, low: float, high: float, code: str) -> float:
@@ -311,7 +320,7 @@ def request_was_sanitized(request: Mapping[str, Any]) -> bool:
     """True when ``validate_request`` replaced a lone surrogate in the text, the query or the
     selector query."""
     return any(
-        isinstance(request.get(k), str) and _SURROGATE.search(request[k]) is not None
+        isinstance(request.get(k), str) and _has_lone_surrogate(request[k])
         for k in ("text", "query", "selector_query")
     )
 

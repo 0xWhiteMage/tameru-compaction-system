@@ -49,3 +49,10 @@ def test_a_preset_mode_survives_when_the_request_names_no_mode(monkeypatch):
     assert validate_request({"text": "t", "preset": "fixed@1"})["mode"] == "fixed"
     assert validate_request({"text": "t", "preset": "fixed@1", "mode": "compiler"})["mode"] == "compiler"
     assert validate_request({"text": "t"})["mode"] == "adaptive"
+
+
+def test_clean_text_replaces_only_lone_surrogates():
+    assert protocol.clean_text("plain é 漢") == ("plain é 漢", False)
+    assert protocol.clean_text("a\ud800b\udfffc") == ("a\ufffdb\ufffdc", True)
+    assert protocol.request_was_sanitized({"selector_query": "q\udc00"})
+    assert not protocol.request_was_sanitized({"text": "t", "query": 3})
