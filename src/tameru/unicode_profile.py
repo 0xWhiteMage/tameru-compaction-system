@@ -65,8 +65,8 @@ def _in_ranges(codepoint: int, ranges: tuple[tuple[int, int], ...]) -> bool:
 
 
 @functools.lru_cache(maxsize=16384)
-def _char_flags(char: str) -> tuple[bool, bool, bool, bool, bool]:
-    """(extends a cluster, ZWJ/ZWNJ, virama, letter, regional indicator)."""
+def _char_flags(char: str) -> tuple[bool, bool, bool, bool, bool, bool]:
+    """Cluster flags: extender, joiner, virama, letter, flag letter, boundary."""
     category = unicodedata.category(char)
     codepoint = ord(char)
     name = unicodedata.name(char, "")
@@ -82,6 +82,7 @@ def _char_flags(char: str) -> tuple[bool, bool, bool, bool, bool]:
         "VIRAMA" in name or "HALANT" in name,
         category.startswith("L"),
         _REGIONAL_RANGE[0] <= codepoint <= _REGIONAL_RANGE[1],
+        category in {"Cc", "Cs", "Zl", "Zp"} or char in _BIDI_CONTROLS,
     )
 
 
@@ -94,10 +95,10 @@ def iter_graphemes(text: str) -> Iterator[str]:
     value = str(text or "")
     start = 0
     regional_count = 0
-    prev_joiner = prev_virama = prev_regional = False
+    prev_joiner = prev_virama = prev_regional = prev_boundary = False
     for index, char in enumerate(value):
-        extend, joiner, virama, letter, regional = _char_flags(char)
-        if index and (
+        extend, joiner, virama, letter, regional, boundary = _char_flags(char)
+        if index and not (boundary or prev_boundary) and (
             extend
             or joiner
             or prev_joiner
@@ -112,6 +113,7 @@ def iter_graphemes(text: str) -> Iterator[str]:
             start = index
             regional_count = 1 if regional else 0
         prev_joiner, prev_virama, prev_regional = joiner, virama, regional
+        prev_boundary = boundary
     if value:
         yield value[start:]
 
