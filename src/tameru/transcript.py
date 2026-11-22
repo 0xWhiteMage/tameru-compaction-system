@@ -566,9 +566,7 @@ def _call_signature(msg: dict[str, Any]) -> list[tuple[str, str]]:
     for call in msg.get("tool_calls") or []:
         if not isinstance(call, dict):
             continue
-        fn = call.get("function") or {}
-        name = str(fn.get("name") or call.get("name") or "")
-        args = fn.get("arguments", call.get("arguments"))
+        name, args = _call_name_and_args(call)
         try:
             canonical = (
                 args
