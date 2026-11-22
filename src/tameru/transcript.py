@@ -598,6 +598,16 @@ def trajectory_gate(
     """
     if not messages:
         return True, "ok"
+    if any(
+        not isinstance(m, dict)
+        or (
+            m.get("role") == "assistant"
+            and m.get("tool_calls") is not None
+            and not isinstance(m["tool_calls"], (list, tuple))
+        )
+        for m in messages
+    ):
+        return False, "malformed-transcript"
     if _pending_tool_calls(messages):
         return False, "pending-tool-calls"
     assistant = [m for m in messages if m.get("role") == "assistant"]
