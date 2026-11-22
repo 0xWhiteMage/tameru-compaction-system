@@ -1023,12 +1023,14 @@ def _adapt_xml(
     )
 
 
+_SQL_DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
+
+
 def _split_sql_statements(text: str) -> list[str] | None:
     statements: list[str] = []
     start = 0
     index = 0
     quote = ""
-    dollar_tag = ""
     line_comment = False
     block_comment = False
     while index < len(text):
@@ -1041,13 +1043,6 @@ def _split_sql_statements(text: str) -> list[str] | None:
             if text.startswith("*/", index):
                 block_comment = False
                 index += 2
-            else:
-                index += 1
-            continue
-        if dollar_tag:
-            if text.startswith(dollar_tag, index):
-                index += len(dollar_tag)
-                dollar_tag = ""
             else:
                 index += 1
             continue
@@ -1077,10 +1072,13 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 1
             continue
         if char == "$":
-            match = re.match(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$", text[index:])
+            match = _SQL_DOLLAR_TAG_RE.match(text, index)
             if match:
-                dollar_tag = match.group(0)
-                index += len(dollar_tag)
+                tag = match.group(0)
+                close = text.find(tag, match.end())
+                if close < 0:
+                    return None
+                index = close + len(tag)
                 continue
         if char == ";":
             statement = text[start : index + 1].strip()
@@ -1088,7 +1086,7 @@ def _split_sql_statements(text: str) -> list[str] | None:
                 statements.append(statement)
             start = index + 1
         index += 1
-    if quote or dollar_tag or block_comment:
+    if quote or block_comment:
         return None
     tail = text[start:].strip()
     if tail:
