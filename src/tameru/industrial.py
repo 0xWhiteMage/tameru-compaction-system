@@ -1,7 +1,6 @@
 """Industrial preflight, limits, profiling, and format orchestration."""
 from __future__ import annotations
 
-import functools
 from .content_cache import _engine_version, content_memo
 import hashlib
 from dataclasses import asdict, dataclass, replace
@@ -186,42 +185,26 @@ def industrial_preprocess(
     value = str(text or "")
     resolved = limits or IndustrialLimits()
     profile = profile_input(value, resolved)
-    if len(str(query or "")) > resolved.max_query_chars:
-        reason = (
-            f"query character limit exceeded: {len(str(query or ''))} > "
-            f"{resolved.max_query_chars}"
-        )
-        return IndustrialResult(
-            text=value,
-            applied=False,
-            hard_fail_open=True,
-            profile=profile,
-            limits=resolved,
-            reason=reason,
-        )
-    if profile.limit_reason:
-        return IndustrialResult(
-            text=value,
-            applied=False,
-            hard_fail_open=True,
-            profile=profile,
-            limits=resolved,
-            reason=profile.limit_reason,
-        )
-    if profile.malformed_surrogates:
-        return IndustrialResult(
-            text=value,
-            applied=False,
-            hard_fail_open=True,
-            profile=profile,
-            limits=resolved,
-            reason="malformed surrogate code point detected",
-        )
-    if profile.format == 'yaml' and yaml_requires_original(value):
+
+    def fail_open(reason: str, format_result: FormatResult | None = None) -> IndustrialResult:
         return IndustrialResult(
             text=value, applied=False, hard_fail_open=True,
-            profile=profile, limits=resolved,
-            reason='YAML anchors and aliases require the original document')
+            profile=profile, limits=resolved, format_result=format_result, reason=reason,
+        )
+
+    query_chars = len(str(query or ""))
+    if query_chars > resolved.max_query_chars:
+        reason = (
+            f"query character limit exceeded: {query_chars} > "
+            f"{resolved.max_query_chars}"
+        )
+        return fail_open(reason)
+    if profile.limit_reason:
+        return fail_open(profile.limit_reason)
+    if profile.malformed_surrogates:
+        return fail_open("malformed surrogate code point detected")
+    if profile.format == 'yaml' and yaml_requires_original(value):
+        return fail_open('YAML anchors and aliases require the original document')
     if reports_only:
         format_result = (adapt_report(value, query, resolved.format_limits(), gap_marker=gap_marker)
                          if allow_reports else None)
@@ -235,15 +218,7 @@ def industrial_preprocess(
             allow_reports=allow_reports,
         )
     if format_result is not None and not format_result.structurally_valid:
-        return IndustrialResult(
-            text=value,
-            applied=False,
-            hard_fail_open=True,
-            profile=profile,
-            limits=resolved,
-            format_result=format_result,
-            reason=format_result.reason or "malformed structured input",
-        )
+        return fail_open(format_result.reason or "malformed structured input", format_result)
     if format_result is not None and format_result.applied and len(format_result.text) < len(value):
         return IndustrialResult(
             text=format_result.text,
