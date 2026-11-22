@@ -5498,7 +5498,7 @@ def sweep_ccr_cache(
     for fp in records:
         try:
             data = json.loads(fp.read_text(encoding="utf-8-sig"))
-        except (OSError, json.JSONDecodeError, RecursionError):
+        except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
             continue
         metadata = _ccr_metadata(data)
         if (
@@ -5937,7 +5937,7 @@ def retrieve(
         return None
     try:
         data = json.loads(fp.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError, RecursionError):
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
         return None
     if not isinstance(data, dict) or data.get("hash") != ccr_hash:
         return None
@@ -5985,7 +5985,7 @@ def list_ccr(
         if not fp.name.startswith(".") and _CCR_HASH_RE.fullmatch(fp.stem):
             try:
                 data = json.loads(fp.read_text(encoding="utf-8-sig"))
-            except (OSError, json.JSONDecodeError, RecursionError):
+            except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
                 continue
             if not isinstance(data, dict):
                 continue
