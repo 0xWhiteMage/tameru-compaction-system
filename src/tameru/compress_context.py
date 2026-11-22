@@ -5172,9 +5172,12 @@ def _render(
         return [marker]
 
     parts: list[str] = []
+    emitted_lines: set[int] | None = set() if not chronological else None
     prev_end = -1
     for b in order:
         if chronological and b["end"] <= prev_end:
+            continue
+        if emitted_lines is not None and all(i in emitted_lines for i in range(b["start"], b["end"] + 1)):
             continue
         if marker_fn is not None:
             if prev_end < 0 and chronological and b["start"] > 0:
@@ -5249,7 +5252,11 @@ def _render(
                     end = j
                     break
                 j += 1
-        parts.extend(lines[start : end + 1])
+        if emitted_lines is None:
+            parts.extend(lines[start : end + 1])
+        else:
+            parts.extend(lines[i] for i in range(start, end + 1) if i not in emitted_lines)
+            emitted_lines.update(range(start, end + 1))
         prev_end = end
     if marker_fn is not None and chronological and parts and prev_end < len(lines) - 1:
         trail = _gap(prev_end + 1, len(lines))
