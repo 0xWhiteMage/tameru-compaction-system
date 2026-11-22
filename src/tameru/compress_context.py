@@ -5316,6 +5316,9 @@ def _block_fingerprint(block: dict[str, Any]) -> str:
     return f"{block['type']}:{block.get('id', '?')}:{content_hash}"
 
 
+_FREEZE_PREFIX_CHARS = 500
+
+
 def _apply_freeze(
     decision_cache: dict,
     scored: list[dict[str, Any]],
@@ -5358,8 +5361,11 @@ def _apply_freeze(
     # the next turn would include appended content and falsely invalidate the
     # cache. No plaintext context is retained in the decision cache.
     cached_prefix_len = decision_cache.get("ctx_prefix_len")
-    if not isinstance(cached_prefix_len, int) or cached_prefix_len < 0:
-        cached_prefix_len = min(len(original_text), 500)
+    if (
+        not isinstance(cached_prefix_len, int)
+        or not 0 <= cached_prefix_len <= _FREEZE_PREFIX_CHARS
+    ):
+        cached_prefix_len = min(len(original_text), _FREEZE_PREFIX_CHARS)
         decision_cache["ctx_prefix_len"] = cached_prefix_len
     ctx_hash = hashlib.sha256(
         original_text[:cached_prefix_len].encode("utf-8", errors="surrogatepass")
@@ -5370,7 +5376,7 @@ def _apply_freeze(
         # Context changed fundamentally — clear decisions to avoid stale replay.
         decisions = {}
         decision_cache[cache_key] = decisions
-        cached_prefix_len = min(len(original_text), 500)
+        cached_prefix_len = min(len(original_text), _FREEZE_PREFIX_CHARS)
         decision_cache["ctx_prefix_len"] = cached_prefix_len
         ctx_hash = hashlib.sha256(
             original_text[:cached_prefix_len].encode("utf-8", errors="surrogatepass")
