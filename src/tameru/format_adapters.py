@@ -1024,6 +1024,7 @@ def _adapt_xml(
 
 
 _SQL_DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
+_SQL_GO_BATCH_RE = re.compile(r"go(?:[ \t]+[1-9][0-9]*)?[ \t]*(?:--[^\r\n]*)?(?=[\r\n]|$)", re.IGNORECASE)
 
 
 def _split_sql_statements(text: str) -> list[str] | None:
@@ -1071,6 +1072,12 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 2
             continue
         char = text[index]
+        if char in "gG" and _SQL_GO_BATCH_RE.match(text, index):
+            before = index
+            while before and text[before - 1] in " \t":
+                before -= 1
+            if not before or text[before - 1] in "\r\n":
+                return None  # GO is a client batch boundary, not a SQL statement.
         if char == "\\":
             return None  # An unquoted backslash may start a client metacommand.
         if char in {"'", '"', "`", "["}:

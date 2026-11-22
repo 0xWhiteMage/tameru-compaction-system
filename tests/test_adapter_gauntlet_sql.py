@@ -29,3 +29,10 @@ def test_sql_gauntlet_client_commands_decline():
     result = adapt_format(source, "needle-42", format_name="sql")
     assert not result.applied
     assert result.text == source
+
+
+def test_sql_gauntlet_go_batches_decline():
+    source = "SELECT 'ordinary';\r\n go 2 -- repeat batch\r\nSELECT 'needle-42';"
+    result = adapt_format(source, "needle-42", format_name="sql")
+    assert not result.applied
+    assert result.text == source
