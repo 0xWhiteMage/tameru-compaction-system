@@ -117,34 +117,29 @@ def iter_graphemes(text: str) -> Iterator[str]:
     This is a documented UAX #29 tailoring suitable for stdlib-only matching;
     it is intentionally conservative around combining and join sequences.
     """
-    current = ""
+    value = str(text or "")
+    start = 0
     regional_count = 0
     prev_joiner = prev_virama = prev_regional = False
-    for char in str(text or ""):
+    for index, char in enumerate(value):
         extend, joiner, virama, letter, regional = _char_flags(char)
-        if not current:
-            current = char
-            regional_count = 1 if regional else 0
-            prev_joiner, prev_virama, prev_regional = joiner, virama, regional
-            continue
-        if (
+        if index and (
             extend
             or joiner
             or prev_joiner
             or (prev_virama and letter)
             or (regional and prev_regional and regional_count % 2 == 1)
         ):
-            current += char
             if regional:
                 regional_count += 1
-            prev_joiner, prev_virama, prev_regional = joiner, virama, regional
-            continue
-        yield current
-        current = char
-        regional_count = 1 if regional else 0
+        else:
+            if index:
+                yield value[start:index]
+            start = index
+            regional_count = 1 if regional else 0
         prev_joiner, prev_virama, prev_regional = joiner, virama, regional
-    if current:
-        yield current
+    if value:
+        yield value[start:]
 
 
 def graphemes(text: str) -> list[str]:
