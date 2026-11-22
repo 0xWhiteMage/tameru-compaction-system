@@ -692,9 +692,9 @@ def _indent(line: str) -> int:
 
 
 _YAML_DOCUMENT_START_RE = re.compile(r"^---(?:[ \t]|$)")
-_YAML_EMPTY_START_RE = re.compile(r"^---[ \t]*(?:[ \t]+#.*)?$")
+_YAML_EMPTY_START_RE = re.compile(r"^---(?:[ \t]+(?:#.*)?)?$")
 _YAML_BLOCK_SCALAR_RE = re.compile(
-    r"(?m)(?:^|[:?\-][ \t]+)[ \t]*[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#[^\n]*)?[ \t\r]*$"
+    r"(?m)(?:^[ \t]*|[:?\-][ \t]+)[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#[^\n]*)?[ \t\r]*$"
 )
 
 
