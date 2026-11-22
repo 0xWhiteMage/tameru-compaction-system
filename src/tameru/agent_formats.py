@@ -1204,7 +1204,11 @@ def _classify_slowlog(lines):
         for j in range(start, end):
             m = _SLOWLOG_QT_RE.match(lines[j])
             if m:
+                if len(m.group(2)) > 18:
+                    return [True] * total, tests, suites
                 qt = float(m.group(1))
+                if qt == float("inf"):
+                    return [True] * total, tests, suites
                 rows = int(m.group(2))
                 break
         entries.append((start, end, qt, rows))

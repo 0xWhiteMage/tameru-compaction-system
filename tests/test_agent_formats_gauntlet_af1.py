@@ -5,6 +5,11 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_slowlog_large_finite_width_counts():
+    lines = [f"# Query_time: 1 Lock_time: 0 Rows_sent: 1 Rows_examined: {'9' * 310}" for _ in range(6)]
+    assert af._classify_slowlog(lines)[0] == [True] * len(lines)
+
+
 @pytest.mark.parametrize("detector", [af.looks_like_diagnostics, af.looks_like_stack_trace])
 def test_diagnostic_sample_memory_bound(detector):
     text = "plain line\n" * 200000
