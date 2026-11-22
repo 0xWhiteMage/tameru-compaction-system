@@ -5469,7 +5469,12 @@ def sweep_ccr_cache(
     root = Path(ccr_dir)
     if not root.is_dir():
         return 0
-    current = time.time() if now is None else float(now)
+    try:
+        current = time.time() if now is None else float(now)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if not math.isfinite(current) or current <= 0:
+        return 0
     removed = 0
     limit = None if max_records is None else max(0, int(max_records))
     # Cursor progression only works when every call sees the same ordering;
