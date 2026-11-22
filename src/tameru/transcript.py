@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from itertools import chain
 from typing import Any
 
 from .contract_gates import GENERIC_WORDS
@@ -207,10 +206,7 @@ def _call_id_variants(call: Any) -> frozenset[str]:
 def _find_tool_call(messages: list[dict[str, Any]], idx: int, call_id: str) -> Any:
     """The assistant tool_call that ``call_id`` answers, nearest before ``idx`` first."""
     wanted = _id_variants(call_id)
-    order = chain(
-        range(min(idx, len(messages)) - 1, -1, -1), range(max(idx, 0), len(messages))
-    )
-    for i in order:
+    for i in range(min(idx, len(messages)) - 1, -1, -1):
         msg = messages[i]
         if not isinstance(msg, dict) or msg.get("role") != "assistant":
             continue

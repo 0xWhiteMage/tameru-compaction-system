@@ -103,3 +103,12 @@ def test_pruning_only_copies_modified_message(monkeypatch):
 def test_normalisation_cannot_expand_a_part_past_its_cap():
     parts = t.task_query([{"role": "tool"}], 0, focus="㍿" * 600, normalise=True)
     assert parts == ["株式会社" * 150]
+
+
+def test_future_call_is_not_the_producer_of_an_earlier_result():
+    messages = [{"role": "tool", "tool_call_id": "reused"},
+                {"role": "assistant", "tool_calls": [
+                    {"id": "reused", "name": "future_name", "arguments": {"path": "future.py"}}
+                ]}]
+    assert t._find_tool_call(messages, 0, "reused") is None
+    assert "future_name" not in t.task_query(messages, 0)
