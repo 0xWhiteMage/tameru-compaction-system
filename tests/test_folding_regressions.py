@@ -19,3 +19,11 @@ def test_json_brief_escapes_ascii_delete_in_values_and_keys():
     assert out is not None
     assert "\x7f" not in out
     assert json.loads(out)["_head"][0] == rows[0]
+
+
+def test_folding_does_not_minify_nonfinite_json_constants():
+    for literal in ("NaN", "Infinity", "-Infinity"):
+        raw = f'{{\n  "a": {literal},\n  "b": 2\n}}'
+        out, stats = fold_lossless(raw)
+        assert out == raw
+        assert not stats["json_minified"]

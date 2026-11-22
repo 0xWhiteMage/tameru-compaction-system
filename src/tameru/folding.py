@@ -16,9 +16,10 @@ Every regex here is linear: bounded character classes, no nested quantifiers.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections import Counter
-from typing import Any
+from typing import Any, NoReturn
 
 from .structured_reports import loads_for_rewrite
 
@@ -135,7 +136,7 @@ def _json_minified(text: str) -> str | None:
         return None
     try:
         # a number that overflows to inf (1e400) is not minified, as before
-        json.loads(text, parse_float=_finite_float)
+        json.loads(text, parse_float=_finite_float, parse_constant=_reject_nonfinite)
     except (ValueError, RecursionError):
         return None
     mini = _JSON_STRING_OR_WS_RE.sub(lambda m: m.group(1) or "", text)
@@ -144,9 +145,13 @@ def _json_minified(text: str) -> str | None:
 
 def _finite_float(literal: str) -> float:
     value = float(literal)
-    if value in (float("inf"), float("-inf")):
-        raise ValueError("non-finite number")
+    if not math.isfinite(value):
+        _reject_nonfinite(literal)
     return value
+
+
+def _reject_nonfinite(_literal: str) -> NoReturn:
+    raise ValueError("non-finite number")
 
 
 def fold_lossless(text: str) -> tuple[str, dict]:
