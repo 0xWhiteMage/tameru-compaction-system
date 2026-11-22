@@ -43,6 +43,9 @@ class IndustrialLimits:
         return asdict(self)
 
 
+_DEFAULT_INDUSTRIAL_LIMITS = IndustrialLimits()
+
+
 @dataclass(frozen=True)
 class InputProfile:
     characters: int
@@ -122,13 +125,13 @@ def profile_input(text: str, limits: IndustrialLimits | None = None) -> InputPro
     # Perf (v1.5.0): the profile (an immutable record) of a large text is
     # computed once per (text, limits); a retry of the same output reuses it.
     if type(text) is str and _PROFILE_MEMO_MIN_CHARS <= len(text) <= _PROFILE_MEMO_MAX_CHARS:
-        return _profile_input_cached(text, limits or IndustrialLimits())
+        return _profile_input_cached(text, limits or _DEFAULT_INDUSTRIAL_LIMITS)
     return _profile_input(text, limits)
 
 
 def _profile_input(text: str, limits: IndustrialLimits | None = None) -> InputProfile:
     value = str(text or "")
-    resolved = limits or IndustrialLimits()
+    resolved = limits or _DEFAULT_INDUSTRIAL_LIMITS
     line_count = value.count("\n") + (1 if value else 0)
     limit_reason = ""
     if len(value) > resolved.max_input_chars:

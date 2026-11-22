@@ -20,6 +20,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from ._fingerprint_patterns import _DIGITS_RE as _M_DIGITS, _HEXRUN_RE as _M_HEX, _UUID_RE as _M_UUID
 from .structured_reports import loads_for_rewrite
 
 __all__ = ["fold_lossless", "json_brief", "mask_template"]
@@ -200,13 +201,10 @@ _M_TS = re.compile(
     r"\b\d{4}-\d{2}-\d{2}(?:[t ]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:z|[+-]\d{2}:?\d{2})?)?"
     r"|\b\d{1,2}:\d{2}:\d{2}(?:[.,]\d{1,9})?"
 )
-_M_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _M_IP4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b")
 _M_IP6 = re.compile(r"(?<![\w:])(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}(?![\w:])")
 _M_PATH = re.compile(r"(?<![\w<>/.:=-])(?:/[\w.@+~%,=-]{1,128}){3,}/?")
 _M_DUR = re.compile(r"\b\d+(?:\.\d+)?(?:ms|us|µs|s|m|h)\b")
-_M_HEX = re.compile(r"[0-9a-f]{6,}")
-_M_DIGITS = re.compile(r"\d+")
 
 
 def _volatile(placeholder: str):
