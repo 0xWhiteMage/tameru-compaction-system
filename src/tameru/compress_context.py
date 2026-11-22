@@ -5789,6 +5789,11 @@ def _summarise_with_llm(
     timeout = max(0.1, timeout)
     deadline = time.monotonic() + timeout
 
+    class _NoSummaryRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise urllib.error.HTTPError(req.full_url, code, "summary redirects disabled", headers, fp)
+
+    opener = urllib.request.build_opener(_NoSummaryRedirect())
     for model in models:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -5807,7 +5812,7 @@ def _summarise_with_llm(
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=remaining) as resp:
+            with opener.open(req, timeout=remaining) as resp:
                 raw = resp.read(MAX_SUMMARY_RESPONSE_BYTES + 1)
                 if len(raw) > MAX_SUMMARY_RESPONSE_BYTES:
                     continue

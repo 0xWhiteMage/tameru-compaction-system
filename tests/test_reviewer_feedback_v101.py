@@ -253,7 +253,7 @@ class EscapedJsonPreprocessTests(unittest.TestCase):
 
 
 class ConfigurableSummariserTests(unittest.TestCase):
-    @patch("urllib.request.urlopen")
+    @patch("urllib.request.OpenerDirector.open")
     def test_environment_configures_endpoint_models_and_total_timeout(self, mocked_open):
         class Response:
             def __enter__(self):
@@ -285,7 +285,7 @@ class ConfigurableSummariserTests(unittest.TestCase):
         self.assertEqual(payload["model"], "review-model-a")
         self.assertLessEqual(mocked_open.call_args.kwargs["timeout"], 2.5)
 
-    @patch("urllib.request.urlopen", side_effect=TimeoutError)
+    @patch("urllib.request.OpenerDirector.open", side_effect=TimeoutError)
     def test_timeout_is_one_budget_not_renewed_per_model(self, mocked_open):
         with patch.object(cc.time, "monotonic", side_effect=[100.0, 100.0, 102.1]):
             summary = cc._summarise_with_llm(

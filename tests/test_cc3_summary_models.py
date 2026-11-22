@@ -22,5 +22,5 @@ def test_bad_model_configuration_fails_open(models, monkeypatch):
     def no_network(*args, **kwargs):
         pytest.fail("invalid configuration reached network")
 
-    monkeypatch.setattr("urllib.request.urlopen", no_network)
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", no_network)
     assert c._summarise_with_llm("hello", "query", model_candidates=models) is None
