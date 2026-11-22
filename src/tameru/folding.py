@@ -97,7 +97,7 @@ def _fold_text_steps(text: str, stats: dict) -> list[str] | None:
 
 def _fold_runs(lines: list[str], stats: dict) -> list[str]:
     """Collapse >=3 identical consecutive lines when that is strictly shorter."""
-    out: list[str] = []
+    out: list[str] | None = None
     n = len(lines)
     i = 0
     collapsed = 0
@@ -109,15 +109,18 @@ def _fold_runs(lines: list[str], stats: dict) -> list[str]:
         if run >= _RUN_MIN and not _RUN_MARKER_RE.fullmatch(lines[i]):
             marker = f"[×{run - 1} identical lines]"
             if len(lines[i]) + 1 + len(marker) < run * len(lines[i]) + run - 1:
+                if out is None:
+                    out = lines[:i]
                 out.append(lines[i])
                 out.append(marker)
                 collapsed += 1
                 i = j
                 continue
-        out.extend(lines[i:j])
+        if out is not None:
+            out.extend(lines[i:j])
         i = j
     stats["runs_collapsed"] = collapsed
-    return out
+    return lines if out is None else out
 
 
 _JSON_STRING_OR_WS_RE = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*")|[ \t\r\n]+')
@@ -198,7 +201,9 @@ def fold_lossless(text: str) -> tuple[str, dict]:
         stats["json_minified"] = True
         folded = mini
     else:
-        folded = "\n".join(_fold_runs(lines, stats))
+        collapsed = _fold_runs(lines, stats)
+        if collapsed is not lines:
+            folded = "\n".join(collapsed)
     if len(folded) > len(text):  # cannot happen; keep the invariant explicit
         return text, {**stats, "saved_chars": 0}
     stats["saved_chars"] = len(text) - len(folded)
