@@ -1,6 +1,21 @@
+import tracemalloc
+
 import pytest
 
 from tameru import agent_formats as af
+
+
+@pytest.mark.parametrize("detector", [af.looks_like_diagnostics, af.looks_like_stack_trace])
+def test_diagnostic_sample_memory_bound(detector):
+    text = "plain line\n" * 200000
+    tracemalloc.start()
+    try:
+        assert not detector(text)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 1000000
+    assert not detector("")
 
 
 def test_npm_tree_linear_ancestry(monkeypatch):

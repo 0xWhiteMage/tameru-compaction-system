@@ -25,7 +25,7 @@ import csv
 import re
 import statistics
 from dataclasses import asdict, dataclass
-from typing import Callable
+from typing import Callable, Iterator
 
 from .contract_gates import query_has_distinctive_selectors
 from .gap_kind import call_gap_marker
@@ -302,9 +302,25 @@ def is_kubectl_status_line(line: str) -> bool:
     return KUBECTL_STATUS_LINE_RE.search(line[:4096]) is not None
 
 
+def _head_lines(text: str, limit: int) -> Iterator[str]:
+    start = 0
+    for _ in range(limit):
+        end = text.find("\n", start)
+        if end == -1:
+            yield text[start:]
+            return
+        yield text[start:end]
+        start = end + 1
+
+
 def looks_like_diagnostics(text: str) -> bool:
-    lines = text.split("\n")[:2000]
-    return sum(1 for line in lines if is_diagnostic_line(line)) >= 2
+    hits = 0
+    for line in _head_lines(text, 2000):
+        if is_diagnostic_line(line):
+            hits += 1
+            if hits >= 2:
+                return True
+    return False
 
 _STACK_TRACE_LINE_RE = re.compile(
     r"^(?:goroutine \d+ \[[^\]]*\]:\s*$"
@@ -318,7 +334,7 @@ def looks_like_stack_trace(text: str) -> bool:
     """A Go goroutine header or Python traceback head, or two
     Java/Go frame lines: stack-trace text, never YAML."""
     hits = 0
-    for line in text.split("\n")[:5000]:
+    for line in _head_lines(text, 5000):
         m = _STACK_TRACE_LINE_RE.match(line)
         if m is None:
             continue
