@@ -3,6 +3,12 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_ansible_large_recap_counts():
+    lines = ["PLAY RECAP ***", "a : ok=1 changed=0 unreachable=0 failed=0",
+             "b : ok=1 changed=0 unreachable=" + "9" * 5000 + " failed=0"]
+    assert af._classify_ansible(lines)[0] == [True, True, True]
+
+
 def test_ansible_repeated_plays():
     lines = ["PLAY RECAP ***", "a : ok=1 changed=0 unreachable=0 failed=0",
              "PLAY [next] ***", "TASK [x] ***", "ok: [a]", "ok: [b]"]

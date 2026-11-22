@@ -1607,10 +1607,8 @@ def _classify_ansible(lines: list[str]) -> tuple[list[bool], list[int], list[int
 
         recap_match = _ANSIBLE_RECAP_ROW_RE.match(line)
         if recap_match and in_recap:
-            unreachable = int(recap_match.group(1))
-            failed = int(recap_match.group(2))
-            rescued = int(recap_match.group(3)) if recap_match.group(3) is not None else 0
-            if not seen_recap or unreachable > 0 or failed > 0 or rescued > 0:
+            unsuccessful = any(value and value.strip("0") for value in recap_match.groups())
+            if not seen_recap or unsuccessful:
                 keep[i] = True
             else:
                 keep[i] = False
