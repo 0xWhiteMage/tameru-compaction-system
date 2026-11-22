@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+from .content_cache import _engine_version, content_memo
 import hashlib
 from dataclasses import asdict, dataclass, replace
 from typing import Callable
@@ -112,7 +113,7 @@ _PROFILE_MEMO_MIN_CHARS = 2048
 _PROFILE_MEMO_MAX_CHARS = 1_000_000  # larger texts are not pinned in the cache
 
 
-@functools.lru_cache(maxsize=6)
+@content_memo("profile_input", version=_engine_version)
 def _profile_input_cached(value: str, resolved: IndustrialLimits) -> InputProfile:
     return _profile_input(value, resolved)
 

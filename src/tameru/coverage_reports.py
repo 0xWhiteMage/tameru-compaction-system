@@ -6,6 +6,8 @@ record are kept as raw text. Counters stay strings, so no numeric literal is rew
 """
 from __future__ import annotations
 
+from .gap_kind import call_gap_marker
+
 from .structured_reports import ReportSelection
 
 
@@ -129,7 +131,7 @@ def select_lcov(text, matches, *, max_records, max_record_chars, gap_marker=None
         omitted = len(text) - len(body)
         header = f'[tameru:report lcov kept {kept}/{total} file records]'
         if gap_marker is not None:
-            marker = str(gap_marker(omitted, len(text)))
+            marker = str(call_gap_marker(gap_marker, omitted, len(text), "records"))
             if getattr(gap_marker, 'inline_short', False) and len(marker) >= omitted:
                 return ReportSelection('lcov', text, total, total, 'marker would exceed omitted content')
             header += '\n' + marker

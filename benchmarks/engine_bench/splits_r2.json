@@ -1,0 +1,66 @@
+{
+ "counts": {
+  "dev": {
+   "cases": 190,
+   "clusters": 110,
+   "families": 10
+  },
+  "sealed": {
+   "cases": 380,
+   "clusters": 220,
+   "families": 20
+  },
+  "validation": {
+   "cases": 190,
+   "clusters": 110,
+   "families": 10
+  }
+ },
+ "deal": {
+  "attempt": 4,
+  "rule": "families ordered by sha256('<seed>:<family>'); first 10 -> dev, next 10 -> validation, rest -> sealed",
+  "seed": "r2-deal-2026-11-21-f1"
+ },
+ "families": {
+  "airflow": "dev",
+  "bandit": "sealed",
+  "behave": "sealed",
+  "cfevents": "validation",
+  "checkov": "dev",
+  "consul": "sealed",
+  "dbt": "dev",
+  "dftable": "dev",
+  "dig": "sealed",
+  "dmesg": "sealed",
+  "essearch": "validation",
+  "ffmpeg": "dev",
+  "flyway": "sealed",
+  "iostat": "sealed",
+  "k6": "dev",
+  "kafka": "validation",
+  "latexlog": "validation",
+  "mongo": "sealed",
+  "nixbuild": "validation",
+  "nomad": "sealed",
+  "openssl": "sealed",
+  "perf": "dev",
+  "pserrors": "sealed",
+  "pstable": "validation",
+  "puppet": "dev",
+  "rediscli": "sealed",
+  "robotfw": "validation",
+  "semgrep": "dev",
+  "shellcheck": "validation",
+  "smartctl": "validation",
+  "spark": "sealed",
+  "sstable": "sealed",
+  "strace": "validation",
+  "systemctl": "sealed",
+  "tcpdump": "sealed",
+  "trivy": "sealed",
+  "unitylog": "sealed",
+  "winevt": "sealed",
+  "wrk": "sealed",
+  "zpool": "dev"
+ }
+}

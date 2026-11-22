@@ -1,0 +1,164 @@
+{
+ "acceptance": {
+  "1.10.0_deepseek_accept": {
+   "gap_points_vs_dev": {
+    "sealed": 5.57,
+    "validation": 8.772
+   },
+   "per_split": {
+    "dev": 57.168,
+    "sealed": 62.738,
+    "validation": 48.396
+   }
+  },
+  "1.10.0_hermes_accept": {
+   "gap_points_vs_dev": {
+    "sealed": 4.68,
+    "validation": 5.376
+   },
+   "per_split": {
+    "dev": 61.366,
+    "sealed": 66.046,
+    "validation": 55.99
+   }
+  },
+  "1.9.0_deepseek_accept": {
+   "gap_points_vs_dev": {
+    "sealed": 4.793,
+    "validation": 8.86
+   },
+   "per_split": {
+    "dev": 56.015,
+    "sealed": 60.808,
+    "validation": 47.155
+   }
+  },
+  "1.9.0_hermes_accept": {
+   "gap_points_vs_dev": {
+    "sealed": 4.223,
+    "validation": 5.138
+   },
+   "per_split": {
+    "dev": 60.326,
+    "sealed": 64.549,
+    "validation": 55.188
+   }
+  }
+ },
+ "classifier": "session-corpus L2 logistic regression, 5-fold CV x 10 fold seeds; primary = folds grouped by family",
+ "comparisons": {
+  "dev_vs_sealed": {
+   "auc_case_level": 0.6508,
+   "auc_family_grouped": 0.4858,
+   "gated": true,
+   "n": [
+    190,
+    380
+   ]
+  },
+  "dev_vs_validation": {
+   "auc_case_level": 0.5807,
+   "auc_family_grouped": 0.3438,
+   "gated": false,
+   "n": [
+    190,
+    190
+   ]
+  }
+ },
+ "deal": {
+  "attempt": 4,
+  "rule": "families ordered by sha256('<seed>:<family>'); first 10 -> dev, next 10 -> validation, rest -> sealed",
+  "seed": "r2-deal-2026-11-21-f1"
+ },
+ "descriptors_sha256": "75ac046ea18f8d75f50c008d53ca22fb219cfdf95cf2653d85fc7b9f6ce35a2f",
+ "engines": [
+  "1.10.0 (this checkout)",
+  "1.9.0 (commit 3bc2978, scratch worktree)"
+ ],
+ "features": [
+  "1.10.0_deepseek_accept",
+  "1.10.0_deepseek_saved",
+  "1.10.0_deepseek_failopen",
+  "1.10.0_hermes_accept",
+  "1.10.0_hermes_saved",
+  "1.10.0_hermes_failopen",
+  "1.9.0_deepseek_accept",
+  "1.9.0_deepseek_saved",
+  "1.9.0_deepseek_failopen",
+  "1.9.0_hermes_accept",
+  "1.9.0_hermes_saved",
+  "1.9.0_hermes_failopen",
+  "gold_line_pos",
+  "log_chars",
+  "n_lines",
+  "cjk_share",
+  "lang_zh",
+  "lang_mixed",
+  "kind_s5_buried",
+  "kind_s5_superseded",
+  "kind_csv_args",
+  "size_bin0",
+  "size_bin1",
+  "size_bin2",
+  "size_bin3",
+  "size_bin4"
+ ],
+ "gates": {
+  "acceptance_gap_max_points": 10.0,
+  "auc_max": 0.65,
+  "saved_sign": "sign(1.10.0 - 1.9.0 saved) equal on sealed and dev"
+ },
+ "pass": true,
+ "registered": "2026-11-22",
+ "result_sha256": "decb8f9bd142e8cb9cbce11e735db4cd52dcc274b787c21662db33f81af6d1f3",
+ "saved_pct_per_split": {
+  "1.10.0_deepseek_saved_pct": {
+   "dev": 45.39,
+   "sealed": 50.002,
+   "validation": 38.896
+  },
+  "1.10.0_hermes_saved_pct": {
+   "dev": 46.764,
+   "sealed": 49.917,
+   "validation": 41.642
+  },
+  "1.9.0_deepseek_saved_pct": {
+   "dev": 45.232,
+   "sealed": 48.637,
+   "validation": 37.401
+  },
+  "1.9.0_hermes_saved_pct": {
+   "dev": 46.052,
+   "sealed": 48.801,
+   "validation": 40.063
+  }
+ },
+ "saved_sign": {
+  "deepseek": {
+   "diff_points_per_split": {
+    "dev": 0.158,
+    "sealed": 1.365,
+    "validation": 1.495
+   },
+   "same_sign_sealed_dev": true
+  },
+  "hermes": {
+   "diff_points_per_split": {
+    "dev": 0.712,
+    "sealed": 1.116,
+    "validation": 1.579
+   },
+   "same_sign_sealed_dev": true
+  },
+  "pooled": {
+   "diff_points_per_split": {
+    "dev": 0.4351,
+    "sealed": 1.2402,
+    "validation": 1.5367
+   },
+   "same_sign_sealed_dev": true
+  }
+ },
+ "sealed_r2_sha256": "ed64e3812599aed39649e621c2f1968d48e3763cc7416c8279d24079d1a3ab53"
+}

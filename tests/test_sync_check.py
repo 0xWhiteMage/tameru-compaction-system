@@ -81,6 +81,31 @@ class SyncCheckTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertRegex(out, rf"missing:\s+{re.escape(victim.name)}")
 
+    def test_package_data_is_copied_and_checked(self):
+        data = self.target / "presets.json"
+        self.assertTrue(data.is_file(), "presets.json must be vendored with the modules")
+        self.assertEqual(data.read_bytes(), (SRC / "presets.json").read_bytes().replace(b"\r\n", b"\n"))
+        prices = self.target / "prices.json"
+        self.assertTrue(prices.is_file(), "prices.json must be vendored with the modules")
+        self.assertEqual(prices.read_bytes(), (SRC / "prices.json").read_bytes().replace(b"\r\n", b"\n"))
+        data.write_text("{}\n", encoding="utf-8")
+        code, out = self._check()
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"differs:\s+presets\.json")
+        data.unlink()
+        code, out = self._check()
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"missing:\s+presets\.json")
+        self.assertEqual(_run(str(self.target), "--manifest", "../plugin.yaml")[0], 0)
+        self.assertEqual(self._check()[0], 0)
+
+    def test_harness_owned_json_is_not_removed(self):
+        mine = self.target / "package.json"
+        mine.write_text("{}\n", encoding="utf-8")
+        self.assertEqual(self._check()[0], 0)
+        _run(str(self.target), "--manifest", "../plugin.yaml")
+        self.assertTrue(mine.is_file())
+
     def test_stale_vendored_module_fails(self):
         (self.target / "removed_upstream.py").write_text("x = 1\n", encoding="utf-8")
         code, out = self._check()
