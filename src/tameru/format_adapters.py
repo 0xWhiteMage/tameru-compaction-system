@@ -696,6 +696,14 @@ _YAML_EMPTY_START_RE = re.compile(r"^---(?:[ \t]+(?:#.*)?)?$")
 _YAML_BLOCK_SCALAR_RE = re.compile(
     r"(?m)(?:^[ \t]*|[:?\-][ \t]+)[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#[^\n]*)?[ \t\r]*$"
 )
+_YAML_MAPPING_COMMENT_RE = re.compile(r":[ \t]+#")
+
+
+def _ends_yaml_mapping_key(line: str) -> bool:
+    if line.rstrip().endswith(":"):
+        return True
+    comment = _YAML_MAPPING_COMMENT_RE.search(line)
+    return comment is not None and not line.lstrip().startswith("#")
 
 
 def _adapt_yaml_documents(
@@ -761,8 +769,9 @@ def _adapt_yaml(
     # content lines (what the backward scans look at): non-blank and not a comment
     content = [index for index in nonblank if not lines[index].lstrip().startswith("#")]
     is_list = {index: re.match(r"^\s*-\s+", lines[index]) is not None for index in content}
-    is_colon = {index: lines[index].rstrip().endswith(":") for index in content}
-    colon_nonblank = [index for index in nonblank if lines[index].rstrip().endswith(":")]
+    is_colon = {index: _ends_yaml_mapping_key(lines[index]) for index in content}
+    colon_nonblank = [index for index in nonblank
+                     if is_colon.get(index) or (index not in is_colon and lines[index].rstrip().endswith(":"))]
     separators = [index for index, line in enumerate(lines) if line.rstrip() == "---"] if has_document_separator else []
     # next nonblank line (strictly after i) whose indent is <= indents[i]; n when none
     next_le = [n] * n
