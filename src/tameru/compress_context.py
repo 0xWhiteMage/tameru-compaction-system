@@ -6571,19 +6571,16 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
     seen_tpl: set[str] = set()
 
     def take(i: int) -> bool:
-        if len(picked) >= limit:
-            return False
         fp = _error_fp(lines[i])
-        if fp in seen_tpl or i in picked:
-            return True
-        seen_tpl.add(fp)
-        picked.add(i)
-        return True
+        if fp not in seen_tpl and i not in picked:
+            seen_tpl.add(fp)
+            picked.add(i)
+        return len(picked) >= limit
 
     for i, line in enumerate(lines):
         if line.strip() and _is_error_line(line):
-            if not take(i):
-                break
+            if take(i):
+                return [lines[j] for j in sorted(picked)]
     terms = _query_hit_terms(query)
     if terms and len(picked) < limit:
         ranked = _rank_query_hits(
@@ -6591,8 +6588,8 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
             terms,
         )
         for _, i in ranked:
-            if not take(i):
-                break
+            if take(i):
+                return [lines[j] for j in sorted(picked)]
     if len(picked) < limit:
         dense = []
         for i, line in enumerate(lines):
@@ -6608,7 +6605,7 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
             if score >= 2:
                 dense.append((-score, i))
         for _, i in sorted(dense):
-            if not take(i):
+            if take(i):
                 break
     return [lines[i] for i in sorted(picked)]
 
