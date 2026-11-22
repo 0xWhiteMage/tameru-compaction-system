@@ -76,3 +76,13 @@ def test_format_gauntlet_csv_treats_midfield_quote_as_literal():
     assert result.format == "csv"
     assert result.applied
     assert result.text == f"id,note\n{target}"
+
+
+def test_format_gauntlet_pipe_table_treats_escaped_pipe_as_data():
+    target = r"| connection \| replica | warning |"
+    source = "\n".join(["| state | level |", "|---|---|"] + ["| normal | ok |"] * 25 + [target])
+    assert adapters.detect_format(source) == "markdown_table"
+    result = adapters.adapt_format(source, "")
+    assert result.applied
+    assert target in result.text
+    assert result.kept_records == 1

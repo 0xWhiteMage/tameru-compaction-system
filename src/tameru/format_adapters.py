@@ -1283,6 +1283,21 @@ _ADAPTERS: dict[str, Callable[..., FormatResult]] = {
 
 
 _PIPE_SEPARATOR_RE = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
+_PIPE_TOKEN_RE = re.compile(r"\\\\|\\\||\|")
+
+
+def _split_pipe_row(line: str) -> list[str] | None:
+    if not line.startswith("|") or not line.endswith("|") or len(line) < 2:
+        return None
+    if "\\" not in line:
+        return line[1:-1].split("|")
+    cells = []
+    start = 1
+    for token in _PIPE_TOKEN_RE.finditer(line, start):
+        if token.group() == "|":
+            cells.append(line[start:token.start()])
+            start = token.end()
+    return cells if start == len(line) else None
 
 
 def _looks_pipe_table(text: str) -> bool:
@@ -1292,16 +1307,14 @@ def _looks_pipe_table(text: str) -> bool:
 def _valid_pipe_table_lines(lines: list[str]) -> bool:
     if len(lines) < 4:
         return False
-    if not all(line.startswith("|") and line.endswith("|") for line in lines):
-        return False
     if not _PIPE_SEPARATOR_RE.match(lines[1]):
         return False
-    header_cells = lines[0][1:-1].split("|")
-    if any("\t" in cell for cell in header_cells):
+    header_cells = _split_pipe_row(lines[0])
+    if not header_cells or any("\t" in cell for cell in header_cells):
         return False
     for line in lines[1:]:
-        cells = line[1:-1].split("|")
-        if len(cells) != len(header_cells):
+        cells = _split_pipe_row(line)
+        if cells is None or len(cells) != len(header_cells):
             return False
         if any("\t" in cell for cell in cells):
             return False
@@ -1319,7 +1332,7 @@ def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
     total = len(data)
     if total > limits.max_records:
         return _decline(text, "markdown_table", "record limit exceeded", total_records=total)
-    rows = [[cell.strip() for cell in line.strip()[1:-1].split("|")] for line in [header, *data]]
+    rows = [[cell.strip() for cell in (_split_pipe_row(line.strip()) or [])] for line in [header, *data]]
     width = len(rows[0])
     if width < 2 or width > limits.max_fields or any(
         sum(map(len, row)) + width - 1 > limits.max_record_chars for row in rows
