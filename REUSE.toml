@@ -49,9 +49,3 @@ path = ["fixtures/shape-git-log.txt"]
 precedence = "override"
 SPDX-FileCopyrightText = "Copyright (c) 2025 Nous Research"
 SPDX-License-Identifier = "MIT"
-
-[[annotations]]
-path = ["tests/golden/compress_context.json"]
-precedence = "override"
-SPDX-FileCopyrightText = ["2026 Benjamin Ang", "Copyright © 39 AI, INC. All Rights Reserved.", "Copyright (c) 1999 - 2021 The PHP Group. All rights reserved.", "NOASSERTION"]
-SPDX-License-Identifier = "Apache-2.0 AND PHP-3.01 AND LicenseRef-Fish-Audio-Research AND LicenseRef-Unresolved-Musubi-Tuner"
