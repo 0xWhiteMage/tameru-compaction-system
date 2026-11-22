@@ -110,15 +110,35 @@ LATIN_IDENT_RE = re.compile(
     r"|[A-Z][a-z]+[A-Z][A-Za-z0-9]*"
 )
 
-NON_LATIN_RE = re.compile(
-    r"[\u00C0-\u024F\u0400-\u04FF\u0600-\u06FF\u0900-\u097F"
-    r"\u0E00-\u0E7F\u3400-\u9FFF\uAC00-\uD7A3]"
-)
+NON_LATIN_RE: re.Pattern[str]
+HAN_RUN_RE: re.Pattern[str]
+_UNICODE_PATTERNS = {
+    "NON_LATIN_RE": (
+        r"[\u00C0-\u024F\u0400-\u04FF\u0600-\u06FF\u0900-\u097F"
+        r"\u0E00-\u0E7F\u3400-\u9FFF\uAC00-\uD7A3]"
+    ),
+    # Han: the unified block, Extension A, compatibility ideographs and the supplementary planes (Extension B and later).
+    "HAN_RUN_RE": "[㐀-䶿一-鿿豈-﫿\U00020000-\U0002fa1f]+",
+}
+
+
+def _unicode_pattern(name: str) -> re.Pattern[str]:
+    if name in globals():
+        return globals()[name]
+    return globals().setdefault(name, re.compile(_UNICODE_PATTERNS[name]))
+
+
+def __getattr__(name: str):
+    if name in _UNICODE_PATTERNS:
+        return _unicode_pattern(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | _UNICODE_PATTERNS.keys())
 
 _HYPHEN_RE = re.compile(r"\b\w+(?:-\w+)+\b")
 
-# Han: the unified block, Extension A, compatibility ideographs and the supplementary planes (Extension B and later).
-HAN_RUN_RE = re.compile("[㐀-䶿一-鿿豈-﫿\U00020000-\U0002fa1f]+")
 # Function words that match nearly every line of a Chinese text. A Han unit holding one of these characters, or equal
 # to one of the words below (instruction filler: "tell me", "the output", "what"), is never a key.
 HAN_STOP_CHARS = frozenset("的是了在有和与或吗呢吧啊嘛哦我你他她它们这那个把被让请帮先再就也都还又很会能要可以为么什怎哪如何否给看")
@@ -136,9 +156,12 @@ def han_units(text: str) -> list[str]:
     """Bigrams and trigrams of every Han run of ``text`` (NFKC, in order, deduplicated, at most 96). A single
     character is never a unit, and a unit holding a function character (``HAN_STOP_CHARS``) or equal to a ``HAN_STOP``
     word is dropped, so 的/是/了 never count as a query key."""
+    shadow = matching_shadow(text or "")
+    if shadow.isascii():
+        return []
     out: list[str] = []
     seen: set[str] = set()
-    for run in HAN_RUN_RE.findall(matching_shadow(text or "")):
+    for run in _unicode_pattern("HAN_RUN_RE").findall(shadow):
         n = len(run)
         for i in range(n - 1):
             for width in (2, 3):
@@ -200,7 +223,7 @@ def _distinctive_query_terms(query: str) -> list[str]:
             and len(unit) >= 2
         ):
             _add(unit)
-    nl = NON_LATIN_RE.search(text)
+    nl = None if text.isascii() else _unicode_pattern("NON_LATIN_RE").search(text)
     if nl:
         sentinel = f"script:{nl.group(0)}"
         if sentinel not in seen:
@@ -338,3 +361,6 @@ def evaluate_semantic_contract(text: str, spec: dict) -> SemanticContractVerdict
         missing_evidence=missing_evidence,
         forbidden_hits=forbidden_hits,
     )
+
+
+__all__ = [name for name in dir() if not name.startswith("_")] + list(_UNICODE_PATTERNS)

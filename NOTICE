@@ -2,3 +2,31 @@ Tameru Compaction System
 Copyright 2026 Benjamin Ang
 
 This product includes software developed by Benjamin Ang (The White Mage).
+
+Third-party software
+
+Portions of benchmarks/squeez_eval.py are copied from Squeez:
+https://github.com/KRLabsOrg/squeez
+Commit aa0bd37c4d32ade33f98e4b278801e4f139fbd9e
+Copyright 2026 KR Labs
+Licensed under the Apache License, Version 2.0.
+These portions are not included in the wheel or source distribution.
+
+Fish Speech test inputs
+
+The following notice applies to the Fish Speech test input:
+This model is licensed under the Fish Audio Research License,
+Copyright © 39 AI, INC. All Rights Reserved.
+Modified by Benjamin Ang, 2026: excerpted from the Fish Speech README and contributor list, reformatted and truncated for use as a test input.
+These test inputs are not included in the wheel or source distribution.
+
+PHP test input
+
+The following notices apply to fixtures/shape-yaml-travis.txt:
+This product includes PHP software, freely available from <http://www.php.net/software/>
+Copyright (c) 1999 - 2021 The PHP Group. All rights reserved.
+These test inputs are not included in the wheel or source distribution.
+
+See THIRD_PARTY_NOTICES.md in the source repository,
+https://github.com/0xWhiteMage/tameru-compaction-system,
+for provenance and other acknowledgements.

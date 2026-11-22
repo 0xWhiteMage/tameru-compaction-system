@@ -1,18 +1,8 @@
 
 """Public metadata and industrial profiling API for Tameru."""
 
-from typing import TYPE_CHECKING
-
-from .format_adapters import FormatLimits, FormatResult, adapt_format, detect_format
-from .industrial import (
-    IndustrialLimits,
-    IndustrialResult,
-    InputProfile,
-    industrial_preprocess,
-    profile_input,
-)
-from .folding import fold_lossless
-from .unicode_profile import UnicodeProfile, profile_text
+# Mypy and Pyright recognize this name without importing typing at runtime.
+TYPE_CHECKING = False
 
 if TYPE_CHECKING:  # pragma: no cover
     from .compress_context import (
@@ -25,6 +15,16 @@ if TYPE_CHECKING:  # pragma: no cover
         rewrap_tool_payload,
         unwrap_tool_payload,
     )
+    from .folding import fold_lossless
+    from .format_adapters import FormatLimits, FormatResult, adapt_format, detect_format
+    from .industrial import (
+        IndustrialLimits,
+        IndustrialResult,
+        InputProfile,
+        industrial_preprocess,
+        profile_input,
+    )
+    from .unicode_profile import UnicodeProfile, profile_text
 
 # Engine helpers are exported lazily (PEP 562): importing the package must not
 # import compress_context, or `python -m tameru.compress_context` runs a second
@@ -43,6 +43,13 @@ _ENGINE_EXPORTS = frozenset(
     }
 )
 
+_FORMAT_EXPORTS = frozenset({"FormatLimits", "FormatResult", "adapt_format", "detect_format"})
+_INDUSTRIAL_EXPORTS = frozenset(
+    {"IndustrialLimits", "IndustrialResult", "InputProfile", "industrial_preprocess", "profile_input"}
+)
+_FOLDING_EXPORTS = frozenset({"fold_lossless"})
+_UNICODE_EXPORTS = frozenset({"UnicodeProfile", "profile_text"})
+
 # Interface helpers live in small leaf modules; they are lazy for the same
 # reason and so the package stays importable without the engine module. Static
 # imports only: the host-rule check flags dynamic importing.
@@ -60,6 +67,14 @@ def __getattr__(name: str):
     module = None
     if name in _ENGINE_EXPORTS:
         from . import compress_context as module
+    elif name in _FORMAT_EXPORTS:
+        from . import format_adapters as module
+    elif name in _INDUSTRIAL_EXPORTS:
+        from . import industrial as module
+    elif name in _FOLDING_EXPORTS:
+        from . import folding as module
+    elif name in _UNICODE_EXPORTS:
+        from . import unicode_profile as module
     elif name in _DECIDE_EXPORTS:
         from . import decide as module
     elif name in _LOSS_EXPORTS:
@@ -81,7 +96,10 @@ def __getattr__(name: str):
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | _ENGINE_EXPORTS | _DECIDE_EXPORTS | _LOSS_EXPORTS | _PLAN_EXPORTS)
+    return sorted(set(globals()).union(
+        _ENGINE_EXPORTS, _FORMAT_EXPORTS, _INDUSTRIAL_EXPORTS, _FOLDING_EXPORTS, _UNICODE_EXPORTS,
+        _DECIDE_EXPORTS, _LOSS_EXPORTS, _PLAN_EXPORTS,
+    ))
 
 __version__ = "1.10.0"
 

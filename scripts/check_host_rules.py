@@ -51,8 +51,6 @@ CREDENTIAL_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH
 # environment variables the engine may read, and why (the summary route is opt-in and a host never
 # enables it; TAMERU_CACHE_MAX_BYTES sizes the process-wide content cache, default 64 MB)
 ALLOWED_ENV = {"TAMERU_SUMMARY_ENDPOINT", "TAMERU_SUMMARY_ALLOW_REMOTE", "TAMERU_SUMMARY_MODELS", "TAMERU_SUMMARY_TIMEOUT", "TAMERU_CACHE_MAX_BYTES"}
-# names a host's own code might be imported as: an engine that imports any of these is no longer harness-agnostic
-HOST_PREFIXES = ("hermes", "agent", "run_agent", "plugins", "dsh", "deepseek", "openai_agents", "langchain", "autogen", "crewai")
 BINARY_SUFFIXES = {".pyc", ".pyo", ".so", ".pyd", ".dll", ".dylib", ".exe", ".wasm", ".a", ".o", ".zip", ".whl", ".egg", ".jar", ".7z", ".rar"}
 ARCHIVE_SUFFIXES = (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
 MAGIC = (b"\x7fELF", b"MZ", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\x00asm")
