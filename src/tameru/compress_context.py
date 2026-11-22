@@ -5916,6 +5916,22 @@ def _summary_preserves_required_facts(
     return recall == 1.0 and no_novel_ids, recall
 
 
+def _read_ccr_record(fp: Path) -> Any:
+    if not stat.S_ISREG(fp.lstat().st_mode):
+        raise OSError("CCR record must be a regular file")
+    return json.loads(fp.read_text(encoding="utf-8-sig"))
+
+
+def _ccr_original(data: Any, digest: str) -> str | None:
+    if not isinstance(data, dict) or data.get("hash") != digest:
+        return None
+    original = data.get("original")
+    if not isinstance(original, str):
+        return None
+    actual = hashlib.sha256(original.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
+    return original if actual == digest else None
+
+
 def retrieve(
     ccr_hash: str,
     ccr_dir: str | Path = DEFAULT_CCR_DIR,
@@ -5932,13 +5948,7 @@ def retrieve(
         return None
     fp = root / f"{ccr_hash}.json"
     try:
-        info = fp.lstat()
-    except OSError:
-        return None
-    if not stat.S_ISREG(info.st_mode):
-        return None
-    try:
-        data = json.loads(fp.read_text(encoding="utf-8-sig"))
+        data = _read_ccr_record(fp)
     except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
         return None
     if not isinstance(data, dict) or data.get("hash") != ccr_hash:
@@ -5955,10 +5965,8 @@ def retrieve(
         except OSError:
             pass
         return None
-    original = data.get("original")
-    if not isinstance(original, str):
-        return None
-    if hashlib.sha256(original.encode("utf-8", errors="surrogatepass")).hexdigest()[:24] != ccr_hash:
+    original = _ccr_original(data, ccr_hash)
+    if original is None:
         return None
     if offset or limit is not None:
         start = max(0, int(offset))
@@ -5986,7 +5994,7 @@ def list_ccr(
     for fp in root.glob("*.json"):
         if not fp.name.startswith(".") and _CCR_HASH_RE.fullmatch(fp.stem):
             try:
-                data = json.loads(fp.read_text(encoding="utf-8-sig"))
+                data = _read_ccr_record(fp)
             except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
                 continue
             if not isinstance(data, dict):
@@ -5999,7 +6007,7 @@ def list_ccr(
             ):
                 continue
             record_hash = data.get("hash")
-            original = data.get("original")
+            original = _ccr_original(data, fp.stem)
             if (
                 not isinstance(record_hash, str)
                 or record_hash != fp.stem
