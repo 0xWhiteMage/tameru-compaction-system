@@ -5183,6 +5183,8 @@ def _render(
     parts: list[str] = []
     prev_end = -1
     for b in order:
+        if chronological and b["end"] <= prev_end:
+            continue
         if marker_fn is not None:
             if prev_end < 0 and chronological and b["start"] > 0:
                 lead = _gap(0, b["start"])
@@ -5238,6 +5240,8 @@ def _render(
             else:
                 parts.append("[…]")
         start, end = b["start"], b["end"]
+        if chronological:
+            start = max(start, prev_end + 1)
         # Structural verbatim invariant (leanctx-inspired): a kept fenced
         # code block must survive whole — extend the keep range to the
         # closing fence if it lands just outside, so agents see exact tokens.
