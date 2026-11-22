@@ -19,6 +19,7 @@ import json
 import math
 import re
 from collections import Counter
+from itertools import islice
 from typing import Any, NoReturn
 
 from .structured_reports import loads_for_rewrite
@@ -508,7 +509,7 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
     def build(k: int, notable_cap: int) -> tuple[str, int] | None:
         head, tail = parts(k)
         shown = set(head) | set(tail)
-        notable = [i for i in notable_all if i not in shown][:notable_cap]
+        notable = list(islice((i for i in notable_all if i not in shown), notable_cap))
         if size(head, tail, notable) > inner_budget + 3 * len(notable) + 4:
             return None
         omitted = n - len(shown) - len(notable)
