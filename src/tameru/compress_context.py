@@ -12,6 +12,7 @@ import collections
 import contextvars
 import functools
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -5730,11 +5731,11 @@ def _summarise_with_llm(
         configured = os.environ.get("TAMERU_SUMMARY_MODELS", "")
         model_candidates = configured if configured.strip() else DEFAULT_SUMMARY_MODELS
     if isinstance(model_candidates, str):
-        model_candidates = model_candidates.split(",", _SUMMARY_MAX_MODELS)
+        model_candidates = model_candidates.split(",", _SUMMARY_MAX_MODELS)[:_SUMMARY_MAX_MODELS]
     models: list[str] = []
     try:
-        for index, model in enumerate(model_candidates):
-            if index >= _SUMMARY_MAX_MODELS or not isinstance(model, str):
+        for model in itertools.islice(model_candidates, _SUMMARY_MAX_MODELS):
+            if not isinstance(model, str):
                 return None
             if len(model) > _SUMMARY_MAX_MODEL_CHARS:
                 return None
