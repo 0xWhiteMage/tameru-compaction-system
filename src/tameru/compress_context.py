@@ -5451,7 +5451,7 @@ def _ccr_metadata(data: Any) -> tuple[float, float] | None:
     try:
         stored = float(data["stored_at"])
         ttl = float(data.get("ttl", CCR_TTL_SECONDS))
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         return None
     if (
         not math.isfinite(stored)
