@@ -50,12 +50,19 @@ def _laplace(rng: random.Random, scale: float) -> float:
     return -scale * (1 if u >= 0 else -1) * math.log(1 - 2 * abs(u))
 
 
+def _all_kept(row) -> bool:
+    """Every gold line survived. ``gold_kept`` is the kept FRACTION and ``gold_total`` a count, so comparing the two
+    (as before 2026-11-22) only held for single-line gold; ``gold_each`` is per line, with the fraction as fallback."""
+    each = row.get("gold_each")
+    return all(each) if each is not None else row["gold_kept"] >= 1.0
+
+
 def _gold_share(rows) -> float:
     """100 * share of cases whose gold lines all survived the effective text."""
     use = [r for r in rows if r.get("gold_total")]
     if not use:
         return float("nan")
-    return 100.0 * sum(1 for r in use if r["gold_kept"] == r["gold_total"]) / len(use)
+    return 100.0 * sum(1 for r in use if _all_kept(r)) / len(use)
 
 
 def _gold_share_bound(rows) -> float:
@@ -63,7 +70,7 @@ def _gold_share_bound(rows) -> float:
     use = [r for r in rows if r.get("gold_total")]
     if not use:
         return float("nan")
-    pairs = [(r["source_case"], 1.0 if r["gold_kept"] == r["gold_total"] else 0.0) for r in use]
+    pairs = [(r["source_case"], 1.0 if _all_kept(r) else 0.0) for r in use]
     return 100.0 * report.cluster_mean(pairs)["lo"]
 
 
