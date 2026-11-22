@@ -100,6 +100,9 @@ def test_prices_reject_infinite_cache_prices(r, w):
 def test_prices_reject_invalid_optional_figures(field, value):
     raw = price_raw()
     (raw["relative"] if field == "o" else raw)[field] = value
+    if field == "o" and value == 0:
+        assert prices._build("test", raw).o == 0
+        return
     with pytest.raises(ValueError):
         prices._build("test", raw)
     assert prices._build("test", price_raw()).o is None

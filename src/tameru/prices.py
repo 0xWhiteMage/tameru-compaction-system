@@ -75,9 +75,12 @@ def _build(name: str, raw: dict[str, Any]) -> PriceProfile:
     r, w = float(rel["r"]), float(rel["w"])
     if not (isfinite(r) and isfinite(w) and 0 < r <= w):
         raise ValueError(f"price profile {name}: need 0 < r <= w")
-    for value in (rel.get("o"), raw.get("ttl_s"), raw.get("peak_multiplier", 1.0)):
+    output = rel.get("o")
+    if output is not None and (not isfinite(float(output)) or float(output) < 0):
+        raise ValueError(f"price profile {name}: output price must be finite and nonnegative")
+    for value in (raw.get("ttl_s"), raw.get("peak_multiplier", 1.0)):
         if value is not None and (not isfinite(float(value)) or float(value) <= 0):
-            raise ValueError(f"price profile {name}: prices, TTL and multipliers must be finite and positive")
+            raise ValueError(f"price profile {name}: TTL and multipliers must be finite and positive")
     notes = "; ".join(str(raw[k]) for k in ("ttl_note", "peak_note") if raw.get(k))
     return PriceProfile(
         name=name,
