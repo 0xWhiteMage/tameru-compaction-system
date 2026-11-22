@@ -516,12 +516,15 @@ def _boolean_requirement_satisfied(field: str, expected: bool, post: str) -> boo
     field_ref = rf"(?<![a-z0-9_]){field_pattern}(?![a-z0-9_])"
     explicit = re.search(
         rf"{field_ref}[\"']?\s*(?:(?:is|equals?)\s+|[=:]\s*)?"
-        r"(true|yes|on|false|no|off)\b",
+        r"(not\s+)?(true|yes|on|false|no|off)\b",
         post,
         re.IGNORECASE,
     )
     if explicit:
-        return (explicit.group(1).casefold() in {"true", "yes", "on"}) is expected
+        value = explicit.group(2).casefold() in {"true", "yes", "on"}
+        if explicit.group(1):
+            value = not value
+        return value is expected
 
     negated = bool(
         re.search(
