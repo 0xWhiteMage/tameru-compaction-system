@@ -12,13 +12,13 @@
  },
  "schema": 1,
  "source": {
-  "accepted_rows": 1023,
+  "accepted_rows": 933,
   "engine_commit": [
-   "cb126c53f9897f7af51d07914c51398aefc3dc71"
+   "f15473add894fd511a3dfcf5b0c59314dbc7bec4"
   ],
   "families": 6,
-  "rows": "benchmarks/engine_bench/results/r3-candidate-e13-dev.jsonl",
-  "rows_sha256": "0e3cc92bb10cb95f533e6cce17889eee5390fee1ae63594c92afc4f9ce483483",
+  "rows": "benchmarks/engine_bench/results/r4-candidate-e15-dev.jsonl",
+  "rows_sha256": "f99783140d9e3c0d39d2288a27743574095c9f75707120cfd061c7da87cdc5ab",
   "split": "dev"
  },
  "strata": {
@@ -30,7 +30,7 @@
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 8
+   "rows": 4
   },
   "lexical|specific": {
    "alpha": 7.998,
@@ -40,7 +40,7 @@
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 252
+   "rows": 161
   },
   "lexical|vague": {
    "alpha": 6.998,
@@ -50,7 +50,7 @@
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 75
+   "rows": 93
   },
   "none|vague": {
    "alpha": 7.998,
@@ -60,7 +60,7 @@
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 86
+   "rows": 218
   },
   "structural|specific": {
    "alpha": 7.998,
@@ -70,17 +70,17 @@
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 132
+   "rows": 136
   },
   "structural|vague": {
-   "alpha": 2.998,
+   "alpha": 3.998,
    "auroc_lb": null,
    "beta": 0.002,
-   "families": 1,
+   "families": 2,
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 33
+   "rows": 27
   },
   "tool_call|specific": {
    "alpha": 7.998,
@@ -90,7 +90,17 @@
    "iso": [],
    "lifts_cap": true,
    "losses": 0,
-   "rows": 423
+   "rows": 162
+  },
+  "tool_call|vague": {
+   "alpha": 5.998,
+   "auroc_lb": null,
+   "beta": 0.002,
+   "families": 4,
+   "iso": [],
+   "lifts_cap": true,
+   "losses": 0,
+   "rows": 114
   }
  }
 }
