@@ -3,6 +3,11 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_ansible_host_details():
+    lines = ["TASK [x] ***", "ok: [a]", 'ok: [b] => {"msg": "disk failing"}', "ok: [c]"]
+    assert af._classify_ansible(lines)[0] == [True, True, True, False]
+
+
 def test_audit_header_without_blank():
     lines = ["# npm audit report", "pkg", "Severity: low", "details"]
     keep = af._classify_npm_audit(lines)[0]

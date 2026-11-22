@@ -1594,6 +1594,8 @@ def _classify_ansible(lines: list[str]) -> tuple[list[bool], list[int], list[int
 
         host_match = _ANSIBLE_HOST_RE.match(line)
         if host_match and not in_recap:
+            if line[host_match.end():].strip():
+                continue
             status = host_match.group(1)
             if status in seen_statuses:
                 keep[i] = False
