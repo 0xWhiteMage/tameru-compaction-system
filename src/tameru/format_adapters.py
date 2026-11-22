@@ -398,8 +398,21 @@ def _adapt_ndjson(
         return _decline(text, "ndjson", "record limit exceeded", total_records=len(lines))
     kept: list[str] = []
     flags: list[bool] = []
+
+    def checked_object(pairs):
+        if len(pairs) > limits.max_fields:
+            raise ValueError("field limit exceeded")
+        return dict(pairs)
+
+    def reject_constant(value):
+        raise ValueError("non-finite JSON constant")
+
     for line in lines:
-        if len(line) > limits.max_record_chars or _json_loads(line) is None:
+        try:
+            if len(line) > limits.max_record_chars:
+                raise ValueError("record size limit exceeded")
+            json.loads(line, object_pairs_hook=checked_object, parse_constant=reject_constant)
+        except (ValueError, RecursionError):
             return _decline(
                 text,
                 "ndjson",
