@@ -34,3 +34,10 @@ def test_ndjson_exact_field_limit_preserves_record_bytes():
 
 def test_empty_ndjson_is_unchanged():
     assert adapt_format("", "needle", format_name="ndjson", allow_reports=False).text == ""
+
+
+def test_null_records_keep_the_existing_safe_decline():
+    text = 'null\n{"needle":1}\n{"quiet":2}'
+    result = adapt_format(text, "needle", format_name="ndjson", allow_reports=False)
+    assert not result.applied
+    assert result.text == text
