@@ -5574,11 +5574,16 @@ def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any] | None:
 def _write_private_atomic(path: str | Path, content: str) -> None:
     """Atomically replace a UTF-8 sidecar with owner-only permissions."""
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
-        target.parent.chmod(0o700)
-    except OSError:
-        pass
+        target.parent.mkdir(parents=True, mode=0o700)
+    except FileExistsError:
+        if not target.parent.is_dir():
+            raise
+    else:
+        try:
+            target.parent.chmod(0o700)
+        except OSError:
+            pass
     fd: int | None = None
     temporary: str | None = None
     try:
