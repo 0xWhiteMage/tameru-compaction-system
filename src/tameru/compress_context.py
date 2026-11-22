@@ -5632,8 +5632,8 @@ def _clear_tool_payloads(text: str) -> str:
 
         if is_tool_result:
             # Collect the full payload (consecutive indented lines)
-            j = i
-            total_chars = 0
+            j = i + 1
+            total_chars = len(line)
             while j < len(lines):
                 payload_line = lines[j]
                 if payload_line.strip() == "":
@@ -5655,7 +5655,6 @@ def _clear_tool_payloads(text: str) -> str:
                     j += 1
                 else:
                     break
-            total_chars += len(line)
             # Only clear if the payload is substantial (> 100 chars)
             if total_chars > 100:
                 # Extract the tool name if visible
