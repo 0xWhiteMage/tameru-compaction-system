@@ -5392,7 +5392,7 @@ def _apply_freeze(
     for b in scored:
         fp = _block_fingerprint(b)
         decision = decisions.get(fp)
-        if decision not in {"keep", "drop"}:
+        if not isinstance(decision, str) or decision not in {"keep", "drop"}:
             decision = None
         result.append(
             {
