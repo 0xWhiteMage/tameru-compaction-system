@@ -452,6 +452,12 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
     if not isinstance(text, str) or text.lstrip()[:1] not in ("{", "["):
         return None
     try:
+        budget = int(budget_chars)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if budget <= 0:
+        return None
+    try:
         obj = loads_for_rewrite(text)
     except (ValueError, RecursionError):
         return None
@@ -460,7 +466,6 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
         return None
     rows, wrap_key, scalars = found
     n = len(rows)
-    budget = int(budget_chars)
 
     prefix = suffix = ""
     if wrap_key is not None:

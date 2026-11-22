@@ -44,3 +44,9 @@ def test_nested_ansi_past_pass_cap_preserves_original_text_and_stats():
     out, stats = fold_lossless(raw)
     assert out == raw
     assert not any(stats.values())
+
+
+def test_json_brief_returns_none_for_invalid_budgets():
+    text = '[{"status":"ok"},{"status":"pending"}]'
+    for budget in (float("inf"), float("-inf"), float("nan"), None, "invalid", 0, -1):
+        assert json_brief(text, budget_chars=budget) is None
