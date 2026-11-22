@@ -378,11 +378,13 @@ def _notable_order(rows: list[dict], dumped: list[str], terms: list[str]) -> lis
         from .compress_context import _term_in_text  # lazy, see above
 
         term_rows: list[tuple[int, list[str]]] = []
+        freq: Counter[str] = Counter()
         for i, d in enumerate(dumped):
             low = d[:4000].casefold()
             hit_terms = [t for t in terms if _term_in_text(t, low)]
-            term_rows.append((i, hit_terms))
-        freq = Counter(t for _, ht in term_rows for t in ht)
+            if hit_terms:
+                term_rows.append((i, hit_terms))
+                freq.update(hit_terms)
         for i, ht in term_rows:
             # a term present in over half the rows (a key name such as
             # "status") says nothing about which row matters
