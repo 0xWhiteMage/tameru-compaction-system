@@ -26,6 +26,7 @@ I/O. Rules:
 from __future__ import annotations
 
 import re
+from itertools import islice
 from typing import Any, Mapping
 
 from .compress_context import ENGINE_VERSION, RESULT_SCHEMA
@@ -344,7 +345,7 @@ def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None =
         "risk": result.compression_risk,
         "confidence": result.confidence,
         "content_type": result.content_type,
-        "reasons": [str(r)[:MAX_REASON_CHARS] for r in list(result.reasons)[:MAX_REPLY_REASONS]],
+        "reasons": [str(r)[:MAX_REASON_CHARS] for r in islice(result.reasons, MAX_REPLY_REASONS)],
         "sanitized": bool(sanitized),
         "result_schema": RESULT_SCHEMA,
         "confidence_basis": str(getattr(result, "confidence_basis", "none")),
