@@ -175,3 +175,10 @@ def test_boolean_requirements_accept_quoted_json_keys(value):
 def test_boolean_explicit_negation_is_not_positive_evidence(text, value):
     assert t._boolean_requirement_satisfied("enabled", value, text)
     assert not t._boolean_requirement_satisfied("enabled", not value, text)
+
+
+@pytest.mark.parametrize("expected", [True, False])
+def test_contradictory_boolean_answers_are_not_preservation_proof(expected):
+    for post in ("enabled: true; enabled: false", "enabled: false; enabled: true"):
+        assert not t._boolean_requirement_satisfied("enabled", expected, post)
+    assert t._boolean_requirement_satisfied("enabled", expected, f"enabled: {expected}; enabled: {expected}")
