@@ -27,3 +27,11 @@ def test_an_optional_escaped_paren_counts_as_an_optional_quantifier():
     assert protocol.regex_risk("a?" * 5 + "a" * 5)
     assert protocol.regex_risk(r"\(?" * 5 + r"\(" * 5)
     assert not protocol.regex_risk(r"(?:ab)(?i:c)\(?")
+
+
+def test_a_bounded_repeat_of_a_group_holding_optional_quantifiers_is_refused():
+    # (a?a?){14}b takes over ten seconds to fail on "a" * 14: each repeat may match 0, 1 or 2 a's.
+    assert protocol.regex_risk("(a?a?){10}b")
+    assert protocol.regex_risk("(?:x?y){3}")
+    assert not protocol.regex_risk("(ab)?c?")
+    assert not protocol.regex_risk("(ab){3}")

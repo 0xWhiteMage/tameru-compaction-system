@@ -193,6 +193,7 @@ def regex_risk(pattern: str) -> bool:
             cur[0] = True
             unbounded += 1
         elif ch == "?" and not opens_group:
+            cur[0] = True
             optional += 1
         elif ch == "{" and _BRACE_QUANT.match(pattern, i):
             cur[0] = True
