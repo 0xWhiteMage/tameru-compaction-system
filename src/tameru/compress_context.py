@@ -7059,19 +7059,20 @@ def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
 
     nonblank = [line for line in lines if line.strip()]
     if len(nonblank) < 20:
-        return _state_summary_lines(lines, max_regions)
+        return []
 
     matches: list[str] = []
+    match_limit = min(2, len(nonblank) // 20)
     for line in nonblank:
         low = line.lower()
         if not any(token in low for token in _STATE_CHANGE_PREFILTER):
             continue
         if _STATE_CHANGE_RE.search(line):
             matches.append(line)
+            if len(matches) > match_limit:
+                return _state_summary_lines(lines, max_regions)
 
     if not matches:
-        return _state_summary_lines(lines, max_regions)
-    if len(matches) > 2 or len(matches) * 100 > len(nonblank) * 5:
         return _state_summary_lines(lines, max_regions)
 
     fp_counts: dict[str, int] = {}
