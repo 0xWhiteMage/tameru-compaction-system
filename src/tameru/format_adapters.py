@@ -613,27 +613,29 @@ def _adapt_markdown(
 ) -> FormatResult:
     del limits
     lines = text.splitlines()
-    sections: list[tuple[list[str], list[str]]] = []
-    ancestors: dict[int, str] = {}
-    current_ancestors: list[str] = []
+    sections: list[tuple[list[tuple[int, str]], list[str], int]] = []
+    ancestors: dict[int, tuple[int, str]] = {}
+    current_ancestors: list[tuple[int, str]] = []
     current: list[str] = []
+    current_start = 0
     in_fence = False
     fence_marker = ""
 
     def flush() -> None:
         nonlocal current
         if current:
-            sections.append((list(current_ancestors), current))
+            sections.append((list(current_ancestors), current, current_start))
             current = []
 
-    for line in lines:
-        stripped = line.lstrip()
-        marker = stripped[:3]
-        if marker in {"```", "~~~"}:
+    for index, line in enumerate(lines):
+        fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            marker, rest = fence.groups()
             if not in_fence:
-                in_fence = True
-                fence_marker = marker
-            elif marker == fence_marker:
+                if marker[0] != "`" or "`" not in rest:
+                    in_fence = True
+                    fence_marker = marker
+            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker) and not rest.strip():
                 in_fence = False
             current.append(line)
             continue
@@ -643,34 +645,37 @@ def _adapt_markdown(
             level = len(heading.group(1))
             ancestors = {depth: value for depth, value in ancestors.items() if depth < level}
             current_ancestors = [ancestors[depth] for depth in sorted(ancestors)]
-            ancestors[level] = line
+            ancestors[level] = (index, line)
             current = [line]
+            current_start = index
         else:
             current.append(line)
     flush()
-    flags = [_contains_selector("\n".join(body), selectors) for _, body in sections]
+    if in_fence:
+        return _decline(text, "markdown", "unterminated code fence", structurally_valid=False)
+    flags = [_contains_selector("\n".join(body), selectors) for _, body, _ in sections]
     selected = [section for section, hit in zip(sections, flags) if hit]
     if not selected or len(selected) == len(sections):
         return _decline(text, "markdown", "no selective section match", total_records=len(sections))
     output: list[str] = []
-    seen_headings: set[str] = set()
+    seen_headings: set[int] = set()
     run_start = 0  # first section not yet emitted or accounted for as omitted
     selected_ids = [i for i, hit in enumerate(flags) if hit]
-    for position, (parents, body) in zip(selected_ids, selected):
+    for position, (parents, body, start) in zip(selected_ids, selected):
         if gap_marker is not None and position > run_start:
             dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, position))
             if dropped.strip():
                 output.append(str(gap_marker(len(dropped), len(text))))
         run_start = position + 1
-        for heading in parents:
-            if heading not in seen_headings:
+        for heading_id, heading in parents:
+            if heading_id not in seen_headings:
                 output.append(heading)
-                seen_headings.add(heading)
+                seen_headings.add(heading_id)
         if output and output[-1].strip() and body and body[0].strip():
             output.append("")
         output.extend(body)
         if body and body[0].startswith("#"):
-            seen_headings.add(body[0])
+            seen_headings.add(start)
     if gap_marker is not None and run_start < len(sections):
         dropped = "\n".join("\n".join(sections[i][1]) for i in range(run_start, len(sections)))
         if dropped.strip():
