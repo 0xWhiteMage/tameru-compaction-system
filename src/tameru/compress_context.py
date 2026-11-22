@@ -5499,7 +5499,7 @@ def sweep_ccr_cache(
         if not _CCR_HASH_RE.fullmatch(fp.stem):
             continue
         try:
-            data = json.loads(fp.read_text(encoding="utf-8-sig"))
+            data = _read_ccr_record(fp)
         except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
             continue
         metadata = _ccr_metadata(data)
@@ -5539,6 +5539,8 @@ def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any] | None:
     }
     record = path / f"{digest}.json"
     encoded = json.dumps(payload).encode("utf-8")
+    if len(encoded) > _CCR_MAX_RECORD_BYTES:
+        return None
     fd: int | None = None
     temporary: str | None = None
     try:
@@ -5916,10 +5918,20 @@ def _summary_preserves_required_facts(
     return recall == 1.0 and no_novel_ids, recall
 
 
+_CCR_MAX_RECORD_BYTES = 128 * 1024 * 1024  # exceeds 8M input chars at 12 JSON bytes per char
+
+
 def _read_ccr_record(fp: Path) -> Any:
-    if not stat.S_ISREG(fp.lstat().st_mode):
+    info = fp.lstat()
+    if not stat.S_ISREG(info.st_mode):
         raise OSError("CCR record must be a regular file")
-    return json.loads(fp.read_text(encoding="utf-8-sig"))
+    if info.st_size > _CCR_MAX_RECORD_BYTES:
+        raise OSError("CCR record exceeds size limit")
+    with fp.open("rb") as fh:
+        raw = fh.read(_CCR_MAX_RECORD_BYTES + 1)
+    if len(raw) > _CCR_MAX_RECORD_BYTES:
+        raise OSError("CCR record exceeds size limit")
+    return json.loads(raw.decode("utf-8-sig"))
 
 
 def _ccr_original(data: Any, digest: str) -> str | None:
