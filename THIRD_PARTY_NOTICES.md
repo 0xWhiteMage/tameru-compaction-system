@@ -27,26 +27,25 @@ All ten files in `fixtures/` were inspected. The Musubi excerpt's holder remains
 | `fixtures/shape-ko-readme.txt` | [Fish Speech README](https://github.com/fishaudio/fish-speech/blob/a391467946cc9c396c025fc69eba10ef0b38332e/README.md) and contributor-list text; despite its filename, much of the excerpt is English | 39 AI, INC., per upstream licence notice | [Fish Audio Research License Agreement](https://github.com/fishaudio/fish-speech/blob/a391467946cc9c396c025fc69eba10ef0b38332e/LICENSE), custom, `LicenseRef-Fish-Audio-Research` |
 | `fixtures/shape-yaml-travis.txt` | [php/php-src .travis.yml](https://github.com/php/php-src/blob/004cb827501d1ddaf98daacb185a53e0816f78a7/.travis.yml), exact match ignoring surrounding whitespace | Copyright (c) 1999 - 2021 The PHP Group. All rights reserved. | [PHP-3.01](https://github.com/php/php-src/blob/004cb827501d1ddaf98daacb185a53e0816f78a7/LICENSE), the matching PHP-7.4 revision's licence, not current HEAD's BSD licence |
 | `fixtures/shape-git-log.txt` | [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/commit/8f97ae9aec729bcbbad17da462115e1ec1398421), commit subjects, including locally anonymised repository references | "Copyright (c) 2025 Nous Research", per upstream licence | [MIT](https://github.com/NousResearch/hermes-agent/blob/8f97ae9aec729bcbbad17da462115e1ec1398421/LICENSE) |
-| `tests/golden/compress_context.json` | Also contains Musubi, Fish Speech and PHP fixture-derived text (nine occurrences reported by the provenance reviewer); not opened or edited for this audit | Benjamin Ang and the known Fish Speech/PHP holders; `NOASSERTION` for the Musubi portion | Apache-2.0 AND PHP-3.01 AND LicenseRef-Fish-Audio-Research AND LicenseRef-Unresolved-Musubi-Tuner; Hermes text was not verified in this file, so MIT is not asserted |
 
 `fixtures/example-config-engine.txt`, `fixtures/industrial-multilingual.json`, `fixtures/shape-npm-log.txt`, `fixtures/shape-sql-acmecorp.txt`, `fixtures/shape-vitest-log.txt` and `fixtures/manifest.json`: no third-party source identified; treated as project-authored test data.
 
 The following notice applies to the Fish Speech test input:
 "This model is licensed under the Fish Audio Research License, Copyright © 39 AI, INC. All Rights Reserved."
 Built with Fish Audio (test-input attribution only, not a claim that Tameru runs a Fish Audio model).
-Modified by Benjamin Ang, 2026: excerpted from the Fish Speech README and contributor list, reformatted and truncated for use as a test input; derived text also appears in tests/golden/compress_context.json.
+Modified by Benjamin Ang, 2026: excerpted from the Fish Speech README and contributor list, reformatted and truncated for use as a test input.
 The Research licence grants no commercial rights; Fish Speech later relicensed under Community License 1.0, dated 2026-10-13.
 The historical Research licence, not that later licence, is recorded here; see its verbatim text in
 `LICENSES/LicenseRef-Fish-Audio-Research.txt`. Unverified fixture permissions remain an owner follow-up.
 
-The following notices apply to `fixtures/shape-yaml-travis.txt` and the PHP-derived text in `tests/golden/compress_context.json`:
+The following notices apply to `fixtures/shape-yaml-travis.txt`:
 
 This product includes PHP software, freely available from <http://www.php.net/software/>
 
 Copyright (c) 1999 - 2021 The PHP Group. All rights reserved.
 
 The reserved paths `benchmarks/engine_bench/**` and `benchmarks/session_corpus/**` were deliberately not inspected; their Apache-2.0 annotation is a default, not verified authorship or licence, and their copyright metadata is `NOASSERTION`.
-The `tests/**` override also supplies default Apache-2.0/Benjamin Ang annotations without full inspection; these are not verified authorship or licence findings, and the golden-file exception above records its reported third-party content separately.
+The `tests/**` override also supplies default Apache-2.0/Benjamin Ang annotations without full inspection; these are not verified authorship or licence findings.
 
 ## Data used but not redistributed
 
