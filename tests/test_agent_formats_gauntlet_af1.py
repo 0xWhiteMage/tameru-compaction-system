@@ -3,6 +3,12 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_slowlog_malformed_decimal():
+    text = "\n".join("# Query_time: 1..2 Lock_time: 0 Rows_sent: 1 Rows_examined: 2" for _ in range(5))
+    assert not af._detect_slowlog(text)
+    assert af._classify_slowlog(text.splitlines())[0] == [True] * 5
+
+
 def test_curl_unknown_response_data():
     lines = ["< unexpected response payload"] + [f"< x-{i}: value" for i in range(8)]
     keep = af._classify_curl_verbose(lines)[0]

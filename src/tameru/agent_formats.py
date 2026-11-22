@@ -1103,7 +1103,7 @@ def _lint_key(message: str) -> str:
     return f"{sev.group(1)}{_LINT_NORM_RE.sub('#', message)}"
 
 
-_SLOWLOG_QT_RE = re.compile(r"^# Query_time:\s*([\d.]+)\s+Lock_time:\s*[\d.]+\s+Rows_sent:\s*\d+\s+Rows_examined:\s*(\d+)")
+_SLOWLOG_QT_RE = re.compile(r"^# Query_time:\s*([0-9]+(?:\.[0-9]+)?)\s+Lock_time:\s*[0-9]+(?:\.[0-9]+)?\s+Rows_sent:\s*[0-9]+\s+Rows_examined:\s*([0-9]+)\b")
 
 
 def _slowlog_median(values):
