@@ -6412,13 +6412,10 @@ def brief_context(
         state = {"raw": 0, "gaps": 0}
 
         def gap_delta(p: int | None, q: int | None, i: int) -> int:
-            if p is None and q is None:
-                return has_content(0, i) + has_content(i + 1, n)
-            if p is None:
-                return has_content(0, i) + has_content(i + 1, q) - has_content(0, q)
-            if q is None:
-                return has_content(p + 1, i) + has_content(i + 1, n) - has_content(p + 1, n)
-            return has_content(p + 1, i) + has_content(i + 1, q) - has_content(p + 1, q)
+            lo = 0 if p is None else p + 1
+            hi = n if q is None else q
+            previous = 0 if p is None and q is None else has_content(lo, hi)
+            return has_content(lo, i) + has_content(i + 1, hi) - previous
 
         def try_add(i: int) -> bool:
             if i in chosen_set:
@@ -6526,9 +6523,7 @@ def brief_context(
     prev = -1
     for i in chosen:
         lo = prev + 1
-        if prev < 0 and i > 0:
-            parts.extend(gap_parts(0, i))
-        elif prev >= 0 and i > prev + 1:
+        if lo < i:
             parts.extend(gap_parts(lo, i))
         parts.append(eff(i))
         prev = i
