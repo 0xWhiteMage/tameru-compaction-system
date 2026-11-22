@@ -79,7 +79,7 @@ def _char_flags(char: str) -> tuple[bool, bool, bool, bool, bool, bool]:
     return (
         extend,
         char in {_ZWJ, _ZWNJ},
-        "VIRAMA" in name or "HALANT" in name,
+        "VIRAMA" in name or "HALANT" in name or name == "KHMER SIGN COENG",
         category.startswith("L"),
         _REGIONAL_RANGE[0] <= codepoint <= _REGIONAL_RANGE[1],
         category in {"Cc", "Cs", "Zl", "Zp"} or char in _BIDI_CONTROLS,

@@ -10,3 +10,7 @@ def test_non_joiner_does_not_attach_the_following_base():
     assert graphemes("ک\u200cت") == ["ک\u200c", "ت"]
     assert graphemes("क्\u200cष") == ["क्\u200c", "ष"]
     assert graphemes("क्\u200dष") == ["क्\u200dष"]
+
+
+def test_khmer_coeng_keeps_the_subscript_consonant_atomic():
+    assert graphemes("ក\u17d2រ") == ["ក\u17d2រ"]
