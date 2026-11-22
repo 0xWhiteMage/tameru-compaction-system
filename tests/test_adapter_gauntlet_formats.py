@@ -45,3 +45,16 @@ def test_format_gauntlet_yaml_keeps_parent_with_inline_comment():
     result = adapters.adapt_format(source, "needle-42", format_name="yaml")
     assert result.applied
     assert result.text == "settings: # operating parameters\n  endpoint: needle-42"
+
+
+def test_format_gauntlet_xml_detection_does_not_parse_a_dtd(monkeypatch):
+    source = "<!DOCTYPE root>\n<root>\n<item>needle-42</item>\n</root>"
+
+    def unexpected_parser(text):
+        raise AssertionError("XML with a DTD must not reach the parser")
+
+    monkeypatch.setattr(adapters.ET, "fromstring", unexpected_parser)
+    result = adapters.adapt_format(source, "needle-42", allow_reports=False)
+    assert result.format == "xml"
+    assert not result.applied
+    assert result.text == source

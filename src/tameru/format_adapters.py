@@ -294,12 +294,17 @@ def _looks_vertical(text: str) -> bool:
     return short / len(lines) >= 0.8
 
 
+_XML_DECLARATION_RE = re.compile(r"<!DOCTYPE|<!ENTITY", re.IGNORECASE | re.ASCII)
+
+
 def detect_format(text: str) -> str:
     value = str(text or "")
     stripped = value.lstrip()
     if re.search(r"<!doctype\s+html|<html\b", stripped[:512], re.IGNORECASE):
         return "html"
     if stripped.startswith("<") and stripped.rstrip().endswith(">"):
+        if _XML_DECLARATION_RE.search(stripped):
+            return "xml"
         try:
             ET.fromstring(stripped)
         except (ET.ParseError, RecursionError, UnicodeError):
@@ -1012,8 +1017,7 @@ def _adapt_xml(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
     del limits
-    upper = text.upper()
-    if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+    if _XML_DECLARATION_RE.search(text):
         return _decline(text, "xml", "DTD/entity declarations are not processed", structurally_valid=False)
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 3:
