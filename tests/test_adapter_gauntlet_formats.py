@@ -86,3 +86,10 @@ def test_format_gauntlet_pipe_table_treats_escaped_pipe_as_data():
     assert result.applied
     assert target in result.text
     assert result.kept_records == 1
+
+
+def test_format_gauntlet_csv_declines_on_outlier_overflow():
+    source = "kind,value\n" + "normal,1\n" * 20 + "normal," + "9" * 400
+    result = adapters.adapt_format(source, "", format_name="csv")
+    assert not result.applied
+    assert result.text == source

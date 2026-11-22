@@ -5,6 +5,7 @@ import bisect
 import csv
 import io
 import json
+import math
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
@@ -561,9 +562,12 @@ def _select_table_outliers(
             if numeric_pattern.fullmatch(value):
                 number_text = value[:-1] if value.endswith("%") else value
                 try:
-                    parsed_values.append((row_index, value, float(number_text)))
+                    number = float(number_text)
                 except ValueError:
                     continue
+                if not math.isfinite(number):
+                    return [], "numeric field exceeds finite range"
+                parsed_values.append((row_index, value, number))
         if len(parsed_values) * 10 < total * 9:
             continue
         numbers = sorted(number for _, _, number in parsed_values)
