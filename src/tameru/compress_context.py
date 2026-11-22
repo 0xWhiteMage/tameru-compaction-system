@@ -7687,9 +7687,9 @@ def _write_audit_log(
             }
             log_file = log_path / "compactions.jsonl"
             fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-            if hasattr(os, "fchmod"):
-                os.fchmod(fd, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
                 fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
             pass  # logging must never break compression
