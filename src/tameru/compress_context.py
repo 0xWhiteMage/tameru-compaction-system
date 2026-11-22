@@ -5496,6 +5496,8 @@ def sweep_ccr_cache(
             _CCR_SWEEP_CURSOR[key] = (start + count) % total
         records = [records[(start + offset) % total] for offset in range(count)]
     for fp in records:
+        if not _CCR_HASH_RE.fullmatch(fp.stem):
+            continue
         try:
             data = json.loads(fp.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
