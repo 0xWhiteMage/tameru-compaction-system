@@ -1846,7 +1846,8 @@ _OUTCOME_KV_RE = re.compile(r"^\s*[a-z][\w.-]{1,39}[:=]\S{1,80}\s*$")
 _OUTCOME_ERR_NEAR_RE = re.compile(
     r"(?i)(?:\(error\)|\bERROR\b|\berror[ s:]|fail(?:ed|ure)?"
     r"|\bwarn(?:ing)?[ s:]|\bnot[ _]found\b"
-    r"|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt)\b)"
+    r"|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt|"
+    r"critical|overrun\w*|exceed\w*)\b)"
 )
 _OUTCOME_LONE_KV_RE = re.compile(r"^\s*\S[^:=>]{1,40}\s*(?::|=|->)\s*\S{1,80}\s*$")
 # Credential material only when a keyword binds a value ("password=hunter2",
@@ -1915,6 +1916,8 @@ _OUTCOME_EVIDROW_RE = re.compile(
     r"|\b\d+(?:\.\d+)?\s?[KMGTPE]i?B\b"
     r"|\|\s*\S.*\|"
     r"|\b(?:disk|part|lvm|rom)\b"
+    r"|\b[ds]ports?:\d"
+    r"|(?-i:\b(?:ACCEPT|DROP|REJECT|DNAT|SNAT|MASQUERADE)\b)"
     r"|\bidle\b",
     re.IGNORECASE,
 )
