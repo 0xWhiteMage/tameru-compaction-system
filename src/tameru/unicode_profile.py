@@ -135,6 +135,10 @@ def matching_shadow(text: str) -> str:
     return normalised.translate(_BIDI_DELETE).casefold()
 
 
+def _is_surrogate(char: str) -> bool:
+    return "\ud800" <= char <= "\udfff"
+
+
 def unicode_safety_counts(text: str) -> tuple[int, int, bool]:
     """Return bidi controls, overrides, and malformed-surrogate presence."""
     value = str(text or "")
@@ -144,7 +148,7 @@ def unicode_safety_counts(text: str) -> tuple[int, int, bool]:
     overrides = 0
     malformed = False
     for char in value:
-        malformed = malformed or unicodedata.category(char) == "Cs"
+        malformed = malformed or _is_surrogate(char)
         if char in _BIDI_CONTROLS:
             controls += 1
             overrides += int(char in _BIDI_OVERRIDES)
@@ -384,8 +388,7 @@ def profile_text(text: str) -> UnicodeProfile:
     overrides = 0
     malformed = False
     for char in value:
-        category = unicodedata.category(char)
-        malformed = malformed or category == "Cs"
+        malformed = malformed or _is_surrogate(char)
         if char in _BIDI_CONTROLS:
             controls += 1
             overrides += int(char in _BIDI_OVERRIDES)
