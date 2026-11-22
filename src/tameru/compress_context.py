@@ -6265,6 +6265,20 @@ def _query_hit_terms(query: str) -> list[str]:
     return terms
 
 
+def _rank_query_hits(
+    candidates: Iterable[tuple[int, str]], terms: list[str]
+) -> list[tuple[int, int]]:
+    tests = [_term_test(term) for term in terms]
+    ranked = []
+    for i, line in candidates:
+        low = line[:_RX_LINE_CAP].casefold()
+        hits = sum(1 for test in tests if test(low))
+        if hits:
+            ranked.append((-hits, i))
+    ranked.sort()
+    return ranked
+
+
 def _brief_scan(
     text: str, query: str
 ) -> tuple[tuple[str, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
@@ -6296,17 +6310,12 @@ def _brief_scan(
     hit_idx: list[int] = []
     terms = _query_hit_terms(query)
     if terms:
-        tests = [_term_test(t) for t in terms]
-        ranked: list[tuple[int, int]] = []
+        ranked = _rank_query_hits(
+            ((i, line) for i, line in enumerate(lines) if nonblank[i + 1] != nonblank[i]),
+            terms,
+        )
         seen_hit: set[str] = set()
-        for i, line in enumerate(lines):
-            if nonblank[i + 1] == nonblank[i]:
-                continue
-            low = line[:_RX_LINE_CAP].casefold()
-            hits = sum(1 for test in tests if test(low))
-            if hits:
-                ranked.append((-hits, i))
-        for _, i in sorted(ranked):
+        for _, i in ranked:
             fp = _error_fp(lines[i])
             if fp not in seen_hit:
                 seen_hit.add(fp)
@@ -6577,16 +6586,11 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
                 break
     terms = _query_hit_terms(query)
     if terms and len(picked) < limit:
-        tests = [_term_test(t) for t in terms]
-        ranked = []
-        for i, line in enumerate(lines):
-            if not line.strip() or i in picked:
-                continue
-            low = line[:_RX_LINE_CAP].casefold()
-            hits = sum(1 for test in tests if test(low))
-            if hits:
-                ranked.append((-hits, i))
-        for _, i in sorted(ranked):
+        ranked = _rank_query_hits(
+            ((i, line) for i, line in enumerate(lines) if i not in picked and line.strip()),
+            terms,
+        )
+        for _, i in ranked:
             if not take(i):
                 break
     if len(picked) < limit:
