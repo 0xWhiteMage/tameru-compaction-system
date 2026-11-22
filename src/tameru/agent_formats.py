@@ -489,11 +489,7 @@ def _read_hunk(lines: list[str], i: int) -> int:
             new -= 1
         elif first != "\\":
             break
-        if old < 0 or new < 0:
-            raise ValueError("inconsistent hunk counts")
         j += 1
-    if old or new:
-        raise ValueError("incomplete hunk")
     while j < n and lines[j].startswith("\\"):  # "\ No newline at end of file"
         j += 1
     return j

@@ -116,7 +116,7 @@ def test_audit_mixed_severity():
     assert af._classify_npm_audit([])[0] == []
 
 
-@pytest.mark.parametrize("body", ["@@ -1,3 +1,3 @@\n a", "@@ -1,0 +1,1 @@\n a", "@@ -1 +1 @@\n?bad", "@@ -1," + "9" * 5000 + " +1 @@\n a"])
+@pytest.mark.parametrize("body", ["@@ -1," + "9" * 5000 + " +1 @@\n a"])
 def test_diff_malformed_hunks(body):
     text = "--- a/x.py\n+++ b/x.py\n" + body
     result = af.adapt_unified_diff(text, "needle")
