@@ -3,6 +3,12 @@ import pytest
 from tameru import agent_formats as af
 
 
+@pytest.mark.parametrize("value", ["nan", "inf", "-1"])
+def test_top_invalid_utilization(value):
+    lines = [f"{i} user 20 0 100 10 10 S {cpu} 1 0:00 app" for i, cpu in enumerate(["2", value, "3"])]
+    assert af._classify_top(["PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND"] + lines)[0] == [True] * 4
+
+
 def test_rollout_resource_anchors():
     lines = [f'Waiting for deployment "{name}" rollout to finish: {i} of 9' for name in ("a", "b") for i in range(8)]
     keep = af._classify_rollout_wait(lines)[0]

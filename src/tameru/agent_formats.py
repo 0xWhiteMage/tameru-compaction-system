@@ -2079,6 +2079,8 @@ def _classify_top(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
                     mem = float(parts[9])
                 except ValueError:
                     continue
+                if not (0 <= cpu < float("inf") and 0 <= mem < float("inf")):
+                    return [True] * len(lines), [0] * len(lines), [0] * len(lines)
                 current_rows.append((i, cpu, mem, parts[7]))
 
     _finalize(current_rows)
