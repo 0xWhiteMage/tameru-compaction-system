@@ -146,7 +146,7 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
             if type(text) is not str or (max_chars is not None and len(text) > max_chars):
                 return fn(text, *extra)
             v = version() if callable(version) else version
-            key = content_key(str(v), name, text, tuple(str(e) for e in extra))
+            key = content_key(str(v), name, text, extra)
             hit = CACHE.get(key)
             if hit is _MISS:
                 hit = fn(text, *extra)
@@ -159,6 +159,7 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
     return deco
 
 
+@functools.lru_cache(maxsize=1)
 def _engine_version() -> str:
     from .compress_context import ENGINE_VERSION
 
