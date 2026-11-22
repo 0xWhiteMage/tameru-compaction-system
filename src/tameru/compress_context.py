@@ -873,6 +873,7 @@ def _is_critical_line(line: str) -> bool:
 # Level-tagged error lines. Case-sensitive on purpose: "error" in prose is not
 # a log level, ERROR is.
 _ERR_LEVEL_RE = re.compile(r"\b(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)\b")
+_ERR_LEVEL_TAG_RE = re.compile(r"\[(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)\]")
 _ERR_STRUCT_LEVEL_RE = re.compile(
     r"(?:^|[\s{,])\"?(?:level|lvl|severity|log\.level)\"?\s*[=:]\s*\"?(?:error|err|fatal|critical|crit|panic|emerg|alert)\b",
     re.IGNORECASE,
@@ -1844,7 +1845,8 @@ _OUTCOME_SECTION_RE = re.compile(r"^\s*(?:[\w.-]+\[\d+\]|(?:Event|Record|Entry|I
 _OUTCOME_KV_RE = re.compile(r"^\s*[a-z][\w.-]{1,39}[:=]\S{1,80}\s*$")
 _OUTCOME_ERR_NEAR_RE = re.compile(
     r"(?i)(?:\(error\)|\bERROR\b|\berror[ s:]|fail(?:ed|ure)?"
-    r"|\bwarn(?:ing)?[ s:]|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt)\b)"
+    r"|\bwarn(?:ing)?[ s:]|\bnot[ _]found\b"
+    r"|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt)\b)"
 )
 _OUTCOME_LONE_KV_RE = re.compile(r"^\s*\S[^:=>]{1,40}\s*(?::|=|->)\s*\S{1,80}\s*$")
 # Credential material only when a keyword binds a value ("password=hunter2",
@@ -1856,6 +1858,27 @@ _OUTCOME_CRED_RE = re.compile(
     r"bearer|token|private|signing|basic|db[-_]?pass|mysqlpwd|mysql[-_]?pwd|"
     r"pgpassword|rediscli[-_]?auth)\s*[:=]"
 )
+# Lines that hold an actual credential token — not just a word that could be
+# one. The _SECRET_LITERALS prefilter is a recall net for the real regexes;
+# reused as a worthiness guard it rejects ordinary URLs ("://"), "curl"
+# commands and "key-" fields. These shapes are unambiguous tokens, plus URI
+# userinfo (scheme://user:pass@host) which is the credential "://" was after.
+_OUTCOME_SECRET_LINE_RE = re.compile(
+    r"-----BEGIN |\bAKIA[0-9A-Z]{8,}|\bgh[pousr]_\w{8,}|github_pat_\w+|\bxox[baprs]?-\w+"
+    r"|\bsk-[\w-]{8,}|\beyJ[\w-]{8,}|\bAIza[\w-]{8,}|\bya29\.\w+|\bhf_[\w-]{8,}"
+    r"|\bnpm_\w{8,}|pypi-AgE|SG\.[\w-]{8,}\.[\w-]{8,}|glpat-\w+|dckr_pat_\w+|xapp-\w+"
+    r"|hooks\.slack\.com|/api/webhooks/|whsec_\w+|dop_v1_\w+|sshpass\b|1//0[\w-]{6,}"
+    r"|[a-z][a-z0-9+.-]*://[^\s/:]{1,64}:[^\s@]{1,256}@",
+    re.IGNORECASE,
+)
+# "???" in a result row is an unresolved/failed record (an mtr hop that never
+# answered, a missing field) — failure evidence even without an error word.
+_OUTCOME_ANOMALY_RE = re.compile(r"\?\?\?")
+# A decorated header ("=== warnings summary ===") or a docs pointer line
+# ("-- Docs: https://...") is furniture even when its text holds a warning
+# word — the failure vocabulary wants events, not framing.
+_OUTCOME_FRAME_RE = re.compile(r"^\s*[-=*_+#~]{3,}.*[-=*_+#~]{3,}\s*$")
+_OUTCOME_DOC_LINK_RE = re.compile(r"(?i)^\s*-{0,3}\s*(?:docs?|see also|ref(?:erence)?|link)\s*:")
 # A run of 8+ box/block-drawing glyphs at line start is a download/progress
 # bar ("   ━━━━ 119.0/119.0 kB"), never failure context — _is_progress_bar
 # misses shapes that carry no % or /.
@@ -1878,6 +1901,21 @@ _OUTCOME_DATAROW_RE = re.compile(
     r"(?:\$\d|\d+/(?:tcp|udp|sctp)\b|0(?:\.0+)?\s*(?:[KMG]i?bits|pkts|pps)\b"
     r"|\b(?:down|dead|decommission\w*|failed?|error\w*|unhealthy|offline|weak|"
     r"vulnerab\w*|insecure|non-?complian\w*)\b)",
+    re.IGNORECASE,
+)
+# E14: rows whose evidence is the row itself rather than a money/port/state
+# anchor — device rows ("sdc  657G disk"), mtr hops ("  9.|-- host 0.0%"),
+# node state rows ("DN 10.2.102.31 497 GB ... rack3"), pipe tables, queue
+# states. Collected only when the line also carries a digit, so prose using
+# these words stays out.
+_OUTCOME_EVIDROW_RE = re.compile(
+    r"^\s*\d+\.\|--"
+    r"|^\s*[UD]N\s+\d"
+    r"|\d+(?:\.\d+)?%"
+    r"|\b\d+(?:\.\d+)?\s?[KMGTPE]i?B\b"
+    r"|\|\s*\S.*\|"
+    r"|\b(?:disk|part|lvm|rom)\b"
+    r"|\bidle\b",
     re.IGNORECASE,
 )
 # A pure box-drawing run adjacent to a total/summary line is a table border,
@@ -1903,7 +1941,7 @@ def _outcome_worthy(ln: str, *, allow_short: bool = False) -> bool:
     if _is_trust_risk_line(ln) or _is_sink_noise(ln) or _TEST_FILE_NOISE_RE.search(ln):
         return False
     probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
-    if any(lit in probe for lit in _SECRET_LITERALS):
+    if _OUTCOME_SECRET_LINE_RE.search(probe):
         return False
     if _OUTCOME_CRED_RE.search(probe):
         return False
@@ -1921,7 +1959,11 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         return ()
     err_near = [False] * len(lines)
     for i in nb_i:
-        if _OUTCOME_ERR_NEAR_RE.search(lines[i]):
+        if (
+            (_OUTCOME_ERR_NEAR_RE.search(lines[i]) or _OUTCOME_ANOMALY_RE.search(lines[i]))
+            and not _OUTCOME_FRAME_RE.match(lines[i])
+            and not _OUTCOME_DOC_LINK_RE.match(lines[i])
+        ):
             for j in range(max(0, i - 2), min(len(lines), i + 3)):
                 err_near[j] = True
     summaries: dict[str, tuple[int, str]] = {}
@@ -1939,7 +1981,11 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
     is_err = [False] * len(lines)
     for pos, i in enumerate(nb_i):
         ln = lines[i]
-        if _OUTCOME_ERR_NEAR_RE.search(ln):
+        if (
+            (_OUTCOME_ERR_NEAR_RE.search(ln) or _OUTCOME_ANOMALY_RE.search(ln))
+            and not _OUTCOME_FRAME_RE.match(ln)
+            and not _OUTCOME_DOC_LINK_RE.match(ln)
+        ):
             is_err[i] = True
             fp = _log_fingerprint(ln) or ln
             fail_lines.append((i, ln, fp))
@@ -1980,13 +2026,26 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         if _OUTCOME_STATEKV_RE.match(ln):
             state_kvs.append((i, ln))
             continue
-        if len(ln.split()) >= 3 and _OUTCOME_DATAROW_RE.search(ln):
+        if (
+            len(ln.split()) >= 3 and not _OUTCOME_BAR_RE.match(ln)
+            and (
+                _OUTCOME_DATAROW_RE.search(ln)
+                or (any(ch.isdigit() for ch in ln) and _OUTCOME_EVIDROW_RE.search(ln))
+            )
+        ):
             datarows.append((i, ln))
             continue
         if len(borders) < 1 and _OUTCOME_BORDER_RE.match(ln):
             prev = next((lines[j] for j in reversed(nb_i[:pos])), "")
             nxt = next((lines[j] for j in nb_i[pos + 1:pos + 2]), "")
-            if _OUTCOME_TOTAL_RE.search(prev) or _OUTCOME_TOTAL_RE.search(nxt) or _OUTCOME_SUMMARY_RE.match(prev.strip()) or _OUTCOME_SUMMARY_RE.match(nxt.strip()):
+            # A border earns protection beside a total/summary (the classic
+            # score table) or beside a pipe-table row ("+---+" framing the
+            # "| peer | id |" grid is the table's landmark edge).
+            if (
+                _OUTCOME_TOTAL_RE.search(prev) or _OUTCOME_TOTAL_RE.search(nxt)
+                or _OUTCOME_SUMMARY_RE.match(prev.strip()) or _OUTCOME_SUMMARY_RE.match(nxt.strip())
+                or prev.lstrip().startswith("|") or nxt.lstrip().startswith("|")
+            ):
                 borders.append((i, ln))
                 continue
         if len(lone_kvs) < _OUTCOME_LONE_KV_MAX and (
@@ -2100,16 +2159,37 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         lt = lines[nb_i[-1]]
         fp = _log_fingerprint(lt) or lt
         if (
-            len(lt.split()) >= 3 and not _is_progress_bar(lt)
+            len(lt.split()) >= 3
+            and (not _is_progress_bar(lt) or _OUTCOME_EVIDROW_RE.search(lt))
             and not _OUTCOME_BAR_RE.match(lt)
             and sum(1 for i in nb_i if (_log_fingerprint(lines[i]) or lines[i]) == fp) * 2 <= len(nb_i)
         ):
             tail_row.append((nb_i[-1], lt))
+    # The last datarow of each contiguous run is the run's terminal record —
+    # the destination hop a traceroute ended on, the device above the SMART
+    # report, the queue row above "not_found". When the run ends at a failure
+    # that terminal row is the evidence the failure was about; runs broken by
+    # unrelated lines don't earn it (err_near bounds it to ~one per failure).
+    terminal_rows: list[tuple[int, str]] = []
+    for k, (i, ln) in enumerate(datarows):
+        nxt = datarows[k + 1][0] if k + 1 < len(datarows) else len(lines) + 1
+        if nxt - i > 1 and err_near[i]:
+            terminal_rows.append((i, ln))
     # Datarows rank error-neighbouring rows first — the row the error happened
-    # on is the evidence, not the first row of the table.
+    # on is the evidence, and it PRECEDES the error line (the device above the
+    # SMART report, the port above the warning); at equal distance the row
+    # before wins over the row after, which belongs to the next section.
+    err_idx = [i for i in nb_i if is_err[i]]
+
+    def _errdist(i: int) -> tuple[int, int]:
+        if not err_idx:
+            return (10**9, 0)
+        e = min(err_idx, key=lambda x: abs(x - i))
+        return (abs(i - e), 0 if i < e else 1)
+
     datarows = sorted(
-        datarows, key=lambda t: (not err_near[t[0]], -t[0])
-    )[:2]
+        datarows, key=lambda t: (not err_near[t[0]], _errdist(t[0]), -t[0])
+    )[:2] + terminal_rows
     # Numbered records ("Event[90]:" + indented body) repeat by the dozen, so
     # positional caps pick the wrong ones. A record earns protection from its
     # content: a body carrying an error/status evidence line, or the outcome
@@ -2160,6 +2240,7 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         | {ln for _i, ln in fails}
         | {ln for _i, ln in lone_kvs}
         | {ln for _i, ln in borders}
+        | {ln for _i, ln in datarows}
     )
     merged = (
         summary_list + prompt_list + ranked_sections + tables + kvs
@@ -2242,12 +2323,15 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
         trace_src = []
         trace_idx = []
 
-    # First pass: drop progress bars but remember whether we saw any.
-    kept_src = [i for i, ln in enumerate(lines) if not _is_progress_bar(ln)]
-    kept_lines = [lines[i] for i in kept_src]
     # 1.10.0 (S5): indices into `lines` of the protected fact lines — they never fold (below).
     # The memoised fingerprint() is shared so each line is still fingerprinted once.
     fact_protected_src = _fact_protected_set(lines, fingerprint) | _outcome_protected_set(lines)
+    # First pass: drop progress bars but remember whether we saw any. A
+    # protected line is exempt — a "%" column in a landmark row (nodetool's
+    # Owns%, an mtr hop's loss%) reads as a bar to the shape check but is the
+    # evidence, not noise.
+    kept_src = [i for i, ln in enumerate(lines) if not _is_progress_bar(ln) or i in fact_protected_src]
+    kept_lines = [lines[i] for i in kept_src]
 
     query_match_source_indices: set[int] = set()
     if query_selectors:
@@ -4002,7 +4086,17 @@ def _error_exemplar_ids(blocks: list[dict[str, Any]], content_type: str | None) 
                 break
             for line in b["text"].splitlines():
                 if (
-                    is_diagnostic_line(line[:_RX_LINE_CAP], code_only=True)
+                    (
+                        is_diagnostic_line(line[:_RX_LINE_CAP], code_only=True)
+                        # E14: a BRACKETED uppercase level tag ("[CRITICAL]",
+                        # "[FATAL]") in any non-code content is the same
+                        # exemplar contract as a log ERROR — sslscan-style
+                        # reports tag severities without a leading log level
+                        # and were invisible here. The bracket is required:
+                        # a bare "ERROR" in prose ("ERROR is the name of the
+                        # sentinel enum value") is not an exemplar.
+                        or _ERR_LEVEL_TAG_RE.search(line[:_RX_LINE_CAP])
+                    )
                     and _ERR_NEGATED_RE.search(line[:_RX_LINE_CAP]) is None
                 ):
                     fp = _error_fp(line)

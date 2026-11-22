@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
-  "settings_tried": 45,
+  "settings_tried": 46,
   "validation_queries": {
     "engine": 10,
     "deepseek-plugin": 0,
@@ -414,6 +414,16 @@
       "split": "r3 dev",
       "source": "r3 dev dry-run on E12: 53/62 - gold misses on new evidence shapes and fail-open amplification where a small floor append flips a borderline extract",
       "outcome": "r3 dev dry-run: 63/63 PASS vs 1.10.0 baseline (all retention, savings, fail-open, calibration cells). Suite 2644 green; golden regenerated for intended changes. NOT promoted - incumbent default preserved pending sealed look."
+    },
+    {
+      "n": 46,
+      "date": "2026-11-25",
+      "target": "engine",
+      "id": "E14",
+      "setting": "E13 + outcome vocabulary for burned-family shapes: digit-guarded evidrow (disk/hop/status rows), terminal datarow per failure-adjacent run, ???/not_found as failure classes, URI-userinfo secret-line check replacing the literal prefilter, bracketed level-tag exemplars ([CRITICAL]), evidrow tail-row exemption, protected-line progress-bar exemption in kept_src, decorated-header/doc-pointer exclusion from failure classes",
+      "split": "r3 dev (post-burn: 30 families)",
+      "source": "r3 sealed look failed 54/65; the burned set is dev material now. Missing shapes: evidence datarows without port/money/state-word anchors and CRITICAL-tag lines",
+      "result": "r3 dev dry-run 66/66 PASS on post-burn 30 families (was 54/65 on sealed). Full suite green."
     }
   ],
   "noise_seed": 20261121,

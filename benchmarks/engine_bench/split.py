@@ -210,9 +210,26 @@ def _main_r3(args) -> int:
     if args.check:
         assert stored, "splits_r3.json missing"
         doc, cases = r3_doc(stored["deal"]["seed"], stored["deal"]["attempt"])
-        blob = json.dumps(doc, indent=1, sort_keys=True) + "\n"
+        # The look-time sealed corpus hash is registered in SEALED-R3.sha256;
+        # compute it before any burn replay moves those families to dev.
         digest = corpus.sealed_digest([c for c in cases if doc["families"][c["family"]] == "sealed"])
-        ok = (corpus.SPLITS_R3_FILE.read_text(encoding="utf-8") == blob
+        burn = stored.get("burn")
+        if burn:
+            # A spent look burns its sealed families into dev — replay the
+            # recorded burn(s) onto the fresh deal so the integrity check is
+            # "corpus or deal changed", not "a look happened".
+            for entry in burn:
+                for f in entry["families"]:
+                    doc["families"][f] = "dev"
+            doc["burn"] = burn
+            for s in doc["counts"]:
+                sub = [c for c in cases if doc["families"][c["family"]] == s]
+                doc["counts"][s] = {"families": len({c["family"] for c in sub}), "cases": len(sub),
+                                    "clusters": len({c["source_case"] for c in sub})}
+        # Semantic compare: a recorded burn is appended to the committed file
+        # in the file's own key order, so byte equality with a fresh
+        # sort_keys dump cannot hold. Content equality is the integrity check.
+        ok = (json.loads(corpus.SPLITS_R3_FILE.read_text(encoding="utf-8")) == doc
               and corpus.SEALED_R3_HASH_FILE.read_text().split()[0] == digest)
         print("splits_r3.json and SEALED-R3.sha256 match" if ok else "MISMATCH: r3 corpus or deal changed")
         return 0 if ok else 1
