@@ -407,3 +407,75 @@ def test_failure_evidence_is_not_folded_after_runner_selection():
     result = compress_context(source, "which test failed", ccr=False, citations=False)
     assert evidence in result.compressed_text
     assert "src/lib.rs:5:28" in result.compressed_text
+
+
+# Captured from `go test -v` (go 1.27) and shortened: three tests using t.Parallel(),
+# one of which logs its failure before the others finish.
+GO_PARALLEL = "\n".join(
+    [
+        "=== RUN   TestFetchOrders",
+        "=== PAUSE TestFetchOrders",
+        "=== RUN   TestFetchUsers",
+        "=== PAUSE TestFetchUsers",
+        "=== RUN   TestFetchItems",
+        "=== PAUSE TestFetchItems",
+        "=== CONT  TestFetchOrders",
+        "=== CONT  TestFetchItems",
+        "=== NAME  TestFetchOrders",
+        "    client_test.go:3: GET /orders: got status 502, want 200",
+        "=== CONT  TestFetchUsers",
+        "=== NAME  TestFetchUsers",
+        "    client_test.go:4: users fetched",
+        "--- PASS: TestFetchUsers (0.02s)",
+        "=== NAME  TestFetchItems",
+        "    client_test.go:5: items fetched",
+        "--- PASS: TestFetchItems (0.03s)",
+        "--- FAIL: TestFetchOrders (0.08s)",
+        "FAIL",
+        "FAIL\texample.com/shop/client\t0.260s",
+        "FAIL",
+    ]
+)
+
+# Captured from `go test -v` (go 1.27): a table-driven test with one failing subtest,
+# followed by a passing test that logs.
+GO_SUBTEST = "\n".join(
+    [
+        "=== RUN   TestParseAmount",
+        "=== RUN   TestParseAmount/plain",
+        "=== RUN   TestParseAmount/with_comma",
+        '    money_test.go:8: parse("1,200") = -1, want 1200',
+        "--- FAIL: TestParseAmount (0.00s)",
+        "    --- PASS: TestParseAmount/plain (0.00s)",
+        "    --- FAIL: TestParseAmount/with_comma (0.00s)",
+        "=== RUN   TestFormatAmount",
+        "    money_test.go:12: formatted 1200 as 1,200",
+        "--- PASS: TestFormatAmount (0.00s)",
+        "=== RUN   TestRound",
+        "--- PASS: TestRound (0.00s)",
+        "FAIL",
+        "FAIL\texample.com/shop/money\t0.213s",
+        "FAIL",
+    ]
+)
+
+
+def test_go_parallel_failure_log_survives_another_tests_pass():
+    out = preprocess_test_output(GO_PARALLEL, "")
+    assert out is not None
+    assert "    client_test.go:3: GET /orders: got status 502, want 200" in out
+    assert "--- FAIL: TestFetchOrders (0.08s)" in out
+    assert "users fetched" not in out and "items fetched" not in out
+    counts = [int(n) for n in re.findall(r"\[… (\d+) passing tests? omitted …\]", out)]
+    assert sum(counts) == 2  # TestFetchUsers and TestFetchItems
+
+
+def test_go_failed_subtest_survives_a_later_passing_test():
+    out = preprocess_test_output(GO_SUBTEST, "")
+    assert out is not None
+    assert '    money_test.go:8: parse("1,200") = -1, want 1200' in out
+    assert "--- FAIL: TestParseAmount (0.00s)" in out
+    assert "    --- FAIL: TestParseAmount/with_comma (0.00s)" in out
+    assert "formatted 1200" not in out
+    counts = [int(n) for n in re.findall(r"\[… (\d+) passing tests? omitted …\]", out)]
+    assert sum(counts) == 3  # TestParseAmount/plain, TestFormatAmount, TestRound

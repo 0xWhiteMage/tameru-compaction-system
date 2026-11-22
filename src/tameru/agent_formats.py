@@ -3524,6 +3524,18 @@ def _classify_jest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
 _GO_PKG_OK_RE = re.compile(r"^ok\s+(\S+)\s+(?:[\d.]+s|\(cached\))")
 _GO_PKG_NOTEST_RE = re.compile(r"^\?\s+\S+\s+\[no test files\]")
 _GO_PKG_FOLD_MIN = 5
+_GO_EVENT_RE = re.compile(r"^=== (?:RUN|PAUSE|CONT|NAME)\s+(\S+)")
+_GO_RESULT_NAME_RE = re.compile(r"^--- (?:PASS|SKIP|FAIL): (\S+)")
+
+
+def _go_take_pending(pending: dict[str | None, list[int]], name: str | None) -> list[int]:
+    """Remove and return the log lines of ``name`` and its subtests, with the
+    lines no ``=== `` line attributed. An unreadable name takes everything."""
+    taken: list[int] = []
+    for key in list(pending):
+        if name is None or key is None or key == name or key.startswith(name + "/"):
+            taken.extend(pending.pop(key))
+    return taken
 
 
 def _classify_go(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
@@ -3532,48 +3544,69 @@ def _classify_go(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     keep = [True] * n
     tests = [0] * n
     suites = [0] * n
-    pending: list[int] = []  # indented log lines since the last top-level result
+    # Indented log lines, by the test the last `=== ` line named. With
+    # t.Parallel() the output of several tests interleaves, so a `--- PASS:`
+    # may only drop the lines of the test it names.
+    pending: dict[str | None, list[int]] = {}
+    current: str | None = None
     dropping = False  # inside the indented children of a passing/skipped test
+    failed = False  # inside the indented children of a failed test
     for i, ln in enumerate(lines):
         indented = ln[:1] in {" ", "\t"}
         if ln.startswith(("--- PASS:", "--- SKIP:")):
-            for j in pending:  # `t.Log` output of a test that passed
-                keep[j] = False
-            pending = []
+            named = _GO_RESULT_NAME_RE.match(ln)
+            for j in _go_take_pending(pending, named.group(1) if named else None):
+                keep[j] = False  # `t.Log` output of a test that passed
             keep[i] = False
             tests[i] = 1 if ln.startswith("--- PASS:") else 0
             dropping = True
+            failed = False
         elif ln.startswith("--- FAIL:"):
-            pending = []
+            named = _GO_RESULT_NAME_RE.match(ln)
+            _go_take_pending(pending, named.group(1) if named else None)
             dropping = False
+            failed = True
         elif ln.startswith("=== "):
             keep[i] = False  # RUN / PAUSE / CONT / NAME
+            event = _GO_EVENT_RE.match(ln)
+            current = event.group(1) if event else None
             dropping = False
+            failed = False
         elif ln == "PASS":
             keep[i] = False
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
         elif indented and dropping:
             keep[i] = False
             if ln.lstrip().startswith("--- PASS:"):
                 tests[i] = 1
+        elif indented and failed:
+            # Subtest results under a failed test: the failures stay, a
+            # passing sibling is counted like any other passing test.
+            if ln.lstrip().startswith(("--- PASS:", "--- SKIP:")):
+                keep[i] = False
+                tests[i] = 1 if ln.lstrip().startswith("--- PASS:") else 0
         elif indented:
-            pending.append(i)
+            pending.setdefault(current, []).append(i)
         elif fold_pkgs and _GO_PKG_OK_RE.match(ln):
             m = _GO_PKG_OK_RE.match(ln)
             keep[i] = False
             suites[i] = 1
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
             if i > 0 and keep[i - 1] and lines[i - 1] == f"# {m.group(1)}":
                 keep[i - 1] = False
         elif fold_pkgs and _GO_PKG_NOTEST_RE.match(ln):
             keep[i] = False
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
         else:
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
     return keep, tests, suites
 
 
