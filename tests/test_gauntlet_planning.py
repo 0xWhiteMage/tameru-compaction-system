@@ -64,6 +64,22 @@ def test_loss_rejects_boolean_numbers():
         loss._number("test", "p_needed", {"p_needed": {"value": True}})
 
 
+def loss_raw():
+    return {"date": "2026-11-21", "values": {
+        key: {"value": value} for key, value in
+        dict(p_needed=0.25, p_recovered=0.9, recovery_output_tokens=200,
+             lambda_base=100).items()},
+        "strength_multipliers": {"normal": {"value": 1}}}
+
+
+def test_loss_rejects_fractional_recovery_tokens():
+    raw = loss_raw()
+    raw["values"]["recovery_output_tokens"]["value"] = 1.5
+    with pytest.raises(ValueError):
+        loss._build("test", raw)
+    assert loss._build("test", loss_raw()).recovery_output_tokens == 200
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
