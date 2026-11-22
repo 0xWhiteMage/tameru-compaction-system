@@ -43,6 +43,8 @@ class SemanticTier:
 
     # -- bi-encoder -----------------------------------------------------
     def encode(self, texts: Sequence[str]) -> list[list[float]]:
+        if not texts:
+            return []
         vecs = self._bi.encode(list(texts), normalize_embeddings=True, show_progress_bar=False)
         return [v.tolist() for v in vecs]
 
@@ -51,12 +53,16 @@ class SemanticTier:
 
     def score_against_query(self, query: str, texts: Sequence[str]) -> tuple[list[float], list[float]]:
         """Returns (query_vector, per-text cosine similarities)."""
+        if not texts:
+            return [], []
         qv = self.encode([query])[0]
         tv = self.encode(list(texts))
         return qv, self.similarity(qv, tv)
 
     # -- cross-encoder ---------------------------------------------------
     def cross_scores(self, query: str, texts: Sequence[str]) -> list[float] | None:
+        if not texts:
+            return []
         if self._ce is None:
             return None
         pairs = [(query, t) for t in texts]
