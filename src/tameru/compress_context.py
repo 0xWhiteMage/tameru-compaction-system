@@ -6323,7 +6323,8 @@ def _brief_scan_memo(text: str, query: str):
     # Perf (v1.5.0): a host asks for the same output's brief at growing budgets;
     # the scan does not depend on the budget. Everything returned is a tuple.
     if (
-        type(query) is str
+        type(text) is str
+        and type(query) is str
         and len(query) <= _MEMO_MAX_QUERY_CHARS
         and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS
     ):
