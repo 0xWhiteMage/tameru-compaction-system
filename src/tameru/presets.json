@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "presets": {
+    "tool-result@1": {
+      "ccr": false,
+      "citations": false,
+      "inline_short_gaps": true,
+      "anchor_errors": true,
+      "prose_brief": true,
+      "min_savings_ratio": 0.1
+    },
+    "dsh-tool-result@1": {
+      "ccr": false,
+      "citations": false,
+      "strategy": "extract",
+      "min_savings_ratio": 0.25
+    }
+  }
+}

@@ -2,7 +2,7 @@
 """Sync vendored Tameru modules into a harness plugin directory.
 
 Vendored integrations (the Hermes plugin repo's `hermes_tameru_plugin/tameru/`,
-Pi/OpenCode extensions, etc.) track this repo by copying `src/tameru/*.py` wholesale.
+Pi/OpenCode extensions, etc.) track this repo by copying `src/tameru/*.py` (plus its package data, `presets.json` and `prices.json`) wholesale.
 This script makes that a single command:
 
     python scripts/sync_to_harness.py <target_plugin_dir> [--manifest plugin.yaml]
@@ -44,6 +44,12 @@ SRC = REPO_ROOT / "src" / "tameru"
 
 # Files upstream deliberately does NOT ship into vendored dirs.
 _SKIP = {"__init__.py", "__main__.py"}
+# Non-.py package data upstream ships next to the modules (presets.json and prices.json are read at run time).
+_DATA = {".json"}
+
+
+def _is_module_or_data(path: Path) -> bool:
+    return path.suffix == ".py" or path.suffix in _DATA
 
 
 def _upstream_version() -> str:
@@ -85,8 +91,8 @@ def _sources(stamp_only: bool) -> list[Path]:
         return []
     return sorted(
         f
-        for f in SRC.glob("*.py")
-        if f.name not in _SKIP and not f.name.startswith(".")
+        for f in SRC.iterdir()
+        if f.is_file() and _is_module_or_data(f) and f.name not in _SKIP and not f.name.startswith(".")
     )
 
 
@@ -96,7 +102,7 @@ def _stale(target: Path, stamp_only: bool) -> list[str]:
         return []
     return [
         f.name
-        for f in target.glob("*.py")
+        for f in target.glob("*.py")  # data files are never removed: the harness may own its own json
         if f.name not in _SKIP and not (SRC / f.name).exists()
     ]
 
@@ -211,7 +217,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.dry_run:
         for src in sources:
-            py_compile.compile(str(target / src.name), doraise=True)
+            if src.suffix == ".py":
+                py_compile.compile(str(target / src.name), doraise=True)
 
     prefix = "[dry-run] " if args.dry_run else ""
     print(f"{prefix}tameru {version} -> {target}")

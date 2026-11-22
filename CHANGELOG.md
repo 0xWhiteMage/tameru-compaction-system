@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased]
+## [1.10.0] - Unreleased
 
 - Refactor: table outlier selection reuses each column for categorical and numeric analysis, counts low-cardinality values once, and reuses static table, scoring, bridge-name and transcript-word regexes without changing output.
 
@@ -14,6 +14,95 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Refactor: JSON briefs avoid unused prefix sums, repeated key-manifest serialization and discovery, identity list copies and duplicate minimum-size probes while preserving output.
 
+Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
+release, paired, cluster bootstrap); none of it is a measurement against a real model's bill. Plan and rules: [`docs/ANALYSIS-PLAN-1.10.md`](docs/ANALYSIS-PLAN-1.10.md).
+
+- **Query-independent analyses are cached by content digest, not by the text itself (S7).** A byte-capped LRU
+  (`tameru.content_cache`, default 64 MB per process, `TAMERU_CACHE_MAX_BYTES` to size it) holds the compact analysis
+  records — content profile, fingerprints, protected facts, error exemplars, block segmentation — keyed by
+  `content_key = sha256(engine version, analysis, text)`. The text is never a dict key and never in a record, so a
+  long-lived host no longer pins up to six copies of a 1 MB input per cache; the scored-blocks memo is byte-capped
+  the same way. `tameru.cache_stats()` reports hits, misses, analyses, bytes, evictions and a per-content_key count;
+  protocol 3 adds an additive `stats` request (`{"op": "stats"}`). Inputs over 2,000,000 chars take a streaming
+  head/tail + error-line-sampler path (result carries `confidence_basis="partial"`, confidence capped at 0.5,
+  reason `huge_sampled`); over 8,000,000 chars the call fails open with the closed reason `too_large` and no
+  analysis. Development latency on the benchmark matrix (`benchmarks/latency.py`): the new 4M class runs p50 256-638 ms
+  against a 2 s budget; the 2M class drops from 840-3,435 ms (e638509) to 160-430 ms; smaller classes are
+  unchanged within noise, all 132 cells inside budget. Peak traced allocation per ~1.7M call is unchanged from
+  e638509 (engine-internal, ~22x input); retained memory after a call is ~0x input — the old memos pinned whole texts.
+- **Stack traces and build logs shrink under any question.** On a generic or tool-call-shaped question the engine used to skip its log folding, so Java and .NET
+  traces saved 0 to 21%. A structural pass now always runs for log and trace routes: frames fold per exception cause (Java, .NET, Python, Go, JS, Ruby, PHP)
+  keeping each head, cause message, `... N more` and the first frame outside the framework; repeated templates and build noise become counts. On the benchmark
+  every Java and .NET trace case saves at least 74% (mean 84 to 91%) under task, tool-call and generic questions for both hosts' call settings, with all evidence kept.
+- **The engine fails open less, never keeps less evidence.** Paired against 1.9.0 on dev and validation: evidence kept never lower in any cell, fail-open lower
+  in every cell (generic question under the DeepSeek call: 77.5% to 14%). 609 of 5,616 golden combinations that failed open now return a shortened text; none starts failing open.
+- **Confidence says what it rests on.** Keyword recall counts only query terms the source contains (a long query no longer caps confidence at 0.70), critical lines are
+  error lines and query-key lines, and every result names its basis (`confidence_basis`: lexical, cross_lingual, tool_call, structural, derived, anchored, none). Zero query keys never gives 1.0;
+  derived confidence is capped below 0.7 and never judged by the terms it derived. DeepSeek-style tool-call rows that are confident at 0.7 and not failing open: 48% to 76%.
+- **Chinese and full-width text.** Han bigrams and trigrams with a stop set replace single characters; classifiers, fingerprints and term extraction match on NFKC text while the output keeps the raw bytes;
+  a Chinese-only question that misses an English source fails open. A Chinese user message with an English tool call now gives confidence 0.94 (was 0.57) with all evidence kept.
+- **Rare fact lines survive, and losing one is reported.** A short `key=value`-shaped line that occurs rarely in a tool result — the host that failed, the limit that was
+  set, the identifier a question asks for — used to disappear three ways: selector pre-filters that keep only rows matching the query (often the tool call's own arguments),
+  log-template collapse that kept a stale same-key line, and final selection. Fact-shaped lines (an assignment after an optional timestamp and comment marker; not an error
+  line, not a table row; rare by line fingerprint; when a key repeats, the newest value wins) are now exempt from those destructive stages, the newest line of a collapsed
+  same-key group stays verbatim, and a small floor — at most 8 lines, at most 15% of the extract — carries them through selection whole. The machinery applies only to
+  sparse fact-shaped content — at most 8 candidates, on no more than a tenth of the lines — so a fact-dense dump such as a git log or a YAML config keeps the old behaviour
+  exactly and is marked `fact_dense` in the receipt instead. A new optional `selector_query` argument lets a host pass the query minus the producing call's name and
+  arguments (`tameru.transcript.build_selector_query` builds it): the destructive pre-filters then run only when the user's part names something distinctive, and when they
+  run they keep lines matching the full query — a line that matches only a call's term is kept. Scoring, selection and confidence always use the full query. The result
+  reports `fact_lines_dropped` — schema 3, in the receipt too — and when it is positive confidence caps at 0.98, or at `max(0, 1 − 0.1 × dropped)` when the query has no
+  distinctive selectors. Facts are detected on the caller's original text before the industrial and format adapters run, so a fact line an adapter would delete is restored
+  verbatim; on a near-empty extract the highest-priority missing fact is kept even when it exceeds the character cap; detection reads the NFKC view while the output keeps
+  raw bytes. The first line per error fingerprint (at most 16) gets the same exemption from the destructive pre-filters and adapters — an error exemplar a selector misses
+  is never deleted — independent of fact density, with no floor, and secret-bearing lines are never protected. On the round-2 engine benchmark's dev split (replay-free
+  development data, no model answers): fact-line gold kept among accepted calls under transcript-built vague queries is 100% in English and Chinese for both hosts
+  (baseline: 58–68%), evidence gold kept among accepted is unchanged or better vs 1.10.0 in every cell (English up 25–28 points), and in the stage diagnosis no
+  gold line is deleted by a selector pre-filter or adapter any more; the 23 accepted calls that still lose one lose it in selection. On the round-1 development splits gold kept and saved ratio are unchanged within noise. Fact and error detection cost roughly one
+  extra linear pass per call (about +32% p50 mean on the quick latency classes, machine-dependent). Candidate adoption used a small-cell rule set before the candidate ran
+  — within one retention point for cells of 20+ accepted calls, at most one more dropped call for smaller ones — because one case moves 2.5–9 points on cells that size.
+  Engine tuning decisions now read only the r2 dev split; r2 validation is queried through the ledger-enforced thresholdout oracle, and the two earlier full-validation
+  reads (the 1.10.0 diagnosis, the first S5 evaluation) are disclosed in `docs/SETTINGS-TRIED-LEDGER.json`.
+- **A 2M-character numbered source with a task question took over nine minutes** (600K: 25 s); a quadratic YAML check is now linear (2M: about 1 s). Anchor probes are size-capped.
+- **One interface for every host.** `decide()` (one accept-or-decline function with closed reason codes and the Hermes and DeepSeek policies as data), versioned presets
+  (`tool-result@1`, `dsh-tool-result@1`, byte-equal to the 1.9.x calls), an engine-owned worker protocol v3 (closed enums, capped `pin_patterns`, type-only errors, `version_info()`),
+  a shared `build_query`, query pruning to the terms the source contains, and the result schema fields (`confidence_basis`, `stable_key`, `dropped`, `result_schema`, `preset`; schema 3 adds `fact_lines_dropped`, above).
+  `dropped` names what an extract left out (category, line count, first locator) so a host can say what to re-read.
+  `pin_patterns` validation also refuses polynomial and exponential shapes (`a*a*a*b`, `.*x.*y`: any unbounded quantifier, more than four optional ones, more than six alternations; literal pins are unaffected); pin matching itself still scans the full block, as in 1.9.0.
+- **`redact_secrets`** (off by default): replaces matches of the engine's own credential patterns in the output with `[tameru:redacted]`; a fail-open still returns the original text, and the decision never changes. It also covers the `dropped` locators and the receipt copy.
+- **A pure `plan()` and an EV accept rule, interface only — no host wires it and no measured claim attaches to it yet.**
+  `tameru/plan.py` plans one moment for a prune host or a compact host: it acts only on cache-broken events
+  (`trigger`, `cache_cold`, `prefix_rewritten`) or on a warm step inside a caller-set forecast horizon, honours a
+  hysteresis window `K` (the trigger overrides it), covers every stock-cut item (`extract` when the caller's
+  precomputed engine candidate passes the hard vetoes and the EV rule and fits the stock cut, `stub` otherwise —
+  never a partial replacement, never a touch on a non-cut item), and allocates a compact host's retained budget by
+  fact rows first, then EV per retained character, then recency; `superseded` commits only when the successor covers
+  the item's facts. The planner is deterministic, O(n log n), and holds no host constants — trigger formulas, stock
+  actions and candidates arrive as inputs. Worker protocol v3 carries it additively: `selector_query` on `compress`
+  requests (and the `derive_selector_query` flag a worker resolves from its query parts) plus a `plan` request
+  (closed `PlanInput` body, capped at 2,000 items, `plan_to_dict` reply); a v2 client works unchanged.
+  behaviour and candidates all arrive as inputs. `tameru/loss_profiles.json` + `tameru/loss.py` hold dated, sourced
+  loss profiles (default `replay-2026-11-21`; `p_needed` 0.25 flagged as an unverified assumption until S3/P4 measures
+  it, `p_recovered` 0.90 from the Hermes P2c replay, recovery 200 output tokens, `lambda_base` 100 in item-token units,
+  strength multipliers less/normal/more 10/1/0.1). `Policy.ev` (`EVPolicy`: price profile, loss profile, strength,
+  conservatism quantile, a calibrator hook reserved for S6) replaces the confidence check with
+  `p_hat·V − (1 − p_hat)·L > 0` — the caller passes `n_eff`, suffix tokens `S`, `item_tokens` and `cache_broken`;
+  with `p_hat` = 1 and `L` = 0 the rule is exactly `required_share`'s pay-back condition.
+  The warm-step forecast gains a runway gate (`PlanInput.growth_tokens_per_step`, `margin_steps`): a warm `step`
+  acts only when the horizon admits it, growth is positive, the host is a compact host, and the plan's own
+  projected prompt leaves `(trigger − projected_after)/growth ≥ H + margin_steps` of runway — otherwise it
+  stands down with `no_runway`; trigger, cold-cache and prefix-rewrite events are unchanged. A compact host's
+  trigger event may also carry `replace_compaction`: the plan then aims at `trigger_tokens − growth × margin_steps`,
+  grants extracts in the usual order only while the projected prompt stays under that target (the rest go `header`),
+  and reports `reaches_target`; when the target is unreachable even with every demotable row at its stock remnant it
+  falls back to the normal allocation with `reaches_target` false. New closed reason `negative_ev`.
+  `compress_context` output is unchanged (the golden corpus stands).
+- **Price profiles and the closed-form pay-back share, a pure helper; no host default changes.** `tameru/prices.json` holds dated, sourced cache price profiles (DeepSeek pro and flash, Anthropic Opus, Sonnet and Haiku 5.5 with 5-minute and 1-hour caches, generic OpenAI 30-minute and 12-hour, marked secondary) with each figure's verification status; `tameru/prices.py` gives `required_share` (a prune of Δ in front of a cached suffix S pays back iff Δ/S ≥ (w − r)/(r·(N + 1)); 0 on a cold cache) and `implied_later_requests`. The share 0.35 implies about 82 later requests on DeepSeek pro, not the 25 the old replay price assumed. See `docs/PRICES.md`; every figure from it is replay-only. No `compress_context` output changes.
+- **One list of the lines the engine writes itself** (`tameru/markers.py`); the red-team checker uses it, clearing 11 false fabrication flags (the forged-marker detection stays).
+- **Benchmarks:** `benchmarks/engine_bench` (294 cases, 207 source clusters, dev / validation / sealed split with a committed sealed hash), `benchmarks/latency.py` with the 1.9.0 baseline,
+  and the Squeez result for 1.9.0 (`benchmarks/squeez-1.9.0.json`).
+- **Known limits.** Calls with `pin_patterns` or `pin_recent` do not get the structural features (the folds move the blocks the pins anchor to). Unstructured prose with no specific
+  question (a Japanese README, for example) still falls back to the original. Compiler diagnostics are not regrouped by file. Squeez: the engine compresses about 39% of the input and falls open on 200 of 618 samples; it is not a span extractor.
+- **Changed for plugin authors.** `unwrap_hermes_tool` is a deprecated alias of `unwrap_tool_payload`; the golden corpus is regenerated once (receipts carry the engine version and the new result fields).
 - **One interface for every plugin.** `docs/PLUGIN-UI.md` specifies the bar, the icon meanings, the Off / Less / Normal / More strength names and the words shared by the Hermes and DeepSeek Harness plugins; `docs/ui-vocabulary.json` (English and Chinese, with a forbidden-words list that keeps cost and saving wording out) and `docs/ui-icons.json` (the star, lock, undo and size-arrow drawings) are the data each plugin copies and tests against. Reviewed by five design specialists over four rounds. No file under `src/` changes.
 - **Open for contribution.** `CONTRIBUTING.md`, `SECURITY.md`, a pull request template, issue forms and CODEOWNERS, modelled on how Hermes Agent runs its contributions. `docs/HOST-RESTRICTIONS.md` records what harness maintainers have taught us a plugin may not do (14 numbered rules, each with where it was learned), and `scripts/check_host_rules.py` enforces it in CI: any new network, process, dynamic-code, file-write, home-path, environment, import or monkey-patching finding fails, against a baseline of the existing optional cache and summary route; every module must also import under `python -I -S`. Contributor credit follows Hermes: `.mailmap`, one-file-per-email mappings in `contributors/`, and an attribution check in CI. A CI workflow (tests on Linux and Windows, host restrictions, attribution) is added; actions are pinned by commit. No file under `src/` changes.
 - **Licence: MIT to Apache License 2.0.** `LICENSE` is the Apache-2.0 text and `NOTICE` carries the copyright line; the package metadata declares `Apache-2.0`. Copies of earlier releases remain available under the MIT licence they were published with.
