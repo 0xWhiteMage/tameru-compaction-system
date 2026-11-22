@@ -5236,7 +5236,6 @@ def _render(
         fences = sum(1 for ln in kept_text if ln.strip().startswith("```"))
         if fences % 2 == 1:
             j = end + 1
-            end = len(lines) - 1
             while j < len(lines):
                 if lines[j].strip().startswith("```"):
                     end = j
