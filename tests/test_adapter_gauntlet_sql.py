@@ -36,3 +36,23 @@ def test_sql_gauntlet_go_batches_decline():
     result = adapt_format(source, "needle-42", format_name="sql")
     assert not result.applied
     assert result.text == source
+
+
+def test_sql_gauntlet_custom_statement_delimiter_declines():
+    source = (
+        "SELECT 'ordinary';\n"
+        "DELIMITER //\n"
+        "CREATE PROCEDURE needle_42() BEGIN\nSELECT 1;\nEND//\n"
+        "DELIMITER ;\n"
+        "SELECT 'unrelated';"
+    )
+    result = adapt_format(source, "needle_42", format_name="sql")
+    assert not result.applied
+    assert result.text == source
+
+
+def test_sql_gauntlet_directive_text_in_literal_is_not_a_command():
+    target = "SELECT '\nDELIMITER //\nneedle-42';"
+    result = adapt_format("SELECT 'ordinary';\n" + target, "needle-42", format_name="sql")
+    assert result.applied
+    assert result.text == target

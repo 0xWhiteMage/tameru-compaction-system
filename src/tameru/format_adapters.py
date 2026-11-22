@@ -1072,7 +1072,10 @@ def _adapt_xml(
 
 
 _SQL_DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
-_SQL_GO_BATCH_RE = re.compile(r"go(?:[ \t]+[1-9][0-9]*)?[ \t]*(?:--[^\r\n]*)?(?=[\r\n]|$)", re.IGNORECASE)
+_SQL_CLIENT_LINE_RE = re.compile(
+    r"(?:go(?:[ \t]+[1-9][0-9]*)?[ \t]*(?:--[^\r\n]*)?|delimiter[ \t]+[^ \t\r\n]+[^\r\n]*)(?=[\r\n]|$)",
+    re.IGNORECASE,
+)
 
 
 def _split_sql_statements(text: str) -> list[str] | None:
@@ -1120,12 +1123,12 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 2
             continue
         char = text[index]
-        if char in "gG" and _SQL_GO_BATCH_RE.match(text, index):
+        if char in "gGdD" and _SQL_CLIENT_LINE_RE.match(text, index):
             before = index
             while before and text[before - 1] in " \t":
                 before -= 1
             if not before or text[before - 1] in "\r\n":
-                return None  # GO is a client batch boundary, not a SQL statement.
+                return None  # Client-side boundaries are not SQL statements.
         if char == "\\":
             return None  # An unquoted backslash may start a client metacommand.
         if char in {"'", '"', "`", "["}:
@@ -1160,7 +1163,7 @@ def _adapt_sql(
 ) -> FormatResult:
     statements = _split_sql_statements(text)
     if statements is None:
-        return _decline(text, "sql", "unterminated SQL quote or comment", structurally_valid=False)
+        return _decline(text, "sql", "unsafe SQL statement boundaries", structurally_valid=False)
     if len(statements) > limits.max_records:
         return _decline(text, "sql", "record limit exceeded", total_records=len(statements))
     if any(len(statement) > limits.max_record_chars for statement in statements):
