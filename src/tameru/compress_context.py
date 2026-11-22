@@ -6173,15 +6173,18 @@ def _crush_embedded_json(text: str, query: str) -> str:
     if not payloads:
         return text
 
-    modified = False
-    result = text
-    for start, end, payload in reversed(payloads):  # reverse to preserve offsets
+    parts: list[str] = []
+    cursor = 0
+    for start, end, payload in payloads:
         crushed = _crush_json_items(payload, query)
         if crushed is not None:
-            result = result[:start] + crushed + result[end:]
-            modified = True
+            parts.extend((text[cursor:start], crushed))
+            cursor = end
 
-    return result if modified else text
+    if not parts:
+        return text
+    parts.append(text[cursor:])
+    return "".join(parts)
 
 
 def inspect_compressibility(text: str, query: str) -> dict[str, Any]:
