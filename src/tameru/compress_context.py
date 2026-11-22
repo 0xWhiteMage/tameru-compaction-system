@@ -6682,11 +6682,16 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
     return extras
 
 def _strip_structured_anchor(line):
+    try:
+        return _strip_structured_anchor_record(line)
+    except (RecursionError, OverflowError):
+        return line
+
+
+def _strip_structured_anchor_record(line):
     if line.lstrip().startswith("{"):
         try:
             record = loads_for_rewrite(line)
-        except RecursionError:
-            return None
         except ValueError:
             record = None
         if isinstance(record, dict):
@@ -6800,6 +6805,8 @@ def _strip_anchor_prefix(line: str) -> str:
     if m:
         return f"{m.group(1)} {m.group(2)} {m.group(3)}"
     stripped = _strip_structured_anchor(line)
+    if stripped == line:
+        return line
     if stripped is not None:
         line = stripped
     m = _ANCHOR_LOG_PREFIX_RE.match(line)
@@ -7154,6 +7161,14 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
 
 
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
+    try:
+        return _structured_anchor_regions(text, max_regions)
+    except (RecursionError, OverflowError):
+        # Fail open if decoding or rendering a structured record exceeds depth limits.
+        return []
+
+
+def _structured_anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
     ``_ANCHOR_REGION_BEFORE`` before and ``_ANCHOR_REGION_AFTER`` after). A neighbour line is frame-like
