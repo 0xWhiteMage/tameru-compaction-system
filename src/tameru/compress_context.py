@@ -3174,6 +3174,9 @@ def _dup_fp(text: str) -> str:
 _NEGATED_TERM_RE = re.compile(r"\b(?:not|never|no|cannot|can't|won't|didn't|doesn't|don't|isn't|wasn't|couldn't|wouldn't|failed to|fails to|unable to)\s+([a-z][a-z0-9_]*)")
 _FAILURE_EVIDENCE_RE = re.compile(r"fail|error|err\b|fatal|emerg|crit|panic|unable|cannot|can't|couldn't|refused|denied|timed? ?out|abort|killed|\bnot\b|exit(?:ed)? (?:code|status) [1-9]")
 
+_PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b")
+
+
 def _bridge_index(blocks: list[dict[str, Any]], n: int) -> tuple[list[list[str]], dict[str, list[int]]]:
     """Tokenise each block once and index bridge entities by lowercase token (helper of score_blocks)."""
     bridge_entities: dict[str, int] = {}
@@ -3201,7 +3204,6 @@ def _bridge_index(blocks: list[dict[str, Any]], n: int) -> tuple[list[list[str]]
             token_block_df[w] = token_block_df.get(w, 0) + 1
     seen_candidates: set[str] = set()
     candidate_blocks: dict[str, int] = {}
-    _PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b")
     for b_idx, b in enumerate(blocks):
         toks = block_token_lists[b_idx]
         # Extract candidate bridge entities: CamelCase, UPPER_SNAKE, dotted
@@ -3624,6 +3626,13 @@ def _score_one_block(
     }
 
 
+_LOG_ERR_RE = re.compile(
+    r"\b(?:ERROR|FATAL|WARN|WARNINGS?)\b|Traceback|Exception",
+    re.IGNORECASE,
+)
+_LOG_NOISE_RE = re.compile(r"^\s*(?:INFO|DEBUG)\b", re.MULTILINE)
+
+
 def score_blocks(
     blocks: list[dict[str, Any]],
     query: str,
@@ -3683,14 +3692,6 @@ def score_blocks(
         if any(_LOG_LINE_RE.match(line) for line in b["text"].splitlines()[:3])
     )
     is_log_context = log_block_count >= 2 and log_block_count / n > 0.4
-    if is_log_context:
-        _LOG_ERR_RE = re.compile(
-            r"\b(?:ERROR|FATAL|WARN|WARNINGS?)\b|Traceback|Exception",
-            re.IGNORECASE,
-        )
-        _LOG_NOISE_RE = re.compile(
-            r"^\s*(?:INFO|DEBUG)\b", re.MULTILINE,
-        )
     # Recency + novelty prior (rate-distortion signal): even without query
     # overlap, recent blocks and blocks holding rare, high-information
     # identifiers deserve a base floor so a "keep track of every detail"

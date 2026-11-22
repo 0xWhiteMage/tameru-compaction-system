@@ -27,7 +27,7 @@ from .regex_cache import cached_compile
 from .coverage_reports import select_lcov
 from .junit_reports import select_junit
 from .structured_reports import select_report
-from .unicode_profile import graphemes, matching_shadow, search_units
+from .unicode_profile import _sample_nonblank_lines, graphemes, matching_shadow, search_units
 
 
 @dataclass(frozen=True)
@@ -197,7 +197,7 @@ def _with_gaps(
 
 
 def _looks_ndjson(text: str) -> bool:
-    lines = [line for line in text.splitlines() if line.strip()]
+    lines = _sample_nonblank_lines(text, 32)
     if len(lines) < 2:
         return False
     candidates = sum(line.lstrip().startswith(("{", "[")) for line in lines[:32])
@@ -466,6 +466,9 @@ def _adapt_delimited(
     )
 
 
+_OUTLIER_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?%?$")
+
+
 def _adapt_delimited_outliers(
     text: str,
     query: str,
@@ -491,32 +494,25 @@ def _adapt_delimited_outliers(
     if total < 20:
         return _decline(text, format_name, "too few records for outliers", total_records=total)
 
-    import re
-
     outlier_flags = [False] * total
 
     for col in range(width):
         values = [row[col] if row and col < len(row) else "" for row in data_rows]
-        distinct = set(values)
-        if len(distinct) > 5:
-            continue
         counts: dict[str, int] = {}
         for value in values:
             counts[value] = counts.get(value, 0) + 1
-        if not counts:
-            continue
-        most_common_value, most_common_count = max(counts.items(), key=lambda item: item[1])
-        if most_common_count * 100 >= total * 75:
-            for index, value in enumerate(values):
-                if value != most_common_value:
-                    outlier_flags[index] = True
+            if len(counts) > 5:
+                break
+        if counts and len(counts) <= 5:
+            most_common_value, most_common_count = max(counts.items(), key=lambda item: item[1])
+            if most_common_count * 100 >= total * 75:
+                for index, value in enumerate(values):
+                    if value != most_common_value:
+                        outlier_flags[index] = True
 
-    numeric_pattern = re.compile(r"^-?\d+(\.\d+)?%?$")
-    for col in range(width):
-        values = [row[col] if row and col < len(row) else "" for row in data_rows]
         parsed_values: list[tuple[int, str, float]] = []
         for row_index, value in enumerate(values):
-            if numeric_pattern.fullmatch(value):
+            if _OUTLIER_NUMBER_RE.fullmatch(value):
                 number_text = value[:-1] if value.endswith("%") else value
                 try:
                     parsed_values.append((row_index, value, float(number_text)))

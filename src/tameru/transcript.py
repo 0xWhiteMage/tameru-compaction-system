@@ -31,6 +31,8 @@ from .compress_context import (
 MIN_TOOL_CHARS = 800
 PROTECT_LAST_TOOL = 2
 
+_ASCII_WORD_RE = re.compile(r"[a-z0-9]+")
+
 _PRESERVATION_VERBS = {"carry", "keep", "preserve", "remember", "retain"}
 _PRESERVATION_QUANTIFIERS = {"all", "entire", "every", "everything", "full"}
 _PRESERVATION_OBJECTS = {
@@ -377,7 +379,7 @@ def build_selector_query(
 
 
 def _requests_full_preservation(query: str) -> bool:
-    words = set(re.findall(r"[a-z0-9]+", (query or "").casefold()))
+    words = set(_ASCII_WORD_RE.findall((query or "").casefold()))
     if not words.intersection(_PRESERVATION_VERBS):
         return False
     if "everything" in words:
@@ -431,7 +433,7 @@ def _json_query_answer_requirements(
 
     needles = [needle.casefold() for needle in _json_query_needles(query)]
     selectors = _selector_patterns(needles)
-    query_words = set(re.findall(r"[a-z0-9]+", (query or "").casefold()))
+    query_words = set(_ASCII_WORD_RE.findall((query or "").casefold()))
     answers: set[str] = set()
     booleans: set[tuple[str, bool]] = set()
 
@@ -445,7 +447,7 @@ def _json_query_answer_requirements(
                 record = ""
             if selectors and any(selector.search(record) for selector in selectors):
                 for key, scalar in value.items():
-                    key_words = set(re.findall(r"[a-z0-9]+", str(key).casefold()))
+                    key_words = set(_ASCII_WORD_RE.findall(str(key).casefold()))
                     if not key_words.intersection(query_words):
                         continue
                     if isinstance(scalar, bool):
