@@ -149,9 +149,11 @@ def regex_risk(pattern: str) -> bool:
     stack: list[list[bool]] = []   # enclosing groups' [has_quantifier, has_alternation]
     cur = [False, False]
     in_class = False
+    group_opened = False   # the previous character was an unescaped `(`, so a `?` starts `(?...)`
     i, n = 0, len(pattern)
     while i < n:
         ch = pattern[i]
+        opens_group, group_opened = group_opened, False
         if ch == "\\":
             i += 2
             continue
@@ -171,6 +173,7 @@ def regex_risk(pattern: str) -> bool:
         if ch == "(":
             stack.append(cur)
             cur = [False, False]
+            group_opened = True
         elif ch == ")":
             if not stack:
                 return False  # unbalanced: compile rejects it
@@ -189,7 +192,7 @@ def regex_risk(pattern: str) -> bool:
         elif ch in "+*":
             cur[0] = True
             unbounded += 1
-        elif ch == "?" and pattern[i - 1:i] != "(":
+        elif ch == "?" and not opens_group:
             optional += 1
         elif ch == "{" and _BRACE_QUANT.match(pattern, i):
             cur[0] = True
