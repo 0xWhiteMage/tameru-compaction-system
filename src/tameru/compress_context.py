@@ -9357,6 +9357,7 @@ def _compress_context_impl(
     inline_short_gaps: bool = False,
     selector_query: str | None = None,
     _ccr_defer: bool = False,
+    _internal_sample: bool = False,
 ) -> CompressResult:
     """Query-aware extractive compression of ``context``.
 
@@ -9459,7 +9460,7 @@ def _compress_context_impl(
     # output — the caller already has the compacted form.
     if (
         any(marker in caller_text for marker in _RECURSION_MARKERS)
-        or _DEFAULT_ELISION_LINE.search(caller_text) is not None
+        or (_DEFAULT_ELISION_LINE.search(caller_text) is not None and not _internal_sample)
         or (_has_anchored_marker(caller_text, recursion_markers))
     ):
         return _recursion_noop_result(
@@ -9958,6 +9959,7 @@ def compress_context(
     redact_secrets: bool = False,
     selector_query: str | None = None,
     _ccr_defer: bool = False,
+    _internal_sample: bool = False,
 ) -> CompressResult:
     full_text = str(context or "")
     # the caller query's specificity feeds the S6 calibrator through every return path (result schema 4)
@@ -9988,7 +9990,19 @@ def compress_context(
             recursion_markers=recursion_markers, content_hint=content_hint,
             inline_short_gaps=inline_short_gaps, redact_secrets=redact_secrets,
             selector_query=selector_query, _ccr_defer=_ccr_defer,
+            _internal_sample=True,
         )
+        if res.fail_open:
+            # The sampled pass declined: a fail-open's contract is that the output IS
+            # the caller's input, and the sample never is — return the whole original.
+            est = _estimate_tokens(full_text)
+            return CompressResult(
+                compressed_text=full_text, original_tokens=est, kept_tokens=est,
+                tokens_saved_pct=0.0, policy_name="huge-sample-declined", mode=mode,
+                keep_ratio=1.0, fail_open=True, reasons=[*res.reasons, "huge_sampled"],
+                confidence=min(0.5, res.confidence) if res.confidence is not None else 0.5,
+                confidence_basis="partial", query_specific=q_specific,
+            )
         return dataclasses.replace(
             res, original_tokens=_estimate_tokens(full_text),
             confidence_basis="partial",
@@ -10012,6 +10026,7 @@ def compress_context(
         prose_brief=prose_brief, gap_marker=gap_marker, recursion_markers=recursion_markers,
         content_hint=content_hint, inline_short_gaps=inline_short_gaps,
         selector_query=selector_query, _ccr_defer=_ccr_defer,
+        _internal_sample=_internal_sample,
         )
     finally:
         _PINNED_LINES.reset(_pin_token)

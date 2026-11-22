@@ -101,6 +101,38 @@ def test_too_large_fails_open():
     assert res.confidence_basis == "none"
 
 
+def test_huge_sample_compresses_not_verbatim():
+    # A templated stream over _HUGE_CHARS compresses through the sampled path:
+    # the sampler's own "[…]" seams are engine-internal and must not trip the
+    # recursion guard (a verbatim sample back is the guard's fail-open shape).
+    from tameru.compress_context import _huge_sample
+
+    big = "\n".join(
+        f"2026-01-01 10:{i // 60 % 24:02d}:{i % 60:02d} INFO worker ok id={i}"
+        for i in range(80_000)
+    )
+    assert len(big) > _HUGE_CHARS
+    res = compress_context(big, "why")
+    assert not res.fail_open
+    assert res.compressed_text != _huge_sample(big)
+    assert "huge_sampled" in res.reasons
+
+
+def test_huge_sample_decline_returns_original():
+    # When the sampled pass declines, the fail-open contract is the caller's
+    # whole text — a partial sample is never it (red-team fail_open_identity).
+    rng_words = [f"w{i}" for i in range(2000)]
+    import random
+
+    rng = random.Random(5)
+    big = " ".join(rng.choice(rng_words) for _ in range(500_000))
+    assert len(big) > _HUGE_CHARS
+    res = compress_context(big, "why")
+    assert res.fail_open
+    assert res.compressed_text == big
+    assert "huge_sampled" in res.reasons
+
+
 @pytest.mark.parametrize("seed", ["0", "1"])
 def test_determinism_under_hash_seed(seed):
     code = (
