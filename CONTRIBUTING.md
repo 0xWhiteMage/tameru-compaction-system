@@ -10,7 +10,7 @@ belongs, how to run everything, the rules every pull request must follow, and ho
 ```bash
 python -m pytest -q                              # the test suite (about two minutes)
 python scripts/check_host_rules.py               # the host restrictions
-python scripts/check_attribution.py --base origin/main   # your commits are linked to your GitHub profile
+python scripts/check_attribution.py --base origin/<your PR's base branch>   # mapping check: every author email is a noreply address or mapped in contributors/emails/
 ```
 
 ---
