@@ -137,13 +137,14 @@ _BIG_BOUND = 50
 def regex_risk(pattern: str) -> bool:
     """True when ``pattern`` holds a construct this check refuses (conservative, nothing is matched).
 
-    Refused: back-references and conditionals; a quantified group that holds a quantifier or an
+    Refused: back-references, conditionals and the verbose flag ``(?x)`` (its ``#`` comments and
+    ignored whitespace would hide constructs from this scan); a quantified group that holds a quantifier or an
     alternation (``(a+)+``, ``(a|a)*b``); any unbounded quantifier (``*``, ``+``,
     ``{n,}``, or a bound of 50 or more), because even one (``a*b``) is quadratic on a long run and
     several (``a*a*b``, ``.*x.*y``) are polynomial, and pins match the full block; more than ``MAX_OPTIONAL`` (4) ``?`` or small-bound quantifiers (``a?a?a?...a`` is
     exponential); more than ``MAX_ALTERNATIONS`` (6) ``|``. Literals (``{"literal": ...}``) are
     escaped and never reach this check."""
-    if re.search(r"\\[1-9]|\(\?P=|\(\?\(", pattern):
+    if re.search(r"\\[1-9]|\(\?P=|\(\?\(|\(\?[aiLmsu-]*x", pattern):   # (?x): comments hide syntax
         return True
     unbounded = optional = alternations = 0
     stack: list[list[bool]] = []   # enclosing groups' [has_quantifier, has_alternation]

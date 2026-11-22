@@ -35,3 +35,9 @@ def test_a_bounded_repeat_of_a_group_holding_optional_quantifiers_is_refused():
     assert protocol.regex_risk("(?:x?y){3}")
     assert not protocol.regex_risk("(ab)?c?")
     assert not protocol.regex_risk("(ab){3}")
+
+
+def test_the_verbose_flag_is_refused_because_comments_hide_constructs():
+    assert protocol.regex_risk("(?x)#[\n(a+)+b")
+    assert protocol.regex_risk("(?ix:a)")
+    assert not protocol.regex_risk("(?i)abc")
