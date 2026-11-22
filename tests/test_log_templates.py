@@ -42,8 +42,17 @@ def test_masked_templates_collapse_with_count_and_last():
 
 
 def test_two_repeats_have_no_last_line():
-    out = preprocess_logs(_lines(2))
+    # 1.10.0 (S5): lines carrying an embedded k=v are fact-shaped; two rare ones never collapse.
+    # The [×2] mechanism itself is unchanged, shown on lines without an assignment.
+    out = preprocess_logs([
+        "INFO conn 10.0.0.0 took 0ms",
+        "INFO conn 10.0.1.1 took 1ms",
+    ])
     assert len(out) == 1 and out[0].startswith("[×2] ")
+    # E4: sparse only — two facts among 20 plain lines are protected (a 2-line fact text is dense).
+    padded = _lines(2) + [f"INFO conn 10.0.0.0 took {i}ms" for i in range(20)]
+    out = preprocess_logs(padded)
+    assert all(ln in out for ln in _lines(2))
 
 
 def test_idempotent():

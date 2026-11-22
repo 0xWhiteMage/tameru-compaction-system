@@ -45,4 +45,7 @@ def test_below_threshold_syslog_fail_open():
 
     r = compress_context(text, "", ccr=False, citations=False, anchor_errors=True)
 
-    assert r.fail_open
+    # Below the rare-template threshold the engine does not guess an anchor. 1.10.0: the structural fold of the
+    # repeats is returned instead of the whole text (the rare MAIL line stays verbatim), and it says so.
+    assert r.fail_open or r.receipt["structural_collapse_only"] is True
+    assert "MAIL" in r.compressed_text and "status 0x004b" in r.compressed_text
