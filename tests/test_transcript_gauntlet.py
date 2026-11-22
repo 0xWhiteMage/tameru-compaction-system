@@ -38,3 +38,23 @@ def test_unidentifiable_trailing_call_cannot_be_assumed_answered():
     assistant = {"role": "assistant", "tool_calls": [{"function": {"name": "read"}}]}
     assert t.trajectory_gate([assistant]) == (False, "unidentifiable-tool-calls")
     assert t.trajectory_gate([assistant, {"role": "assistant", "content": "done"}]) == (True, "ok")
+
+
+@pytest.mark.parametrize("options", [
+    {"min_chars": "800"}, {"min_chars": -1}, {"min_chars": True},
+    {"protect_last_tool": -1}, {"protect_last_tool": "2"},
+    {"protect_last_tool": True}, {"query": {}},
+])
+def test_invalid_prune_options_leave_original_untouched(options, monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid options reached compressor")
+    monkeypatch.setattr(t, "compress_context", forbidden)
+    messages = [{"role": "tool", "content": "payload " * 200}]
+    out, count = t.apply_extractive_tool_prune(messages, timing_gate=False, **options)
+    assert out is messages and count == 0
+
+
+def test_malformed_rows_fail_open_even_without_timing_gate():
+    messages = [None, {"role": "tool", "content": "payload " * 200}]
+    out, count = t.apply_extractive_tool_prune(messages, timing_gate=False)
+    assert out is messages and count == 0

@@ -644,6 +644,13 @@ def apply_extractive_tool_prune(
     """
     if not messages:
         return messages, 0
+    if (
+        type(min_chars) is not int or min_chars < 0
+        or type(protect_last_tool) is not int or protect_last_tool < 0
+        or (query is not None and not isinstance(query, str))
+        or any(not isinstance(m, dict) for m in messages)
+    ):
+        return messages, 0
     if timing_gate:
         allowed, _reason = trajectory_gate(messages)
         if not allowed:
