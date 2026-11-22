@@ -693,6 +693,9 @@ def _indent(line: str) -> int:
 
 _YAML_DOCUMENT_START_RE = re.compile(r"^---(?:[ \t]|$)")
 _YAML_EMPTY_START_RE = re.compile(r"^---[ \t]*(?:[ \t]+#.*)?$")
+_YAML_BLOCK_SCALAR_RE = re.compile(
+    r"(?m)(?:^|[:?\-][ \t]+)[ \t]*[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#[^\n]*)?[ \t\r]*$"
+)
 
 
 def _adapt_yaml_documents(
@@ -747,6 +750,8 @@ def _adapt_yaml(
     O(lines + matches log lines); ``tests/test_perf_regressions.py`` pins it against the previous
     implementation on randomised documents."""
     del limits
+    if _YAML_BLOCK_SCALAR_RE.search(text):
+        return _decline(text, "yaml", "block scalars require whole-document selection")
     lines = text.splitlines()
     n = len(lines)
     nonblank = [index for index, line in enumerate(lines) if line.strip()]
@@ -854,6 +859,8 @@ def _adapt_yaml(
 
 
 def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
+    if _YAML_BLOCK_SCALAR_RE.search(text):
+        return _decline(text, "yaml", "block scalars cannot be compared line by line")
     lines = text.splitlines()
     if any(line.startswith("%") for line in lines):
         return _decline(text, "yaml", "document directives require the original stream")

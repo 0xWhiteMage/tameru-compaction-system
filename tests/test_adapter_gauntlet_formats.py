@@ -31,3 +31,10 @@ def test_format_gauntlet_yaml_commented_document_markers():
     result = adapters.adapt_format(f"{first}\n{target}", "needle-42", format_name="yaml")
     assert result.applied
     assert result.text == target
+
+
+def test_format_gauntlet_yaml_subtree_preserves_literal_block_scalar():
+    source = "config: |-\n  # literal data\n  needle-42\nordinary: absent"
+    result = adapters.adapt_format(source, "needle-42", format_name="yaml")
+    assert not result.applied
+    assert result.text == source
