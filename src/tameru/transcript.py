@@ -53,6 +53,7 @@ _TEXT_PART_TYPES = frozenset({"text", "input_text", "output_text"})
 _QUERY_PART_CHARS = 600
 _QUERY_ARG_CHARS = 240
 _QUERY_MAX_DEPTH = 8
+_QUERY_MAX_NODES = 4096
 
 # ``data:<mime>[;param]*,<payload>`` -- the payload charset is base64 plus
 # percent-encoding, so text that follows the URI is not swallowed. Every part is
@@ -140,18 +141,25 @@ def _clean_query_text(text: str, limit: int | None = None) -> str:
 
 
 def _string_leaves(value: Any, depth: int = 0) -> list[str]:
-    """String leaf values of a JSON-like structure, in document order."""
-    if isinstance(value, str):
-        return [value]
-    if depth >= _QUERY_MAX_DEPTH:
-        return []
+    """Bounded prefix of string leaves of a JSON-like structure, in document order."""
     out: list[str] = []
-    if isinstance(value, dict):
-        for child in value.values():
-            out.extend(_string_leaves(child, depth + 1))
-    elif isinstance(value, (list, tuple)):
-        for child in value:
-            out.extend(_string_leaves(child, depth + 1))
+    stack = [(iter((value,)), depth)]
+    visited = 0
+    while stack and visited < _QUERY_MAX_NODES:
+        children, level = stack[-1]
+        try:
+            child = next(children)
+        except StopIteration:
+            stack.pop()
+            continue
+        visited += 1
+        if isinstance(child, str):
+            out.append(child)
+        elif level < _QUERY_MAX_DEPTH:
+            if isinstance(child, dict):
+                stack.append((iter(child.values()), level + 1))
+            elif isinstance(child, (list, tuple)):
+                stack.append((iter(child), level + 1))
     return out
 
 

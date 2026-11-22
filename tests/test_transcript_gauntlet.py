@@ -128,3 +128,20 @@ def test_query_ignores_malformed_call_collections(calls):
                 {"role": "assistant", "content": "follow up", "tool_calls": calls}]
     assert t.task_query(messages, 1) == ["follow up"]
     assert t._call_signature(messages[0]) == []
+
+
+def test_argument_traversal_has_a_total_node_budget():
+    visits = []
+
+    class Wide(list):
+        def __iter__(self):
+            for value in super().__iter__():
+                visits.append(value)
+                yield value
+
+    assert len(t._string_leaves(Wide(["path"] * 10000))) < 4096
+    assert len(visits) < 4096
+    assert t._string_leaves({"a": ["one", {"b": "two"}], "c": "three"}) == ["one", "two", "three"]
+    cycle = []
+    cycle.append(cycle)
+    assert t._string_leaves(cycle) == []
