@@ -70,8 +70,9 @@ def _decline(
 
 
 def _record_limit_result(
-    text: str, format_name: str, records: list[str], limits: FormatLimits
+    text: str, format_name: str, records: list[str], limits: FormatLimits | None
 ) -> FormatResult | None:
+    limits = limits or FormatLimits()
     if len(records) > limits.max_records:
         return _decline(text, format_name, "record limit exceeded", total_records=len(records))
     if any(len(record) > limits.max_record_chars for record in records):
