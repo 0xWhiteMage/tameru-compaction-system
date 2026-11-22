@@ -47,6 +47,12 @@ def test_policy_token_threshold_is_integral(value):
         Policy(min_tokens_saved=value)
 
 
+def test_ev_quantile_is_normalized():
+    assert replace(EV, quantile="0.5").quantile == 0.5
+    with pytest.raises(ValueError):
+        replace(EV, quantile=float("nan"))
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

@@ -47,6 +47,7 @@ class EVPolicy:
             raise ValueError(f"strength must be one of {_EV_STRENGTHS}")
         if not 0.0 < float(self.quantile) <= 1.0:
             raise ValueError("quantile must be within (0, 1]")
+        object.__setattr__(self, "quantile", float(self.quantile))
 
 
 @dataclass(frozen=True)
