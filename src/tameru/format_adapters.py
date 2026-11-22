@@ -1242,7 +1242,10 @@ _PIPE_SEPARATOR_RE = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
 
 
 def _looks_pipe_table(text: str) -> bool:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return _valid_pipe_table_lines([line.strip() for line in text.splitlines() if line.strip()])
+
+
+def _valid_pipe_table_lines(lines: list[str]) -> bool:
     if len(lines) < 4:
         return False
     if not all(line.startswith("|") and line.endswith("|") for line in lines):
@@ -1263,6 +1266,8 @@ def _looks_pipe_table(text: str) -> bool:
 
 def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
     lines = [line for line in text.splitlines() if line.strip()]
+    if not _valid_pipe_table_lines([line.strip() for line in lines]):
+        return _decline(text, "markdown_table", "invalid pipe table", structurally_valid=False)
     header = lines[0]
     separator = lines[1]
     data = lines[2:]
