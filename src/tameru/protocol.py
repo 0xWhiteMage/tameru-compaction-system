@@ -477,7 +477,7 @@ def _plan_policy(body: Any) -> Policy:
 
 
 def _plan_cache(body: Any) -> CacheState:
-    if not isinstance(body, Mapping) or set(body) - CACHE_FIELDS or not {"warm", "n_eff"} <= set(body):
+    if not isinstance(body, Mapping) or set(body) != CACHE_FIELDS:   # both fields, nothing else
         raise ProtocolError("bad_cache")
     try:
         return CacheState(
