@@ -167,6 +167,11 @@ def _call_name_and_args(call: Any) -> tuple[str, Any]:
     return (name if isinstance(name, str) else ""), args
 
 
+def _tool_calls(message: dict[str, Any]) -> list[Any] | tuple[Any, ...]:
+    calls = message.get("tool_calls")
+    return calls if isinstance(calls, (list, tuple)) else ()
+
+
 def _arg_leaves(args: Any) -> list[str]:
     """String leaves of tool-call arguments given as a JSON string or a dict."""
     if isinstance(args, str):
@@ -215,7 +220,7 @@ def _find_tool_call(
             continue
         if is_scaffold is not None and is_scaffold(msg):
             continue
-        for call in msg.get("tool_calls") or []:
+        for call in _tool_calls(msg):
             if wanted & _call_id_variants(call):
                 return call
     return None
@@ -316,7 +321,7 @@ def task_query(
                 is_scaffold is not None and is_scaffold(follow)
             ):
                 add(text_of(follow.get("content")))
-                for call in follow.get("tool_calls") or []:
+                for call in _tool_calls(follow):
                     for leaf in _arg_leaves(_call_name_and_args(call)[1]):
                         add(leaf, _QUERY_ARG_CHARS)
                 break
@@ -547,7 +552,7 @@ def _pending_tool_calls(messages: list[dict[str, Any]]) -> set[str]:
         return set()
     calls = [
         call
-        for call in messages[last].get("tool_calls") or []
+        for call in _tool_calls(messages[last])
         if _call_id_variants(call)
     ]
     if not calls:
@@ -566,7 +571,7 @@ def _pending_tool_calls(messages: list[dict[str, Any]]) -> set[str]:
 def _call_signature(msg: dict[str, Any]) -> list[tuple[str, str]]:
     """Deterministic (name, canonical-args) pairs for an assistant message."""
     sigs: list[tuple[str, str]] = []
-    for call in msg.get("tool_calls") or []:
+    for call in _tool_calls(msg):
         if not isinstance(call, dict):
             continue
         name, args = _call_name_and_args(call)

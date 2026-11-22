@@ -119,3 +119,12 @@ def test_scaffold_producing_call_is_excluded_from_query():
         {"id": "a", "name": "injected", "arguments": {"path": "secret.py"}}
     ]}, {"role": "tool", "tool_call_id": "a"}]
     assert t.task_query(messages, 1, is_scaffold=lambda m: m.get("scaffold", False)) == []
+
+
+@pytest.mark.parametrize("calls", [12, "invalid", {"id": "a"}])
+def test_query_ignores_malformed_call_collections(calls):
+    messages = [{"role": "assistant", "tool_calls": calls},
+                {"role": "tool", "tool_call_id": "a"},
+                {"role": "assistant", "content": "follow up", "tool_calls": calls}]
+    assert t.task_query(messages, 1) == ["follow up"]
+    assert t._call_signature(messages[0]) == []
