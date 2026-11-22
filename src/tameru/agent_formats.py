@@ -584,7 +584,9 @@ class _StemMatcher:
         for token in _STEM_TOKEN_RE.findall(text):
             stem = memo.get(token)
             if stem is None:
-                stem = memo[token] = light_stem(token)
+                stem = light_stem(token)
+                if len(memo) < 4096:
+                    memo[token] = stem
             if stem in stems:
                 return True
         return False

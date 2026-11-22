@@ -3,6 +3,16 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_stem_cache_bound():
+    matcher = af._StemMatcher(("needle",))
+    for i in range(5000):
+        token = "word" + "".join(chr(97 + (i // (26 ** j)) % 26) for j in range(3))
+        matcher.hit(token)
+    assert len(matcher._memo) <= 4096
+    assert matcher.hit("needle")
+    assert not af._StemMatcher(()).hit("needle")
+
+
 def test_slowlog_oversized_metadata():
     lines = ["# Query_time: 1 Lock_time: 0 Rows_sent: 1 Rows_examined: 1",
              "SELECT 1;", "# Query_time: 2 Lock_time: 0 Rows_sent: 1 Rows_examined: " + "9" * 5000]
