@@ -1,4 +1,4 @@
-from copy import deepcopy
+import inspect
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -8,6 +8,9 @@ from tameru import loss, markers, presets, prices
 from tameru.decide import EVPolicy, Policy, decide, ev_terms
 from tameru.gap_kind import gap_accepts_kind
 from tameru.plan import CacheState, Candidate, PlanInput, PlanItem, plan
+
+
+EV = EVPolicy("deepseek-v4-pro", "replay-2026-11-21")
 
 
 @pytest.mark.parametrize("confidence", [float("nan"), float("inf"), -0.1, 1.1])
@@ -160,8 +163,6 @@ def test_planner_ratio_uses_candidate_characters(ev):
 
 
 def test_equal_callable_instances_do_not_share_signature_cache():
-    import inspect
-
     class Marker:
         def __init__(self, kind):
             self.__signature__ = inspect.Signature([
@@ -188,9 +189,6 @@ def result(**changes):
                   tokens_saved=900, fact_lines_dropped=0)
     values.update(changes)
     return SimpleNamespace(**values)
-
-
-EV = EVPolicy("deepseek-v4-pro", "replay-2026-11-21")
 
 
 @pytest.mark.parametrize("confidence", [float("nan"), float("inf"), -0.1, 1.1])
