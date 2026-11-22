@@ -5135,8 +5135,8 @@ def _render(
     total_chars: int | None = None,
     content_lines: list[str] | None = None,
 ) -> str:
-    chronological_blocks = sorted(blocks, key=lambda block: block["start"])
-    block_starts = [block["start"] for block in chronological_blocks]
+    chronological_blocks: list[dict[str, Any]] | None = None
+    block_starts: list[int] = []
     order = sorted((b for b in blocks if b["id"] in kept), key=lambda b: b["start"])
     chronological = True
     if reorder_best and len(order) >= 3:
@@ -5198,6 +5198,9 @@ def _render(
                     parts.extend(between)
         elif prev_end >= 0 and b["start"] > prev_end + 1:
             if citations:
+                if chronological_blocks is None:
+                    chronological_blocks = sorted(blocks, key=lambda block: block["start"])
+                    block_starts = [block["start"] for block in chronological_blocks]
                 # ARC-style citation: name every dropped block so the model
                 # knows it can recall the exact head/tail by hash later.
                 # Only emit citations when they're net-positive: the stub
