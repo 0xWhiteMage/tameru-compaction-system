@@ -1130,6 +1130,11 @@ def _detect_slowlog(text: str) -> bool:
 
 def _classify_slowlog(lines):
     total = len(lines)
+    if any(
+        len(line) > _LINE_CAP and line.startswith(("# Query_time:", "# Time:", "# User@Host:"))
+        for line in lines
+    ):
+        return [True] * total, [0] * total, [0] * total
     keep = [False] * total
     tests = [0] * total
     suites = [0] * total

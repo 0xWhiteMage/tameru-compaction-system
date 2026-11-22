@@ -3,6 +3,12 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_slowlog_oversized_metadata():
+    lines = ["# Query_time: 1 Lock_time: 0 Rows_sent: 1 Rows_examined: 1",
+             "SELECT 1;", "# Query_time: 2 Lock_time: 0 Rows_sent: 1 Rows_examined: " + "9" * 5000]
+    assert af._classify_slowlog(lines)[0] == [True] * len(lines)
+
+
 def test_curl_response_local_cap():
     lines = ["< HTTP/1.1 200 OK"] + [f"< x-{i}: a" for i in range(4)]
     lines += ["< HTTP/1.1 201 OK"] + [f"< x-{i}: b" for i in range(4)]
