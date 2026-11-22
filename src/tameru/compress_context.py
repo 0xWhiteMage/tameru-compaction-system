@@ -7731,8 +7731,7 @@ def _finalize_result_text_and_ccr(
                 + f"\n[CC-Retrieve: {pending_ccr_hash}]\n"
             )
 
-    candidate_tokens = estimate_tokens(candidate_text)
-    if not fail_open and candidate_tokens > original_tokens and not trust_filtered:
+    if not fail_open and not trust_filtered and estimate_tokens(candidate_text) > original_tokens:
         result_text = caller_text
         compressed = caller_text
         kept = {b["id"] for b in scored}
