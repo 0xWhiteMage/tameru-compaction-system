@@ -6099,17 +6099,16 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
 
     # Find arrays to crush: top-level list, or dicts with list values
     # whose items are dicts (the "catalog" pattern).
-    arrays_to_crush: list[tuple[tuple[str, ...], list]] = []
-
-    def _find_arrays(obj, path=()):
+    arrays_to_crush: list[list] = []
+    pending = [data]
+    while pending:
+        obj = pending.pop()
         if isinstance(obj, list) and len(obj) > max_keep:
             if all(isinstance(item, dict) for item in obj):
-                arrays_to_crush.append((path, obj))
+                arrays_to_crush.append(obj)
         elif isinstance(obj, dict):
-            for key, value in obj.items():
-                _find_arrays(value, (*path, key))
+            pending.extend(reversed(obj.values()))
 
-    _find_arrays(data)
     if not arrays_to_crush:
         return None
 
@@ -6121,7 +6120,7 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
     query_selectors = _selector_patterns(query_terms)
 
     total_crushed = 0
-    for path, arr in arrays_to_crush:
+    for arr in arrays_to_crush:
         kept_items = []
         for item in arr:
             item_str = json.dumps(item, ensure_ascii=False)
@@ -6132,14 +6131,7 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
 
         total_crushed += len(arr) - len(kept_items)
 
-        # Walk back to the array location and replace it
-        if path:
-            target = data
-            for key in path[:-1]:
-                target = target[key]
-            target[path[-1]] = kept_items
-        else:
-            data = kept_items
+        arr[:] = kept_items
 
     if total_crushed == 0:
         return None
