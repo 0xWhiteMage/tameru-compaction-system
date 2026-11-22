@@ -4658,12 +4658,19 @@ def _evidence_blob(text: str) -> str:
     return "\n".join(ln for ln in folded.split("\n") if not _is_trust_risk_line(ln))
 
 
+def _key_in_blob(key: str, blob: str) -> bool:
+    folded = _match_fold(key)
+    if folded.isalpha():
+        return re.search(r"(?<!\w)" + re.escape(folded) + r"(?!\w)", blob) is not None
+    return folded in blob
+
+
 def _source_keys(query: str, blob: str) -> list[str]:
     """The entities and terms of ``query`` that occur in ``blob`` (a folded source). Only these can count for or
     against recall: a query word the text never contains says nothing about what was kept."""
     keys: list[str] = []
     for item in _extract_entities(query) + _extract_terms(query):
-        if item not in keys and item.lower() in blob:
+        if item not in keys and _key_in_blob(item, blob):
             keys.append(item)
     return keys
 
@@ -4939,11 +4946,11 @@ def verify_compression(
     kept_text = _evidence_blob(compressed)
     keys = _source_keys(query, source)
     if keys:
-        entity_recall = sum(1 for k in keys if k.lower() in kept_text) / len(keys)
+        entity_recall = sum(1 for k in keys if _key_in_blob(k, kept_text)) / len(keys)
         query_terms = set(_extract_terms(query))
         term_keys = [k for k in keys if k in query_terms]
         keyword_recall = (
-            sum(1 for k in term_keys if k.lower() in kept_text) / len(term_keys) if term_keys else entity_recall
+            sum(1 for k in term_keys if _key_in_blob(k, kept_text)) / len(term_keys) if term_keys else entity_recall
         )
     else:
         entity_recall = keyword_recall = 1.0
