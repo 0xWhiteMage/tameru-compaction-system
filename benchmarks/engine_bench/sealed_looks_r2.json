@@ -1,1 +1,8 @@
-[]
+[
+ {
+  "date": "2026-11-23",
+  "engine": "1.10.0",
+  "candidate": "engine-e11",
+  "command": "python -m benchmarks.engine_bench.run --round 2 --sealed --candidate engine-e11 --setting E11 --split sealed --out benchmarks/engine_bench/results/sealed-e11.jsonl --quiet"
+ }
+]
