@@ -49,7 +49,13 @@ from .prices import profile_names as price_profile_names
 PROTOCOL_VERSION = 3
 MAX_PIN_PATTERNS = 16
 MAX_PIN_CHARS = 200
+MAX_PIN_RECENT = 50
+MIN_BUDGET_RATIO = 0.01
 MAX_REPLY_REASONS = 20
+MAX_REASON_CHARS = 120          # per reply reason
+MAX_REPLY_DROPPED = 3           # entries of the reply's ``dropped`` list
+MAX_DROPPED_LOC_CHARS = 80      # per ``dropped`` location
+MIN_EV_QUANTILE = 1e-9          # quantile 0 has no finite loss bound
 MAX_PLAN_ITEMS = 2000
 MAX_PLAN_TOKENS = 1_000_000_000    # any token/character quantity in a plan request
 MAX_PLAN_STEPS = 1_000_000         # positions, ages and step counts
@@ -294,11 +300,11 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
             raise ProtocolError("bad_content_hint")
         options["content_hint"] = request["content_hint"]
     if "budget_ratio" in request:
-        options["budget_ratio"] = _number(request["budget_ratio"], 0.01, 1.0, "bad_budget_ratio")
+        options["budget_ratio"] = _number(request["budget_ratio"], MIN_BUDGET_RATIO, 1.0, "bad_budget_ratio")
     if "min_savings_ratio" in request:
         options["min_savings_ratio"] = _number(request["min_savings_ratio"], 0.0, 1.0, "bad_min_savings_ratio")
     if "pin_recent" in request:
-        options["pin_recent"] = int(_number(request["pin_recent"], 0, 50, "bad_pin_recent"))
+        options["pin_recent"] = int(_number(request["pin_recent"], 0, MAX_PIN_RECENT, "bad_pin_recent"))
     for flag in _BOOL_FIELDS:
         if flag in request:
             if not isinstance(request[flag], bool):
@@ -338,12 +344,13 @@ def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None =
         "risk": result.compression_risk,
         "confidence": result.confidence,
         "content_type": result.content_type,
-        "reasons": [str(r)[:120] for r in list(result.reasons)[:MAX_REPLY_REASONS]],
+        "reasons": [str(r)[:MAX_REASON_CHARS] for r in list(result.reasons)[:MAX_REPLY_REASONS]],
         "sanitized": bool(sanitized),
         "result_schema": RESULT_SCHEMA,
         "confidence_basis": str(getattr(result, "confidence_basis", "none")),
         "stable_key": str(getattr(result, "stable_key", "")),
-        "dropped": [[str(c), int(n), str(loc)[:80]] for c, n, loc in (getattr(result, "dropped", None) or ())[:3]],
+        "dropped": [[str(c), int(n), str(loc)[:MAX_DROPPED_LOC_CHARS]]
+                    for c, n, loc in (getattr(result, "dropped", None) or ())[:MAX_REPLY_DROPPED]],
         "preset": preset if preset is not None else getattr(result, "preset", None),
         "fact_lines_dropped": int(getattr(result, "fact_lines_dropped", 0)),
     }
@@ -448,7 +455,7 @@ def _plan_ev(body: Any) -> EVPolicy | None:
             price_profile=price_profile,
             loss_profile=loss_profile,
             strength=strength,
-            quantile=_number(body.get("quantile", 0.5), 1e-9, 1.0, "bad_ev"),
+            quantile=_number(body.get("quantile", 0.5), MIN_EV_QUANTILE, 1.0, "bad_ev"),
         )
     except (ValueError, TypeError):
         raise ProtocolError("bad_ev") from None
