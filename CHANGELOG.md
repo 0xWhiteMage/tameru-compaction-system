@@ -108,6 +108,7 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   Median bare-import time fell from 79.89 ms to 20.58 ms in a separate 60-run subprocess benchmark on Linux with Python 3.12.
 - Bare imports also skip `typing`, while keeping static export declarations. ASCII queries avoid compiling the Unicode-only
   selector patterns until a non-ASCII query or an explicit pattern import needs them.
+- The installed `tameru-compress` command prints help and rejects invalid arguments without loading the engine.
 
 ## [1.9.0] - 2026-11-09
 

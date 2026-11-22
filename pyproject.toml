@@ -14,7 +14,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
-tameru-compress = "tameru.compress_context:main"
+tameru-compress = "tameru.cli:main"
 
 [project.optional-dependencies]
 semantic = ["sentence-transformers>=2.2"]
