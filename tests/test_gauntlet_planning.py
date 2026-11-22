@@ -80,6 +80,18 @@ def test_loss_rejects_fractional_recovery_tokens():
     assert loss._build("test", loss_raw()).recovery_output_tokens == 200
 
 
+def price_raw():
+    return {"provider": "test", "date": "2026-11-21", "relative": {"r": 0.1, "w": 1.0}}
+
+
+@pytest.mark.parametrize("r,w", [(0.1, float("inf")), (float("inf"), float("inf"))])
+def test_prices_reject_infinite_cache_prices(r, w):
+    raw = price_raw()
+    raw["relative"].update(r=r, w=w)
+    with pytest.raises(ValueError):
+        prices._build("test", raw)
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

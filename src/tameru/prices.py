@@ -21,6 +21,7 @@ as dynamic code (E6) and the baseline may not grow.
 from __future__ import annotations
 
 import json
+from math import isfinite
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -70,7 +71,7 @@ def _build(name: str, raw: dict[str, Any]) -> PriceProfile:
     rel = raw["relative"]
     cache = raw.get("cache") or {}
     r, w = float(rel["r"]), float(rel["w"])
-    if not (0 < r <= w):
+    if not (isfinite(r) and isfinite(w) and 0 < r <= w):
         raise ValueError(f"price profile {name}: need 0 < r <= w")
     notes = "; ".join(str(raw[k]) for k in ("ttl_note", "peak_note") if raw.get(k))
     return PriceProfile(
