@@ -407,3 +407,88 @@ def test_failure_evidence_is_not_folded_after_runner_selection():
     result = compress_context(source, "which test failed", ccr=False, citations=False)
     assert evidence in result.compressed_text
     assert "src/lib.rs:5:28" in result.compressed_text
+
+
+# Captured from `cargo test -- --nocapture` (cargo 1.9x) and shortened. With
+# --nocapture the panic report is printed live, between the test rows, and the
+# `failures:` section lists only the test names.
+CARGO_NOCAPTURE = "\n".join(
+    [
+        "   Compiling demo v0.1.0 (/work/rs)",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.21s",
+        "     Running unittests src/lib.rs (target/debug/deps/demo-8326a0c2f4f6dd2c)",
+        "",
+        "running 31 tests",
+    ]
+    + [f"test tests::ok_{i} ... ok" for i in range(1, 16)]
+    + [
+        "",
+        "thread 'tests::parses_header' (20672957) panicked at src/lib.rs:33:30:",
+        "assertion `left == right` failed: header length mismatch",
+        "  left: 17",
+        " right: 16",
+        "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+    ]
+    + [f"test tests::ok_{i} ... ok" for i in range(16, 31)]
+    + [
+        "test tests::parses_header ... FAILED",
+        "",
+        "failures:",
+        "",
+        "failures:",
+        "    tests::parses_header",
+        "",
+        "test result: FAILED. 30 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "",
+        "error: test failed, to rerun pass `--lib`",
+    ]
+)
+
+# Captured from `cargo test` (cargo 1.9x) and shortened: the unit tests pass,
+# then the integration test binary aborts.
+CARGO_ABORT = "\n".join(
+    [
+        "   Compiling demo v0.1.0 (/work/rs2)",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s",
+        "     Running unittests src/lib.rs (target/debug/deps/demo-8326a0c2f4f6dd2c)",
+        "",
+        "running 40 tests",
+    ]
+    + [f"test tests::ok_{i} ... ok" for i in range(1, 41)]
+    + [
+        "",
+        "test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "",
+        "     Running tests/it.rs (target/debug/deps/it-fc3e94bc8badf938)",
+        "",
+        "running 2 tests",
+        "error: test failed, to rerun pass `--test it`",
+        "",
+        "Caused by:",
+        "  process didn't exit successfully: `/work/rs2/target/debug/deps/it-fc3e94bc8badf938` (signal: 6, SIGABRT: process abort signal)",
+    ]
+)
+
+
+def test_cargo_nocapture_keeps_the_live_panic_report():
+    out = preprocess_test_output(CARGO_NOCAPTURE, "")
+    assert out is not None and len(out) < len(CARGO_NOCAPTURE) / 2
+    assert "thread 'tests::parses_header' (20672957) panicked at src/lib.rs:33:30:" in out
+    assert "assertion `left == right` failed: header length mismatch" in out
+    assert "  left: 17\n right: 16" in out
+    assert "test tests::parses_header ... FAILED" in out
+    assert "tests::ok_17 ... ok" not in out
+    counts = [int(n) for n in re.findall(r"\[… (\d+) passing tests? omitted …\]", out)]
+    assert sum(counts) == 30
+    result = compress_context(CARGO_NOCAPTURE, "why did the test fail?", ccr=False, citations=False)
+    assert "header length mismatch" in result.compressed_text
+    assert "  left: 17\n right: 16" in result.compressed_text
+
+
+def test_cargo_keeps_the_cause_of_a_crashed_test_binary():
+    out = preprocess_test_output(CARGO_ABORT, "")
+    assert out is not None
+    assert "error: test failed, to rerun pass `--test it`" in out
+    assert "Caused by:" in out
+    assert "(signal: 6, SIGABRT: process abort signal)" in out
+    assert "tests::ok_17 ... ok" not in out
