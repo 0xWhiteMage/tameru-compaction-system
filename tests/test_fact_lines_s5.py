@@ -265,7 +265,7 @@ def test_fact_parts_full_width_punctuation(line):
 def test_industrial_adapter_cannot_delete_a_fact():
     """E5: the industrial adapter's record selection runs before the fact summary could see
     the working text — the protected fact line of the original is restored verbatim."""
-    rows = ["\t    acme-ingest-%02d  在线         0     0     0" % i for i in range(30)]
+    rows = ["        acme-ingest-%02d  在线         0     0     0" % i for i in range(30)]
     filler = ["worker node %02d heartbeat tick nominal" % i for i in range(60)]
     text = "\n".join(
         ["  pool: acme-relay", " state: ONLINE", "scan: scrub repaired 0B", "config:"]
