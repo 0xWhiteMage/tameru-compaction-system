@@ -17,8 +17,14 @@ Gates:
                               profile x condition cell.
   savings                     round-1 dev+validation: mean paired saved ratio per
                               profile x condition >= stored 1.10.0 baseline - 2 points.
+  s6_calibration              calibrate.py's table fit on this engine's r2 dev rows, applied
+                              to the accepted r2 validation rows: in every stratum with
+                              n >= 50, ECE <= 0.05 and, where p varies within the stratum,
+                              reliability slope within 0.8-1.2; AUROC of p against "a
+                              fact-shaped line was dropped" >= 0.9; no vague or structural
+                              row at p >= 0.99 outside a stratum that lifts the cap.
 
-Testing seams: ``--ledger PATH`` points at a ledger copy; ``--r2-rows``/``--r1-rows``
+Testing seams: ``--ledger PATH`` points at a ledger copy; ``--r2-rows``/``--r1-rows``/``--r2-dev-rows``
 feed precomputed rows instead of running the engine.
 """
 from __future__ import annotations
@@ -61,8 +67,8 @@ def _gold_share_bound(rows) -> float:
     return 100.0 * report.cluster_mean(pairs)["lo"]
 
 
-def _checks(gate: str, r2_rows, r1_rows, r1_base) -> list[tuple[str, float, float]]:
-    """(label, value-in-points, bound) per sub-check."""
+def _checks(gate: str, r2_rows, r1_rows, r1_base, r2_dev_rows=()) -> list[tuple[str, float, float]]:
+    """(label, value-in-points, bound) per sub-check; a check passes when value >= bound + noise."""
     checks: list[tuple[str, float, float]] = []
     if gate in ("s5_vague_en", "s5_vague_zh"):
         lang = gate.rsplit("_", 1)[1]
@@ -92,6 +98,24 @@ def _checks(gate: str, r2_rows, r1_rows, r1_base) -> list[tuple[str, float, floa
                 diffs = [r["saved_pct"] - base[key(r)]["saved_pct"] for r in cand if key(r) in base]
                 if diffs:
                     checks.append((f"savings|{profile}|{cond}", sum(diffs) / len(diffs), -2.0))
+    elif gate == "s6_calibration":
+        from . import calibrate
+        table = calibrate.fit([r for r in r2_dev_rows if r["accepted"] and r["split"] == "dev"])
+        val = [r for r in r2_rows if r["accepted"] and r["split"] == "validation"]
+        if not val:
+            return checks
+        varying = {k for k, s in table["strata"].items() if s["iso"]}
+        lifted = {k for k, s in table["strata"].items() if s["lifts_cap"]}
+        m = calibrate.metrics(val, calibrate.predict(table, val), varying, lifted)
+        for k, s in m["strata"].items():
+            if s["gated"]:
+                checks.append((f"s6|{k}|ece", -100.0 * s["ece"], -5.0))
+                if s["slope"] is not None:
+                    checks.append((f"s6|{k}|slope_low", 100.0 * s["slope"], 80.0))
+                    checks.append((f"s6|{k}|slope_high", -100.0 * s["slope"], -120.0))
+        if m["auroc_vs_fact_drop"] is not None:
+            checks.append(("s6|auroc_vs_fact_drop", 100.0 * m["auroc_vs_fact_drop"], 90.0))
+        checks.append(("s6|p_ge_099_vague_or_structural", -float(m["p_ge_099_vague_or_structural"]), -0.5))
     return checks
 
 
@@ -100,6 +124,12 @@ def _r2_validation_rows() -> list[dict]:
     cases = corpus.load_cases_r2(["validation"], sealed_ok=False)
     rows = bench_run.run(cases, assignment, conditions=bench_run.CONDITIONS_R2)
     return [r for r in rows if r["split"] == "validation"]
+
+
+def _r2_dev_rows() -> list[dict]:
+    assignment = corpus.r2_assignment()
+    rows = bench_run.run(corpus.load_cases_r2(["dev"], sealed_ok=False), assignment, conditions=bench_run.CONDITIONS_R2)
+    return [r for r in rows if r["split"] == "dev"]
 
 
 def _r1_rows() -> list[dict]:
@@ -111,10 +141,11 @@ def _r1_rows() -> list[dict]:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--setting", required=True, help="engine setting id in the ledger")
-    ap.add_argument("--gate", required=True, choices=("s5_vague_en", "s5_vague_zh", "existing_gold", "savings"))
+    ap.add_argument("--gate", required=True, choices=("s5_vague_en", "s5_vague_zh", "existing_gold", "savings", "s6_calibration"))
     ap.add_argument("--ledger", type=Path, default=None, help="ledger path (tests use a copy)")
     ap.add_argument("--r2-rows", type=Path, default=None, help="precomputed r2 validation rows (tests)")
     ap.add_argument("--r1-rows", type=Path, default=None, help="precomputed r1 rows (tests)")
+    ap.add_argument("--r2-dev-rows", type=Path, default=None, help="precomputed r2 dev rows (tests; s6_calibration)")
     ap.add_argument("--r1-baseline", type=Path, default=R1_BASELINE, help="stored 1.10.0 r1 rows")
     args = ap.parse_args(argv)
 
@@ -134,8 +165,11 @@ def main(argv=None) -> int:
     if args.gate == "savings":
         r1_rows = report.load(args.r1_rows) if args.r1_rows else _r1_rows()
         r1_base = report.load(args.r1_baseline)
+    r2_dev_rows = []
+    if args.gate == "s6_calibration":
+        r2_dev_rows = report.load(args.r2_dev_rows) if args.r2_dev_rows else _r2_dev_rows()
 
-    checks = _checks(args.gate, r2_rows, r1_rows, r1_base)
+    checks = _checks(args.gate, r2_rows, r1_rows, r1_base, r2_dev_rows)
     if not checks:
         print("refusing: gate matched no rows", file=sys.stderr)
         return 2
@@ -148,7 +182,7 @@ def main(argv=None) -> int:
         "setting": args.setting, "gate": args.gate, "query_index": used,
         "noise_seed": led.get("noise_seed", 0), "checks": len(checks),
     })
-    ledger_path.write_text(json.dumps(led, indent=1, ensure_ascii=False) + "\n",
+    ledger_path.write_text(json.dumps(led, indent=2, ensure_ascii=False) + "\n",
                            encoding="utf-8", newline="\n")
     print("PASS" if ok else "FAIL")
     return 0

@@ -203,3 +203,30 @@ No exception touches a statistical endpoint, margin, α or the validation-query 
   2. **No regression:** growth ≤ 1.10× the same cell on the 1.10.0 engine (`src/tameru` at `e638509`, unchanged since
      `7a7bb83`). A cell whose 1.10.0 run does not finish within 600 s is judged on the cap alone.
 - **Reporting.** The release report lists the original 3× bound as not met, with this exception and the measured table.
+
+## Appended clarifications, continued (no gate is added or widened)
+
+### 2026-11-22: S6 calibration, defined before the release candidate is fit or judged
+
+- **Unit and label.** One accepted row (the host profile accepted the extract). y = 1 when the row kept every gold line
+  and dropped no protected fact line. A row with `fact_lines_dropped > 0` has y = 0 by this definition and p̂ = 0.
+- **Strata.** `confidence_basis` × style, where style is the engine's own reading of the objective: `specific` when
+  `query_has_distinctive_selectors` holds (the predicate its fact-drop confidence rule uses), else `vague`. Language
+  is reported.
+- **Method** (`tameru/calibration.py`, fit by `benchmarks/engine_bench/calibrate.py`; its constants are fixed, not
+  tuned). Each stratum's base rate is a Beta whose units are families (each family adds its success rate to α and its
+  loss rate to β), plus 2 pseudo-families at the global family-mean rate: losses cluster by family, and every runtime
+  prediction is for a family the fit never saw. A stratum with ≥50 rows from ≥3 families, ≥10 losses from ≥3
+  families and a family-bootstrap AUROC 5th percentile ≥0.65 also gets an isotonic step map of raw confidence. Vague
+  and structural strata are capped at 0.989 unless their Beta's 5th percentile is ≥0.99. The point estimate is the
+  posterior mean; a host's EV quantile reads the Beta.
+- **Metrics** use the posterior mean.
+  - ECE uses 10 equal-width bins.
+  - The reliability slope is a logistic regression of y on logit p̂ (p̂ clipped to [10⁻³, 1 − 10⁻³]) over rows with no
+    fact drop. It is defined only where p̂ varies within the stratum (an isotonic stratum); a stratum with constant p̂
+    has no slope and is judged on ECE alone.
+  - The AUROC label "a fact-shaped line was dropped" means `fact_lines_dropped > 0`, or an s5 item's gold fact lost.
+- **Where it is judged.** Leave-family-out on dev is the development check. Validation is queried only through the
+  `s6_calibration` thresholdout gate. The gate is judged on the sealed split, with the table fit on all dev rows.
+
+No margin, bar or gate changes.
