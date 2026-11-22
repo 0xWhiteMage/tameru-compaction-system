@@ -410,14 +410,14 @@ def _notable_order(rows: list[dict], dumped: list[str], terms: list[str]) -> lis
         if i in seen:
             continue
         rarest = None
-        for k, c in lowcard.items():
-            if k in row:
-                v = row[k]
-                if not (v is None or isinstance(v, (str, int, float, bool))):
-                    continue
-                key = (type(v).__name__, v)
-                if key != modes[k] and key in c:
-                    rarest = c[key] if rarest is None else min(rarest, c[key])
+        for k, v in row.items():
+            c = lowcard.get(k)
+            if c is None or not (v is None or isinstance(v, (str, int, float, bool))):
+                continue
+            key = (type(v).__name__, v)
+            if key != modes[k]:
+                frequency = c[key]
+                rarest = frequency if rarest is None else min(rarest, frequency)
         if rarest is not None:
             ranked.append((1, rarest, i))
     ranked.sort()
