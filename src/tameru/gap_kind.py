@@ -18,6 +18,8 @@ def gap_accepts_kind(fn) -> bool:
     """True when ``fn`` declares a ``kind`` parameter (decided once per callable, cached)."""
     if fn is None:
         return False
+    if not (inspect.isfunction(fn) or inspect.isbuiltin(fn)):
+        return _accepts_kind_cached.__wrapped__(fn)
     try:
         return _accepts_kind_cached(fn)
     except TypeError:  # unhashable callable: decide without the cache

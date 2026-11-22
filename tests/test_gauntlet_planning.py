@@ -159,6 +159,29 @@ def test_planner_ratio_uses_candidate_characters(ev):
     assert plan(planning_input(policy, chars=1000, compressed_chars=100)).actions[0].action == "extract"
 
 
+def test_equal_callable_instances_do_not_share_signature_cache():
+    import inspect
+
+    class Marker:
+        def __init__(self, kind):
+            self.__signature__ = inspect.Signature([
+                inspect.Parameter("kind", inspect.Parameter.KEYWORD_ONLY)
+            ] if kind else [])
+
+        def __hash__(self):
+            return 1
+
+        def __eq__(self, other):
+            return isinstance(other, Marker)
+
+        def __call__(self, *args, **kwargs):
+            return "gap"
+
+    assert gap_accepts_kind(Marker(True))
+    assert not gap_accepts_kind(Marker(False))
+    assert not gap_accepts_kind(None)
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
