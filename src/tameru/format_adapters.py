@@ -67,6 +67,16 @@ def _decline(
     )
 
 
+def _record_limit_result(
+    text: str, format_name: str, records: list[str], limits: FormatLimits
+) -> FormatResult | None:
+    if len(records) > limits.max_records:
+        return _decline(text, format_name, "record limit exceeded", total_records=len(records))
+    if any(len(record) > limits.max_record_chars for record in records):
+        return _decline(text, format_name, "record size limit exceeded", total_records=len(records))
+    return None
+
+
 # v1.4.0 (E6): conversational filler. A reply made only of these words names
 # nothing in the document, so it must behave like an empty query everywhere —
 # including here, where the plain-word fallback below would otherwise turn
@@ -611,7 +621,6 @@ def _selector_is_distinctive(selector: str) -> bool:
 def _adapt_markdown(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     lines = text.splitlines()
     sections: list[tuple[list[tuple[int, str]], list[str], int]] = []
     ancestors: dict[int, tuple[int, str]] = {}
@@ -653,7 +662,11 @@ def _adapt_markdown(
     flush()
     if in_fence:
         return _decline(text, "markdown", "unterminated code fence", structurally_valid=False)
-    flags = [_contains_selector("\n".join(body), selectors) for _, body, _ in sections]
+    records = ["\n".join(body) for _, body, _ in sections]
+    limited = _record_limit_result(text, "markdown", records, limits)
+    if limited is not None:
+        return limited
+    flags = [_contains_selector(record, selectors) for record in records]
     selected = [section for section, hit in zip(sections, flags) if hit]
     if not selected or len(selected) == len(sections):
         return _decline(text, "markdown", "no selective section match", total_records=len(sections))
@@ -738,10 +751,12 @@ def _adapt_yaml_documents(
 def _adapt_yaml(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     lines = text.splitlines()
     selected: set[int] = set()
     nonblank = [index for index, line in enumerate(lines) if line.strip()]
+    limited = _record_limit_result(text, "yaml", [lines[index] for index in nonblank], limits)
+    if limited is not None:
+        return limited
     matches = [index for index in nonblank if _contains_selector(lines[index], selectors)]
     has_document_separator = any(line.rstrip() == "---" for line in lines)
     for match in matches:
@@ -808,7 +823,7 @@ def _adapt_yaml(
     )
 
 
-def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
+def _adapt_yaml_documents_outliers(text, gap_marker, limits: FormatLimits) -> FormatResult:
     lines = text.splitlines()
     starts = [0]
     for idx, line in enumerate(lines):
@@ -827,6 +842,11 @@ def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
             docs.append({"start": start, "end": end, "nonblank": nonblank})
 
     total_docs = len(docs)
+    limited = _record_limit_result(
+        text, "yaml", ["\n".join(lines[doc["start"]:doc["end"]]) for doc in docs], limits
+    )
+    if limited is not None:
+        return limited
     if total_docs < 5:
         return _decline(
             text,
@@ -948,13 +968,16 @@ def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
 def _adapt_xml(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     upper = text.upper()
     if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
         return _decline(text, "xml", "DTD/entity declarations are not processed", structurally_valid=False)
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 3:
         return _decline(text, "xml", "no line-oriented child records")
+    children = lines[1:-1]
+    limited = _record_limit_result(text, "xml", children, limits)
+    if limited is not None:
+        return limited
     try:
         ET.fromstring(text)
     except (ET.ParseError, UnicodeError, RecursionError):
@@ -962,7 +985,6 @@ def _adapt_xml(
     root = re.match(r"^\s*<([A-Za-z_][\w.:-]*)(?:\s[^>]*)?>\s*$", lines[0])
     if root is None or not re.match(rf"^\s*</{re.escape(root.group(1))}>\s*$", lines[-1]):
         return _decline(text, "xml", "root is not line-oriented")
-    children = lines[1:-1]
     for child in children:
         try:
             ET.fromstring(child)
@@ -1087,7 +1109,6 @@ def _adapt_sql(
 def _adapt_ini(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     lines = text.splitlines()
     starts = [index for index, line in enumerate(lines) if re.match(r"^\s*\[[^\]]+\]\s*$", line)]
     if len(starts) < 2:
@@ -1096,6 +1117,9 @@ def _adapt_ini(
     for position, start in enumerate(starts):
         end = starts[position + 1] if position + 1 < len(starts) else len(lines)
         sections.append("\n".join(lines[start:end]).strip("\n"))
+    limited = _record_limit_result(text, "ini", sections, limits)
+    if limited is not None:
+        return limited
     flags = [_contains_selector(section, selectors) for section in sections]
     if not any(flags):
         return _decline(text, "ini", "no selective section match", total_records=len(sections))
@@ -1122,7 +1146,6 @@ _HTML_CHILD_RE = re.compile(r"^\s*<([A-Za-z][\w:-]*)(?:\s[^>]*)?>.*</\1>\s*$", r
 def _adapt_html(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     lines = [line for line in text.splitlines() if line.strip()]
     opening: list[str] = []
     closing: list[str] = []
@@ -1157,6 +1180,9 @@ def _adapt_html(
         return _decline(text, "html", "wrappers are not balanced", structurally_valid=False)
     if not opening or not closing or not children:
         return _decline(text, "html", "missing line-oriented wrappers or children")
+    limited = _record_limit_result(text, "html", children, limits)
+    if limited is not None:
+        return limited
     flags = [_contains_selector(child, selectors) for child in children]
     kept = [child for child, hit in zip(children, flags) if hit]
     if not kept or len(kept) == len(children):
@@ -1175,8 +1201,10 @@ def _adapt_html(
 def _adapt_vertical(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    del limits
     blocks = [block for block in re.split(r"(?:\r?\n){2,}", text) if block.strip()]
+    limited = _record_limit_result(text, "vertical", blocks, limits)
+    if limited is not None:
+        return limited
     flags = [_contains_selector("".join(block.splitlines()), selectors) for block in blocks]
     kept = [block for block, hit in zip(blocks, flags) if hit]
     if not kept or len(kept) == len(blocks):
@@ -1404,7 +1432,7 @@ def adapt_format(
                         structurally_valid=False)
     if resolved_format == "yaml" and any(line.rstrip() == "---" for line in value.splitlines()):
         if not selectors:
-            return _adapt_yaml_documents_outliers(value, gap_marker)
+            return _adapt_yaml_documents_outliers(value, gap_marker, limits or FormatLimits())
         return _adapt_yaml_documents(value, selectors, limits or FormatLimits(), gap_marker)
     if not selectors:
         return _decline(value, resolved_format, "query has no distinctive selectors")
