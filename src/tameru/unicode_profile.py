@@ -125,7 +125,10 @@ _BIDI_DELETE = {ord(char): None for char in _BIDI_CONTROLS}
 
 def matching_shadow(text: str) -> str:
     """Return case-folded NFKC text with presentation-only bidi controls removed."""
-    normalised = unicodedata.normalize("NFKC", str(text or ""))
+    value = str(text or "")
+    if value.isascii():
+        return value.casefold()
+    normalised = unicodedata.normalize("NFKC", value)
     return normalised.translate(_BIDI_DELETE).casefold()
 
 
