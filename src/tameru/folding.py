@@ -32,7 +32,7 @@ __all__ = ["fold_lossless", "json_brief", "mask_template"]
 _ANSI_RE = re.compile(
     r"\x1b\[[0-?]*[ -/]*[@-~]"  # CSI (colours, cursor moves, erase)
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC (titles, hyperlinks)
-    r"|\x1b[@-Z\\-_]"  # two-byte escapes
+    r"|\x1b[@-Z\\^_]"  # two-byte escapes, excluding the OSC introducer
 )
 _RUN_MIN = 3
 _ANSI_PASSES = 4
@@ -55,8 +55,8 @@ def _strip_ansi_line(ln: str) -> tuple[str, int] | None:
         ln, k = _ANSI_RE.subn("", ln)
         total += k
         if not k:
-            return ln, total
-    if _ANSI_RE.search(ln):
+            break
+    if "\x1b]" in ln or _ANSI_RE.search(ln):
         return None
     return ln, total
 

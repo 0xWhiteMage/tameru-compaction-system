@@ -50,3 +50,10 @@ def test_json_brief_returns_none_for_invalid_budgets():
     text = '[{"status":"ok"},{"status":"pending"}]'
     for budget in (float("inf"), float("-inf"), float("nan"), None, "invalid", 0, -1):
         assert json_brief(text, budget_chars=budget) is None
+
+
+def test_incomplete_osc_is_not_treated_as_visible_text():
+    raw = "line elsewhere  \nvalue \x1b]0;unfinished title"
+    out, stats = fold_lossless(raw)
+    assert out == raw
+    assert not any(stats.values())
