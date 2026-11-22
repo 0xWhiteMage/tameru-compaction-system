@@ -41,6 +41,12 @@ def test_policy_normalizes_numeric_thresholds():
     assert policy.min_confidence == 0.7 and policy.min_saved_ratio == 0.1
 
 
+@pytest.mark.parametrize("value", [0.5, -0.5, True, "1"])
+def test_policy_token_threshold_is_integral(value):
+    with pytest.raises(ValueError):
+        Policy(min_tokens_saved=value)
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

@@ -71,8 +71,10 @@ class Policy:
                 if not 0.0 <= value <= 1.0:
                     raise ValueError(f"{name} must be within 0..1")
                 object.__setattr__(self, name, value)
-        if self.min_tokens_saved is not None and int(self.min_tokens_saved) < 0:
-            raise ValueError("min_tokens_saved must be >= 0")
+        if self.min_tokens_saved is not None:
+            value = self.min_tokens_saved
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError("min_tokens_saved must be a nonnegative integer")
         if self.ev is not None and not isinstance(self.ev, EVPolicy):
             raise ValueError("ev must be an EVPolicy")
 
