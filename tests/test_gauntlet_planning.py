@@ -122,6 +122,14 @@ def test_implied_requests_rejects_nonfinite_share(value):
         prices.implied_later_requests(prices.profile("deepseek-v4-pro"), value)
 
 
+def test_nested_preset_options_cannot_poison_cache(monkeypatch):
+    monkeypatch.setattr(presets, "_cache", {"test": {"pin_patterns": ["first"]}})
+    resolved = presets.resolve_preset("test")
+    resolved["pin_patterns"].append("second")
+    assert presets.resolve_preset("test") == {"pin_patterns": ["first"]}
+    assert presets.resolve_preset("test", {"pin_patterns": []})["pin_patterns"] == []
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

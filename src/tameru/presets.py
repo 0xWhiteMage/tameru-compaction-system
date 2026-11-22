@@ -12,6 +12,7 @@ any ``importlib`` import as dynamic code (E6) and the baseline may not grow.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -52,7 +53,7 @@ def resolve_preset(name: str, overrides: Mapping[str, Any] | None = None) -> dic
     presets = _load()
     if not isinstance(name, str) or name not in presets:
         raise ValueError("unknown preset")
-    out = dict(presets[name])
+    out = deepcopy(presets[name])
     for key, value in (overrides or {}).items():
         if key not in ALLOWED_OPTIONS:
             raise ValueError("option not allowed in a preset override")
