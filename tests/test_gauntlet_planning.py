@@ -116,6 +116,12 @@ def test_required_share_rejects_nonfinite_forecasts(value):
         prices.required_share(prices.profile("deepseek-v4-pro"), value)
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_implied_requests_rejects_nonfinite_share(value):
+    with pytest.raises(ValueError):
+        prices.implied_later_requests(prices.profile("deepseek-v4-pro"), value)
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

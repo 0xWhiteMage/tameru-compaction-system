@@ -137,6 +137,6 @@ def required_share(p: PriceProfile, n_eff: float, cold: bool = False) -> float:
 
 def implied_later_requests(p: PriceProfile, share: float) -> float:
     """The ``n_eff`` at which ``required_share`` equals ``share``: ``(w - r) / (r · share) - 1``."""
-    if share <= 0:
-        raise ValueError("share must be > 0")
+    if not isfinite(share) or share <= 0:
+        raise ValueError("share must be finite and > 0")
     return (p.w - p.r) / (p.r * share) - 1.0
