@@ -5720,7 +5720,13 @@ def _summarise_with_llm(
     import urllib.parse
 
     # Target length in tokens
-    target_tokens = max(50, int(estimate_tokens(text) * target_ratio))
+    try:
+        ratio = float(target_ratio)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(ratio) or not 0 < ratio <= 1:
+        return None
+    target_tokens = max(50, int(estimate_tokens(text) * ratio))
 
     prompt = (
         f"Summarise the following context faithfully. Keep ALL entities, "
