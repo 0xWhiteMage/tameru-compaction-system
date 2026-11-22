@@ -203,12 +203,17 @@ def _call_id_variants(call: Any) -> frozenset[str]:
     return _id_variants(call.get("id"), call.get("call_id"), call.get("response_item_id"))
 
 
-def _find_tool_call(messages: list[dict[str, Any]], idx: int, call_id: str) -> Any:
+def _find_tool_call(
+    messages: list[dict[str, Any]], idx: int, call_id: str,
+    *, is_scaffold: Callable[[dict[str, Any]], bool] | None = None,
+) -> Any:
     """The assistant tool_call that ``call_id`` answers, nearest before ``idx`` first."""
     wanted = _id_variants(call_id)
     for i in range(min(idx, len(messages)) - 1, -1, -1):
         msg = messages[i]
         if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        if is_scaffold is not None and is_scaffold(msg):
             continue
         for call in msg.get("tool_calls") or []:
             if wanted & _call_id_variants(call):
@@ -297,7 +302,9 @@ def task_query(
     msg = messages[idx] if isinstance(idx, int) and 0 <= idx < len(messages) else None
     call_id = str((msg or {}).get("tool_call_id") or "") if isinstance(msg, dict) else ""
     if include_call and call_id:
-        name, args = _call_name_and_args(_find_tool_call(messages, idx, call_id))
+        name, args = _call_name_and_args(
+            _find_tool_call(messages, idx, call_id, is_scaffold=is_scaffold)
+        )
         add(name, _QUERY_ARG_CHARS)
         for leaf in _arg_leaves(args):
             add(leaf, _QUERY_ARG_CHARS)

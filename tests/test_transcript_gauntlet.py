@@ -112,3 +112,10 @@ def test_future_call_is_not_the_producer_of_an_earlier_result():
                 ]}]
     assert t._find_tool_call(messages, 0, "reused") is None
     assert "future_name" not in t.task_query(messages, 0)
+
+
+def test_scaffold_producing_call_is_excluded_from_query():
+    messages = [{"role": "assistant", "scaffold": True, "tool_calls": [
+        {"id": "a", "name": "injected", "arguments": {"path": "secret.py"}}
+    ]}, {"role": "tool", "tool_call_id": "a"}]
+    assert t.task_query(messages, 1, is_scaffold=lambda m: m.get("scaffold", False)) == []
