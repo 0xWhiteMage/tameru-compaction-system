@@ -159,3 +159,10 @@ def test_full_query_budget_does_not_scan_lower_priority_sources():
         pytest.fail("full query inspected a lower-priority source")
     messages = [{"role": "user", "content": "task"}, {"role": "tool"}]
     assert t.task_query(messages, 1, focus="focus", max_chars=5, skip_user=forbidden) == ["focus"]
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_boolean_requirements_accept_quoted_json_keys(value):
+    text = '{"enabled": ' + str(value).lower() + '}'
+    assert t._boolean_requirement_satisfied("enabled", value, text)
+    assert not t._boolean_requirement_satisfied("enabled", not value, text)

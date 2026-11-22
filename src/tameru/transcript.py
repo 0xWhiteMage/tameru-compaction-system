@@ -515,7 +515,7 @@ def _boolean_requirement_satisfied(field: str, expected: bool, post: str) -> boo
     field_pattern = r"[\s_-]+".join(re.escape(word) for word in words)
     field_ref = rf"(?<![a-z0-9_]){field_pattern}(?![a-z0-9_])"
     explicit = re.search(
-        rf"{field_ref}\s*(?:(?:is|equals?)\s+|[=:]\s*)?"
+        rf"{field_ref}[\"']?\s*(?:(?:is|equals?)\s+|[=:]\s*)?"
         r"(true|yes|on|false|no|off)\b",
         post,
         re.IGNORECASE,
