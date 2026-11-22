@@ -13,6 +13,7 @@ then ``no_gain``, ``low_confidence`` (skipped under EV) and ``not_enough_tokens`
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Mapping
 
 REASONS = (
@@ -217,7 +218,7 @@ def decide(
         confidence = getattr(result, "confidence", None)
         if confidence is None:
             return Decision(False, "low_confidence", "confidence=None")
-        if confidence < policy.min_confidence:
+        if not isfinite(confidence) or not 0.0 <= confidence <= 1.0 or confidence < policy.min_confidence:
             return Decision(False, "low_confidence", f"confidence={confidence:.3f}<{policy.min_confidence}")
     if policy.min_tokens_saved is not None:
         saved_tokens = int(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0))
