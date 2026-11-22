@@ -1,11 +1,13 @@
 """Opt-in semantic tier for Tameru — embeddings + optional cross-encoder.
 
 Contract (v0.8.0):
-  - NEVER imported by the core engine. The engine accepts a tier object
-    duck-typed on two methods; this module is one possible implementation.
-  - Zero deps by default: if sentence-transformers is missing, `available`
-    is False and every method raises SemanticUnavailable — callers must
-    fall back to lexical.
+  - The core imports resolve_tier; optional model dependencies are imported
+    only when constructing SemanticTier. A live tier object may also be
+    supplied directly.
+  - Zero deps by default: constructing SemanticTier without
+    sentence-transformers raises SemanticUnavailable. resolve_tier falls
+    back to a disabled tier on construction failure; scoring failures in
+    the engine fall back to lexical detection.
   - Local-only: models load from disk/HF cache. No network at query time
     beyond the one-time HF download the user opted into.
   - Deterministic given a pinned model: encode() is inference-only, no RNG.
@@ -80,5 +82,8 @@ def resolve_tier(tier: Any = None) -> Any:
     if tier is None:
         return _DisabledTier()
     if isinstance(tier, dict):
-        return SemanticTier(**tier)
+        try:
+            return SemanticTier(**tier)
+        except Exception:  # optional model initialization must fall back to lexical
+            return _DisabledTier()
     return tier
