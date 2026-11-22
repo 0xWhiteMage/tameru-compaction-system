@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
-  "settings_tried": 35,
+  "settings_tried": 36,
   "validation_queries": {
     "engine": 0,
     "deepseek-plugin": 0,
@@ -323,6 +323,15 @@
       "setting": "plan_replace_compaction: at the compaction moment a trigger plan() with replace_compaction aims the deep prune at trigger - growth x margin_steps (margin 24); the prune replaces the compaction only when reaches_target",
       "split": "corpus dev",
       "source": "P3-13"
+    },
+    {
+      "n": 36,
+      "date": "2026-11-22",
+      "target": "hermes-plugin",
+      "id": "HP4",
+      "setting": "HP1 + plan_deep_tail: at the compaction moment the plan's demotable set also covers the protected tail's older tool results (all but the most recent step's pending round); compaction unchanged, deeper reset",
+      "split": "corpus dev",
+      "source": "P3-14"
     }
   ],
   "noise_seed": 20261121,
