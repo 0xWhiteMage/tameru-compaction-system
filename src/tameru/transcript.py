@@ -373,7 +373,8 @@ def _json_query_answer_requirements(
 
     needles = [needle.casefold() for needle in _json_query_needles(query)]
     selectors = _selector_patterns(needles)
-    query_words = set(re.findall(r"[a-z0-9]+", (query or "").casefold()))
+    query_shadow = (query or "").casefold()
+    query_words = set(re.findall(r"[a-z0-9]+", query_shadow))
     answers: set[str] = set()
     booleans: set[tuple[str, bool]] = set()
 
@@ -398,7 +399,7 @@ def _json_query_answer_requirements(
                     if not isinstance(scalar, (str, int, float)):
                         continue
                     answer = str(scalar).strip()
-                    if answer and answer.casefold() not in (query or "").casefold():
+                    if answer and answer.casefold() not in query_shadow:
                         answers.add(answer)
             for child in value.values():
                 visit(child, depth + 1)
