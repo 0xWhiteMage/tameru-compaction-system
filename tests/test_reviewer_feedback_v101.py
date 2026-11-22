@@ -181,9 +181,9 @@ class CcrPrivacyRegressionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             now = time.time()
-            expired = root / "expired.json"
-            fresh = root / "fresh.json"
-            malformed = root / "malformed.json"
+            expired = root / ("a" * 24 + ".json")
+            fresh = root / ("b" * 24 + ".json")
+            malformed = root / ("c" * 24 + ".json")
             expired.write_text(json.dumps({"stored_at": now - 100, "ttl": 10}), encoding="utf-8")
             fresh.write_text(json.dumps({"stored_at": now - 5, "ttl": 10}), encoding="utf-8")
             malformed.write_text("not json", encoding="utf-8")
@@ -204,9 +204,9 @@ class CcrPrivacyRegressionTests(unittest.TestCase):
     def test_invalid_zero_timestamp_is_removed_and_never_retrieved(self):
         with tempfile.TemporaryDirectory() as td:
             invalid_records = {
-                "zero-time.json": {"stored_at": 0, "ttl": 10, "original": "secret"},
-                "zero-ttl.json": {"stored_at": time.time(), "ttl": 0, "original": "secret"},
-                "bad-time.json": {"stored_at": "not-a-time", "ttl": 10, "original": "secret"},
+                "a" * 24 + ".json": {"stored_at": 0, "ttl": 10, "original": "secret"},
+                "b" * 24 + ".json": {"stored_at": time.time(), "ttl": 0, "original": "secret"},
+                "c" * 24 + ".json": {"stored_at": "not-a-time", "ttl": 10, "original": "secret"},
             }
             for name, payload in invalid_records.items():
                 (Path(td) / name).write_text(json.dumps(payload), encoding="utf-8")
