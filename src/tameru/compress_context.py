@@ -5531,38 +5531,12 @@ def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any] | None:
     encoded = json.dumps(payload).encode("utf-8")
     if len(encoded) > _CCR_MAX_RECORD_BYTES:
         return None
-    fd: int | None = None
-    temporary: str | None = None
-    try:
-        fd, temporary = tempfile.mkstemp(prefix=".ccr-", dir=path)
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as fh:
-            fd = None
-            fh.write(encoded)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(temporary, record)
-        temporary = None
-        record.chmod(0o600)
-    except OSError:
-        if fd is not None:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        raise
-    finally:
-        if temporary is not None:
-            try:
-                Path(temporary).unlink()
-            except OSError:
-                pass
+    _write_private_atomic(record, encoded)
     return {"hash": digest, "path": str(record)}
 
 
-def _write_private_atomic(path: str | Path, content: str) -> None:
-    """Atomically replace a UTF-8 sidecar with owner-only permissions."""
+def _write_private_atomic(path: str | Path, content: str | bytes) -> None:
+    """Atomically replace bytes or a UTF-8 sidecar with owner-only permissions."""
     target = Path(path)
     try:
         target.parent.mkdir(parents=True, mode=0o700)
@@ -5580,7 +5554,8 @@ def _write_private_atomic(path: str | Path, content: str) -> None:
         fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         if hasattr(os, "fchmod"):
             os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with (os.fdopen(fd, "wb") if isinstance(content, bytes)
+              else os.fdopen(fd, "w", encoding="utf-8")) as fh:
             fd = None
             fh.write(content)
             fh.flush()
