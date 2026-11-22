@@ -117,8 +117,9 @@ def content_key(version: str, name: str, text: str, extra: tuple = ()) -> str:
     """``sha256(engine version, analysis name, text, options)`` — the key leaks nothing."""
     digest = hashlib.sha256()
     for part in (version, name, *(str(e) for e in extra), text):
-        digest.update(part.encode("utf-8", errors="surrogatepass"))
-        digest.update(b"\x00")
+        encoded = part.encode("utf-8", errors="surrogatepass")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
     return digest.hexdigest()[:32]
 
 
