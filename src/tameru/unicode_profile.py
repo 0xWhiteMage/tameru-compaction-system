@@ -10,7 +10,7 @@ from .content_cache import _engine_version, content_memo
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 
 _BIDI_CONTROLS = frozenset(
     {
@@ -219,7 +219,7 @@ def _representative(cluster: str) -> str:
     return cluster[0] if cluster else ""
 
 
-def _flush_run(run: list[str], units: list[str]) -> None:
+def _flush_run(run: list[str], emit: Callable[[str], None]) -> None:
     if not run:
         return
     representative = _representative(run[0])
@@ -227,15 +227,14 @@ def _flush_run(run: list[str], units: list[str]) -> None:
     joined = "".join(run)
     if script in _NO_SPACE_SCRIPTS:
         if len(joined) <= 64:
-            units.append(joined)
+            emit(joined)
         if len(run) == 1 and run[0].strip():
-            units.append(run[0])
+            emit(run[0])
         for width in (2, 3, 4):
-            if len(run) < width:
-                continue
-            units.extend("".join(run[index : index + width]) for index in range(len(run) - width + 1))
+            for index in range(len(run) - width + 1):
+                emit("".join(run[index : index + width]))
     elif joined:
-        units.append(joined)
+        emit(joined)
     run.clear()
 
 
@@ -258,7 +257,14 @@ def _search_units_cached(text: str) -> tuple[str, ...]:
 
 def _search_units(text: str) -> list[str]:
     shadow = matching_shadow(text)
-    units: list[str] = []
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    def emit(unit: str) -> None:
+        if unit not in seen and unit.strip("_-./:@+"):
+            seen.add(unit)
+            ordered.append(unit)
+
     run: list[str] = []
     for cluster in iter_graphemes(shadow):
         representative = _representative(cluster)
@@ -266,16 +272,8 @@ def _search_units(text: str) -> list[str]:
         if category[:1] in {"L", "N", "M"} or all(char in _WORD_JOINERS for char in cluster):
             run.append(cluster)
         else:
-            _flush_run(run, units)
-    _flush_run(run, units)
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for unit in units:
-        cleaned = unit.strip("_-./:@+")
-        value = unit if cleaned else ""
-        if value and value not in seen:
-            seen.add(value)
-            ordered.append(value)
+            _flush_run(run, emit)
+    _flush_run(run, emit)
     return ordered
 
 
