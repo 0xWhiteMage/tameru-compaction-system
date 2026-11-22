@@ -92,6 +92,16 @@ def test_prices_reject_infinite_cache_prices(r, w):
         prices._build("test", raw)
 
 
+@pytest.mark.parametrize("field", ["o", "ttl_s", "peak_multiplier"])
+@pytest.mark.parametrize("value", [-1, 0, float("nan"), float("inf")])
+def test_prices_reject_invalid_optional_figures(field, value):
+    raw = price_raw()
+    (raw["relative"] if field == "o" else raw)[field] = value
+    with pytest.raises(ValueError):
+        prices._build("test", raw)
+    assert prices._build("test", price_raw()).o is None
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
