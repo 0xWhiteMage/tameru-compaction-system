@@ -406,10 +406,10 @@ def _pathish(path: str) -> bool:
 
 def _grep_parse_line(line: str) -> tuple[str, str, int, str] | None:
     m = _GREP_MATCH_RE.match(line)
-    if m and _pathish(m.group(1)):
+    if m and len(m.group(2)) <= 18 and _pathish(m.group(1)):
         return "m", m.group(1), int(m.group(2)), m.group(3)
     m = _GREP_CTX_RE.match(line)
-    if m and _pathish(m.group(1)):
+    if m and len(m.group(2)) <= 18 and _pathish(m.group(1)):
         return "c", m.group(1), int(m.group(2)), m.group(3)
     return None
 
