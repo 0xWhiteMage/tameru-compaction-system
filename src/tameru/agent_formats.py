@@ -389,13 +389,13 @@ def detect_unified_diff(text: str) -> bool:
     return _DIFF_FILE_RE.search(text) is not None
 
 
-_GREP_MATCH_RE = re.compile(r"^([^\s:][^:]*):(\d+):(.*)$")
+_GREP_MATCH_RE = re.compile(r"^((?:[A-Za-z]:[\\/])?[^\s:][^:]*):(\d+):(.*)$")
 _GREP_CTX_RE = re.compile(r"^([^\s:][^:]*?)-(\d+)-(.*)$")
 
 
 def _pathish(path: str) -> bool:
     """A file path, not a clock ("12:00:00") or a date ("2026-03-14 12")."""
-    if not ("." in path or "/" in path):
+    if not ("." in path or "/" in path or "\\" in path):
         return False
     if re.fullmatch(r"[\d.\-/]+", path):
         return False
@@ -792,6 +792,8 @@ def adapt_grep_lines(
     """
     if not detect_grep_lines(text):
         return None
+    if type(per_file_cap) is not int or per_file_cap < 1:
+        return AdapterResult("grep", text, reason="invalid per-file cap; unchanged")
     per_file: dict[str, list[_GrepRec]] = {}
     other: list[str] = []
     group = 0
@@ -809,6 +811,8 @@ def adapt_grep_lines(
         per_file.setdefault(path, []).append(_GrepRec(kind, lineno, body, raw, group))
     if not per_file:
         return None
+    if other:
+        return AdapterResult("grep", text, reason="unparsed lines; unchanged")
     matcher = _matcher_for(query)
     total_matches = sum(1 for recs in per_file.values() for r in recs if r.kind == "m")
 
