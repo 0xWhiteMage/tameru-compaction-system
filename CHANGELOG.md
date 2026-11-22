@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.10.0] - Unreleased
 
+- Fix: cache segmentation as compact spans and rebuild block text from the caller's input; scored records omit source text and normalized full-text views are not retained. Reject oversized records without displacing unrelated entries, account for nested records, and bound per-key statistics to resident entries.
+
 Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
 release, paired, cluster bootstrap); none of it is a measurement against a real model's bill. Plan and rules: [`docs/ANALYSIS-PLAN-1.10.md`](docs/ANALYSIS-PLAN-1.10.md).
 

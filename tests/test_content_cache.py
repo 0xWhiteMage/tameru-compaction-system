@@ -1,6 +1,7 @@
 """S7: byte-capped ContentCache, huge-item streaming path, and too_large fail-open."""
 
 import os
+import importlib
 import subprocess
 import sys
 import time
@@ -16,7 +17,7 @@ from tameru.compress_context import (  # noqa: E402
     cache_stats,
     compress_context,
 )
-from tameru.content_cache import CACHE, ContentCache, content_key  # noqa: E402
+from tameru.content_cache import CACHE, ContentCache, _MISS, content_key, content_memo, weight_of  # noqa: E402
 from tameru import protocol  # noqa: E402
 
 TEXT = ("def handler(req):\n    return compute(req.payload)\n"
@@ -77,6 +78,108 @@ def test_record_is_compact_and_never_the_text():
     assert stats["bytes"] < len(TEXT) * 2 + 64_000  # per-block records, never the text
     for key in stats["analysis_counts"]:
         assert len(key) <= 64 and TEXT[:40] not in key
+
+
+@pytest.mark.parametrize("max_bytes", [0, 1000])
+def test_oversized_record_is_not_retained(max_bytes):
+    cache = ContentCache(max_bytes=max_bytes)
+    cache.set("oversized", "x" * 10000)
+    assert cache.get("oversized") is _MISS
+    assert cache.bytes == 0
+    assert cache.stats()["entries"] == 0
+    assert cache.stats()["analysis_counts"] == {}
+
+
+def test_oversized_record_does_not_evict_other_entries():
+    cache = ContentCache(max_bytes=1000)
+    cache.set("first", 1)
+    cache.set("second", 2)
+    before = cache.bytes
+    cache.set("oversized", "x" * 10000)
+    assert cache.get("oversized") is _MISS
+    assert cache.get("first") == 1
+    assert cache.get("second") == 2
+    assert cache.bytes == before
+    cache.set("first", "x" * 10000)
+    assert cache.get("first") is _MISS
+    assert cache.bytes == weight_of(2)
+
+
+def test_evicted_record_statistics_are_bounded_and_cleared():
+    cache = ContentCache(max_bytes=weight_of(1) * 2)
+    for index in range(100):
+        cache.set(str(index), index)
+    assert len(cache.stats()["analysis_counts"]) == cache.stats()["entries"] == 2
+    cache.clear()
+    assert cache.stats()["analysis_counts"] == {}
+    assert cache.bytes == 0
+
+
+def test_nested_weight_includes_deep_values_and_handles_shared_cycles():
+    value = "x" * 10000
+    nested = value
+    for _ in range(10):
+        nested = [nested]
+    cache = ContentCache(max_bytes=1000)
+    cache.set("deep", nested)
+    assert cache.get("deep") is _MISS
+    cycle = [value, value]
+    cycle.append(cycle)
+    assert weight_of(cycle) == sys.getsizeof(cycle) + sys.getsizeof(value)
+
+
+@pytest.mark.parametrize("text", ["", "\n\n", TEXT, ("# 标题\n\n```python\ndef f():\n    pass\n```\n\nERROR é\ud800\r\n") * 60])
+def test_segmentation_cache_rebuilds_text_and_returns_private_blocks(text):
+    cc = importlib.import_module("tameru.compress_context")
+    _fresh()
+    lines = tuple(text.split("\n"))
+    expected = cc.segment_blocks(list(lines))
+    assert list(cc._segment_blocks_cached(lines)) == expected
+    key = content_key(cc.ENGINE_VERSION, "segment_blocks", text)
+    kinds, spans = CACHE.get(key)
+    assert all(isinstance(value, int) for value in spans)
+    assert set(kinds) == {block["type"] for block in expected}
+    if expected:
+        first = cc._segment_blocks_cached(lines)
+        first[0]["text"] = "mutated"
+    assert list(cc._segment_blocks_cached(lines)) == expected
+
+
+def test_scored_cache_rebuilds_text_without_retaining_it():
+    cc = importlib.import_module("tameru.compress_context")
+    cc._clear_memos()
+    lines = TEXT.split("\n")
+    blocks = cc.segment_blocks(lines)
+    expected = cc.score_blocks(blocks, "handler", content_type=None)
+    first = cc._score_blocks_memo(lines, blocks, "handler", None, degraded=False)
+    assert first == expected
+    key = content_key(cc.ENGINE_VERSION, "scored", "\0".join(lines), ("handler", None))
+    assert all("text" not in block for block in cc._SCORED.get(key))
+    first[0]["text"] = "mutated"
+    assert cc._score_blocks_memo(lines, blocks, "handler", None, degraded=False) == expected
+
+
+@pytest.mark.parametrize("text", ["", "source TEXT " * 1000])
+def test_normalized_full_text_views_are_not_cached(text):
+    _fresh()
+
+    @content_memo("test_view")
+    def view(source):
+        return source.casefold()
+
+    assert view(text) == text.casefold()
+    assert CACHE.get(content_key("", "test_view", text)) is _MISS
+
+
+def test_cold_warm_and_disabled_caches_leave_output_identical(monkeypatch):
+    cc = importlib.import_module("tameru.compress_context")
+    cc._clear_memos()
+    expected = compress_context(TEXT, "handler", ccr=False, citations=False).to_dict()
+    assert compress_context(TEXT, "handler", ccr=False, citations=False).to_dict() == expected
+    cc._clear_memos()
+    monkeypatch.setattr(CACHE, "max_bytes", 0)
+    monkeypatch.setattr(cc._SCORED, "max_bytes", 0)
+    assert compress_context(TEXT, "handler", ccr=False, citations=False).to_dict() == expected
 
 
 def test_huge_item_partial_basis():

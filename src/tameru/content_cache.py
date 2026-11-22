@@ -4,7 +4,7 @@ The pre-1.11 memos were entry-count LRUs keyed by the full input string: a handf
 6-entry caches could still pin hundreds of MB in a long-lived host (a 1M-char text as a
 dict key is the whole text retained). ``ContentCache`` instead keys every record by a
 ``content_key`` digest — the text itself is never stored, neither as key nor in the record
-— and evicts by *weight* (pickled record size), default 64 MB per process.
+— and evicts by *weight* (live record size), default 64 MB per process.
 
 Records are the compact analyses the engine already computed: bools, ints, fingerprint
 maps, fact tuples, line bundles. They aim at a few percent of the source text and never
@@ -35,19 +35,25 @@ def _env_max_bytes() -> int:
     return _DEFAULT_MAX_BYTES
 
 
-def weight_of(value: Any, _depth: int = 0) -> int:
+def weight_of(value: Any, _seen: set[int] | None = None) -> int:
     """Live memory of a record — the accounting weight the cache evicts on."""
+    if _seen is None:
+        _seen = set()
+    identity = id(value)
+    if identity in _seen:
+        return 0
+    _seen.add(identity)
     w = sys.getsizeof(value)
-    if _depth >= 6 or value is None or isinstance(value, (int, float, bool, str, bytes)):
+    if value is None or isinstance(value, (int, float, bool, str, bytes)):
         return w
     if isinstance(value, dict):
         for k, v in value.items():
-            w += weight_of(k, _depth + 1) + weight_of(v, _depth + 1)
+            w += weight_of(k, _seen) + weight_of(v, _seen)
     elif isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
-            w += weight_of(item, _depth + 1)
+            w += weight_of(item, _seen)
     elif hasattr(value, "__dict__"):
-        w += weight_of(vars(value), _depth + 1)
+        w += weight_of(vars(value), _seen)
     return w
 
 
@@ -83,22 +89,23 @@ class ContentCache:
             if old is not None:
                 self.bytes -= old[1]
             self.analyses += 1
-            self.analysis_counts[key] = self.analysis_counts.get(key, 0) + 1
             if weight > self.max_bytes or self.max_bytes <= 0:
-                self._items[key] = (value, weight)  # tracked for stats, dropped below
-                self._items.popitem(last=False)
+                self.analysis_counts.pop(key, None)
                 self.evictions += 1
                 return
+            self.analysis_counts[key] = self.analysis_counts.get(key, 0) + 1
             self._items[key] = (value, weight)
             self.bytes += weight
             while self.bytes > self.max_bytes:
                 _k, (_v, w) = self._items.popitem(last=False)
                 self.bytes -= w
+                self.analysis_counts.pop(_k, None)
                 self.evictions += 1
 
     def clear(self) -> None:
         with self._lock:
             self._items.clear()
+            self.analysis_counts.clear()
             self.bytes = 0
 
     def stats(self) -> dict[str, Any]:
@@ -146,7 +153,8 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
             hit = CACHE.get(key)
             if hit is _MISS:
                 hit = fn(text, *extra)
-                CACHE.set(key, hit)
+                if not isinstance(hit, str):
+                    CACHE.set(key, hit)
             return hit
 
         wrapper.cache_clear = CACHE.clear

@@ -23,6 +23,7 @@ import time
 import unicodedata
 import warnings
 import dataclasses
+from array import array
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
@@ -2978,9 +2979,22 @@ def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]
     key = content_key(ENGINE_VERSION, "segment_blocks", text)
     hit = _CONTENT.get(key)
     if hit is _MISS:
-        hit = tuple(segment_blocks(list(lines)))
-        _CONTENT.set(key, hit)
-    return hit
+        blocks = tuple(segment_blocks(list(lines)))
+        kinds = tuple(dict.fromkeys(block["type"] for block in blocks))
+        kind_ids = {kind: index for index, kind in enumerate(kinds)}
+        spans = array("q", (
+            value for block in blocks
+            for value in (block["start"], block["end"], kind_ids[block["type"]], block["tokens"])
+        ))
+        _CONTENT.set(key, (kinds, spans))
+        return blocks
+    kinds, spans = hit
+    return tuple(
+        {"id": index // 4, "start": start, "end": end, "type": kinds[kind],
+         "tokens": tokens, "text": "\n".join(lines[start:end + 1])}
+        for index in range(0, len(spans), 4)
+        for start, end, kind, tokens in (spans[index:index + 4],)
+    )
 
 
 def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> list[str]:
@@ -2999,7 +3013,7 @@ def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> lis
 
 
 def _segment_blocks_memo(lines: list[str]) -> list[dict[str, Any]]:
-    """:func:`segment_blocks`, remembered for the newest few large inputs.
+    """:func:`segment_blocks`, remembered as compact spans without source text.
 
     A block is a flat dict of str/int values, so a shallow copy per block is
     a full copy: callers may mutate what they get back.
@@ -3036,9 +3050,11 @@ def _score_blocks_memo(
     key = content_key(ENGINE_VERSION, "scored", chr(0).join(score_lines), (query, content_type))
     hit = _SCORED.get(key)
     if hit is _MISS:
-        hit = tuple(score_blocks(blocks, query, content_type=content_type))
-        _SCORED.set(key, hit)
-    return [dict(b) for b in hit]
+        scored = score_blocks(blocks, query, content_type=content_type)
+        _SCORED.set(key, tuple({k: v for k, v in block.items() if k != "text"} for block in scored))
+        return scored
+    source = {block["id"]: block["text"] for block in blocks}
+    return [dict(block, text=source[block["id"]]) for block in hit]
 
 
 def _clear_memos() -> None:
