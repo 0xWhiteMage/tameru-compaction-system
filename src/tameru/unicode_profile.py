@@ -42,6 +42,7 @@ _VERTICAL_RE = re.compile(
 )
 _WORD_JOINERS = frozenset("_-./:@+")
 _NO_SPACE_SCRIPTS = frozenset({"han", "kana", "hangul", "thai", "lao", "khmer", "myanmar"})
+_FULL_RUN_MAX_CHARS = 64
 
 
 @dataclass(frozen=True)
@@ -224,17 +225,16 @@ def _flush_run(run: list[str], emit: Callable[[str], None]) -> None:
         return
     representative = _representative(run[0])
     script = script_of(representative)
-    joined = "".join(run)
     if script in _NO_SPACE_SCRIPTS:
-        if len(joined) <= 64:
-            emit(joined)
-        if len(run) == 1 and run[0].strip():
+        if len(run) == 1:
             emit(run[0])
+        elif len(run) <= _FULL_RUN_MAX_CHARS and sum(map(len, run)) <= _FULL_RUN_MAX_CHARS:
+            emit("".join(run))
         for width in (2, 3, 4):
             for index in range(len(run) - width + 1):
                 emit("".join(run[index : index + width]))
-    elif joined:
-        emit(joined)
+    else:
+        emit("".join(run))
     run.clear()
 
 
