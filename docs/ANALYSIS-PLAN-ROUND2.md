@@ -348,3 +348,33 @@ No margin, bar or gate changes.
   engine query budget.
 
 No margin, bar or gate changes.
+
+### 2026-11-25: the r=4 engine look failed; the r4 sealed holdout is burned and the look budget is exhausted
+
+- **The look.** `sealed_looks_r4.json` records the single r4 look (candidate `engine-e15` at setting E15,
+  baseline `engine-1.10.0-r4` on the 19925ac worktree; a first baseline invocation logged a sealed-access
+  grant in the worktree-local log while reading dev splits only - no sealed text was materialized by it, and
+  the real look is the one recorded here). `results/release-gates-r4-sealed-e15.json`: 59 of 65 checks pass
+  at alpha = 0.003125. The 6 failures:
+  - S5 existing gold in 4 profile x condition cells (gate shares: deepseek tool_call 96.3, zh_user 97.1;
+    hermes tool_call 93.4, zh_user 97.1 vs the 99.5 bound). Over all evidence rows the candidate keeps
+    99.2/99.5/98.6/99.5 where the 1.10.0 baseline keeps 92.6/97.1/91.0/99.0 on the same cells - the candidate
+    is strictly better in every cell again and the bound is unmeetable by either engine for a third
+    consecutive look. Misses concentrate in families whose evidence-row shapes the scan never learned
+    (auditavc, lspci, mqtt, sensors, tfplan, wguard; a handful of singletons elsewhere).
+  - S6 ECE in 2 strata (lexical|vague 0.0684, tool_call|vague 0.1004): the r4 dev-fit table is still
+    overconfident on fresh families - the same transfer gap as r2 and r3.
+  - Everything else passes with margin: all four vague-language gates at 100, all 14 savings cells, every
+    gate9 facts/fingerprint cell, S6 AUROC 1.0 and both fact-drop confidence checks.
+- **Burn.** Sealed hash `526f010f3f8dd3db...` (benchmarks/engine_bench/SEALED-R4.sha256) is burned: its 34
+  families move into dev (`splits_r4.json` carries a `burn` record; dev is now 40 families / 760 cases),
+  are never used for confirmation again, and are excluded from any future holdout.
+- **End of the registered look budget.** The protocol permits at most four engine rounds; r2, r3 and r4 have
+  each spent their single look. No fifth holdout may be built and no further look taken. The engine decision
+  is therefore made on the accumulated evidence: across three looks the candidate beats the 1.10.0 baseline on
+  every cell either engine fails, while the failures are confined to the 99.5 existing-gold bound that the
+  baseline cannot meet either (three consecutive times) and to S6 table transfer to fresh families. Whether
+  E15's outcome-scanner improvements ship as the engine, with the bound itself revisited as a maintainer
+  decision, is the judgment left open by this look.
+
+No margin, bar or gate changes.
