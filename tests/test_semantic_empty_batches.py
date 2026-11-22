@@ -24,7 +24,7 @@ def test_empty_batches_do_not_call_models():
     assert value.cross_scores("q", []) == []
     assert value.score_against_query("q", []) == ([], [])
     value._ce = None
-    assert value.cross_scores("q", []) == []
+    assert value.cross_scores("q", []) is None
     assert value.cross_scores("q", ["text"]) is None
 
 

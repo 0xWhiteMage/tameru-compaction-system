@@ -61,10 +61,10 @@ class SemanticTier:
 
     # -- cross-encoder ---------------------------------------------------
     def cross_scores(self, query: str, texts: Sequence[str]) -> list[float] | None:
-        if not texts:
-            return []
         if self._ce is None:
             return None
+        if not texts:
+            return []
         pairs = [(query, t) for t in texts]
         return [float(s) for s in self._ce.predict(pairs)]
 
