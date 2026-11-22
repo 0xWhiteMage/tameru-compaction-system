@@ -28,6 +28,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
+from ._fingerprint_patterns import _DIGITS_RE
 from .agent_formats import (
     GUTTER_RE as _AGENT_GUTTER_RE,
     apply_agent_adapters,
@@ -77,7 +78,6 @@ _REEXPORTED = (fold_lossless,)
 try:
     DEFAULT_CCR_DIR = Path.home() / ".tameru" / "cache" / "context-compress-ccr"
 except Exception:
-    import tempfile
     DEFAULT_CCR_DIR = Path(tempfile.gettempdir()) / ".tameru" / "cache" / "context-compress-ccr"
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
@@ -891,11 +891,6 @@ _ERR_NEGATED_RE = re.compile(
     re.IGNORECASE,
 )
 _COUNT_PREFIX_RE = re.compile(r"^\s*\[(?:\u00d7\d+|last)\]\s*")
-_UUID_RE = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-)
-_HEXRUN_RE = re.compile(r"[0-9a-f]{6,}")
-_DIGITS_RE = re.compile(r"\d+")
 _FINGERPRINT_CAP = 160
 
 
@@ -3263,6 +3258,9 @@ def _dup_fp(text: str) -> str:
 _NEGATED_TERM_RE = re.compile(r"\b(?:not|never|no|cannot|can't|won't|didn't|doesn't|don't|isn't|wasn't|couldn't|wouldn't|failed to|fails to|unable to)\s+([a-z][a-z0-9_]*)")
 _FAILURE_EVIDENCE_RE = re.compile(r"fail|error|err\b|fatal|emerg|crit|panic|unable|cannot|can't|couldn't|refused|denied|timed? ?out|abort|killed|\bnot\b|exit(?:ed)? (?:code|status) [1-9]")
 
+_PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b")
+
+
 def _bridge_index(blocks: list[dict[str, Any]], n: int) -> tuple[list[list[str]], dict[str, list[int]]]:
     """Tokenise each block once and index bridge entities by lowercase token (helper of score_blocks)."""
     bridge_entities: dict[str, int] = {}
@@ -3290,7 +3288,6 @@ def _bridge_index(blocks: list[dict[str, Any]], n: int) -> tuple[list[list[str]]
             token_block_df[w] = token_block_df.get(w, 0) + 1
     seen_candidates: set[str] = set()
     candidate_blocks: dict[str, int] = {}
-    _PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b")
     for b_idx, b in enumerate(blocks):
         toks = block_token_lists[b_idx]
         # Extract candidate bridge entities: CamelCase, UPPER_SNAKE, dotted
@@ -3713,6 +3710,13 @@ def _score_one_block(
     }
 
 
+_LOG_ERR_RE = re.compile(
+    r"\b(?:ERROR|FATAL|WARN|WARNINGS?)\b|Traceback|Exception",
+    re.IGNORECASE,
+)
+_LOG_NOISE_RE = re.compile(r"^\s*(?:INFO|DEBUG)\b", re.MULTILINE)
+
+
 def score_blocks(
     blocks: list[dict[str, Any]],
     query: str,
@@ -3772,14 +3776,6 @@ def score_blocks(
         if any(_LOG_LINE_RE.match(line) for line in b["text"].splitlines()[:3])
     )
     is_log_context = log_block_count >= 2 and log_block_count / n > 0.4
-    if is_log_context:
-        _LOG_ERR_RE = re.compile(
-            r"\b(?:ERROR|FATAL|WARN|WARNINGS?)\b|Traceback|Exception",
-            re.IGNORECASE,
-        )
-        _LOG_NOISE_RE = re.compile(
-            r"^\s*(?:INFO|DEBUG)\b", re.MULTILINE,
-        )
     # Recency + novelty prior (rate-distortion signal): even without query
     # overlap, recent blocks and blocks holding rare, high-information
     # identifiers deserve a base floor so a "keep track of every detail"
@@ -4233,8 +4229,6 @@ def _counterfactual_overlap_ambiguity(
     query: str,
     link_terms: dict[int, set[str]] | None = None,
     semantic_tier: Any = None,
-    log_dir: str | Path | None = None,
-    pin_patterns: Optional[list[str]] = None,
 ) -> bool:
     """Detect a high-scoring kept distractor masking a dropped answer chain.
 
@@ -4395,8 +4389,10 @@ def _counterfactual_overlap_ambiguity(
             if len(cands) < 2:
                 return False
             capped = sorted(cands, key=lambda b: -b["score"])[:32]
-            _, sims = tier.score_against_query(query, [c["text"] for c in capped])
-            win_sim = tier.score_against_query(query, [winner["text"]])[1][0]
+            _, scores = tier.score_against_query(
+                query, [c["text"] for c in capped] + [winner["text"]]
+            )
+            sims, win_sim = scores[:-1], scores[-1]
             near = [c for c, sm in zip(capped, sims) if abs(sm - win_sim) < 0.05]
             return len(near) >= 2
         except Exception:  # tier failure must NEVER break compression
@@ -4621,7 +4617,7 @@ _PROSE_MIN_BLOCKS = 8
 
 def _prose_key(text: str) -> str:
     """Repeat key: NFKC-normalised, digit runs -> '#', lowercased, whitespace collapsed, first 2000 chars."""
-    return " ".join(re.sub(r"\d+", "#", unicodedata.normalize("NFKC", text[:2000]).lower()).split())
+    return " ".join(_DIGITS_RE.sub("#", unicodedata.normalize("NFKC", text[:2000]).lower()).split())
 
 
 def select_prose_brief(
@@ -6301,7 +6297,7 @@ def inspect_compressibility(text: str, query: str) -> dict[str, Any]:
     # Repetition ratio: fraction of duplicate lines (exact + normalised runs).
     from collections import Counter
 
-    norm = [re.sub(r"\d+", "#", ln) for ln in lines]
+    norm = [_DIGITS_RE.sub("#", ln) for ln in lines]
     counts = Counter(norm)
     dup_lines = sum(c for c in counts.values() if c > 1)
     repetition_ratio = dup_lines / len(lines)
@@ -6928,7 +6924,6 @@ def _strip_anchor_prefix(line: str) -> str:
 _WEAK_LINE_HINT_RE = re.compile(
     r"WARN|warn|Failed|exited with|status=|code=|HTTP/"
 )
-_WEAK_WARN_LEVEL_RE = re.compile(r"\b(?:WARN|WARNING)\b")
 _WEAK_STRUCT_LEVEL_RE = re.compile(
     r"(?i)\b(?:level|lvl|severity)\s*[\"']?\s*[=:]\s*[\"']?(?:warn|warning)\b"
 )
@@ -6966,7 +6961,7 @@ def _is_weak_failure_line(line: str) -> bool:
     if _WEAK_EXCLUDE_RE.search(line):
         return False
     if (
-        _WEAK_WARN_LEVEL_RE.search(line) or _WEAK_STRUCT_LEVEL_RE.search(line)
+        _WARN_LEVEL_RE.search(line) or _WEAK_STRUCT_LEVEL_RE.search(line)
     ) and _WEAK_FAILURE_WORD_RE.search(line):
         return True
     return bool(
@@ -6979,7 +6974,6 @@ def _is_weak_failure_line(line: str) -> bool:
 
 
 _ISO_LEVEL_TOKEN_RE = re.compile(r"\b(?:TRACE|DEBUG|INFO|NOTICE|WARN|WARNING)\b")
-_ISO_WARN_TOKEN_RE = re.compile(r"\b(?:WARN|WARNING)\b")
 _ISO_STRUCT_LEVEL_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)(?:trace|debug|info|notice|warn|warning)\b")
 _ISO_STRUCT_WARN_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)warn(?:ing)?\b")
 
@@ -7013,7 +7007,7 @@ def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
     for line in nonblank:
         if _ISO_LEVEL_TOKEN_RE.search(line) or _ISO_STRUCT_LEVEL_RE.search(line) or _REDIS_LINE_RE.match(line):
             level_count += 1
-        if _ISO_WARN_TOKEN_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line) or _redis_warn(line):
+        if _WARN_LEVEL_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line) or _redis_warn(line):
             warn_lines.append(line)
 
     if level_count * 100 < len(nonblank) * 90:
@@ -7081,18 +7075,8 @@ _STATE_SUMMARY_RE = re.compile(
 )
 
 
-def _summary_count_text(line: str) -> str:
-    """The matched count phrase (e.g. ``"20/40"`` or ``"3 of 12"``) of a summary
-    line, with internal whitespace collapsed. Returns ``""`` when the line does
-    not carry a summary count phrase."""
-    for m in _STATE_SUMMARY_RE.finditer(line):
-        phrase = m.group(1) or m.group(2)
-        if phrase:
-            return " ".join(phrase.split())
-    return ""
+def _summary_anchor_region(line: str) -> str | None:
 
-
-def _summary_anchor_region(line: str, lines: list[str]) -> str | None:
     """Region text for a summary-tier exemplar: the summary line without timestamp/level.
 
     Returns ``None`` when the result is empty.
@@ -7137,7 +7121,7 @@ def _state_summary_lines(lines: list[str], max_regions: int) -> list[str]:
         return []
 
     for line in matches:
-        if _summary_anchor_region(line, lines) is None:
+        if _summary_anchor_region(line) is None:
             return []
 
     fp_counts: dict[str, int] = {}
@@ -7356,7 +7340,7 @@ def _anchor_regions(text: str, max_regions: int) -> list[str]:
             # Summary-tier anchor: keep the summary line with timestamp and level
             # removed (e.g. "health: summary 20/40 degraded"), so the count phrase
             # remains available as the anchor region.
-            region = _summary_anchor_region(line, lines)
+            region = _summary_anchor_region(line)
             seen_rows.add(i)
             if region:
                 regions.append(region[:_ANCHOR_LINE_CHARS])

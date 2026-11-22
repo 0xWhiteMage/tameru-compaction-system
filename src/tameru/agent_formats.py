@@ -27,6 +27,7 @@ import statistics
 from dataclasses import asdict, dataclass
 from typing import Callable
 
+from ._fingerprint_patterns import _DIGITS_RE
 from .contract_gates import query_has_distinctive_selectors
 from .gap_kind import call_gap_marker
 from .regex_cache import cached_compile
@@ -114,11 +115,6 @@ GUTTER_RE = re.compile(r"^\s*\d+(?:\t|\||:[ \t])")
 _GUTTER_TAB_RE = re.compile(r"^\s*\d+\t")
 _GUTTER_PIPE_RE = re.compile(r"^\s*\d+\|")
 NUMBERED_RATIO = 0.60
-
-
-def strip_gutter(line: str) -> str:
-    """``line`` without its line-number gutter (unchanged when it has none)."""
-    return GUTTER_RE.sub("", line, count=1)
 
 
 def numbered_gutter_ratio(lines: list[str]) -> float:
@@ -1203,7 +1199,7 @@ def _classify_slowlog(lines):
 
 _ENV_LINE_RE = re.compile(r"^(?:export |declare -x )?([A-Za-z_][A-Za-z0-9_.]*)=(.*)$")
 _ENV_SECRET_KEY_RE = re.compile(r"(?i)password|passwd|secret|token|api_?key|access_?key|private_?key|credential|auth")
-_ENV_DIGITS_RE = re.compile(r"\d+")
+_ENV_DIGITS_RE = _DIGITS_RE
 _ENV_LOGFMT_TAIL_RE = re.compile(r"\s[A-Za-z_][\w.]*=")
 
 
@@ -2507,7 +2503,7 @@ _PS_DASH_RE = re.compile(r"^\s*-{2,}(?:\s+-{2,})+\s*$")
 
 
 def _ps_row_signature(line: str) -> str:
-    return re.sub(r"\d+", "0", " ".join(line.split()))
+    return _DIGITS_RE.sub("0", " ".join(line.split()))
 
 
 def _ps_dash_index(lines: list[str]) -> int | None:
@@ -3758,8 +3754,6 @@ def _is_k8s_header(stripped: str) -> bool:
 
 
 def _classify_kubectl(lines):
-    import re
-
     keep = [False] * len(lines)
     tests = [0] * len(lines)
     suites = [0] * len(lines)
@@ -3812,7 +3806,7 @@ def _classify_kubectl(lines):
             key = (
                 toks[0] if toks else "",
                 toks[1] if len(toks) > 1 else "",
-                re.sub(r"\d+", "#", message),
+                _DIGITS_RE.sub("#", message),
             )
             groups.setdefault(key, []).append(i)
         for indices in groups.values():
@@ -3928,7 +3922,7 @@ def _classify_kubectl_events(lines):
             type_idx = 0
         reason = spans[type_idx + 1].group() if type_idx + 1 < len(spans) else ""
         message = " ".join(m.group() for m in spans[type_idx + 2:])
-        key = (type_token, reason, re.sub(r"\d+", "#", message))
+        key = (type_token, reason, _DIGITS_RE.sub("#", message))
         if key in nonnormal:
             nonnormal[key][1] = i
         else:
@@ -4137,7 +4131,7 @@ _GIT_COMMIT_RE = r"^commit [0-9a-f]{4,64}\b"
 
 
 def _git_subject_template(subject: str) -> str:
-    return re.sub(r"\d+", "#", subject.lower())
+    return _DIGITS_RE.sub("#", subject.lower())
 
 
 def _detect_git_log(text: str) -> bool:

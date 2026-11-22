@@ -10,6 +10,7 @@ from .content_cache import _engine_version, content_memo
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
+from itertools import islice
 from typing import Iterator
 
 _BIDI_CONTROLS = frozenset(
@@ -42,6 +43,7 @@ _VERTICAL_RE = re.compile(
 )
 _WORD_JOINERS = frozenset("_-./:@+")
 _NO_SPACE_SCRIPTS = frozenset({"han", "kana", "hangul", "thai", "lao", "khmer", "myanmar"})
+_LINE_CONTENT_RE = re.compile(r"[^\n\r\v\f\x1c-\x1e\x85\u2028\u2029]+")
 
 
 @dataclass(frozen=True)
@@ -399,19 +401,32 @@ def count_token_units(text: str) -> int:
     return sum(1 for _ in _token_units_gen(text))
 
 
+def _sample_nonblank_lines(text: str, limit: int) -> list[str]:
+    lines: list[str] = []
+    if limit <= 0:
+        return lines
+    for match in _LINE_CONTENT_RE.finditer(text):
+        line = match.group()
+        if line.strip():
+            lines.append(line)
+            if len(lines) == limit:
+                break
+    return lines
+
+
 def _looks_vertical_ocr(text: str) -> bool:
-    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    lines = [line.strip() for line in _sample_nonblank_lines(str(text or ""), 128)]
     if len(lines) < 6:
         return False
-    short = sum(1 for line in lines[:128] if len(graphemes(line)) <= 2)
-    return short / min(len(lines), 128) >= 0.8
+    short = sum(1 for line in lines if sum(1 for _ in islice(iter_graphemes(line), 3)) <= 2)
+    return short / len(lines) >= 0.8
 
 
 def profile_text(text: str) -> UnicodeProfile:
     value = str(text or "")
     if value.isascii():
         has_latin = any(char.isalpha() for char in value)
-        lines = [line.strip() for line in value.splitlines() if line.strip()][:128]
+        lines = [line.strip() for line in _sample_nonblank_lines(value, 128)]
         vertical = bool(_VERTICAL_RE.search(value)) or (
             len(lines) >= 6
             and sum(len(line) <= 2 for line in lines) / len(lines) >= 0.8

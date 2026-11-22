@@ -20,6 +20,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from ._fingerprint_patterns import _DIGITS_RE as _M_DIGITS, _HEXRUN_RE as _M_HEX, _UUID_RE as _M_UUID
 from .structured_reports import loads_for_rewrite
 
 __all__ = ["fold_lossless", "json_brief", "mask_template"]
@@ -200,13 +201,10 @@ _M_TS = re.compile(
     r"\b\d{4}-\d{2}-\d{2}(?:[t ]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:z|[+-]\d{2}:?\d{2})?)?"
     r"|\b\d{1,2}:\d{2}:\d{2}(?:[.,]\d{1,9})?"
 )
-_M_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _M_IP4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b")
 _M_IP6 = re.compile(r"(?<![\w:])(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}(?![\w:])")
 _M_PATH = re.compile(r"(?<![\w<>/.:=-])(?:/[\w.@+~%,=-]{1,128}){3,}/?")
 _M_DUR = re.compile(r"\b\d+(?:\.\d+)?(?:ms|us|µs|s|m|h)\b")
-_M_HEX = re.compile(r"[0-9a-f]{6,}")
-_M_DIGITS = re.compile(r"\d+")
 
 
 def _volatile(placeholder: str):
@@ -460,14 +458,14 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
         for k in row:
             if k not in seen_keys:
                 seen_keys.add(k)
-                if len(keys) < _MAX_KEYS:
-                    keys.append(k)
+                keys.append(k)
+                if len(keys) == _MAX_KEYS:
+                    break
+        if len(keys) == _MAX_KEYS:
+            break
     dumped = [_dumps(r) for r in rows]
-    # prefix sums so a candidate K costs O(1) to size
-    pre = [0] * (n + 1)
-    for i, d in enumerate(dumped):
-        pre[i + 1] = pre[i] + len(d) + 1
-    head_overhead = len(_json_brief_body(n, _dumps(keys), "", "", "", n))
+    dumped_keys = _dumps(keys)
+    head_overhead = len(_json_brief_body(n, dumped_keys, "", "", "", n))
 
     def parts(k: int) -> tuple[list[int], list[int]]:
         head = list(range(min(k, n)))
@@ -480,7 +478,7 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
             tot += sum(len(dumped[i]) + 1 for i in grp)
         return tot
 
-    notable_all = [i for i in _notable_order(rows, dumped, _query_terms(query))]
+    notable_all = _notable_order(rows, dumped, _query_terms(query))
 
     def build(k: int, notable_cap: int) -> tuple[str, int] | None:
         head, tail = parts(k)
@@ -491,7 +489,7 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
         omitted = n - len(shown) - len(notable)
         body = _json_brief_body(
             n,
-            _dumps(keys),
+            dumped_keys,
             ",".join(dumped[i] for i in head),
             ",".join(dumped[i] for i in tail),
             ",".join(dumped[i] for i in sorted(notable)),
@@ -502,11 +500,12 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
     for cap in (_MAX_NOTABLE, 2, 0):
         # Largest K that fits (size grows with K): binary search, K in [1, n].
         lo, hi, best = 1, max(1, n // 2 + 1), None
-        if build(1, cap) is None:
+        minimum = build(1, cap)
+        if minimum is None:
             continue
         while lo <= hi:
             mid = (lo + hi) // 2
-            r = build(mid, cap)
+            r = minimum if mid == 1 else build(mid, cap)
             if r is not None:
                 best, lo = r, mid + 1
             else:

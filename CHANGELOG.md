@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.10.0] - Unreleased
 
+- Documentation: clarify that the core imports the lightweight semantic resolver, model dependencies load only during tier construction, and unavailable dependencies raise `SemanticUnavailable` for direct construction.
+- Semantic ambiguity detection scores the dropped candidates and kept winner in one call, avoiding a duplicate query encoding while retaining the same similarity threshold and lexical fallback.
+- Fix: dictionary-configured semantic tiers fall back to lexical extraction when optional dependencies or model initialization fail, just as scorer failures do; regression tests cover both construction failures.
+- Cleanup: share one compiled WARN/WARNING token pattern across evidence, weak-failure and isolated-warning detection without changing matching behavior.
+- Cleanup: remove unused gutter and summary-count helpers, an unused host-prefix constant and a redundant import; public package exports are unchanged.
+- Refactor: table outlier selection reuses each column for categorical and numeric analysis, counts low-cardinality values once, and reuses static table, scoring, bridge-name and transcript-word regexes without changing output.
+
+- Refactor: bounded OCR/NDJSON line samples preserve Unicode splitlines behavior without collecting unused lines; OCR length checks stop after three graphemes, and complete profiles reuse their safety counts while truncated profiles still scan the full input.
+
+- Refactor: JSON briefs avoid unused prefix sums, repeated key-manifest serialization and discovery, identity list copies and duplicate minimum-size probes while preserving output.
+
+- Refactor: default input profiles reuse one frozen IndustrialLimits instance, including cache hits, without bypassing validation of explicitly constructed limits.
+
+- Refactor: report routing skips irrelevant selector setup, ordinary adapters build selectors only after report selection declines, Markdown table gaps use their known list result directly, and JSON answer checks reuse the casefolded query.
+
+- Refactor: fingerprinting paths share private UUID, lowercase-hex and Unicode digit patterns; repeated digit substitutions reuse the same primitive, and summary/ambiguity helpers no longer accept unused private arguments.
+- Fix: ordinary NDJSON validation enforces nested object field limits and rejects NaN/Infinity even when report routing is disabled, while preserving selected record bytes.
+
+- Fix: Markdown sections, YAML line records and document outliers, XML/HTML children, INI sections and vertical OCR blocks honor caller record-count and record-size limits before selecting output.
+
+- Fix: INI/TOML selection preserves global preambles and inherited INI defaults; XML and HTML selection declines malformed roots, children and wrapper nesting without misclassifying valid multiline XML.
+
+- Fix: Markdown extraction respects fence lengths and closing syntax, preserves repeated ancestor headings in distinct sections, and leaves unterminated fences unchanged.
+
+
+
 Everything below is measured by replay on the engine's own benchmark (`benchmarks/engine_bench`, dev and validation splits, engine 1.9.0 against this
 release, paired, cluster bootstrap); none of it is a measurement against a real model's bill. Plan and rules: [`docs/ANALYSIS-PLAN-1.10.md`](docs/ANALYSIS-PLAN-1.10.md).
 
@@ -101,6 +127,13 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
 - **Open for contribution.** `CONTRIBUTING.md`, `SECURITY.md`, a pull request template, issue forms and CODEOWNERS, modelled on how Hermes Agent runs its contributions. `docs/HOST-RESTRICTIONS.md` records what harness maintainers have taught us a plugin may not do (14 numbered rules, each with where it was learned), and `scripts/check_host_rules.py` enforces it in CI: any new network, process, dynamic-code, file-write, home-path, environment, import or monkey-patching finding fails, against a baseline of the existing optional cache and summary route; every module must also import under `python -I -S`. Contributor credit follows Hermes: `.mailmap`, one-file-per-email mappings in `contributors/`, and an attribution check in CI. A CI workflow (tests on Linux and Windows, host restrictions, attribution) is added; actions are pinned by commit. No file under `src/` changes.
 - **Licence: MIT to Apache License 2.0.** `LICENSE` is the Apache-2.0 text and `NOTICE` carries the copyright line; the package metadata declares `Apache-2.0`. Copies of earlier releases remain available under the MIT licence they were published with.
 - Documentation: the README is rewritten around 1.9.0 for users, with a recording for each feature; the CLI demo is re-rendered to show one failure and a note on what was kept; `docs/industrial-compaction-v1.2.md` is now `docs/ARCHITECTURE.md`; three stale images are removed.
+
+### Package startup
+
+- `import tameru` defers loading format adapters, folding, and profiling code until first use, without changing the public exports.
+  Median bare-import time fell from 79.89 ms to 20.58 ms in a separate 60-run subprocess benchmark on Linux with Python 3.12.
+- Bare imports also skip `typing`, while keeping static export declarations. ASCII queries avoid compiling the Unicode-only
+  selector patterns until a non-ASCII query or an explicit pattern import needs them.
 
 ## [1.9.0] - 2026-11-09
 
