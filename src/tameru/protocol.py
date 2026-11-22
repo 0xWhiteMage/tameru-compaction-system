@@ -106,13 +106,13 @@ class ProtocolError(Exception):
         self.code = code
 
 
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def clean_text(text: str) -> tuple[str, bool]:
     """Lone surrogates (valid in JavaScript strings, not encodable as UTF-8) become U+FFFD."""
-    try:
-        text.encode("utf-8")
-        return text, False
-    except UnicodeEncodeError:
-        return "".join("\ufffd" if 0xD800 <= ord(c) <= 0xDFFF else c for c in text), True
+    cleaned, count = _SURROGATE.subn("\ufffd", text)
+    return cleaned, count > 0
 
 
 def _number(value: Any, low: float, high: float, code: str) -> float:
