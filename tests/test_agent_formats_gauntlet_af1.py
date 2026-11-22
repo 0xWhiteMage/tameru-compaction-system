@@ -23,7 +23,7 @@ def test_grep_invalid_cap(cap):
 
 
 def test_grep_uncertain_lines():
-    text = "x.py:1:needle\nx.py:2:other\nUNKNOWN TRAILER"
+    text = "x.py:1:needle\nx.py:2:other\nx.py:3:third\nUNKNOWN TRAILER"
     result = af.adapt_grep_lines(text, "needle")
     assert result is not None and result.text == text
 

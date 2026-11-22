@@ -390,7 +390,7 @@ def detect_unified_diff(text: str) -> bool:
 
 
 _GREP_MATCH_RE = re.compile(r"^((?:[A-Za-z]:[\\/])?[^\s:][^:]*):(\d+):(.*)$")
-_GREP_CTX_RE = re.compile(r"^([^\s:][^:]*?)-(\d+)-(.*)$")
+_GREP_CTX_RE = re.compile(r"^((?:[A-Za-z]:[\\/])?[^\s:][^:]*?)-(\d+)-(.*)$")
 
 
 def _pathish(path: str) -> bool:
