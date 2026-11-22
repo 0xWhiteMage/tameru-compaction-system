@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Refactor: report routing skips irrelevant selector setup, ordinary adapters build selectors only after report selection declines, Markdown table gaps use their known list result directly, and JSON answer checks reuse the casefolded query.
+
 - Refactor: fingerprinting paths share private UUID, lowercase-hex and Unicode digit patterns; repeated digit substitutions reuse the same primitive, and summary/ambiguity helpers no longer accept unused private arguments.
 
 - **One interface for every plugin.** `docs/PLUGIN-UI.md` specifies the bar, the icon meanings, the Off / Less / Normal / More strength names and the words shared by the Hermes and DeepSeek Harness plugins; `docs/ui-vocabulary.json` (English and Chinese, with a forbidden-words list that keeps cost and saving wording out) and `docs/ui-icons.json` (the star, lock, undo and size-arrow drawings) are the data each plugin copies and tests against. Reviewed by five design specialists over four rounds. No file under `src/` changes.

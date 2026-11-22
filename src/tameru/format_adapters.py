@@ -1252,13 +1252,8 @@ def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
         if omitted_line:
             out.append(omitted_line)
     else:
-        gap_text = _with_gaps(data, keep_flags, "\n", gap_marker, len(text))
         out = [header, separator]
-        if isinstance(gap_text, str):
-            if gap_text:
-                out.extend(gap_text.splitlines())
-        else:
-            out.extend(gap_text)
+        out.extend(_with_gaps(data, keep_flags, "\n", gap_marker, len(text)))
 
     return FormatResult(
         format="markdown_table",
@@ -1274,9 +1269,11 @@ def adapt_report(text: str, query: str, limits: FormatLimits | None = None,
                  *, gap_marker=None) -> FormatResult | None:
     """Run only the recognized report selectors; None when text is not a report."""
     value = str(text or "")
+    stripped = value.lstrip()
+    if not stripped.startswith(("{", "<", "\ufeff", "TN:", "SF:")):
+        return None
     selectors = _query_selectors(query)
     resolved = limits or FormatLimits()
-    stripped = value.lstrip()
     if stripped.startswith("{"):
         report = select_report(
             value, lambda record: _contains_selector(record, selectors),
@@ -1328,13 +1325,13 @@ def adapt_format(
     """
     value = str(text or "")
     resolved_format = format_name or detect_format(value)
-    selectors = _query_selectors(query)
 
     if allow_reports:
         report = adapt_report(value, query, limits, gap_marker=gap_marker)
         if report is not None:
             return report
 
+    selectors = _query_selectors(query)
     if resolved_format in {"csv", "tsv"}:
         if not selectors:
             return _adapt_delimited_outliers(
