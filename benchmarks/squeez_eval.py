@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Benjamin Ang
-# SPDX-FileCopyrightText: KR Labs
+# SPDX-FileCopyrightText: Copyright 2026 KR Labs
+# Modified by Benjamin Ang, 2026: extracted from three upstream files into this file
+# alongside Tameru-specific code; docstring of compute_empty_accuracy shortened.
 
 """Tameru on the Squeez tool-output pruning benchmark (618-example held-out test set).
 
@@ -8,9 +10,9 @@ Benchmark: Kovacs, "Squeez: Task-Conditioned Tool-Output Pruning for Coding Agen
 Data: huggingface.co/datasets/KRLabsOrg/tool-output-extraction-swebench, file ``canonical_test.jsonl``
 (Apache-2.0; sha256 1ead3be111439266370fbcc8ffabeadd38fbd1526bbd981d23347da013b20540).
 
-The metric functions and the naive baselines below are copied verbatim from the Squeez repository at
+The metric functions and the naive baselines below are copied with minor modifications from the Squeez repository at
 commit aa0bd37c4d32ade33f98e4b278801e4f139fbd9e (``squeez/training/evaluate.py``,
-``squeez/data/canonical.py``, ``scripts/evaluate_baselines.py``; Apache License 2.0, Copyright KR Labs), so
+``squeez/data/canonical.py``, ``scripts/evaluate_baselines.py``; Apache License 2.0, Copyright 2026 KR Labs), so
 the numbers are computed exactly as in the paper's Table 4. The naive baselines are re-run here as a check
 that this scorer reproduces the published figures.
 

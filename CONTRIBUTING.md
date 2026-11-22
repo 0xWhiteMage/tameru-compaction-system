@@ -184,8 +184,9 @@ Pushing fixes to the same branch is how you respond.
 
 Your name stays on your work. Commits keep your authorship, merged pull requests make you a contributor on GitHub, and changelog
 entries from outside the maintainers end with `(#PR, thanks @you)`. GitHub only credits a commit whose author email is linked to an
-account, so CI runs an **attribution check**: if one of your commits uses an email GitHub cannot link, it tells you the one command to
-run (`python scripts/add_contributor.py <email> <github-login>`) or to switch to your noreply address. The design, borrowed from
+account. CI runs an **attribution check**: an unrecognised author email prompts you to add a mapping for the project's tooling
+(`python scripts/add_contributor.py <email> <github-login>`) or switch to your noreply address. A mapping cannot verify an email
+with GitHub or change its contributor graph; GitHub does not read `.mailmap`. The design, borrowed from
 [Hermes Agent](https://github.com/NousResearch/hermes-agent/tree/main/contributors), is one small file per email so mappings never
 conflict. Details are in [`contributors/README.md`](contributors/README.md).
 

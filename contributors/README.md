@@ -55,3 +55,4 @@ History includes 11 commits authored by `Claude <noreply@anthropic.com>`, predat
 Three record Benjamin Ang as committer; the other eight also record Claude as committer. Those records alone do not establish
 a responsible human for every commit, so the shared Claude identity is not mapped to a person. Original history is retained;
 new AI-assisted changes follow the human-authorship rule above. A display mapping would not verify an email with GitHub.
+History also contains 53 `Co-Authored-By: Claude` trailers, so the 11 author records do not represent all AI involvement.
