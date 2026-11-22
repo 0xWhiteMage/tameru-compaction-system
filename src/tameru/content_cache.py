@@ -85,8 +85,6 @@ class ContentCache:
             self.analyses += 1
             self.analysis_counts[key] = self.analysis_counts.get(key, 0) + 1
             if weight > self.max_bytes or self.max_bytes <= 0:
-                self._items[key] = (value, weight)  # tracked for stats, dropped below
-                self._items.popitem(last=False)
                 self.evictions += 1
                 return
             self._items[key] = (value, weight)
