@@ -6122,33 +6122,24 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
 
     total_crushed = 0
     for path, arr in arrays_to_crush:
-        kept_indices = []
-        dropped_count = 0
-        for i, item in enumerate(arr):
+        kept_items = []
+        for item in arr:
             item_str = json.dumps(item, ensure_ascii=False)
             if any(selector.search(item_str) for selector in query_selectors):
-                kept_indices.append(i)
-            else:
-                dropped_count += 1
-        # No first-50 fallback. If nothing matched, do not crush this array.
-        if not kept_indices:
+                kept_items.append(item)
+        if not kept_items or len(kept_items) == len(arr):
             continue
 
-        if dropped_count == 0:
-            continue
-
-        # Rebuild the array with only kept items
-        new_arr = [arr[i] for i in sorted(kept_indices)]
-        total_crushed += dropped_count
+        total_crushed += len(arr) - len(kept_items)
 
         # Walk back to the array location and replace it
         if path:
             target = data
             for key in path[:-1]:
                 target = target[key]
-            target[path[-1]] = new_arr
+            target[path[-1]] = kept_items
         else:
-            data = new_arr
+            data = kept_items
 
     if total_crushed == 0:
         return None
