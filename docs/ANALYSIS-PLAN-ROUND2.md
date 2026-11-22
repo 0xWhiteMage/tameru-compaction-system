@@ -249,4 +249,18 @@ No exception touches a statistical endpoint, margin, α or the validation-query 
 - **Where it is judged.** Leave-family-out on dev is the development check. Validation is queried only through the
   `s6_calibration` thresholdout gate. The gate is judged on the sealed split, with the table fit on all dev rows.
 
+### 2026-11-22: the EV rule at forced events; the S3 quality-harness endpoint
+
+- **EV at a forced event.** Where the host forces a cut whether or not the engine accepts — the DeepSeek pruner's
+  stock-trigger cut, Hermes's compaction — the choice is between the extract and the host's forced alternative (a
+  stub, a header or the host's own summary), not between the extract and the original. The registered rule
+  "accept iff p̂·V − (1 − p̂)·L > 0" still applies; at a forced event, V is the value *over* the forced
+  alternative (the savings beyond what the stub already yields) and L is the marginal loss *over* that
+  alternative (a fact the stub also loses is not lost by accepting). An extract better than the stub must not be
+  declined into the stub. The values an arm reports must state which alternative each event used.
+- **S3 quality-harness endpoint.** The S3 answer-quality gate (section 5) is judged by a fixed prompt set sent to
+  a local model. The harness accepts an OpenAI-compatible base URL and a model name so the same prompts run
+  unchanged against LM Studio, llama.cpp, vLLM, Ollama or the GX10 endpoint; the endpoint URL, the model name and
+  the model's digest are recorded next to every S3 result. The endpoint is a reporting parameter, not a tunable.
+
 No margin, bar or gate changes.
