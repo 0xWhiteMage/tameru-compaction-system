@@ -4669,9 +4669,11 @@ def _source_keys(query: str, blob: str) -> list[str]:
     """The entities and terms of ``query`` that occur in ``blob`` (a folded source). Only these can count for or
     against recall: a query word the text never contains says nothing about what was kept."""
     keys: list[str] = []
+    seen: set[str] = set()
     for item in _extract_entities(query) + _extract_terms(query):
-        if item not in keys and _key_in_blob(item, blob):
+        if item not in seen and _key_in_blob(item, blob):
             keys.append(item)
+            seen.add(item)
     return keys
 
 
