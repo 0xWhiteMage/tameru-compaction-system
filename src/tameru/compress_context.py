@@ -75,7 +75,6 @@ _REEXPORTED = (fold_lossless,)
 try:
     DEFAULT_CCR_DIR = Path.home() / ".tameru" / "cache" / "context-compress-ccr"
 except Exception:
-    import tempfile
     DEFAULT_CCR_DIR = Path(tempfile.gettempdir()) / ".tameru" / "cache" / "context-compress-ccr"
 # Engine release this module ships in; the release bump keeps it in step with
 # pyproject.toml and src/tameru/__init__.py.
@@ -4307,8 +4306,10 @@ def _counterfactual_overlap_ambiguity(
             if len(cands) < 2:
                 return False
             capped = sorted(cands, key=lambda b: -b["score"])[:32]
-            _, sims = tier.score_against_query(query, [c["text"] for c in capped])
-            win_sim = tier.score_against_query(query, [winner["text"]])[1][0]
+            _, scores = tier.score_against_query(
+                query, [c["text"] for c in capped] + [winner["text"]]
+            )
+            sims, win_sim = scores[:-1], scores[-1]
             near = [c for c, sm in zip(capped, sims) if abs(sm - win_sim) < 0.05]
             return len(near) >= 2
         except Exception:  # tier failure must NEVER break compression
@@ -6840,7 +6841,6 @@ def _strip_anchor_prefix(line: str) -> str:
 _WEAK_LINE_HINT_RE = re.compile(
     r"WARN|warn|Failed|exited with|status=|code=|HTTP/"
 )
-_WEAK_WARN_LEVEL_RE = re.compile(r"\b(?:WARN|WARNING)\b")
 _WEAK_STRUCT_LEVEL_RE = re.compile(
     r"(?i)\b(?:level|lvl|severity)\s*[\"']?\s*[=:]\s*[\"']?(?:warn|warning)\b"
 )
@@ -6878,7 +6878,7 @@ def _is_weak_failure_line(line: str) -> bool:
     if _WEAK_EXCLUDE_RE.search(line):
         return False
     if (
-        _WEAK_WARN_LEVEL_RE.search(line) or _WEAK_STRUCT_LEVEL_RE.search(line)
+        _WARN_LEVEL_RE.search(line) or _WEAK_STRUCT_LEVEL_RE.search(line)
     ) and _WEAK_FAILURE_WORD_RE.search(line):
         return True
     return bool(
@@ -6891,7 +6891,6 @@ def _is_weak_failure_line(line: str) -> bool:
 
 
 _ISO_LEVEL_TOKEN_RE = re.compile(r"\b(?:TRACE|DEBUG|INFO|NOTICE|WARN|WARNING)\b")
-_ISO_WARN_TOKEN_RE = re.compile(r"\b(?:WARN|WARNING)\b")
 _ISO_STRUCT_LEVEL_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)(?:trace|debug|info|notice|warn|warning)\b")
 _ISO_STRUCT_WARN_RE = re.compile(r"(?i)(?:\blevel\s*=|\"level\"\s*:\s*\"?)warn(?:ing)?\b")
 
@@ -6925,7 +6924,7 @@ def _isolated_warn_lines(lines: list[str], max_regions: int) -> list[str]:
     for line in nonblank:
         if _ISO_LEVEL_TOKEN_RE.search(line) or _ISO_STRUCT_LEVEL_RE.search(line) or _REDIS_LINE_RE.match(line):
             level_count += 1
-        if _ISO_WARN_TOKEN_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line) or _redis_warn(line):
+        if _WARN_LEVEL_RE.search(line) or _ISO_STRUCT_WARN_RE.search(line) or _redis_warn(line):
             warn_lines.append(line)
 
     if level_count * 100 < len(nonblank) * 90:
@@ -6991,17 +6990,6 @@ _STATE_SUMMARY_RE = re.compile(
     r"|\b(\d+\s+(?:of|out of)\s+\d+)\s+(?:services?\s+|nodes?\s+|pods?\s+|checks?\s+|targets?\s+)?(?:are\s+|is\s+)?(?:degraded|down|unhealthy|failed|failing|not\s+ready|unavailable|offline|unreachable|critical)\b",
     re.IGNORECASE,
 )
-
-
-def _summary_count_text(line: str) -> str:
-    """The matched count phrase (e.g. ``"20/40"`` or ``"3 of 12"``) of a summary
-    line, with internal whitespace collapsed. Returns ``""`` when the line does
-    not carry a summary count phrase."""
-    for m in _STATE_SUMMARY_RE.finditer(line):
-        phrase = m.group(1) or m.group(2)
-        if phrase:
-            return " ".join(phrase.split())
-    return ""
 
 
 def _summary_anchor_region(line: str, lines: list[str]) -> str | None:
