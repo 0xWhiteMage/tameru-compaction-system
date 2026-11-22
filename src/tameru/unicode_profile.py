@@ -378,8 +378,7 @@ def profile_text(text: str) -> UnicodeProfile:
             malformed_surrogates=False,
         )
     scripts: set[str] = set()
-    ltr = 0
-    rtl = 0
+    ltr = rtl = False
     controls = 0
     overrides = 0
     malformed = False
@@ -389,11 +388,10 @@ def profile_text(text: str) -> UnicodeProfile:
         if char in _BIDI_CONTROLS:
             controls += 1
             overrides += int(char in _BIDI_OVERRIDES)
-        bidi = unicodedata.bidirectional(char)
-        if bidi == "L":
-            ltr += 1
-        elif bidi in {"R", "AL"}:
-            rtl += 1
+        if not (ltr and rtl):
+            bidi = unicodedata.bidirectional(char)
+            ltr = ltr or bidi == "L"
+            rtl = rtl or bidi in {"R", "AL"}
         script = script_of(char)
         if script:
             scripts.add(script)
