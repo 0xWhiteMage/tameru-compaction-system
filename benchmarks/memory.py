@@ -21,6 +21,7 @@ Usage
   python benchmarks/memory.py --out benchmarks/memory-<label>.json
   python benchmarks/memory.py --sizes 2M --reps 1          # one size, quick look
   python benchmarks/memory.py --baseline ''                # no baseline cells
+  python benchmarks/memory.py --candidate 6a40d6f          # a committed engine instead of the working tree
 """
 from __future__ import annotations
 
@@ -198,6 +199,7 @@ def main() -> int:
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--timeout", type=float, default=600.0, help="seconds per child")
     ap.add_argument("--baseline", default="e638509", help="git rev of the 1.10.0 engine ('' = none)")
+    ap.add_argument("--candidate", default="", help="git rev of the engine under test ('' = this working tree)")
     ap.add_argument("--work", default=str(ROOT / "build" / "memory"))
     ap.add_argument("--out")
     args = ap.parse_args()
@@ -208,12 +210,13 @@ def main() -> int:
     work = Path(args.work)
     sizes = [s for s in args.sizes.split(",") if s]
     inputs = _inputs(sizes, work)
-    engines = {"candidate": _engine_src("", work)}
+    engines = {"candidate": _engine_src(args.candidate, work)}
     if args.baseline:
         engines["1.10.0"] = _engine_src(args.baseline, work)
-    head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
-    dirty = bool(subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "--", "src/tameru"],
-                                capture_output=True, text=True).stdout.strip())
+    head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", args.candidate or "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    dirty = not args.candidate and bool(subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "--", "src/tameru"],
+                                                       capture_output=True, text=True).stdout.strip())
     jobs = [(label, size, kind, profile, rep, tm)
             for label in engines for size in sizes for (kind, s) in inputs if s == size
             for profile in PROFILES for rep in range(args.reps + 1) for tm in (False, True)
