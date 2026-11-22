@@ -3,6 +3,12 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_audit_header_without_blank():
+    lines = ["# npm audit report", "pkg", "Severity: low", "details"]
+    keep = af._classify_npm_audit(lines)[0]
+    assert keep[0] and not keep[1]
+
+
 def test_audit_mixed_severity():
     lines = ["pkg", "Severity: low", "Severity: critical", "exploit"]
     assert af._classify_npm_audit(lines)[0] == [True] * len(lines)

@@ -1996,6 +1996,7 @@ def _classify_npm_audit(lines: list[str]) -> tuple[list[bool], list[int], list[i
                         keep[idx + 1] = False
                 else:
                     first_header_seen = True
+                    keep[idx] = True
 
     return keep, [0] * len(lines), [0] * len(lines)
 
