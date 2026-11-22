@@ -15,22 +15,28 @@ SPDX-License-Identifier = "Apache-2.0"
 
 # Keep lint from opening sealed test or benchmark material.
 [[annotations]]
-path = ["tests/**", "benchmarks/engine_bench/**", "benchmarks/session_corpus/**"]
+path = ["tests/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Benjamin Ang"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["benchmarks/engine_bench/**", "benchmarks/session_corpus/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "NOASSERTION"
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = ["fixtures/shape-jp-musubi.txt"]
 precedence = "override"
 SPDX-FileCopyrightText = "NOASSERTION"
-SPDX-License-Identifier = "LicenseRef-NoLicense-Musubi-Tuner"
+SPDX-License-Identifier = "LicenseRef-Unresolved-Musubi-Tuner"
 
 [[annotations]]
 path = ["fixtures/shape-ko-readme.txt"]
 precedence = "override"
 SPDX-FileCopyrightText = "Copyright © 39 AI, INC. All Rights Reserved."
-SPDX-License-Identifier = "LicenseRef-Fish-Audio-Community-1.0"
+SPDX-License-Identifier = "LicenseRef-Fish-Audio-Research"
 
 [[annotations]]
 path = ["fixtures/shape-yaml-travis.txt"]
@@ -47,5 +53,5 @@ SPDX-License-Identifier = "MIT"
 [[annotations]]
 path = ["tests/golden/compress_context.json"]
 precedence = "override"
-SPDX-FileCopyrightText = ["2026 Benjamin Ang", "Copyright © 39 AI, INC. All Rights Reserved.", "Copyright (c) 1999 - 2021 The PHP Group. All rights reserved."]
-SPDX-License-Identifier = "Apache-2.0 AND PHP-3.01 AND LicenseRef-Fish-Audio-Community-1.0 AND LicenseRef-NoLicense-Musubi-Tuner"
+SPDX-FileCopyrightText = ["2026 Benjamin Ang", "Copyright © 39 AI, INC. All Rights Reserved.", "Copyright (c) 1999 - 2021 The PHP Group. All rights reserved.", "NOASSERTION"]
+SPDX-License-Identifier = "Apache-2.0 AND PHP-3.01 AND LicenseRef-Fish-Audio-Research AND LicenseRef-Unresolved-Musubi-Tuner"
