@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Benjamin Ang
+# SPDX-FileCopyrightText: KR Labs
+
 """Tameru on the Squeez tool-output pruning benchmark (618-example held-out test set).
 
 Benchmark: Kovacs, "Squeez: Task-Conditioned Tool-Output Pruning for Coding Agents", arXiv:2604.04979.

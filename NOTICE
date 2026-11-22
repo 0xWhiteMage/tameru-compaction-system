@@ -2,3 +2,14 @@ Tameru Compaction System
 Copyright 2026 Benjamin Ang
 
 This product includes software developed by Benjamin Ang (The White Mage).
+
+Third-party software
+
+Portions of benchmarks/squeez_eval.py are copied from Squeez:
+https://github.com/KRLabsOrg/squeez
+Commit aa0bd37c4d32ade33f98e4b278801e4f139fbd9e
+Copyright KR Labs
+Licensed under the Apache License, Version 2.0.
+These portions are not part of the installed package.
+
+See THIRD_PARTY_NOTICES.md for provenance and other acknowledgements.
