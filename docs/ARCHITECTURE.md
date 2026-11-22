@@ -74,6 +74,8 @@ Default limits:
 
 The public API accepts an optional `limits` argument. Existing callers receive defaults and remain source-compatible. Limits must be serialisable into receipts.
 
+In 1.10.0 an outer size guard runs before this pipeline: over 2,000,000 characters it analyses a bounded head/tail and error-line sample (`huge_sampled`, basis `partial`, confidence at most 0.5); over 8,000,000 it returns the exact original with `too_large`. The sample path does not verify or store the full original. These thresholds are independent of custom `IndustrialLimits`; see [usage](USAGE.md#1100-results-and-bounded-analysis).
+
 Scale SLOs on the reference host:
 
 - existing 4,000-record battery: under 1.2 seconds median CPU;
@@ -95,19 +97,19 @@ Scale SLOs on the reference host:
 6. attach format/profile/limit metadata to the receipt;
 7. use the generic engine's behaviour when adapters decline.
 
-The original caller text remains the CCR source and fail-open return value.
+On the normal, unsampled path, the original caller text remains the CCR source and fail-open return value.
 
 ## 6a. Interface layer (1.10.0)
 
-Additive modules that let a host keep its acceptance rule, option set and worker schema as data instead of code. None of them
-changes what `compress_context` returns for an existing call (`tests/golden/compress_context.json` is unchanged).
+Additive modules let a host keep its acceptance rule, option set and worker schema as data instead of code. These helpers do not themselves change extraction. The full 1.10.0 release also changes extraction and result metadata; its golden record was regenerated (see the historical [build notes](1.10.0-BUILD-NOTES.md#golden-regeneration-review-1100-done-once-after-steps-2a-and-2b)).
 
 - `decide.py`: `decide(result, policy)` returns `Decision(accept, reason, basis)` with the closed reasons `fail_open`, `sanitized`,
   `risk`, `lost_fingerprint`, `no_gain`, `low_confidence`, `not_enough_tokens`, `negative_ev`, `ok`. `HERMES_POLICY` and
   `DSH_POLICY` express the two 1.9.x host rules. Lines the engine's trust screen flags never count as a surviving error
-  fingerprint. An optional `Policy.ev` (`EVPolicy`: price profile, loss profile, strength, conservatism quantile, reserved
-  calibrator) replaces the confidence check with the expected-value rule `p_hat·V − (1 − p_hat)·L > 0`; the hard vetoes run
+  fingerprint. An optional `Policy.ev` (`EVPolicy`: price profile, loss profile, strength, conservatism quantile,
+  calibrator callable) replaces the confidence check with the expected-value rule `p_hat·V − (1 − p_hat)·L > 0`; the hard vetoes run
   first, unchanged.
+- `calibration.py` + `calibration.json`: a shipped development-fit, family-stratified Beta table. `p_hat(basis, specific, fact_lines_dropped=0, raw_confidence=None, *, quantile=0.5, table=None)` returns a probability estimate (0 when protected facts were dropped); unknown strata use the prior. An EV caller must explicitly supply a `calibrator` callable to use it: `EVPolicy.quantile` alone does not connect the table, and the default EV path still uses raw confidence. No live answer-quality guarantee follows from the fit.
 - `loss.py` + `loss_profiles.json`: dated, sourced loss profiles for the EV rule (`p_needed`, `p_recovered`,
   `recovery_output_tokens`, `lambda_base`, strength multipliers), each figure flagged `unverified` where it is an
   assumption. Plain data read with `pathlib`, same style as `prices.py`.

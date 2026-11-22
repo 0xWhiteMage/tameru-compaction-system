@@ -89,11 +89,13 @@ pip install -e ".[dev]"
 
 The optional `semantic` extra (`pip install -e ".[semantic]"`) is not needed for the engine or for the default tests.
 
+For a release-specific checkout, use the immutable 1.10.0 commit in the [install guide](README.md#install); cloning the default branch alone currently gives 1.9.0. Do not build or run the sealed engine split or the corpus holdout during routine development.
+
 ### Run the checks
 
 | Command | What it checks | When |
 |---|---|---|
-| `python -m pytest -q` | The whole suite (about 2,000 tests, around two minutes). Add `-k name` or a file path for a quick loop. | every change |
+| `python -m pytest -q --ignore-glob='*test_engine_bench*.py' --ignore=tests/test_session_corpus.py --ignore=tests/test_s5_diagnose.py --ignore=tests/test_determinism.py` | Routine tests, excluding engine-benchmark and corpus/diagnosis tests. Add `-k name` or a file path for a quick loop. | every change |
 | `python scripts/check_host_rules.py` | [Host restrictions](docs/HOST-RESTRICTIONS.md). `--list` shows every finding. | every change |
 | `python scripts/check_attribution.py --base origin/main` | Your commits are credited to your GitHub profile. | before you push |
 | `python benchmarks/compare.py --verify-against benchmarks/comparison-v<version>.json` | The engine's outputs, savings and retention still match the recorded report (timings are not compared). | any change that can alter output |
