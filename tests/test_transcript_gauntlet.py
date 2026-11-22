@@ -25,3 +25,10 @@ def test_timing_gate_suppresses_malformed_transcripts(messages):
     assert t.trajectory_gate(messages) == (False, "malformed-transcript")
     out, count = t.apply_extractive_tool_prune(messages)
     assert out is messages and count == 0
+
+
+@pytest.mark.parametrize("stuck_run", [0, -1, True, None, "3", 1])
+def test_invalid_loop_window_fails_safe(stuck_run):
+    assert t.trajectory_gate([{"role": "assistant"}], stuck_run=stuck_run) == (
+        False, "invalid-stuck-run"
+    )

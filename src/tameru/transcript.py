@@ -596,6 +596,8 @@ def trajectory_gate(
     Returns ``(allowed, reason)``. The gate only ever suppresses — the
     fail-safe direction — so it is safe to leave enabled by default.
     """
+    if type(stuck_run) is not int or stuck_run < 2:
+        return False, "invalid-stuck-run"
     if not messages:
         return True, "ok"
     if any(
