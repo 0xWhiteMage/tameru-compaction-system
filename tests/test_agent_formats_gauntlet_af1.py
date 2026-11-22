@@ -3,6 +3,12 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_curl_unknown_response_data():
+    lines = ["< unexpected response payload"] + [f"< x-{i}: value" for i in range(8)]
+    keep = af._classify_curl_verbose(lines)[0]
+    assert keep[0] and not keep[1]
+
+
 @pytest.mark.parametrize("value", ["nan", "inf", "-1"])
 def test_ps_invalid_utilization(value):
     lines = [f"user {i} {cpu} 1 100 10 ? S 12:00 0:00 app" for i, cpu in enumerate(["2", value, "3"])]

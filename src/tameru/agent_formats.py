@@ -2222,7 +2222,7 @@ def _classify_curl_verbose(lines: list[str]) -> tuple[list[bool], list[int], lis
     response_headers = [
         index
         for index, line in enumerate(lines)
-        if line.startswith("< ") and not _CURL_STATUS_RE.match(line)
+        if re.match(r"^< [!#$%&'*+.^_`|~0-9A-Za-z-]+:", line)
     ]
     if len(response_headers) > 6:
         for index in response_headers:
