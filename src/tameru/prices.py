@@ -61,9 +61,11 @@ class PriceProfile:
     def tier_multiplier(self, prompt_tokens: int) -> float:
         """Price multiplier for a prompt of ``prompt_tokens`` (1.0 below every tier)."""
         out = 1.0
+        threshold = -1
         for tier in self.tiers:
-            if prompt_tokens > tier.above_prompt_tokens:
+            if prompt_tokens > tier.above_prompt_tokens and tier.above_prompt_tokens > threshold:
                 out = tier.multiplier
+                threshold = tier.above_prompt_tokens
         return out
 
 

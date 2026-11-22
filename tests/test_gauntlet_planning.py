@@ -102,6 +102,14 @@ def test_prices_reject_invalid_optional_figures(field, value):
     assert prices._build("test", price_raw()).o is None
 
 
+def test_price_tiers_need_not_be_sorted():
+    profile = replace(prices.profile("deepseek-v4-pro"), tiers=(
+        prices.Tier(200, 3), prices.Tier(100, 2)))
+    assert profile.tier_multiplier(201) == 3
+    assert profile.tier_multiplier(200) == 2
+    assert profile.tier_multiplier(100) == 1
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
