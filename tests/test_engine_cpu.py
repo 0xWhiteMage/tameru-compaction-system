@@ -22,6 +22,8 @@ from tameru import compress_context as cc
 from tameru import folding
 from tameru import format_adapters as fa
 from tameru.compress_context import compress_context
+from tameru import content_cache as cc_content_cache
+from tameru.content_cache import content_key
 
 KW = dict(ccr=False, citations=False)
 
@@ -418,10 +420,11 @@ def test_texts_above_the_memo_cap_are_not_remembered(monkeypatch):
     once = counter.calls
     cc.error_fingerprints(text)
     assert counter.calls == 2 * once
-    assert cc._error_fingerprints_cached.cache_info().currsize == 0
+    key = content_key(cc.ENGINE_VERSION, "error_fingerprints", text)
+    assert cc_content_cache.CACHE.get(key) is cc_content_cache._MISS
     monkeypatch.setattr(cc, "_MEMO_MAX_CHARS", len(text))
     cc.error_fingerprints(text)
-    assert cc._error_fingerprints_cached.cache_info().currsize == 1
+    assert cc_content_cache.CACHE.get(key) is not cc_content_cache._MISS
 
 
 def test_threads_sharing_the_memos_get_the_same_answers():
@@ -446,3 +449,69 @@ def test_threads_sharing_the_memos_get_the_same_answers():
     for th in pool:
         th.join()
     assert not failures
+
+
+# --- 1.10.0: early exit and probe cap (work counts) ----------------------------
+
+
+@pytest.mark.parametrize("query", ["", "continue", "ok thanks", "what happened to req-9999zz?"])
+def test_early_exit_skips_scoring_for_an_empty_filler_or_absent_objective(monkeypatch, query):
+    scored = Counter(monkeypatch, cc, "score_blocks")
+    result = compress_context(LOG, query, min_savings_ratio=0.1, **KW)
+    assert scored.calls == 0, "the structural fold clears min_savings_ratio, so nothing is scored"
+    assert not result.fail_open and result.receipt["structural_collapse_only"] is True
+    # identical with warm memos
+    warm = compress_context(LOG, query, min_savings_ratio=0.1, **KW)
+    assert scored.calls == 0 and warm.compressed_text == result.compressed_text
+    # and the output IS the structural pass output
+    assert result.compressed_text == "\n".join(cc.structural_log_pass(cc._norm_newlines(LOG).split("\n")))
+
+
+def test_a_normal_call_scores_exactly_once(monkeypatch):
+    scored = Counter(monkeypatch, cc, "score_blocks")
+    result = compress_context(LOG, QUERY, **KW)
+    assert scored.calls == 1 and not result.fail_open
+    compress_context(LOG, QUERY, **KW)  # warm memo: the scored blocks are remembered, not recomputed
+    assert scored.calls == 1
+
+
+def test_early_exit_never_saves_less_than_the_structural_pass(monkeypatch):
+    folded = "\n".join(cc.structural_log_pass(LOG.split("\n")))
+    result = compress_context(LOG, "continue", min_savings_ratio=0.1, **KW)
+    assert len(result.compressed_text) == len(folded) <= len(LOG)
+
+
+def test_early_exit_declines_when_the_fold_does_not_clear_min_savings(monkeypatch):
+    scored = Counter(monkeypatch, cc, "score_blocks")
+    unique = "\n".join(f"2026-03-14 12:00:{i % 60:02d} INFO  step {'abcdefghij'[i % 10]}{i} finished ok" for i in range(60))
+    result = compress_context(unique, "continue", min_savings_ratio=0.25, **KW)
+    assert scored.calls == 1 and result.fail_open and result.compressed_text == unique
+
+
+def test_built_in_anchor_scores_once_and_runs_no_probe(monkeypatch):
+    probes = Counter(monkeypatch, cc, "compress_context")
+    scored = Counter(monkeypatch, cc, "score_blocks")
+    rng = random.Random(2)
+    vocab = [f"{a}{b}" for a in "abcdefghij" for b in "klmnopqrst"]
+    lines = [f"2026-03-14 12:00:{i % 60:02d} INFO  step {rng.choice(vocab)} {rng.choice(vocab)} finished" for i in range(80)]
+    lines.insert(40, "2026-03-14 12:00:40 ERROR payment gateway refused order 77")
+    text = "\n".join(lines)
+    result = compress_context(text, "continue", min_savings_ratio=0.25, **KW)
+    assert probes.calls == 0 and scored.calls == 1
+    assert "payment gateway refused order 77" in result.compressed_text
+    assert result.receipt.get("query_source") == "error-anchored" or result.reasons
+
+
+def test_probe_runs_only_up_to_the_retry_cap(monkeypatch):
+    probes = Counter(monkeypatch, cc, "compress_context")
+    kw = dict(anchor_errors=True, min_savings_ratio=0.1, **KW)
+    q = "tell me about the ratio"  # a topic word that is on no line: an uninformative objective
+    small = app_log(120)
+    assert len(small) <= cc._ANCHOR_RETRY_MAX_CHARS
+    compress_context(small, q, **kw)
+    assert 1 <= probes.calls <= 2, "up to the cap: the anchored and the plain probe (<= 2 extra runs)"
+    probes.calls = 0
+    large = app_log(900)
+    assert len(large) > cc._ANCHOR_RETRY_MAX_CHARS
+    compress_context(large, q, **kw)
+    assert probes.calls == 0, "above the cap the anchored objective is used directly, with no comparison probe"

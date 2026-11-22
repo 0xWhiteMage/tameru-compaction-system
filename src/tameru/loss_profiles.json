@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "item's own tokens",
+  "note": "Loss profiles for the EV accept rule (tameru.decide EVPolicy, tameru.plan): what a wrong prune is expected to cost. Every number carries the source it was read from and an 'unverified' flag; a flagged figure is an assumption until the named measurement lands. Nothing here is a host default.",
+  "profiles": {
+    "replay-2026-11-21": {
+      "date": "2026-11-21",
+      "sources": ["docs/ANALYSIS-PLAN-ROUND2.md (S4 EV design)", "hermes-tameru-plugin docs/results/replay-corpus-round2-rung.json (P2c replay)"],
+      "values": {
+        "p_needed": {
+          "value": 0.25,
+          "source": "assumption: share of kept lines a later request actually needs",
+          "unverified": true,
+          "verify_with": "S3/P4 measurement of fact reuse"
+        },
+        "p_recovered": {
+          "value": 0.90,
+          "source": "Hermes P2c replay: facts kept or recoverable via read-back on 91-98% of rows",
+          "unverified": false
+        },
+        "recovery_output_tokens": {
+          "value": 200,
+          "source": "assumption: output tokens of one read-back answer",
+          "unverified": true,
+          "verify_with": "measured read-back answers"
+        },
+        "lambda_base": {
+          "value": 100,
+          "source": "assumption: catastrophic-loss unit, in multiples of the item's own tokens",
+          "unverified": true,
+          "verify_with": "S6 calibration"
+        }
+      },
+      "strength_multipliers": {
+        "less": {"value": 10.0, "source": "design constant: conservative strength penalises a miss 10x", "unverified": true},
+        "normal": {"value": 1.0, "source": "design constant", "unverified": true},
+        "more": {"value": 0.1, "source": "design constant: aggressive strength discounts a miss 10x", "unverified": true}
+      }
+    }
+  }
+}
