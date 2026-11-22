@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
-  "settings_tried": 41,
+  "settings_tried": 42,
   "validation_queries": {
     "engine": 5,
     "deepseek-plugin": 0,
@@ -377,6 +377,15 @@
       "setting": "E8 + S7 memory cleanup (count-without-list token estimate, candidate-only fact memos, segment-block records packed as spans without text) + S6 result schema 4 (query_specific; EVPolicy default calibrator through the shipped table)",
       "split": "r2 dev",
       "source": "P3-18b"
+    },
+    {
+      "n": 42,
+      "date": "2026-11-22",
+      "target": "engine",
+      "id": "E10",
+      "setting": "E9 + stream-break floor: on template-uniform texts (>=90% repeated fingerprints, >=30 non-blank lines) the rare last line and up to 2 unique-template rows get selection-floor protection alongside facts",
+      "split": "r2 dev",
+      "source": "existing_gold diagnosis + fix (kafka tail summaries, pstable anomalous rows)"
     }
   ],
   "noise_seed": 20261121,

@@ -1562,6 +1562,116 @@ def _count_fact_lines_dropped(facts, out_text: str) -> int:
     return dropped
 
 
+_STREAM_BREAK_MIN_LINES = 30
+_STREAM_BREAK_MAX_RARE = 2
+
+
+def _stream_break_lines_scan(text: str) -> tuple[tuple[int, str, str, str], ...]:
+    """Floor extras: the break lines of a largely-templated stream.
+
+    A command dump is mostly repeats — same row shape, same heartbeat, same
+    record template — plus a few lines that break the pattern, and the breaks
+    are the evidence a scored selection cannot recognise:
+
+    - a trailing status/footer line: the last non-blank line whose template is
+      rare (``_FACT_PROTECT_FP_MAX``, the same bound as a fact). ``Processed a
+      total of N messages``, ``SMART Health Status: OK``, a table header
+      repeated at the end — a bare summary with no error keyword and no
+      ``key: value`` shape, so neither error anchoring nor S5 sees it. A last
+      line that CONTINUES the dominant template (the stream cut mid-run) is
+      not a footer and is not flagged.
+    - the unique-template rows (at most ``_STREAM_BREAK_MAX_RARE``) in an
+      otherwise uniform run: anomalous records a block score treats as
+      ordinary — a RUNNING/``<defunct>`` process among sleeping workers, a
+      100%-full mount, a red index row. More than two uniques means the text
+      is heterogeneous, not uniform-plus-anomalies.
+
+    Returns ``(index, key, value, line)`` in the fact-line shape so the
+    selection floor restores a dropped break line the same way; key and value
+    are the line itself, so it ranks as query-relevant only when the whole
+    line literally occurs in the query.
+
+    Break lines feed ONLY the selection floor — never the stage restores — so
+    one can be re-added only while it sits in the final ``lines`` (``f[3] in
+    line_set``): a line an earlier stage deleted (a credentials strip, a
+    folded marker) is absent from ``lines`` and stays gone — the floor fixes
+    selection losses, never safety deletions. Worthiness guards: the break
+    line must be substantive (``_template_long_enough``), not injection-shaped
+    (trust-risk) and not ``_is_sink_noise`` filler, and it must not look like
+    credential material — a secret-bearing tail is stripped evidence, not a
+    status footer. The credential check uses the ``_secret_scan`` literal
+    prefilter and the env-dump key/value test only: the once-per-call
+    ``_SECRETS_RE`` budget leaves no room for per-line regexes, and a literal
+    without a regex match merely under-protects, never over-restores.
+    """
+    lines = _norm_newlines(text).split("\n")
+    nb = [(i, ln) for i, ln in enumerate(lines) if ln.strip()]
+    if len(nb) < _STREAM_BREAK_MIN_LINES:
+        return ()
+    fps: list[str | None] = []
+    counts: dict[str, int] = {}
+    for _i, ln in nb:
+        fp = _log_fingerprint(ln)
+        fps.append(fp)
+        if fp is not None:
+            counts[fp] = counts.get(fp, 0) + 1
+    repeated = sum(1 for fp in fps if fp is not None and counts[fp] >= 2)
+    if repeated * 10 < len(nb) * 9:
+        return ()
+
+    def _worthy(ln: str) -> bool:
+        # A break line must carry enough distinctive content to be evidence —
+        # a tiny stub ("shortline1", "#") is noise, not a status footer or an
+        # anomalous record — and injection-shaped or boilerplate lines never
+        # qualify.
+        if not _template_long_enough(ln):
+            return False
+        if _is_trust_risk_line(ln) or _is_sink_noise(ln):
+            return False
+        probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
+        if any(lit in probe for lit in _SECRET_LITERALS):
+            return False
+        if any(lit in probe.lower() for lit in _SECRET_FOLDED_LITERALS):
+            return False
+        em = _env_match(probe)
+        return em is None or not _env_is_sensitive(em.group(1), em.group(2))
+
+    out: list[tuple[int, str, str, str]] = []
+    i_last, last = nb[-1]
+    fp_last = fps[-1]
+    if (
+        fp_last is not None
+        and counts.get(fp_last, 0) <= _FACT_PROTECT_FP_MAX
+        and _worthy(last)
+    ):
+        out.append((i_last, last, last, last))
+    rare = [
+        (i, ln)
+        for (i, ln), fp in zip(nb, fps)
+        if fp is not None and counts[fp] == 1
+    ]
+    if 1 <= len(rare) <= _STREAM_BREAK_MAX_RARE:
+        seen = {ln for _i, _k, _v, ln in out}
+        out.extend(
+            (i, ln, ln, ln) for i, ln in rare if ln not in seen and _worthy(ln)
+        )
+    return tuple(sorted(out))
+
+
+@content_memo("stream_break_lines", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
+def _stream_break_lines_cached(text: str) -> tuple[tuple[int, str, str, str], ...]:
+    return _stream_break_lines_scan(text)
+
+
+def _stream_break_lines(text: str) -> tuple[tuple[int, str, str, str], ...]:
+    """``_stream_break_lines_scan`` over the caller's original text (memoised; the scan
+    fingerprints every non-blank line, so texts over the memo cap skip the cache rather
+    than pay a second pass)."""
+    if type(text) is str and len(text) <= _MEMO_MAX_CHARS:
+        return _stream_break_lines_cached(text)
+    return _stream_break_lines_scan(text)
+
+
 def structural_log_pass(lines: list[str]) -> list[str]:
     """The always-on STRUCTURAL log pass (1.10.0): progress removal, ``[×N]`` template collapse with the last instance kept, and per-cause stack folding. It is :func:`preprocess_logs` with no query: it never drops a distinct error line, an exception head, a ``Caused by`` / inner-exception message, ``... N more``, or the first frame outside the framework, and it is idempotent."""
     return preprocess_logs(_fold_build_noise(lines), "", structural=True)
@@ -9365,6 +9475,10 @@ def _compress_context_impl(
     protected_source = unwrap_tool_payload(original_text).inner
     fact_lines, fact_dense = _fact_summary(protected_source)
     _FACT_OFF.set(fact_dense)
+    # Stream-break lines (a trailing status/footer of a templated dump, its one or two
+    # anomalous rows) get the same selection-floor protection as S5 facts: they are not
+    # fact-shaped, so the floor pool below merges them in explicitly.
+    break_lines = _stream_break_lines(protected_source)
     # 1.10.0 (S5, E6): protected error exemplars — first line per error fingerprint of the same
     # original text, before any destructive stage — are exempt from the selector pre-filters and
     # adapters below (independent of ``fact_dense``). Kept as a position-ordered tuple so the
@@ -9592,16 +9706,21 @@ def _compress_context_impl(
     # Never on a fail-open (the floor alone never decides the verdict): the cost gates below still
     # judge the result, so an extract plus the floor that misses min_savings_ratio fails open under
     # the existing rule.
-    if not fail_open and fact_lines:
+    if not fail_open and (fact_lines or break_lines):
         line_set = set(lines)
         floor_facts = [
             f for f in fact_lines
             if f[3] in line_set and not _is_trust_risk_line(f[3])
         ]
-        if floor_facts:
+        floor_seen = {f[3] for f in floor_facts}
+        floor_pool = floor_facts + [
+            f for f in break_lines
+            if f[3] in line_set and f[3] not in floor_seen
+        ]
+        if floor_pool:
             budget_chars = int(budget_ratio * len(caller_text)) if budget_ratio else None
             compressed = _apply_fact_floor(
-                compressed=compressed, facts=floor_facts, query=query or "",
+                compressed=compressed, facts=floor_pool, query=query or "",
                 budget_chars=budget_chars,
             )
 
