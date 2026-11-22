@@ -137,6 +137,20 @@ def test_marker_recognition_rejects_trailing_newlines():
     assert markers.marker_name("") is None
 
 
+def planning_input(policy, *, chars=1000, compressed_chars=100, tokens=1000, saved=900):
+    candidate = Candidate(compressed_chars, saved, 1.0, False, "low", True)
+    item = PlanItem("one", 0, tokens, chars, stock_action="cut",
+                    stock_kept_chars=compressed_chars, candidate=candidate)
+    return PlanInput("trigger", "prune", tokens, tokens, (item,), CacheState(False, 80), policy)
+
+
+def test_planner_ev_still_enforces_token_savings_gate():
+    planned = plan(planning_input(Policy(ev=EV, min_tokens_saved=901)))
+    assert planned.actions[0].action == "stub"
+    assert planned.actions[0].reason == "not_enough_tokens"
+    assert plan(planning_input(Policy(ev=EV, min_tokens_saved=900))).actions[0].action == "extract"
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,

@@ -12,7 +12,7 @@ Supersession commits only when the successor covers the item's facts.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -150,7 +150,8 @@ def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: fl
         p_hat, V, L = terms
         if p_hat * V - (1 - p_hat) * L <= 0:
             return "negative_ev", (p_hat, V, L)
-        return "ok", (p_hat, V, L)
+        verdict = decide(result, replace(policy, ev=None, min_confidence=None), fingerprints={})
+        return verdict.reason, (p_hat, V, L)
     # no EV policy: the configured numeric gates decide (confidence included). The fingerprint veto
     # already ran on c.fingerprints_ok, so the recheck passes an empty wanted set.
     verdict = decide(result, policy, fingerprints={})
