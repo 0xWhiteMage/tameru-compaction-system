@@ -4,7 +4,8 @@ The pre-1.11 memos were entry-count LRUs keyed by the full input string: a handf
 6-entry caches could still pin hundreds of MB in a long-lived host (a 1M-char text as a
 dict key is the whole text retained). ``ContentCache`` instead keys every record by a
 ``content_key`` digest — the text itself is never stored, neither as key nor in the record
-— and evicts by *weight* (pickled record size), default 64 MB per process.
+— and evicts by *weight* (``sys.getsizeof``-based live record weight, as computed
+by ``weight_of``), default 64 MB per process.
 
 Records are the compact analyses the engine already computed: bools, ints, fingerprint
 maps, fact tuples, line bundles. They aim at a few percent of the source text and never
@@ -133,7 +134,8 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
 
     Texts longer than ``max_chars`` bypass the cache (same bound the old memos had).
     ``version`` may be a string or a zero-arg callable (for lazy ``ENGINE_VERSION`` lookups
-    in modules ``compress_context`` itself imports)."""
+    in modules ``compress_context`` itself imports). The wrapper's ``cache_clear``
+    clears the whole shared ``CACHE``, not just this analysis."""
 
     def deco(fn):
         @functools.wraps(fn)
