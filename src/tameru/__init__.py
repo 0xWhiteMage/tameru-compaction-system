@@ -1,7 +1,8 @@
 
 """Public metadata and industrial profiling API for Tameru."""
 
-from typing import TYPE_CHECKING
+# Mypy and Pyright recognize this name without importing typing at runtime.
+TYPE_CHECKING = False
 
 if TYPE_CHECKING:  # pragma: no cover
     from .compress_context import (
