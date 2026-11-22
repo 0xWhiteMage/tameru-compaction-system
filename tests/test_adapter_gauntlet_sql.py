@@ -22,3 +22,10 @@ def test_sql_gauntlet_executable_comment_declines():
     result = adapt_format(source, "needle-42", format_name="sql")
     assert not result.applied
     assert result.text == source
+
+
+def test_sql_gauntlet_client_commands_decline():
+    source = "\\connect archive\nSELECT 'unrelated';\nSELECT 'needle-42';"
+    result = adapt_format(source, "needle-42", format_name="sql")
+    assert not result.applied
+    assert result.text == source

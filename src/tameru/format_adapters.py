@@ -1071,6 +1071,8 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 2
             continue
         char = text[index]
+        if char == "\\":
+            return None  # An unquoted backslash may start a client metacommand.
         if char in {"'", '"', "`", "["}:
             quote = "]" if char == "[" else char
             index += 1
