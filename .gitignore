@@ -9,6 +9,8 @@ htmlcov/
 .venv/
 venv/
 build/
+# session corpus exports and the Squeez file (benchmarks/session_corpus; never committed)
+build/session_corpus/
 dist/
 docs/INTERNAL_ROADMAP.md
 benchmarks/redteam/runs/
