@@ -58,3 +58,17 @@ def test_malformed_rows_fail_open_even_without_timing_gate():
     messages = [None, {"role": "tool", "content": "payload " * 200}]
     out, count = t.apply_extractive_tool_prune(messages, timing_gate=False)
     assert out is messages and count == 0
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("compressor failed"), None, 42])
+def test_prune_retains_payload_on_compressor_failure(failure, monkeypatch):
+    from types import SimpleNamespace
+
+    def compressor(*args, **kwargs):
+        if isinstance(failure, Exception):
+            raise failure
+        return SimpleNamespace(compressed_text=failure, fail_open=False)
+    monkeypatch.setattr(t, "compress_context", compressor)
+    messages = [{"role": "tool", "content": "payload " * 200}]
+    out, count = t.apply_extractive_tool_prune(messages, protect_last_tool=0)
+    assert out is messages and count == 0

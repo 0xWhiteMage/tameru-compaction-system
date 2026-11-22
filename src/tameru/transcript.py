@@ -669,9 +669,12 @@ def apply_extractive_tool_prune(
         # Live tool payloads can contain credentials or other secrets. This
         # adapter has no retrieval path, so persisting originals in CCR only
         # adds exposure, unbounded disk retention, and a semantic marker.
-        result = compress_context(content, q, ccr=False, citations=False)
-        new = result.compressed_text
-        if result.fail_open or new == content or len(new) >= len(content):
+        try:
+            result = compress_context(content, q, ccr=False, citations=False)
+            new = result.compressed_text
+            if result.fail_open or not isinstance(new, str) or len(new) >= len(content):
+                continue
+        except Exception:  # Fail-open boundary: retain the original payload.
             continue
         if out is None:
             out = [dict(m) for m in messages]
