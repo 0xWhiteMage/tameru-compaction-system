@@ -5056,8 +5056,8 @@ def _compute_confidence(
 ) -> float:
     """The confidence a result reports, by what the objective rests on.
 
-    ``lexical`` / ``tool_call``: the selection's recall blended with the verifier's score (both over the keys
-    the text contains). ``structural`` / ``anchored``: error-fingerprint and error-head retention. ``derived``:
+    ``lexical`` / ``tool_call``: the selection's recall over the keys the text contains.
+    ``structural`` / ``anchored``: error-fingerprint and error-head retention. ``derived``:
     the same, capped below 0.7, and never the recall of the derived terms themselves. ``cross_lingual`` /
     ``none``: capped at 0.5. A fail-open result keeps the recall it was given (it returns the original)."""
     if fail_open:
