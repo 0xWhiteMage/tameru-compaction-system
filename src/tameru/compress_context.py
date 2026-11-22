@@ -7395,7 +7395,8 @@ def _resolve_objective(
             # A generic query whose topic words are absent from the text or on
             # nearly every line carries no signal: anchor on the errors too,
             # keeping the caller's words in front.
-            sample = [ln.casefold() for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
+            originals = [ln for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
+            sample = [ln.casefold() for ln in originals]
             tests = [_term_test(t.casefold()) for t in topic]
             uninformative = bool(sample) and all(
                 (hits := sum(1 for ln in sample if test(ln))) == 0 or hits > 0.8 * len(sample)
@@ -7416,7 +7417,6 @@ def _resolve_objective(
                 and len(caller_text) <= _ANCHOR_RETRY_MAX_CHARS
                 and route_content_type(caller_text.split("\n", 50)[:50]) == "log"
             ):
-                originals = [ln for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
                 rare_hits = []
                 seen_rare_lines = set()
                 rare_hit_limit = max(2, len(sample) // 50)
