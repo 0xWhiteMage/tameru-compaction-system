@@ -58,3 +58,12 @@ def test_format_gauntlet_xml_detection_does_not_parse_a_dtd(monkeypatch):
     assert result.format == "xml"
     assert not result.applied
     assert result.text == source
+
+
+def test_format_gauntlet_pipe_table_treats_quotes_as_literal():
+    target = '| "needs attention | warning |'
+    source = "\n".join(["| state | level |", "|---|---|"] + ["| normal | ok |"] * 25 + [target])
+    result = adapters.adapt_format(source, "", format_name="markdown_table")
+    assert result.applied
+    assert target in result.text
+    assert result.kept_records == 1

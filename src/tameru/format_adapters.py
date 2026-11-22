@@ -1306,48 +1306,27 @@ def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
     separator = lines[1]
     data = lines[2:]
 
-    tsv_lines = []
-    for line in [header] + data:
-        cells = line.strip()[1:-1].split("|")
-        tsv_lines.append("\t".join(cell.strip() for cell in cells))
-    tsv = "\n".join(tsv_lines)
-
-    result = _adapt_delimited_outliers(tsv, query, limits, "\t", "markdown_table", None)
-    if not result.applied:
-        return _decline(text, "markdown_table", result.reason, total_records=len(data))
-
-    result_lines = result.text.splitlines()
-    if len(result_lines) >= 2 and (
-        result_lines[-1].startswith("...") or "omitted" in result_lines[-1]
+    total = len(data)
+    if total > limits.max_records:
+        return _decline(text, "markdown_table", "record limit exceeded", total_records=total)
+    rows = [[cell.strip() for cell in line.strip()[1:-1].split("|")] for line in [header, *data]]
+    width = len(rows[0])
+    if width < 2 or width > limits.max_fields or any(
+        sum(map(len, row)) + width - 1 > limits.max_record_chars for row in rows
     ):
-        kept_tsv_lines = result_lines[1:-1]
-        omitted_line = result_lines[-1]
-    else:
-        kept_tsv_lines = result_lines[1:]
-        omitted_line = None
-
-    kept_counts = {}
-    for line in kept_tsv_lines:
-        kept_counts[line] = kept_counts.get(line, 0) + 1
-
-    kept_original = []
-    keep_flags = []
-    for line in data:
-        cells = line.strip()[1:-1].split("|")
-        tsv_row = "\t".join(cell.strip() for cell in cells)
-        count = kept_counts.get(tsv_row, 0)
-        if count > 0:
-            kept_counts[tsv_row] = count - 1
-            kept_original.append(line)
-            keep_flags.append(True)
-        else:
-            keep_flags.append(False)
+        return _decline(text, "markdown_table", "invalid delimited record", total_records=total)
+    search_text = "\n".join("\t".join(row) for row in rows) if query else ""
+    kept_indices, reason = _select_table_outliers(search_text, query, "\t", rows[1:])
+    if not kept_indices:
+        return _decline(text, "markdown_table", reason, total_records=total)
 
     if gap_marker is None:
-        out = [header, separator] + kept_original
-        if omitted_line:
-            out.append(omitted_line)
+        out = [header, separator, *(data[index] for index in kept_indices)]
+        out.append(f"... {total - len(kept_indices)} of {total} rows omitted")
     else:
+        keep_flags = [False] * total
+        for index in kept_indices:
+            keep_flags[index] = True
         gap_text = _with_gaps(data, keep_flags, "\n", gap_marker, len(text))
         out = [header, separator]
         if isinstance(gap_text, str):
@@ -1360,8 +1339,8 @@ def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
         format="markdown_table",
         applied=True,
         text="\n".join(out),
-        total_records=len(data),
-        kept_records=len(kept_original),
+        total_records=total,
+        kept_records=len(kept_indices),
         reason="header plus outlier and matching records",
     )
 
