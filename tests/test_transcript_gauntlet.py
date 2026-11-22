@@ -72,3 +72,15 @@ def test_prune_retains_payload_on_compressor_failure(failure, monkeypatch):
     messages = [{"role": "tool", "content": "payload " * 200}]
     out, count = t.apply_extractive_tool_prune(messages, protect_last_tool=0)
     assert out is messages and count == 0
+
+
+def test_explicit_preservation_request_bypasses_pruning(monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("full preservation must not call the compressor")
+    monkeypatch.setattr(t, "compress_context", forbidden)
+    messages = [
+        {"role": "user", "content": "Keep all details"},
+        {"role": "tool", "content": "payload " * 200},
+    ]
+    out, count = t.apply_extractive_tool_prune(messages, protect_last_tool=0)
+    assert out is messages and count == 0

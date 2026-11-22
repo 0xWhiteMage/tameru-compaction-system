@@ -656,6 +656,8 @@ def apply_extractive_tool_prune(
         if not allowed:
             return messages, 0
     q = query if query is not None else last_user_text(messages)
+    if _requests_full_preservation(q):
+        return messages, 0
     tool_idxs = [i for i, m in enumerate(messages) if m.get("role") == "tool"]
     skip = set(tool_idxs[-protect_last_tool:]) if protect_last_tool else set()
     out: list[dict[str, Any]] | None = None
