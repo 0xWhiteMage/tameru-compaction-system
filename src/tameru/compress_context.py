@@ -6088,10 +6088,9 @@ def _detect_json_payloads(text: str) -> list[tuple[int, int, str]]:
 def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | None:
     """Crush redundant array items in a JSON payload.
 
-    Finds the top-level array (or arrays under known keys like "items"),
-    keeps only query-relevant items + up to max_keep others, and returns
-    the re-serialized JSON. Returns None if no array was found or the
-    result is not actually shorter.
+    Only arrays longer than max_keep and consisting entirely of objects
+    are eligible. An eligible array is reduced to its query matches only
+    if at least one item matches. Return None if rewriting does not help.
     """
     try:
         data = loads_for_rewrite(payload)
@@ -6104,8 +6103,7 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
 
     def _find_arrays(obj, path=()):
         if isinstance(obj, list) and len(obj) > max_keep:
-            # Check if items are dicts (the pattern we want to crush)
-            if obj and isinstance(obj[0], dict):
+            if all(isinstance(item, dict) for item in obj):
                 arrays_to_crush.append((path, obj))
         elif isinstance(obj, dict):
             for key, value in obj.items():
