@@ -3,6 +3,22 @@ import pytest
 from tameru import agent_formats as af
 
 
+def test_npm_tree_linear_ancestry(monkeypatch):
+    original = af._NPM_TREE_LINE_RE
+    calls = 0
+
+    class CountingPattern:
+        def match(self, line):
+            nonlocal calls
+            calls += 1
+            return original.match(line)
+
+    monkeypatch.setattr(af, "_NPM_TREE_LINE_RE", CountingPattern())
+    lines = ["root@1", "├── parent@1"] + ["│ ├── bad@1 invalid"] * 200
+    assert af._classify_npm_tree(lines)[0] == [True] * len(lines)
+    assert calls <= 3 * len(lines)
+
+
 def test_stem_cache_bound():
     matcher = af._StemMatcher(("needle",))
     for i in range(5000):

@@ -2161,9 +2161,16 @@ def _classify_npm_tree(lines: list[str]) -> tuple[list[bool], list[int], list[in
     keep = [not _NPM_TREE_LINE_RE.match(line) for line in lines]
     first_tree = None
     problem_indices = []
+    ancestors: list[tuple[int, int]] = []
+    parents: dict[int, int | None] = {}
 
     for i, line in enumerate(lines):
         if _NPM_TREE_LINE_RE.match(line):
+            depth = len(_prefix(line))
+            while ancestors and ancestors[-1][0] >= depth:
+                ancestors.pop()
+            parents[i] = ancestors[-1][1] if ancestors else None
+            ancestors.append((depth, i))
             if first_tree is None:
                 first_tree = i
             if _NPM_TREE_PROBLEM_RE.search(line):
@@ -2174,24 +2181,10 @@ def _classify_npm_tree(lines: list[str]) -> tuple[list[bool], list[int], list[in
 
     for problem in problem_indices:
         keep[problem] = True
-        current = problem
-        current_prefix_len = len(_prefix(lines[current]))
-
-        while current_prefix_len > 0:
-            parent = None
-            for j in range(current - 1, -1, -1):
-                if _NPM_TREE_LINE_RE.match(lines[j]):
-                    parent_prefix_len = len(_prefix(lines[j]))
-                    if parent_prefix_len < current_prefix_len:
-                        parent = j
-                        break
-
-            if parent is None:
-                break
-
+        parent = parents[problem]
+        while parent is not None and not keep[parent]:
             keep[parent] = True
-            current = parent
-            current_prefix_len = len(_prefix(lines[current]))
+            parent = parents[parent]
 
     return keep, [0] * len(lines), [0] * len(lines)
 
