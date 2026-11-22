@@ -92,7 +92,11 @@ def text_of(content: Any) -> str:
         for part in content:
             if isinstance(part, str):
                 parts.append(part)
-            elif isinstance(part, dict) and part.get("type") in _TEXT_PART_TYPES:
+            elif (
+                isinstance(part, dict)
+                and isinstance(part.get("type"), str)
+                and part["type"] in _TEXT_PART_TYPES
+            ):
                 text = part.get("text")
                 if isinstance(text, str):
                     parts.append(text)
