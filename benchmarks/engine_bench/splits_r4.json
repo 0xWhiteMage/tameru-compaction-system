@@ -1,0 +1,72 @@
+{
+ "counts": {
+  "dev": {
+   "cases": 114,
+   "clusters": 66,
+   "families": 6
+  },
+  "sealed": {
+   "cases": 646,
+   "clusters": 374,
+   "families": 34
+  },
+  "validation": {
+   "cases": 114,
+   "clusters": 66,
+   "families": 6
+  }
+ },
+ "deal": {
+  "attempt": 1,
+  "rule": "families ordered by sha256('<seed>:<family>'); first 6 -> dev, next 6 -> validation, rest -> sealed",
+  "seed": "r4-deal-2026-11-25-a"
+ },
+ "families": {
+  "aastat": "validation",
+  "argols": "sealed",
+  "auditavc": "sealed",
+  "btrfs": "sealed",
+  "certbot": "validation",
+  "clams": "sealed",
+  "clickhs": "sealed",
+  "conntrack": "sealed",
+  "dmidec": "sealed",
+  "dps": "sealed",
+  "escat": "sealed",
+  "ethtool": "dev",
+  "fail2ban": "sealed",
+  "falco": "dev",
+  "helmls": "sealed",
+  "ipmisdr": "dev",
+  "iptv": "dev",
+  "kubget": "sealed",
+  "lldpnbr": "sealed",
+  "lsof": "sealed",
+  "lspci": "sealed",
+  "lvmstat": "sealed",
+  "lxclist": "sealed",
+  "mdadm": "validation",
+  "memcached": "validation",
+  "mqtt": "sealed",
+  "mysqladm": "sealed",
+  "natscli": "sealed",
+  "nfsstat": "validation",
+  "ovsctl": "validation",
+  "pgstat": "sealed",
+  "promtool": "sealed",
+  "pulsarad": "sealed",
+  "pvelist": "sealed",
+  "quotarep": "dev",
+  "redisinf": "sealed",
+  "saltkey": "sealed",
+  "semanage": "dev",
+  "sensors": "sealed",
+  "smbstatus": "sealed",
+  "ss": "sealed",
+  "swanctl": "sealed",
+  "tfplan": "sealed",
+  "virsh": "sealed",
+  "wguard": "sealed",
+  "zkmntr": "sealed"
+ }
+}

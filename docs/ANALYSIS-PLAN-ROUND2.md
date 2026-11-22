@@ -327,3 +327,24 @@ No margin, bar or gate changes.
   sealing, and its hash is appended here before the look — the same protocol round 3 used.
 
 No margin, bar or gate changes.
+
+### 2026-11-25: the round-4 holdout is registered
+
+- **Round-4 engine_bench split.** The engine's next look is confirmed on `benchmarks/engine_bench/SEALED-R4.sha256`
+  `526f010f3f8dd3db93c25ba0189898d46d9153fe19b18e0203c5fc17023ff45b`: 874 cases in 506 clusters from 46 families in
+  no earlier corpus — not the r2 families (dev, validation or the 20 burned), the r3 families (dev, validation or
+  the 24 burned), the round-1 shapes or the session corpus — gen_cases_r4, dealt by seed `r4-deal-2026-11-25-a`
+  (attempt 1, first deal; one family id and one template token were renamed pre-registration to keep the
+  non-overlap and no-sealed-leak invariants, re-dealt attempt 1 each time). The r4 corpus has the same item-kind
+  mix as r3 (evidence / s5_buried / s5_superseded / csv_args in the same 11-source plan) and the same query
+  conditions; case ids carry the `r4-` prefix.
+- **Equivalence** (descriptors under 1.9.0 and 1.10.0 only, `equivalence-r4-result.json`): classifier AUC sealed vs
+  dev 0.4224 (<=0.65), every profile x engine acceptance gap vs dev <= 6.6 points (<=10), and the 1.10.0-minus-1.9.0
+  saved-ratio difference has the same sign on sealed as on dev (+6.55 vs +9.54 points pooled).
+- **Composition.** Sealed: 136 evidence / 136 s5_buried (68 en + 68 zh) / 34 s5_superseded / 68 csv_args clusters,
+  374 s5 fact cases in 34 sealed families (646 cases); dev 6 families / validation 6 families of 66 clusters each.
+- **Judgment.** `release_gates_r4.py` at alpha = 0.003125, bootstrap seed 20261124; the look logs to
+  `sealed_looks_r4.json` and validation is queried only through `thresholdout.py --round 4` under the same shared
+  engine query budget.
+
+No margin, bar or gate changes.

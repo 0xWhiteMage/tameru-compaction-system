@@ -8,3 +8,4 @@ f3024d6a24de8b4d5d92ce5276b2e2b2de789e0899eef0e59ac97c8481715b1c  docs/ANALYSIS-
 29f655ba7847d963fef8a9dd49b12f87f0ae031bca4ce166439d55e3c507d06b  burn: r2 sealed look consumed; 20 sealed families moved to dev (splits_r2.json burn block)
 d3d055b1265fc559725ef01eb6a8af6eb2858aeaaea1190cbd2108008c5ce6ca  r3 holdout registered: SEALED-R3 dealt attempt 6 (24 sealed families), equivalence PASS
 b7aa2067fe92a9bd4d9b25610279c9c76a0f1d4645f04f215de5a6a4107ca823  burn: r3 sealed look consumed; 24 sealed families moved to dev (splits_r3.json burn block)
+517f61e1e8af092a4bf3ae30c96505a1af760b992a86fe19974ffc54e3afa7f9  r4 holdout registered: SEALED-R4 dealt attempt 1 (34 sealed families), equivalence PASS

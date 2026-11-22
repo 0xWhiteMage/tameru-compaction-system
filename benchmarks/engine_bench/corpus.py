@@ -211,22 +211,65 @@ def load_cases_r3(splits=("dev", "validation"), *, sealed_ok: bool = False) -> l
     return [c for c in _build_r3() if assignment[c["id"]] in splits]
 
 
+# ---------------------------------------------------------------- round 4
+SPLITS_R4_FILE = HERE / "splits_r4.json"
+SEALED_R4_HASH_FILE = HERE / "SEALED-R4.sha256"
+SEALED_LOOKS_R4_FILE = HERE / "sealed_looks_r4.json"
+
+
+def _build_r4() -> list[dict]:
+    """All round-4 generated cases (gen_cases_r4); the r4 split file maps family -> split.
+
+    The r4 holdout exists because the failed r3 sealed look burned its families into dev —
+    every r4 family is disjoint from r1, session-corpus and all r2/r3 families.
+    """
+    from .gen_cases_r4 import generated_cases_r4
+
+    cases = generated_cases_r4()
+    seen = set()
+    for c in cases:
+        assert c["id"] not in seen, c["id"]
+        seen.add(c["id"])
+        missing = [g for g in c["gold"] if g not in c["text"]]
+        assert not missing, (c["id"], missing)
+    return sorted(cases, key=lambda c: c["id"])
+
+
+def load_splits_r4() -> dict:
+    """The round-4 split document: {deal: {seed, attempt, rule}, families: {fid: split}, counts}."""
+    return json.loads(SPLITS_R4_FILE.read_text(encoding="utf-8"))
+
+
+def r4_assignment() -> dict[str, str]:
+    fams = load_splits_r4()["families"]
+    return {c["id"]: fams[c["family"]] for c in _build_r4()}
+
+
+def load_cases_r4(splits=("dev", "validation"), *, sealed_ok: bool = False) -> list[dict]:
+    """Round-4 cases of the requested splits.  Sealed r4 texts need ``sealed_ok=True``."""
+    splits = set(splits)
+    if "sealed" in splits and not sealed_ok:
+        raise SealedAccessError("the sealed r4 split may only be read through run.py --round 4 --sealed --candidate NAME")
+    assignment = r4_assignment()
+    return [c for c in _build_r4() if assignment[c["id"]] in splits]
+
+
 def main(argv=None) -> int:
     import argparse
     from collections import Counter
 
     p = argparse.ArgumentParser(description="engine_bench corpus counts")
-    p.add_argument("--round", dest="round_", type=int, choices=(1, 2, 3), default=1)
+    p.add_argument("--round", dest="round_", type=int, choices=(1, 2, 3, 4), default=1)
     a = p.parse_args(argv)
-    cases = {1: _build_all, 2: _build_r2, 3: _build_r3}[a.round_]()
+    cases = {1: _build_all, 2: _build_r2, 3: _build_r3, 4: _build_r4}[a.round_]()
     print(f"round {a.round_}: {len(cases)} cases, {len({c['source_case'] for c in cases})} clusters, "
           f"{dict(Counter(c['language'] for c in cases))}")
     if a.round_ >= 2:
         print(f"families: {len({c['family'] for c in cases})}, "
               f"kinds: {dict(Counter(c['item_kind'] for c in cases))}")
-        splits_file = SPLITS_R2_FILE if a.round_ == 2 else SPLITS_R3_FILE
+        splits_file = {2: SPLITS_R2_FILE, 3: SPLITS_R3_FILE, 4: SPLITS_R4_FILE}[a.round_]
         if splits_file.exists():
-            fams = load_splits_r2()["families"] if a.round_ == 2 else load_splits_r3()["families"]
+            fams = {2: load_splits_r2, 3: load_splits_r3, 4: load_splits_r4}[a.round_]()["families"]
             per = Counter(fams[c["family"]] for c in cases)
             print(f"splits: {dict(per)}")
     return 0

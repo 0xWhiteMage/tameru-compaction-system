@@ -154,26 +154,25 @@ def _log_sealed_look(candidate: str, command: str, path: Path = None) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--round", dest="round_", type=int, choices=(1, 2, 3), default=1,
-                    help="benchmark round; 2/3 = the gen_cases_r2/r3 corpus and its own sealed guard")
+    ap.add_argument("--round", dest="round_", type=int, choices=(1, 2, 3, 4), default=1,
+                    help="benchmark round; 2/3/4 = the gen_cases_r2/r3/r4 corpus and its own sealed guard")
     ap.add_argument("--split", action="append", choices=["dev", "validation", "sealed"],
-                    help="repeatable; default: dev for round 2/3, dev + validation for round 1")
+                    help="repeatable; default: dev for round 2/3/4, dev + validation for round 1")
     ap.add_argument("--sealed", action="store_true", help="allow reading sealed texts (one look per host; logged)")
     ap.add_argument("--candidate", help="candidate name, required with --sealed")
-    ap.add_argument("--setting", help="engine setting id in docs/SETTINGS-TRIED-LEDGER.json (required for round 2/3)")
-    ap.add_argument("--reference", help="commit hash of a clean worktree reference run (round 2/3 alternative to --setting)")
+    ap.add_argument("--setting", help="engine setting id in docs/SETTINGS-TRIED-LEDGER.json (required for round 2/3/4)")
+    ap.add_argument("--reference", help="commit hash of a clean worktree reference run (round 2/3/4 alternative to --setting)")
     ap.add_argument("--out", type=Path, help="write rows to this jsonl file")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
-    r2 = args.round_ == 2
-    r3 = args.round_ == 3
-    if (r2 or r3) and "validation" in (args.split or []):
+    multi = args.round_ >= 2
+    if multi and "validation" in (args.split or []):
         print(f"refusing: round-{args.round_} validation is queried only through "
               "benchmarks/engine_bench/thresholdout.py", file=sys.stderr)
         return 2
-    splits = args.split or (["dev"] if (r2 or r3) else ["dev", "validation"])
+    splits = args.split or (["dev"] if multi else ["dev", "validation"])
     try:
-        prov = ledger.resolve_provenance(args.setting, args.reference, required=r2 or r3)
+        prov = ledger.resolve_provenance(args.setting, args.reference, required=multi)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 2
@@ -183,18 +182,23 @@ def main(argv=None) -> int:
     if args.sealed and not args.candidate:
         print("--sealed requires --candidate NAME", file=sys.stderr)
         return 2
-    assignment = corpus.r3_assignment() if r3 else (corpus.r2_assignment() if r2 else corpus.load_splits())
+    assignment = {2: corpus.r2_assignment, 3: corpus.r3_assignment,
+                  4: corpus.r4_assignment}[args.round_]() if multi else corpus.load_splits()
     if args.sealed:
-        hash_file = corpus.SEALED_R3_HASH_FILE if r3 else (corpus.SEALED_R2_HASH_FILE if r2 else corpus.SEALED_HASH_FILE)
-        builder = corpus._build_r3 if r3 else (corpus._build_r2 if r2 else corpus._build_all)
+        hash_file = {2: corpus.SEALED_R2_HASH_FILE, 3: corpus.SEALED_R3_HASH_FILE,
+                     4: corpus.SEALED_R4_HASH_FILE}[args.round_] if multi else corpus.SEALED_HASH_FILE
+        builder = {2: corpus._build_r2, 3: corpus._build_r3,
+                   4: corpus._build_r4}[args.round_] if multi else corpus._build_all
         if corpus.sealed_digest([c for c in builder() if assignment[c["id"]] == "sealed"]) != hash_file.read_text().split()[0]:
             print("refusing: sealed cases no longer match " + hash_file.name, file=sys.stderr)
             return 2
         _log_sealed_look(args.candidate, "python -m benchmarks.engine_bench.run " + " ".join(argv if argv is not None else sys.argv[1:]),
-                         corpus.SEALED_LOOKS_R3_FILE if r3 else (corpus.SEALED_LOOKS_R2_FILE if r2 else None))
-    loader = corpus.load_cases_r3 if r3 else (corpus.load_cases_r2 if r2 else corpus.load_cases)
+                         {2: corpus.SEALED_LOOKS_R2_FILE, 3: corpus.SEALED_LOOKS_R3_FILE,
+                          4: corpus.SEALED_LOOKS_R4_FILE}[args.round_] if multi else None)
+    loader = {2: corpus.load_cases_r2, 3: corpus.load_cases_r3,
+              4: corpus.load_cases_r4}[args.round_] if multi else corpus.load_cases
     cases = loader(splits, sealed_ok=args.sealed)
-    rows = run(cases, assignment, conditions=CONDITIONS_R2 if (r2 or r3) else CONDITIONS)
+    rows = run(cases, assignment, conditions=CONDITIONS_R2 if multi else CONDITIONS)
     for row in rows:
         row.update(prov)
     if args.out:

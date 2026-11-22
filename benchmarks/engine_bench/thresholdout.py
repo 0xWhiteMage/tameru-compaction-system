@@ -153,6 +153,23 @@ def _r3_dev_rows() -> list[dict]:
     return [r for r in rows if r["split"] == "dev"]
 
 
+def _r4_validation_rows() -> list[dict]:
+    assignment = corpus.r4_assignment()
+    cases = corpus.load_cases_r4(["validation"], sealed_ok=False)
+    rows = bench_run.run(cases, assignment, conditions=bench_run.CONDITIONS_R2)
+    return [r for r in rows if r["split"] == "validation"]
+
+
+def _r4_dev_rows() -> list[dict]:
+    assignment = corpus.r4_assignment()
+    rows = bench_run.run(corpus.load_cases_r4(["dev"], sealed_ok=False), assignment, conditions=bench_run.CONDITIONS_R2)
+    return [r for r in rows if r["split"] == "dev"]
+
+
+_VALIDATION_ROWS = {2: _r2_validation_rows, 3: _r3_validation_rows, 4: _r4_validation_rows}
+_DEV_ROWS = {2: _r2_dev_rows, 3: _r3_dev_rows, 4: _r4_dev_rows}
+
+
 def _r1_rows() -> list[dict]:
     assignment = corpus.load_splits()
     cases = corpus.load_cases(["dev", "validation"], sealed_ok=False)
@@ -163,8 +180,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--setting", required=True, help="engine setting id in the ledger")
     ap.add_argument("--gate", required=True, choices=("s5_vague_en", "s5_vague_zh", "existing_gold", "savings", "s6_calibration"))
-    ap.add_argument("--round", dest="round_", type=int, choices=(2, 3), default=2,
-                    help="which round's validation/dev corpus the gate queries (r3 post-burn)")
+    ap.add_argument("--round", dest="round_", type=int, choices=(2, 3, 4), default=2,
+                    help="which round's validation/dev corpus the gate queries (r3/r4 post-burn)")
     ap.add_argument("--ledger", type=Path, default=None, help="ledger path (tests use a copy)")
     ap.add_argument("--r2-rows", type=Path, default=None, help="precomputed validation rows for the selected round (tests)")
     ap.add_argument("--r1-rows", type=Path, default=None, help="precomputed r1 rows (tests)")
@@ -183,15 +200,14 @@ def main(argv=None) -> int:
         print("refusing: engine validation query budget exhausted", file=sys.stderr)
         return 2
 
-    r3 = args.round_ == 3
-    r2_rows = report.load(args.r2_rows) if args.r2_rows else (_r3_validation_rows() if r3 else _r2_validation_rows())
+    r2_rows = report.load(args.r2_rows) if args.r2_rows else _VALIDATION_ROWS[args.round_]()
     r1_rows, r1_base = [], []
     if args.gate == "savings":
         r1_rows = report.load(args.r1_rows) if args.r1_rows else _r1_rows()
         r1_base = report.load(args.r1_baseline)
     r2_dev_rows = []
     if args.gate == "s6_calibration":
-        r2_dev_rows = report.load(args.r2_dev_rows) if args.r2_dev_rows else (_r3_dev_rows() if r3 else _r2_dev_rows())
+        r2_dev_rows = report.load(args.r2_dev_rows) if args.r2_dev_rows else _DEV_ROWS[args.round_]()
 
     checks = _checks(args.gate, r2_rows, r1_rows, r1_base, r2_dev_rows)
     if not checks:
