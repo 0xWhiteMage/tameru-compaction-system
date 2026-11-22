@@ -65,31 +65,25 @@ def _strip_ansi_line(ln: str) -> tuple[str, int] | None:
 def _fold_text_steps(text: str, stats: dict) -> list[str] | None:
     """CR redraws, ANSI, trailing whitespace -> list of lines."""
     lines = text.split("\n")
-    cr = 0
+    cr = ansi = ws = 0
     for i, ln in enumerate(lines):
         if "\r" in ln:
             # Trailing \r's belong to the line ending (\r\n, or a bare \r
             # that redraws nothing): they must not erase the line's text
             # ("abc\r\r\n" shows "abc").
-            body = ln.rstrip("\r")
-            if "\r" in body:
-                body = body.rsplit("\r", 1)[1]
+            ln = ln.rstrip("\r")
+            if "\r" in ln:
+                ln = ln.rsplit("\r", 1)[1]
                 cr += 1
-            lines[i] = body
-    ansi = 0
-    if "\x1b" in text:
-        for i, ln in enumerate(lines):
-            if "\x1b" in ln:
-                stripped_ansi = _strip_ansi_line(ln)
-                if stripped_ansi is None:
-                    return None
-                lines[i], k = stripped_ansi
-                ansi += k
-    ws = 0
-    for i, ln in enumerate(lines):
+        if "\x1b" in ln:
+            stripped_ansi = _strip_ansi_line(ln)
+            if stripped_ansi is None:
+                return None
+            ln, k = stripped_ansi
+            ansi += k
         stripped = ln.rstrip()
+        lines[i] = stripped
         if stripped != ln:
-            lines[i] = stripped
             ws += 1
     stats.update(cr_redraws=cr, ansi=ansi, trailing_ws=ws)
     return lines
