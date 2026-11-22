@@ -100,8 +100,9 @@ def test_preprocess_logs_empty_query_collapses_to_single_marker():
 
     out = preprocess_logs(_twenty_five_frames(), "")
 
-    assert len(out) == 7
-    assert out[3] == "  ... 19 frames omitted"
+    # 1.10.0 per-cause folding: the first frame, one counted marker, the last frame (was: 3 + marker + 3).
+    assert len(out) == 3
+    assert out[1].strip() == "... 23 frames omitted"
 
 
 def test_full_frame_query_collapses_to_single_marker() -> None:
@@ -118,7 +119,8 @@ def test_full_frame_query_collapses_to_single_marker() -> None:
     compressed_text = result.compressed_text or ""
 
     markers = re.findall(r"  \.\.\. \d+ frames omitted", compressed_text)
-    assert markers == ["  ... 19 frames omitted"]
+    # every frame matches the query: the first, the last and the one hit slot are kept (1.10.0).
+    assert markers == ["  ... 22 frames omitted"]
 
 
 from tameru.compress_context import (  # noqa: E402

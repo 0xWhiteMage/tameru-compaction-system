@@ -1,0 +1,470 @@
+{
+ "acceptance": {
+  "1.10.0_deepseek_accept": {
+   "failopen_pct_per_split": {
+    "dev": 59.785,
+    "holdout": 68.333,
+    "validation": 68.087
+   },
+   "gap_points": 8.548,
+   "per_split": {
+    "dev": 40.215,
+    "holdout": 31.667,
+    "validation": 31.913
+   },
+   "saved_pct_per_split": {
+    "dev": 33.845,
+    "holdout": 26.513,
+    "validation": 25.71
+   }
+  },
+  "1.10.0_hermes_accept": {
+   "failopen_pct_per_split": {
+    "dev": 53.725,
+    "holdout": 57.742,
+    "validation": 57.718
+   },
+   "gap_points": 7.26,
+   "per_split": {
+    "dev": 43.245,
+    "holdout": 35.985,
+    "validation": 40.672
+   },
+   "saved_pct_per_split": {
+    "dev": 29.728,
+    "holdout": 18.939,
+    "validation": 24.896
+   }
+  },
+  "1.9.0_deepseek_accept": {
+   "failopen_pct_per_split": {
+    "dev": 67.708,
+    "holdout": 71.045,
+    "validation": 69.839
+   },
+   "gap_points": 3.337,
+   "per_split": {
+    "dev": 32.292,
+    "holdout": 28.955,
+    "validation": 30.161
+   },
+   "saved_pct_per_split": {
+    "dev": 27.646,
+    "holdout": 24.63,
+    "validation": 23.16
+   }
+  },
+  "1.9.0_hermes_accept": {
+   "failopen_pct_per_split": {
+    "dev": 64.205,
+    "holdout": 65.576,
+    "validation": 61.979
+   },
+   "gap_points": 7.869,
+   "per_split": {
+    "dev": 32.891,
+    "holdout": 28.258,
+    "validation": 36.127
+   },
+   "saved_pct_per_split": {
+    "dev": 23.759,
+    "holdout": 17.187,
+    "validation": 22.106
+   }
+  }
+ },
+ "classifier": "L2 logistic regression (lambda 1, standardised, Newton), 5-fold CV x 10 fold seeds; primary = folds grouped by family",
+ "comparisons": {
+  "dev_vs_holdout": {
+   "auc_family_grouped": 0.6268,
+   "auc_scenario_level": 0.6983,
+   "n": [
+    132,
+    275
+   ]
+  },
+  "dev_vs_validation": {
+   "auc_family_grouped": 0.6009,
+   "auc_scenario_level": 0.7049,
+   "n": [
+    132,
+    88
+   ]
+  }
+ },
+ "content_shares": {
+  "dev": {
+   "families": 12,
+   "mixed_scenarios_pct": 19.7,
+   "real_chars_pct_full": 34.0,
+   "scenarios": 132,
+   "vague_pct": 50.0,
+   "zh_scenarios_pct": 31.1
+  },
+  "holdout": {
+   "families": 25,
+   "mixed_scenarios_pct": 20.4,
+   "real_chars_pct_full": 34.06,
+   "scenarios": 275,
+   "vague_pct": 49.8,
+   "zh_scenarios_pct": 29.8
+  },
+  "validation": {
+   "families": 8,
+   "mixed_scenarios_pct": 18.2,
+   "real_chars_pct_full": 34.02,
+   "scenarios": 88,
+   "vague_pct": 47.7,
+   "zh_scenarios_pct": 31.8
+  }
+ },
+ "deal": {
+  "attempt": 10,
+  "rule": "the 8 round-1 families are pinned to dev; the others, sorted by id, are shuffled by random.Random(sha256('deal:'+seed)) and dealt 4 to dev, 8 to validation, the rest to holdout",
+  "seed": "session-corpus-round2-deal-10"
+ },
+ "descriptors_sha256": "77bdfbef0e506990c82fb33cb1a277113392daa34c86fa0532db86cdb36a1035",
+ "engines": [
+  "1.10.0 (this checkout)",
+  "1.9.0 (commit 3bc2978, scratch worktree)"
+ ],
+ "features": [
+  "1.10.0_deepseek_accept",
+  "1.10.0_deepseek_saved",
+  "1.10.0_deepseek_failopen",
+  "1.10.0_hermes_accept",
+  "1.10.0_hermes_saved",
+  "1.10.0_hermes_failopen",
+  "1.9.0_deepseek_accept",
+  "1.9.0_deepseek_saved",
+  "1.9.0_deepseek_failopen",
+  "1.9.0_hermes_accept",
+  "1.9.0_hermes_saved",
+  "1.9.0_hermes_failopen",
+  "fact_step_pos",
+  "fact_line_pos",
+  "size_bin0",
+  "size_bin1",
+  "size_bin2",
+  "size_bin3",
+  "size_bin4",
+  "cjk_share",
+  "cross_deepseek_128k_rho3",
+  "cross_hermes_128k_rho3",
+  "cross_deepseek_252k_rho3",
+  "cross_hermes_252k_rho3",
+  "cross_deepseek_500k_rho3",
+  "cross_hermes_500k_rho3",
+  "cross_deepseek_1000k_rho3",
+  "cross_hermes_1000k_rho3",
+  "real_share_252k",
+  "real_share_full"
+ ],
+ "gates": {
+  "acceptance_gap_max_points": 10.0,
+  "auc_max": 0.65
+ },
+ "generator": "session-corpus-3",
+ "not_computed_here": "1.9.0-vs-stock facts sign (needs a replay; checked by the adapters' first dev run)",
+ "pass": true,
+ "registered": "2026-11-20",
+ "result_sha256": "dbd6cab9b22ae1b6fa08fb5760c3b952126cb0fab4519cb37fb57d26ce20b9ca",
+ "sample_steps_per_scenario": 24,
+ "sealed_holdout_sha256": "38e14391b6c7c2f4a46c201b62ca15e86f9e76b491333b07f0eb4572c2e36115",
+ "trigger_crossing_pct": {
+  "dev": {
+   "cross_deepseek_1000k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 42.4
+   },
+   "cross_deepseek_1000k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 75.0
+   },
+   "cross_deepseek_1000k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_252k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 59.8
+   },
+   "cross_deepseek_252k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 97.0
+   },
+   "cross_deepseek_252k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_500k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 40.9
+   },
+   "cross_deepseek_500k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 75.8
+   },
+   "cross_deepseek_500k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_1000k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 59.8
+   },
+   "cross_hermes_1000k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_1000k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_128k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 37.9
+   },
+   "cross_hermes_128k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 77.3
+   },
+   "cross_hermes_128k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_252k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 42.4
+   },
+   "cross_hermes_252k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 75.8
+   },
+   "cross_hermes_252k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_500k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 59.1
+   },
+   "cross_hermes_500k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 99.2
+   },
+   "cross_hermes_500k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   }
+  },
+  "holdout": {
+   "cross_deepseek_1000k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 36.7
+   },
+   "cross_deepseek_1000k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 73.8
+   },
+   "cross_deepseek_1000k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_252k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 54.9
+   },
+   "cross_deepseek_252k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 97.5
+   },
+   "cross_deepseek_252k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_500k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 36.4
+   },
+   "cross_deepseek_500k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 72.7
+   },
+   "cross_deepseek_500k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_1000k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 58.9
+   },
+   "cross_hermes_1000k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_1000k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_128k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 37.1
+   },
+   "cross_hermes_128k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 71.3
+   },
+   "cross_hermes_128k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_252k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 36.7
+   },
+   "cross_hermes_252k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 74.5
+   },
+   "cross_hermes_252k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_500k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 59.3
+   },
+   "cross_hermes_500k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_500k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   }
+  },
+  "validation": {
+   "cross_deepseek_1000k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 46.6
+   },
+   "cross_deepseek_1000k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 84.1
+   },
+   "cross_deepseek_1000k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_128k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_252k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 65.9
+   },
+   "cross_deepseek_252k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 97.7
+   },
+   "cross_deepseek_252k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_deepseek_500k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 47.7
+   },
+   "cross_deepseek_500k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 80.7
+   },
+   "cross_deepseek_500k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_1000k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 70.5
+   },
+   "cross_hermes_1000k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_1000k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_128k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 46.6
+   },
+   "cross_hermes_128k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 85.2
+   },
+   "cross_hermes_128k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_252k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 47.7
+   },
+   "cross_hermes_252k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 81.8
+   },
+   "cross_hermes_252k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_500k_rho1": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 70.5
+   },
+   "cross_hermes_500k_rho3": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   },
+   "cross_hermes_500k_rho5": {
+    "ge1_pct": 100.0,
+    "ge2_pct": 100.0
+   }
+  }
+ }
+}

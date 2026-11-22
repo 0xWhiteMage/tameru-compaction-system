@@ -300,3 +300,116 @@ def test_realistic_paths_and_tokens_still_match():
         "https://h.io/p",
         "src/app/core/x.py",
     ]
+
+
+# ------------------------------------------------ 1.10.0: structural pass, chain folding, early exit, probes
+
+
+def make_java_chain_log(chains: int, seed: int = 5) -> str:
+    """INFO noise plus ``chains`` Java exception chains (head, frames, a cause, ``... N more``)."""
+    rng = random.Random(seed)
+    out = []
+    for c in range(chains):
+        out.append(f"2026-03-14 12:{c % 60:02d}:00 INFO  w{rng.randint(1, 9)} job {c} ok id={rng.getrandbits(32):08x}")
+        out.append(f"2026-03-14 12:{c % 60:02d}:01 INFO  w{rng.randint(1, 9)} heartbeat {rng.randint(1, 999)}ms")
+        out += [f"2026-03-14 12:{c % 60:02d}:02 ERROR [exec-{c}] c.a.Svc - request {c} failed",
+                f"java.lang.IllegalStateException: order {c} has no payment"]
+        out += [f"\tat org.springframework.web.Layer{i}.step(Layer{i}.java:{10 + i})" for i in range(12)]
+        out += [f"Caused by: java.sql.SQLException: connection {c} reset"]
+        out += [f"\tat com.acme.Dao{i}.query(Dao{i}.java:{20 + i})" for i in range(9)] + ["\t... 31 more"]
+    return "\n".join(out)
+
+
+@pytest.mark.perf
+def test_structural_log_pass_scales_linearly():
+    small, large = make_log(2000).split("\n"), make_log(8000).split("\n")
+    assert_scales_linearly(
+        lambda: cc.structural_log_pass(small), lambda: cc.structural_log_pass(large), "structural_log_pass"
+    )
+
+
+@pytest.mark.perf
+def test_chain_folding_scales_linearly():
+    small, large = make_java_chain_log(150).split("\n"), make_java_chain_log(600).split("\n")
+    assert_scales_linearly(
+        lambda: cc.structural_log_pass(small), lambda: cc.structural_log_pass(large), "per-cause chain folding"
+    )
+
+
+@pytest.mark.perf
+def test_one_long_stack_scales_linearly():
+    def stack(n):
+        return ["java.lang.IllegalStateException: deep"] + [f"\tat com.acme.F{i}.run(F{i}.java:{i})" for i in range(n)]
+
+    small, large = stack(4000), stack(16000)
+    assert_scales_linearly(lambda: cc.structural_log_pass(small), lambda: cc.structural_log_pass(large), "one long stack")
+
+
+@pytest.mark.perf
+@pytest.mark.parametrize("query", ["continue", "", "what happened to req-9999zz?"])
+def test_early_exit_scales_linearly(query):
+    small_log, large_log = make_log(2000), make_log(8000)
+    kw = dict(ccr=False, citations=False, min_savings_ratio=0.1)
+    assert not compress_context(small_log, query, **kw).fail_open
+    assert_scales_linearly(
+        lambda: compress_context(small_log, query, **kw),
+        lambda: compress_context(large_log, query, **kw),
+        f"early exit ({query!r})",
+    )
+
+
+@pytest.mark.perf
+def test_uninformative_query_probe_on_a_650kb_log_scales_linearly():
+    """A generic objective with ``anchor_errors``: above ``_ANCHOR_RETRY_MAX_CHARS`` the two comparison probes are
+    skipped, so 4x the text costs about 4x (it used to pay two extra full runs at any size)."""
+    small_log, large_log = make_log(2250, seed=3), make_log(9000, seed=3)
+    assert 600_000 < len(large_log) < 700_000
+    kw = dict(ccr=False, citations=False, anchor_errors=True, min_savings_ratio=0.1)
+    q = "tell me about the ratio"
+    assert_scales_linearly(
+        lambda: compress_context(small_log, q, **kw),
+        lambda: compress_context(large_log, q, **kw),
+        "uninformative-query probe",
+    )
+
+
+def make_numbered_source(n_funcs: int) -> str:
+    out, ln = [], 1
+    for fn in range(n_funcs):
+        for body in (f"def handle_{fn}(request, ctx):", f"    limit = ctx.get('limit_{fn % 9}', {fn})",
+                     "    items = [i for i in request.items if i.valid]",
+                     f"    raise ValueError('too many items for step {fn}')", ""):
+            out.append(f"{ln:5d}  {body}")
+            ln += 1
+    return "\n".join(out)
+
+
+@pytest.mark.perf
+def test_large_numbered_source_with_a_task_query_scales_linearly():
+    """1.9.0: a 600 KB numbered source with a task query took over two minutes (the sampled format profile read it
+    as YAML and the YAML subtree adapter scanned every earlier line for every match)."""
+    small, large = make_numbered_source(600), make_numbered_source(2400)
+    q = "where is the ValueError raised for too many items in step 7"
+    kw = dict(ccr=False, citations=False, min_savings_ratio=0.25)
+    assert_scales_linearly(
+        lambda: compress_context(small, q, **kw), lambda: compress_context(large, q, **kw),
+        "numbered source + task query",
+    )
+
+
+@pytest.mark.perf
+def test_yaml_subtree_adapter_scales_linearly():
+    from tameru import format_adapters as fa
+
+    def doc(n):
+        lines = []
+        for i in range(n):
+            lines += [f"svc{i}:", f"  name: worker-{i}", "  ports:", f"    - {8000 + i}", f"  note: needle {i}"]
+        return "\n".join(lines)
+
+    small, large = doc(1500), doc(6000)
+    assert_scales_linearly(
+        lambda: fa._adapt_yaml(small, ("needle",), None),
+        lambda: fa._adapt_yaml(large, ("needle",), None),
+        "_adapt_yaml",
+    )

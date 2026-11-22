@@ -6,6 +6,7 @@ shadow, while callers retain and return original substrings.
 from __future__ import annotations
 
 import functools
+from .content_cache import _engine_version, content_memo
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
@@ -203,6 +204,8 @@ def script_of(char: str) -> str | None:
         ("khmer", 0x1780, 0x17FF),
         ("mongolian", 0x1800, 0x18AF),
         ("han", 0x3400, 0x9FFF),
+        ("han", 0xF900, 0xFAFF),      # compatibility ideographs
+        ("han", 0x20000, 0x2FA1F),    # Extension B and later, compatibility supplement
         ("kana", 0x3040, 0x30FF),
         ("hangul", 0xAC00, 0xD7AF),
         ("armenian", 0x0530, 0x058F),
@@ -268,10 +271,10 @@ def search_units(text: str) -> list[str]:
     return _search_units(text)
 
 
-_UNITS_MEMO_MAX_CHARS = 2048
+_UNITS_MEMO_MAX_CHARS = 8192
 
 
-@functools.lru_cache(maxsize=256)
+@content_memo("search_units", version=_engine_version)
 def _search_units_cached(text: str) -> tuple[str, ...]:
     return tuple(_search_units(text))
 

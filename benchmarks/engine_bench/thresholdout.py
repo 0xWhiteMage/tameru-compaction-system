@@ -1,0 +1,158 @@
+"""Round-2 validation is queried ONLY through this gate (plan section 7): a noisy
+pass/fail answer on a fixed gate, never the numbers.
+
+    python -m benchmarks.engine_bench.thresholdout --setting E4 --gate s5_vague_en
+
+Each query: refuses when ``validation_queries.engine`` has reached the budget (20),
+otherwise runs the gate on the r2 validation rows of THIS tree's engine, adds Laplace
+noise (scale 0.2 points, derived from the ledger's ``noise_seed``) to each bound,
+increments the counter, logs the query and prints exactly ``PASS`` or ``FAIL``.
+
+Gates:
+  s5_vague_en / s5_vague_zh   S5 kinds under build_vague: gold kept over all cases >=
+                              95 points and cluster-bootstrap one-sided lower bound >=
+                              90 points, in the named language, for BOTH profiles.
+  existing_gold               evidence cases under the round-1 conditions (tool_call,
+                              generic, zh_user): gold kept >= 99.5 in every
+                              profile x condition cell.
+  savings                     round-1 dev+validation: mean paired saved ratio per
+                              profile x condition >= stored 1.10.0 baseline - 2 points.
+
+Testing seams: ``--ledger PATH`` points at a ledger copy; ``--r2-rows``/``--r1-rows``
+feed precomputed rows instead of running the engine.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import random
+import sys
+from pathlib import Path
+
+from . import corpus, ledger, report, run as bench_run
+
+NOISE_SCALE = 0.2  # Laplace scale, in points
+S5_KINDS = ("s5_buried", "s5_superseded", "csv_args")
+R1_CONDS_IN_R2 = ("tool_call", "generic", "zh_user")
+R1_BASELINE = Path(__file__).resolve().parent / "results" / "r1-baseline-1.10.0-dev-validation.jsonl"
+
+
+def _laplace(rng: random.Random, scale: float) -> float:
+    u = rng.random() - 0.5
+    import math
+    return -scale * (1 if u >= 0 else -1) * math.log(1 - 2 * abs(u))
+
+
+def _gold_share(rows) -> float:
+    """100 * share of cases whose gold lines all survived the effective text."""
+    use = [r for r in rows if r.get("gold_total")]
+    if not use:
+        return float("nan")
+    return 100.0 * sum(1 for r in use if r["gold_kept"] == r["gold_total"]) / len(use)
+
+
+def _gold_share_bound(rows) -> float:
+    """One-sided cluster-bootstrap lower bound of the full-kept share, in points."""
+    use = [r for r in rows if r.get("gold_total")]
+    if not use:
+        return float("nan")
+    pairs = [(r["source_case"], 1.0 if r["gold_kept"] == r["gold_total"] else 0.0) for r in use]
+    return 100.0 * report.cluster_mean(pairs)["lo"]
+
+
+def _checks(gate: str, r2_rows, r1_rows, r1_base) -> list[tuple[str, float, float]]:
+    """(label, value-in-points, bound) per sub-check."""
+    checks: list[tuple[str, float, float]] = []
+    if gate in ("s5_vague_en", "s5_vague_zh"):
+        lang = gate.rsplit("_", 1)[1]
+        rows = [r for r in r2_rows
+                if r.get("item_kind") in S5_KINDS and r["query_condition"] == "build_vague"
+                and r["language"] == lang and r["split"] == "validation"]
+        for profile in bench_run.PROFILES:
+            cell = [r for r in rows if r["profile"] == profile]
+            checks.append((f"{gate}|{profile}|point", _gold_share(cell), 95.0))
+            checks.append((f"{gate}|{profile}|bound", _gold_share_bound(cell), 90.0))
+    elif gate == "existing_gold":
+        rows = [r for r in r2_rows
+                if r.get("item_kind") == "evidence" and r["split"] == "validation"
+                and r["query_condition"] in R1_CONDS_IN_R2]
+        for profile in bench_run.PROFILES:
+            for cond in R1_CONDS_IN_R2:
+                cell = [r for r in rows if r["profile"] == profile and r["query_condition"] == cond]
+                if cell:
+                    checks.append((f"existing_gold|{profile}|{cond}", _gold_share(cell), 99.5))
+    elif gate == "savings":
+        key = lambda r: (r["case"], r["profile"], r["query_condition"])  # noqa: E731
+        base = {key(r): r for r in r1_base}
+        for profile in bench_run.PROFILES:
+            for cond in bench_run.CONDITIONS:
+                cand = [r for r in r1_rows
+                        if r["profile"] == profile and r["query_condition"] == cond]
+                diffs = [r["saved_pct"] - base[key(r)]["saved_pct"] for r in cand if key(r) in base]
+                if diffs:
+                    checks.append((f"savings|{profile}|{cond}", sum(diffs) / len(diffs), -2.0))
+    return checks
+
+
+def _r2_validation_rows() -> list[dict]:
+    assignment = corpus.r2_assignment()
+    cases = corpus.load_cases_r2(["validation"], sealed_ok=False)
+    rows = bench_run.run(cases, assignment, conditions=bench_run.CONDITIONS_R2)
+    return [r for r in rows if r["split"] == "validation"]
+
+
+def _r1_rows() -> list[dict]:
+    assignment = corpus.load_splits()
+    cases = corpus.load_cases(["dev", "validation"], sealed_ok=False)
+    return bench_run.run(cases, assignment)
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--setting", required=True, help="engine setting id in the ledger")
+    ap.add_argument("--gate", required=True, choices=("s5_vague_en", "s5_vague_zh", "existing_gold", "savings"))
+    ap.add_argument("--ledger", type=Path, default=None, help="ledger path (tests use a copy)")
+    ap.add_argument("--r2-rows", type=Path, default=None, help="precomputed r2 validation rows (tests)")
+    ap.add_argument("--r1-rows", type=Path, default=None, help="precomputed r1 rows (tests)")
+    ap.add_argument("--r1-baseline", type=Path, default=R1_BASELINE, help="stored 1.10.0 r1 rows")
+    args = ap.parse_args(argv)
+
+    led = ledger.load_ledger(args.ledger)
+    ledger_path = args.ledger or ledger.LEDGER_PATH
+    if args.setting not in ledger.engine_setting_ids(led):
+        print("refusing: setting is not an engine setting in the ledger", file=sys.stderr)
+        return 2
+    used = led.get("validation_queries", {}).get("engine", 0)
+    budget = led.get("validation_query_budget", 20)
+    if used >= budget:
+        print("refusing: engine validation query budget exhausted", file=sys.stderr)
+        return 2
+
+    r2_rows = report.load(args.r2_rows) if args.r2_rows else _r2_validation_rows()
+    r1_rows, r1_base = [], []
+    if args.gate == "savings":
+        r1_rows = report.load(args.r1_rows) if args.r1_rows else _r1_rows()
+        r1_base = report.load(args.r1_baseline)
+
+    checks = _checks(args.gate, r2_rows, r1_rows, r1_base)
+    if not checks:
+        print("refusing: gate matched no rows", file=sys.stderr)
+        return 2
+    rng = random.Random(f"{led.get('noise_seed', 0)}:{used}:{args.gate}")
+    ok = all(value >= bound + _laplace(rng, NOISE_SCALE) for _label, value, bound in checks)
+
+    led.setdefault("validation_queries", {})["engine"] = used + 1
+    led.setdefault("validation_query_log", []).append({
+        "date": datetime.date.today().isoformat(), "target": "engine",
+        "setting": args.setting, "gate": args.gate, "query_index": used,
+        "noise_seed": led.get("noise_seed", 0), "checks": len(checks),
+    })
+    ledger_path.write_text(json.dumps(led, indent=1, ensure_ascii=False) + "\n",
+                           encoding="utf-8", newline="\n")
+    print("PASS" if ok else "FAIL")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
