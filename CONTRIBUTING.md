@@ -182,8 +182,8 @@ Pushing fixes to the same branch is how you respond.
 
 ## How you are credited
 
-Your name stays on your work. Commits keep your authorship, merged pull requests make you a contributor on GitHub, and changelog
-entries from outside the maintainers end with `(#PR, thanks @you)`. GitHub only credits a commit whose author email is linked to an
+Your name stays on your work. Commits keep your authorship, and we aim to credit contributors in changelog entries and release
+notes. Changelog entries from outside the maintainers end with `(#PR, thanks @you)`. GitHub links commits only when the author email belongs to an
 account. CI runs an **attribution check**: an unrecognised author email prompts you to add a mapping for the project's tooling
 (`python scripts/add_contributor.py <email> <github-login>`) or switch to your noreply address. A mapping cannot verify an email
 with GitHub or change its contributor graph; GitHub does not read `.mailmap`. The design, borrowed from
