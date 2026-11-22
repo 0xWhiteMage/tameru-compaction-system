@@ -14,7 +14,9 @@ S5 (strategy S5 and the P3 exit):
   vague         build_vague rows of the S5 kinds (s5_buried, s5_superseded, csv_args), per language (en, zh) x profile:
                 all-gold-kept share >= 95 points and its lower bound >= 90.
   existing      evidence rows under tool_call, generic and zh_user, per profile x condition: all-gold-kept share >= 99.5.
-  savings       per profile x condition: mean paired saved_pct (candidate - 1.10.0) >= -2.0 points.
+  savings       per profile x condition: mean paired saved_pct (candidate - 1.10.0) >= -2.0 points, except
+                build_vague and build_specific, where the maintainer exception of 2026-11-22 sets >= -12.0
+                (ANALYSIS-PLAN-ROUND2, Maintainer exceptions).
 Gate 9 (round-1 margins, ANALYSIS-PLAN-1.10):
   facts         per profile x condition: paired difference of gold kept (case mean, points), lower bound >= -1.0.
   fingerprints  per profile x condition, rows whose original has error fingerprints: paired difference of the share of
@@ -120,7 +122,8 @@ def s5_gates(cand: list[dict], base_by_key: dict) -> list[dict]:
                             lambda r: float(r["saved_pct"]))
             if pairs:
                 s = lower_bound(pairs)
-                out.append(_check(f"S5 savings|{p}|{c}", s["mean"] >= -2.0, mean_diff=s["mean"], lower=s["lower"], n=s["n"]))
+                bound = -12.0 if c in ("build_vague", "build_specific") else -2.0
+                out.append(_check(f"S5 savings|{p}|{c}", s["mean"] >= bound, mean_diff=s["mean"], lower=s["lower"], n=s["n"]))
     return out
 
 

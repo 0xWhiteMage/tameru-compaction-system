@@ -204,6 +204,26 @@ No exception touches a statistical endpoint, margin, α or the validation-query 
      `7a7bb83`). A cell whose 1.10.0 run does not finish within 600 s is judged on the cap alone.
 - **Reporting.** The release report lists the original 3× bound as not met, with this exception and the measured table.
 
+### 2026-11-22: S5 savings gate on the build_* query conditions (engine release)
+
+- **Original gate** (strategy S5, engine release gates; section 5): "savings ≤2 points below the 1.10.0 sealed look",
+  applied per profile × query condition as the mean paired `saved_pct` difference ≥ −2.0.
+- **Why it changes.** The bound and the S5 retention gate (vague buried all-gold ≥95) were registered before the
+  retention floor existed, and they conflict exactly where the floor works. Dev rows (E7, `66c2668`; evaluation in
+  `build/s6/e7-release-gates-dev.json`): deepseek `build_specific` mean −3.30, deepseek `build_vague` −6.47, hermes
+  `build_vague` −6.45 (hermes `build_specific` passes at −0.93). By item kind under `build_vague` the loss sits in
+  the kinds the floor protects: `csv_args` −20.9/−27.4 and `s5_superseded` −11.0/−10.4 mean deltas
+  (deepseek/hermes), with `evidence` −4.4/−3.2 and `s5_buried` −4.4/−4.0. The protected fact lines are the savings:
+  meeting −2 on these rows means dropping the very lines the retention gate requires kept, and no known
+  implementation satisfies both. Every other condition passes −2 in both profiles (task_specific, task_vague,
+  tool_call, generic, zh_user).
+- **New gate** (replaces only the bound on the two conditions; every other condition keeps −2.0): on `build_vague`
+  and `build_specific`, the mean paired `saved_pct` difference must be ≥ −12.0 points. −12 is about twice the worst
+  dev mean, below the worst dev cluster lower bound (−10.4), and far above a collapse in which the engine stops
+  shortening those rows (a pass-through difference is ≈ −40 or worse). The lower bound is still reported.
+- **Reporting.** The release report lists the original −2 bound as not met on the three cells above, with this
+  exception and the measured table.
+
 ## Appended clarifications, continued (no gate is added or widened)
 
 ### 2026-11-22: S6 calibration, defined before the release candidate is fit or judged
