@@ -484,14 +484,48 @@ def _adapt_delimited_outliers(
     if width < 2 or any(len(row or []) != width for row in parsed[1:]):
         return _decline(text, format_name, "inconsistent field count", structurally_valid=False)
 
-    data_rows = parsed[1:]
-    total = max(0, len(data_rows))
-    if total < 20:
-        return _decline(text, format_name, "too few records for outliers", total_records=total)
+    data_rows = [row for row in parsed[1:] if row is not None]
+    total = len(data_rows)
+    kept_indices, reason = _select_table_outliers(text, query, delimiter, data_rows)
+    if not kept_indices:
+        return _decline(text, format_name, reason, total_records=total)
 
-    import re
+    if gap_marker is None:
+        kept_records = [records[1 + index] for index in kept_indices]
+        omitted = total - len(kept_indices)
+        result_records = [
+            records[0],
+            *kept_records,
+            f"... {omitted} of {total} rows omitted",
+        ]
+    else:
+        keep_flags = [False] * total
+        for index in kept_indices:
+            keep_flags[index] = True
+        result_records = [
+            records[0],
+            *_with_gaps(records[1:], keep_flags, "\n", gap_marker, len(text)),
+        ]
+
+    return FormatResult(
+        format=format_name,
+        applied=True,
+        text=_line_separator(text).join(result_records),
+        total_records=total,
+        kept_records=len(kept_indices),
+        reason="header plus outlier and matching records",
+    )
+
+
+def _select_table_outliers(
+    text: str, query: str, delimiter: str, data_rows: list[list[str]],
+) -> tuple[list[int], str]:
+    total = len(data_rows)
+    if total < 20:
+        return [], "too few records for outliers"
 
     outlier_flags = [False] * total
+    width = len(data_rows[0])
 
     for col in range(width):
         values = [row[col] if row and col < len(row) else "" for row in data_rows]
@@ -564,7 +598,7 @@ def _adapt_delimited_outliers(
 
     lower_text = text.lower()
     if guard_words and not any(word in lower_text for word in guard_words):
-        return _decline(text, format_name, "query unrelated to table", total_records=total)
+        return [], "query unrelated to table"
 
     query_flags = [False] * total
     if query_words:
@@ -579,36 +613,10 @@ def _adapt_delimited_outliers(
         index for index in range(total) if outlier_flags[index] or query_flags[index]
     ]
     if not kept_indices:
-        return _decline(text, format_name, "no outliers", total_records=total)
+        return [], "no outliers"
     if len(kept_indices) * 5 > total:
-        return _decline(text, format_name, "too many outliers", total_records=total)
-
-    keep_flags = [False] * total
-    for index in kept_indices:
-        keep_flags[index] = True
-
-    if gap_marker is None:
-        kept_records = [records[1 + index] for index in kept_indices]
-        omitted = total - len(kept_indices)
-        result_records = [
-            records[0],
-            *kept_records,
-            f"... {omitted} of {total} rows omitted",
-        ]
-    else:
-        result_records = [
-            records[0],
-            *_with_gaps(records[1:], keep_flags, "\n", gap_marker, len(text)),
-        ]
-
-    return FormatResult(
-        format=format_name,
-        applied=True,
-        text=_line_separator(text).join(result_records),
-        total_records=total,
-        kept_records=len(kept_indices),
-        reason="header plus outlier and matching records",
-    )
+        return [], "too many outliers"
+    return kept_indices, ""
 
 
 def _selector_is_distinctive(selector: str) -> bool:
