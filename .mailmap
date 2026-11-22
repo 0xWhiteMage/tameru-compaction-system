@@ -1,7 +1,7 @@
-# .mailmap: one canonical name and address per person, for `git shortlog`, `git log` and GitHub.
+# .mailmap: one canonical name and address per person, for `git shortlog` and mailmap-aware `git log`.
 # Format: Canonical Name <canonical@email> Commit Name <commit@email>
 # See https://git-scm.com/docs/gitmailmap. This changes how names are shown; it does not rewrite history.
-# The canonical address is the person's GitHub noreply address, so GitHub can link it to the profile.
+# GitHub does not read this file; it cannot verify an email or change the contributor graph.
 # New contributors: see contributors/README.md (a one-file mapping, not an edit here).
 
 Benjamin Ang <98248594+0xWhiteMage@users.noreply.github.com> <hello@benjaminang.tv>

@@ -294,6 +294,12 @@ def _looks_vertical(text: str) -> bool:
     return short / len(lines) >= 0.8
 
 
+# 1.10.0 (E7): YAML forbids tabs in indentation. A tab-indented line that is neither a mapping entry nor a sequence
+# item (a whitespace-aligned table row, as in `zpool status`) means the text is not YAML, and the subtree adapter
+# would delete rows it cannot parse.
+_TAB_NOT_YAML_RE = re.compile(r"(?m)^[ ]*\t[ \t]*(?![-?][ \t])(?![^\s:#][^:\n]{0,120}:(?:[ \t]|$))\S")
+
+
 def detect_format(text: str) -> str:
     value = str(text or "")
     stripped = value.lstrip()
@@ -363,6 +369,7 @@ def detect_format(text: str) -> str:
         and not looks_like_stack_trace(value)
         # A heading-shaped YAML comment must not hide anchor/alias dependencies.
         and (not markdown or yaml_requires_original(value))
+        and not _TAB_NOT_YAML_RE.search(value)
     ):
         return "yaml"
     if markdown:

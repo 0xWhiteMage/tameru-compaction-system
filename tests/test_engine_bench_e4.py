@@ -129,3 +129,12 @@ def test_thresholdout_fails_when_gold_is_dropped(tmp_path):
         thresholdout.main(["--setting", "E4", "--gate", "s5_vague_en",
                            "--ledger", str(lp), "--r2-rows", str(rows)])
     assert buf.getvalue() == "FAIL\n"
+
+
+def test_gold_share_counts_multi_line_gold_by_line():
+    """A case with two gold lines, both kept, is fully kept (the fraction is 1.0, the count is 2)."""
+    both = {"source_case": "c1", "gold_total": 2, "gold_kept": 1.0, "gold_each": [True, True]}
+    half = {"source_case": "c2", "gold_total": 2, "gold_kept": 0.5, "gold_each": [True, False]}
+    one = {"source_case": "c3", "gold_total": 1, "gold_kept": 1.0}
+    assert thresholdout._gold_share([both, half, one]) == 100.0 * 2 / 3
+    assert thresholdout._all_kept(both) and not thresholdout._all_kept(half) and thresholdout._all_kept(one)
