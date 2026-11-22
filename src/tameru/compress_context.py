@@ -6681,10 +6681,27 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
 
     return extras
 
+class _StructuredAnchorDepthFailure(Exception):
+    pass
+
+
+_STRUCTURED_ANCHOR_ACTIVE = contextvars.ContextVar("tameru_structured_anchor_active", default=False)
+
+
+def _structured_anchor_depth_noop_result(text, mode):
+    return dataclasses.replace(
+        _recursion_noop_result(caller_text=text, requested_mode=mode),
+        policy_name="local-noop-anchor-depth", compression_risk="high", confidence=0.0,
+        reasons=["structured anchor depth limit"],
+    )
+
+
 def _strip_structured_anchor(line):
     try:
         return _strip_structured_anchor_record(line)
-    except (RecursionError, OverflowError):
+    except (RecursionError, OverflowError) as exc:
+        if _STRUCTURED_ANCHOR_ACTIVE.get():
+            raise _StructuredAnchorDepthFailure from exc
         return line
 
 
@@ -7161,11 +7178,13 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
 
 
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
+    token = _STRUCTURED_ANCHOR_ACTIVE.set(True)
     try:
         return _structured_anchor_regions(text, max_regions)
-    except (RecursionError, OverflowError):
-        # Fail open if decoding or rendering a structured record exceeds depth limits.
-        return []
+    except (RecursionError, OverflowError) as exc:
+        raise _StructuredAnchorDepthFailure from exc
+    finally:
+        _STRUCTURED_ANCHOR_ACTIVE.reset(token)
 
 
 def _structured_anchor_regions(text: str, max_regions: int) -> list[str]:
@@ -9775,6 +9794,8 @@ def compress_context(
         content_hint=content_hint, inline_short_gaps=inline_short_gaps,
         selector_query=selector_query, _ccr_defer=_ccr_defer,
         )
+    except _StructuredAnchorDepthFailure:
+        result = _structured_anchor_depth_noop_result(full_text, mode)
     finally:
         _PINNED_LINES.reset(_pin_token)
         _FACT_OFF.reset(_fact_off_token)
