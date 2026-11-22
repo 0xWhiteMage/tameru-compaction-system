@@ -1065,6 +1065,8 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 2
             continue
         if text.startswith("/*", index):
+            if text.startswith(("/*!", "/*M!"), index):
+                return None  # MySQL and MariaDB executable comments are not trivia.
             block_comment = True
             index += 2
             continue

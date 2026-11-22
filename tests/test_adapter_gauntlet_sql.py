@@ -15,3 +15,10 @@ def test_sql_gauntlet_bracketed_identifier_is_kept_whole():
     result = adapt_format(source, "needle-42", format_name="sql")
     assert result.applied
     assert result.text == target
+
+
+def test_sql_gauntlet_executable_comment_declines():
+    source = "/*!40101 SET @mode = 'strict' */;\nSELECT 'needle-42';"
+    result = adapt_format(source, "needle-42", format_name="sql")
+    assert not result.applied
+    assert result.text == source
