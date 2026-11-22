@@ -303,9 +303,10 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def request_was_sanitized(request: Mapping[str, Any]) -> bool:
-    """True when ``validate_request`` replaced a lone surrogate in the text or the query."""
+    """True when ``validate_request`` replaced a lone surrogate in the text, the query or the
+    selector query."""
     return any(
-        isinstance(request.get(k), str) and clean_text(request[k])[1]
+        isinstance(request.get(k), str) and _SURROGATE.search(request[k]) is not None
         for k in ("text", "query", "selector_query")
     )
 
