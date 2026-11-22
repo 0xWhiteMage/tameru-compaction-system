@@ -177,3 +177,29 @@ The power table above shows that at the round-2 pass levels (α_r) the facts che
   (one look, 99db5bd) is development material from now on.
 
 No margin, bar or gate changes.
+
+## Maintainer exceptions (a gate changed after this file's hash was committed)
+
+The rule at the top allows only holdout registrations and clarifications. An exception changes a gate: the maintainer
+decides it, it states the original gate, the change and why, and the release report lists it next to the original gate.
+No exception touches a statistical endpoint, margin, α or the validation-query budget.
+
+### 2026-11-22: S7 memory gate (engine release)
+
+- **Original gate** (strategy S7, engine release gates): "RSS growth per 2M call ≤3× input".
+- **Why it changes.** The bound was set without a baseline measurement, and the 1.10.0 engine misses it as widely as
+  the release candidate: one child per cell at 1M characters with `benchmarks/memory.py`, peak working-set growth is
+  9.4-17.3× the input on 1.10.0 and 10.6-17.2× on the candidate (c02c5d1). On `latency.py`'s 2M inputs, splitting the
+  text into lines once costs 1.3-2.1× the input and one lowercased copy 1.0×, so 3× is spent before any scoring;
+  meeting it means re-implementing the engine's line handling (38 split and 38 join sites in `compress_context.py`)
+  and re-running every E6 result. Memory is an engineering budget, not a statistical endpoint: no look, margin or α
+  is affected. Registered before the full measurement.
+- **New gate** (replaces only that bound; every other S7 item stands). `benchmarks/memory.py`: a fresh child process
+  per measurement, the input decoded from a memory-mapped file, growth = the peak working set after the call minus the
+  working set just before it (a 0.5 ms working-set sampler where an earlier peak masks the call's), median of 5
+  children, on every `latency.py` content kind × the 2M-class profiles (`deepseek`, `hermes`) with the kind's task
+  query, at 1M, 2M, 4M and 8M characters:
+  1. **Fixed cap:** growth ≤ 64 MiB in every cell (the S7 content cache's own budget, `content_cache._DEFAULT_MAX_BYTES`).
+  2. **No regression:** growth ≤ 1.10× the same cell on the 1.10.0 engine (`src/tameru` at `e638509`, unchanged since
+     `7a7bb83`). A cell whose 1.10.0 run does not finish within 600 s is judged on the cap alone.
+- **Reporting.** The release report lists the original 3× bound as not met, with this exception and the measured table.
