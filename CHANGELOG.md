@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Refactor: default input profiles reuse one frozen IndustrialLimits instance, including cache hits, without bypassing validation of explicitly constructed limits.
+
 - Refactor: report routing skips irrelevant selector setup, ordinary adapters build selectors only after report selection declines, Markdown table gaps use their known list result directly, and JSON answer checks reuse the casefolded query.
 
 - Refactor: fingerprinting paths share private UUID, lowercase-hex and Unicode digit patterns; repeated digit substitutions reuse the same primitive, and summary/ambiguity helpers no longer accept unused private arguments.
