@@ -19,7 +19,8 @@ I/O. Rules:
   ``derive_selector_query`` (a flag the worker resolves into ``selector_query`` from the query parts
   it accepts, via ``transcript.build_selector_query``; it is not a ``compress_context`` parameter,
   so the worker pops it before the call). It also adds the ``plan`` request: a closed ``PlanInput``
-  body validated by ``validate_plan_request``, answered with ``plan_to_dict``.
+  body validated by ``validate_plan_request``, answered with ``plan_to_dict``, and the ``stats``
+  request (``validate_stats_request``), answered with ``compress_context.cache_stats()``.
 * A rejection is a ``ProtocolError`` whose ``code`` is a fixed identifier. It never contains request
   text, not even a field name.
 """
