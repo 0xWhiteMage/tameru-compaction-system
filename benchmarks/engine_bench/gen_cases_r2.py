@@ -650,11 +650,11 @@ def _csv_args(r, spec, src_i, n, rid, variant, zh):
     return lines, [line], fact, [], tool
 
 
-def _source_case(fid, spec, src, variant):
+def _source_case(fid, spec, src, variant, prefix="r2"):
     """One case dict of (family, source index, variant)."""
     kind, lang = SRC_PLAN[src]
-    cid = f"r2-{fid}-{src:02d}{variant}"
-    r, c = rng(cid), rng(f"r2c-{fid}-{src}")
+    cid = f"{prefix}-{fid}-{src:02d}{variant}"
+    r, c = rng(cid), rng(f"{prefix}c-{fid}-{src}")
     n, rid = c.randint(100, 999), hexid(c, 6)
     zh = lang == "zh"
     tool = spec["tool"].format(**_p(c, 0, n, rid))
@@ -672,7 +672,7 @@ def _source_case(fid, spec, src, variant):
     q = _queries(cid, lang, spec["thing"].format(**_p(c, 0, n, rid)), tool, key, key_zh)
     q["build_specific"] = _build_q(q["task_specific"], tool, text)
     q["build_vague"] = _build_q(q["task_vague"], tool, text)
-    case = {"id": cid, "source_case": f"r2-{fid}-{src:02d}", "content_type": spec["ctype"], "shape": f"r2-{fid}",
+    case = {"id": cid, "source_case": f"{prefix}-{fid}-{src:02d}", "content_type": spec["ctype"], "shape": f"{prefix}-{fid}",
             "text": text, "gold": gold, "forbidden": forbidden,
             "language": lang, "queries": q,
             # 1.10.0 (S5): the same transcripts through build_selector_query — run.py passes them as

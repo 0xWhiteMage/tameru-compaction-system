@@ -6,3 +6,4 @@ ff3ca71f1d3cb33db77e09192b413b359db01fa66f907fcbc4736f51e99dec30  docs/ANALYSIS-
 8763527fee574f4886ff6c83881b91c65a8f396ab139f5d25ebbc8e88311408a  docs/ANALYSIS-PLAN-ROUND2.md with the 2026-11-22 S5 savings-gate maintainer exception appended (LF line endings)
 f3024d6a24de8b4d5d92ce5276b2e2b2de789e0899eef0e59ac97c8481715b1c  docs/ANALYSIS-PLAN-ROUND2.md with the 2026-11-22 EV-forced-event and S3-endpoint clarifications appended (LF line endings)
 29f655ba7847d963fef8a9dd49b12f87f0ae031bca4ce166439d55e3c507d06b  burn: r2 sealed look consumed; 20 sealed families moved to dev (splits_r2.json burn block)
+d3d055b1265fc559725ef01eb6a8af6eb2858aeaaea1190cbd2108008c5ce6ca  r3 holdout registered: SEALED-R3 dealt attempt 6 (24 sealed families), equivalence PASS

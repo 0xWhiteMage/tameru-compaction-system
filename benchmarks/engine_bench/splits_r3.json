@@ -1,0 +1,62 @@
+{
+ "counts": {
+  "dev": {
+   "cases": 114,
+   "clusters": 66,
+   "families": 6
+  },
+  "sealed": {
+   "cases": 456,
+   "clusters": 264,
+   "families": 24
+  },
+  "validation": {
+   "cases": 114,
+   "clusters": 66,
+   "families": 6
+  }
+ },
+ "deal": {
+  "attempt": 6,
+  "rule": "families ordered by sha256('<seed>:<family>'); first 6 -> dev, next 6 -> validation, rest -> sealed",
+  "seed": "r3-deal-2026-11-25-s023"
+ },
+ "families": {
+  "authlog": "validation",
+  "cephs": "sealed",
+  "chronyc": "sealed",
+  "coredumpctl": "validation",
+  "etcdctl": "sealed",
+  "fiorun": "dev",
+  "glusterv": "sealed",
+  "hdfsrep": "dev",
+  "infracost": "dev",
+  "iperf": "validation",
+  "ipneigh": "sealed",
+  "iproute": "sealed",
+  "kubebench": "sealed",
+  "lsblk": "sealed",
+  "lynis": "validation",
+  "memtier": "sealed",
+  "minio": "sealed",
+  "monit": "sealed",
+  "mtrep": "sealed",
+  "nftables": "sealed",
+  "nmap": "dev",
+  "nodetool": "sealed",
+  "ntpq": "validation",
+  "oscap": "sealed",
+  "pgbench": "sealed",
+  "pm2list": "sealed",
+  "postfixq": "dev",
+  "rabbitmq": "sealed",
+  "restic": "sealed",
+  "rsyncst": "sealed",
+  "sslscan": "sealed",
+  "supervisord": "sealed",
+  "systimers": "dev",
+  "tfsec": "sealed",
+  "trino": "validation",
+  "velero": "sealed"
+ }
+}

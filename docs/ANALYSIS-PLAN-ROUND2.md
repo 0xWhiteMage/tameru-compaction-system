@@ -282,3 +282,23 @@ No margin, bar or gate changes.
   sealing, and its hash is appended here before the look — the same protocol round 2 used.
 
 No margin, bar or gate changes.
+
+### 2026-11-25: the round-3 holdout is registered
+
+- **Round-3 engine_bench split.** The engine's next look is confirmed on `benchmarks/engine_bench/SEALED-R3.sha256`
+  `c64902931bf51237e1d5176e2865af3306c69ae12ca09dac6247f3522895da79`: 456 cases in 264 clusters from 24 families in
+  no other round-3 split and none of the r2 families (dev, validation or the 20 burned), the round-1 shapes or the
+  session corpus — gen_cases_r3, 34 families dealt by seed `r3-deal-2026-11-25-s023` (attempt 6; attempts 1-5
+  failed the equivalence check and were re-dealt, each logged in `equivalence-r3-attempts.json`). The r3 corpus has
+  the same item-kind mix as r2 (evidence / s5_buried / s5_superseded / csv_args in the same 11-source plan) and the
+  same query conditions; case ids carry the `r3-` prefix.
+- **Equivalence** (descriptors under 1.9.0 and 1.10.0 only, `equivalence-r3-result.json`): classifier AUC sealed vs
+  dev 0.471 (<=0.65), every profile x engine acceptance gap vs dev <= 8.9 points (<=10), and the 1.10.0-minus-1.9.0
+  saved-ratio difference has the same sign on sealed as on dev (-1.6 vs -3.1 points pooled).
+- **Composition.** Sealed: 96 evidence / 96 s5_buried (48 en + 48 zh) / 24 s5_superseded / 48 csv_args clusters,
+  264 s5 fact cases; dev 6 families / validation 6 families of 66 clusters each.
+- **Judgment.** `release_gates_r3.py` at alpha = 0.00625, bootstrap seed 20261124; the look logs to
+  `sealed_looks_r3.json` and validation is queried only through `thresholdout.py --round 3` under the same shared
+  engine query budget.
+
+No margin, bar or gate changes.
