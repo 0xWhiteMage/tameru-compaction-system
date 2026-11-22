@@ -112,7 +112,7 @@ def iter_graphemes(text: str) -> Iterator[str]:
                 yield value[start:index]
             start = index
             regional_count = 1 if regional else 0
-        prev_joiner, prev_virama, prev_regional = joiner, virama, regional
+        prev_joiner, prev_virama, prev_regional = char == _ZWJ, virama, regional
         prev_boundary = boundary
     if value:
         yield value[start:]
