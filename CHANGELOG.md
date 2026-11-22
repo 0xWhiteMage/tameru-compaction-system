@@ -47,11 +47,11 @@ release, paired, cluster bootstrap); none of it is a measurement against a real 
   head/tail + error-line-sampler path (result carries `confidence_basis="partial"`, confidence capped at 0.5,
   reason `huge_sampled`); over 8,000,000 chars the call fails open with the closed reason `too_large` and no
   analysis. Development latency on the benchmark matrix (`benchmarks/latency.py`, ee797ee): the 2M class runs p50
-  1,760-2,931 ms and the 4M class 2,109-7,648 ms — the sampled pass does real compression work on the ~1M sample
+  1,950-3,461 ms and the 4M class 2,122-6,270 ms — the sampled pass does real compression work on the ~1M sample
   (an earlier revision measured a no-op recursion-guard return and reported 160-638 ms, which was never reachable
-  truth); the 4M cells exceed their 2 s advisory budget and are reported, not gated. Smaller classes run ~1.4-1.6x
-  the e638509 engine (the accumulated cost of the retention-floor machinery) and stay inside every budget.
-  Peak traced allocation per ~1.7M call is unchanged from
+  truth); the 24 4M cells exceed their 2 s advisory budget and are reported, not gated. Smaller classes run
+  ~1.5-2.1x the e638509 engine at the median cell (the accumulated cost of the retention-floor machinery) and
+  stay inside every budget. Peak traced allocation per ~1.7M call is unchanged from
   e638509 (engine-internal, ~22x input); retained memory after a call is ~0x input — the old memos pinned whole texts.
 - **Stack traces and build logs shrink under any question.** On a generic or tool-call-shaped question the engine used to skip its log folding, so Java and .NET
   traces saved 0 to 21%. A structural pass now always runs for log and trace routes: frames fold per exception cause (Java, .NET, Python, Go, JS, Ruby, PHP)
