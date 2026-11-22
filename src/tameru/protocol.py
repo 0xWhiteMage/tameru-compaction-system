@@ -230,6 +230,13 @@ def _pin_patterns(value: Any) -> list[str]:
     return out
 
 
+def _declared_protocol(request: Mapping[str, Any], allowed: tuple[int, ...]) -> int:
+    declared = request.get("protocol", PROTOCOL_VERSION)
+    if isinstance(declared, bool) or declared not in allowed:
+        raise ProtocolError("bad_protocol")
+    return declared
+
+
 def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     """Check a ``compress`` request and return the keyword arguments for ``compress_context``.
 
@@ -239,9 +246,7 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         raise ProtocolError("bad_request")
     if set(request) - ALL_FIELDS:
         raise ProtocolError("unknown_field")
-    declared = request.get("protocol", PROTOCOL_VERSION)
-    if isinstance(declared, bool) or declared not in (1, 2, 3):
-        raise ProtocolError("bad_protocol")
+    declared = _declared_protocol(request, (1, 2, 3))
     if declared == 1 and (set(request) & V2_FIELDS) - {"protocol"}:
         raise ProtocolError("field_needs_protocol_2")
     if declared <= 2 and set(request) & V3_FIELDS:
@@ -497,9 +502,7 @@ def validate_stats_request(request: Mapping[str, Any]) -> dict[str, Any]:
         raise ProtocolError("unknown_field")
     if request.get("op") != "stats":
         raise ProtocolError("bad_op")
-    declared = request.get("protocol", PROTOCOL_VERSION)
-    if isinstance(declared, bool) or declared != 3:
-        raise ProtocolError("bad_protocol")
+    _declared_protocol(request, (3,))
     return {}
 
 
@@ -512,9 +515,7 @@ def validate_plan_request(request: Mapping[str, Any]) -> PlanInput:
         raise ProtocolError("bad_request")
     if set(request) - PLAN_FIELDS:
         raise ProtocolError("unknown_field")
-    declared = request.get("protocol", PROTOCOL_VERSION)
-    if isinstance(declared, bool) or declared != 3:
-        raise ProtocolError("bad_protocol")
+    _declared_protocol(request, (3,))
     event, host_mode = request.get("event"), request.get("host_mode")
     if event not in EVENTS:
         raise ProtocolError("bad_event")
