@@ -103,7 +103,7 @@ JSON_CRUSH_FRAGMENTS = (
 def marker_name(line: str) -> str | None:
     """Name of the engine marker `line` matches, or None for ordinary text."""
     for name, rx, _src in ENGINE_MARKERS:
-        if rx.match(line):
+        if rx.fullmatch(line):
             return name
     return None
 

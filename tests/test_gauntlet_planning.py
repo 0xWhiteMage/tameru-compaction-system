@@ -130,6 +130,13 @@ def test_nested_preset_options_cannot_poison_cache(monkeypatch):
     assert presets.resolve_preset("test", {"pin_patterns": []})["pin_patterns"] == []
 
 
+def test_marker_recognition_rejects_trailing_newlines():
+    assert markers.marker_name("[…]") == "gap"
+    assert markers.marker_name("[…]\n") is None
+    assert markers.marker_name("[…]\nordinary") is None
+    assert markers.marker_name("") is None
+
+
 def result(**changes):
     values = dict(fail_open=False, compression_risk="low", confidence=0.9,
                   compressed_text="short", original_tokens=1000, kept_tokens=100,
