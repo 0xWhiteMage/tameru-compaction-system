@@ -7890,8 +7890,7 @@ def _builtin_anchor_lines(
         or mode_norm != "adaptive" or content_type != "log" or route_hint == "numbered_code"
     ):
         return []
-    q = query or ""
-    if (query_has_distinctive_selectors(q) or _topic_terms(q)) and not _objective_is_empty_or_absent(q, text):
+    if not _objective_is_empty_or_absent(query, text):
         return []
     if "[\u00d7" in text or "frames omitted" in text or "[\u2026" in text or "[last] " in text:
         return []  # already folded or cut by the engine: anchoring again would not be idempotent
