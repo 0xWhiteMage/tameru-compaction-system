@@ -851,6 +851,8 @@ def _adapt_yaml(
 
 def _adapt_yaml_documents_outliers(text, gap_marker) -> FormatResult:
     lines = text.splitlines()
+    if any(line.startswith("%") for line in lines):
+        return _decline(text, "yaml", "document directives require the original stream")
     starts = [0]
     for idx, line in enumerate(lines):
         if line.rstrip() == "---" and starts[-1] != idx:
