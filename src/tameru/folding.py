@@ -16,9 +16,11 @@ Every regex here is linear: bounded character classes, no nested quantifiers.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections import Counter
-from typing import Any
+from itertools import islice
+from typing import Any, NoReturn
 
 from ._fingerprint_patterns import _DIGITS_RE as _M_DIGITS, _HEXRUN_RE as _M_HEX, _UUID_RE as _M_UUID
 from .structured_reports import loads_for_rewrite
@@ -32,7 +34,7 @@ __all__ = ["fold_lossless", "json_brief", "mask_template"]
 _ANSI_RE = re.compile(
     r"\x1b\[[0-?]*[ -/]*[@-~]"  # CSI (colours, cursor moves, erase)
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC (titles, hyperlinks)
-    r"|\x1b[@-Z\\-_]"  # two-byte escapes
+    r"|\x1b[@-Z\\^_]"  # two-byte escapes, excluding the OSC introducer
 )
 _RUN_MIN = 3
 _ANSI_PASSES = 4
@@ -42,61 +44,55 @@ _ANSI_PASSES = 4
 _RUN_MARKER_RE = re.compile(r"\[×\d+ identical lines\]")
 
 
-def _strip_ansi_line(ln: str) -> tuple[str, int]:
+def _strip_ansi_line(ln: str) -> tuple[str, int] | None:
     """Strip ANSI sequences to a fixed point (idempotence).
 
     Removing one escape can splice the halves of another into a new one
     (``ESC[3 ESC[0m 1m`` -> ``ESC[31m``), so a single pass is not idempotent.
-    Passes are capped (adversarial nesting would be quadratic); if the cap is
-    hit, the remaining stray ESC bytes are dropped, which cannot create a new
-    sequence since every sequence starts with ESC.
+    Passes are capped (nested escapes could make work quadratic). Return None
+    if there are still sequences we have not classified.
     """
     total = 0
     for _ in range(_ANSI_PASSES):
         ln, k = _ANSI_RE.subn("", ln)
         total += k
         if not k:
-            return ln, total
-    if _ANSI_RE.search(ln):
-        ln = ln.replace("\x1b", "")
+            break
+    if "\x1b]" in ln or _ANSI_RE.search(ln):
+        return None
     return ln, total
 
 
-def _fold_text_steps(text: str, stats: dict) -> list[str]:
+def _fold_text_steps(text: str, stats: dict) -> list[str] | None:
     """CR redraws, ANSI, trailing whitespace -> list of lines."""
     lines = text.split("\n")
-    cr = 0
+    cr = ansi = ws = 0
     for i, ln in enumerate(lines):
         if "\r" in ln:
             # Trailing \r's belong to the line ending (\r\n, or a bare \r
             # that redraws nothing): they must not erase the line's text
             # ("abc\r\r\n" shows "abc").
-            body = ln.rstrip("\r")
-            if "\r" in body:
-                body = body.rsplit("\r", 1)[1]
+            ln = ln.rstrip("\r")
+            if "\r" in ln:
+                ln = ln.rsplit("\r", 1)[1]
                 cr += 1
-            lines[i] = body
-    stats["cr_redraws"] = cr
-    if "\x1b" in text:
-        ansi = 0
-        for i, ln in enumerate(lines):
-            if "\x1b" in ln:
-                lines[i], k = _strip_ansi_line(ln)
-                ansi += k
-        stats["ansi"] = ansi
-    ws = 0
-    for i, ln in enumerate(lines):
+        if "\x1b" in ln:
+            stripped_ansi = _strip_ansi_line(ln)
+            if stripped_ansi is None:
+                return None
+            ln, k = stripped_ansi
+            ansi += k
         stripped = ln.rstrip()
+        lines[i] = stripped
         if stripped != ln:
-            lines[i] = stripped
             ws += 1
-    stats["trailing_ws"] = ws
+    stats.update(cr_redraws=cr, ansi=ansi, trailing_ws=ws)
     return lines
 
 
 def _fold_runs(lines: list[str], stats: dict) -> list[str]:
     """Collapse >=3 identical consecutive lines when that is strictly shorter."""
-    out: list[str] = []
+    out: list[str] | None = None
     n = len(lines)
     i = 0
     collapsed = 0
@@ -108,18 +104,22 @@ def _fold_runs(lines: list[str], stats: dict) -> list[str]:
         if run >= _RUN_MIN and not _RUN_MARKER_RE.fullmatch(lines[i]):
             marker = f"[×{run - 1} identical lines]"
             if len(lines[i]) + 1 + len(marker) < run * len(lines[i]) + run - 1:
+                if out is None:
+                    out = lines[:i]
                 out.append(lines[i])
                 out.append(marker)
                 collapsed += 1
                 i = j
                 continue
-        out.extend(lines[i:j])
+        if out is not None:
+            out.extend(lines[i:j])
         i = j
     stats["runs_collapsed"] = collapsed
-    return out
+    return lines if out is None else out
 
 
 _JSON_STRING_OR_WS_RE = re.compile(r'("[^"\\]*(?:\\.[^"\\]*)*")|[ \t\r\n]+')
+_BARE_CR_RE = re.compile(r"\r(?=[^\r\n])")
 
 
 def _json_minified(text: str) -> str | None:
@@ -136,7 +136,7 @@ def _json_minified(text: str) -> str | None:
         return None
     try:
         # a number that overflows to inf (1e400) is not minified, as before
-        json.loads(text, parse_float=_finite_float)
+        json.loads(text, parse_float=_finite_float, parse_constant=_reject_nonfinite)
     except (ValueError, RecursionError):
         return None
     mini = _JSON_STRING_OR_WS_RE.sub(lambda m: m.group(1) or "", text)
@@ -145,9 +145,13 @@ def _json_minified(text: str) -> str | None:
 
 def _finite_float(literal: str) -> float:
     value = float(literal)
-    if value in (float("inf"), float("-inf")):
-        raise ValueError("non-finite number")
+    if not math.isfinite(value):
+        _reject_nonfinite(literal)
     return value
+
+
+def _reject_nonfinite(_literal: str) -> NoReturn:
+    raise ValueError("non-finite number")
 
 
 def fold_lossless(text: str) -> tuple[str, dict]:
@@ -177,14 +181,24 @@ def fold_lossless(text: str) -> tuple[str, dict]:
     }
     if not text:
         return text, stats
+    if _BARE_CR_RE.search(text):
+        mini = _json_minified(text)
+        if mini is not None:
+            stats["json_minified"] = True
+            stats["saved_chars"] = len(text) - len(mini)
+            return mini, stats
     lines = _fold_text_steps(text, stats)
+    if lines is None:
+        return text, stats
     folded = "\n".join(lines)
     mini = _json_minified(folded)
     if mini is not None:
         stats["json_minified"] = True
         folded = mini
     else:
-        folded = "\n".join(_fold_runs(lines, stats))
+        collapsed = _fold_runs(lines, stats)
+        if collapsed is not lines:
+            folded = "\n".join(collapsed)
     if len(folded) > len(text):  # cannot happen; keep the invariant explicit
         return text, {**stats, "saved_chars": 0}
     stats["saved_chars"] = len(text) - len(folded)
@@ -291,7 +305,7 @@ _UNSAFE_RAW_RE = re.compile(
 def _dumps(obj: Any) -> str:
     # allow_nan=False: NaN/Infinity are not valid JSON, and the brief must be.
     out = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
-    if out.isascii():
+    if out.isascii() and "\x7f" not in out:
         return out
     return _UNSAFE_RAW_RE.sub(_escape_char, out)
 
@@ -362,11 +376,13 @@ def _notable_order(rows: list[dict], dumped: list[str], terms: list[str]) -> lis
         from .compress_context import _term_in_text  # lazy, see above
 
         term_rows: list[tuple[int, list[str]]] = []
+        freq: Counter[str] = Counter()
         for i, d in enumerate(dumped):
             low = d[:4000].casefold()
             hit_terms = [t for t in terms if _term_in_text(t, low)]
-            term_rows.append((i, hit_terms))
-        freq = Counter(t for _, ht in term_rows for t in ht)
+            if hit_terms:
+                term_rows.append((i, hit_terms))
+                freq.update(hit_terms)
         for i, ht in term_rows:
             # a term present in over half the rows (a key name such as
             # "status") says nothing about which row matters
@@ -394,12 +410,14 @@ def _notable_order(rows: list[dict], dumped: list[str], terms: list[str]) -> lis
         if i in seen:
             continue
         rarest = None
-        for k, c in lowcard.items():
-            if k in row:
-                v = row[k]
-                key = (type(v).__name__, v)
-                if key != modes[k] and key in c:
-                    rarest = c[key] if rarest is None else min(rarest, c[key])
+        for k, v in row.items():
+            c = lowcard.get(k)
+            if c is None or not (v is None or isinstance(v, (str, int, float, bool))):
+                continue
+            key = (type(v).__name__, v)
+            if key != modes[k]:
+                frequency = c[key]
+                rarest = frequency if rarest is None else min(rarest, frequency)
         if rarest is not None:
             ranked.append((1, rarest, i))
     ranked.sort()
@@ -434,6 +452,12 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
     if not isinstance(text, str) or text.lstrip()[:1] not in ("{", "["):
         return None
     try:
+        budget = int(budget_chars)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if budget <= 0:
+        return None
+    try:
         obj = loads_for_rewrite(text)
     except (ValueError, RecursionError):
         return None
@@ -442,7 +466,6 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
         return None
     rows, wrap_key, scalars = found
     n = len(rows)
-    budget = int(budget_chars)
 
     prefix = suffix = ""
     if wrap_key is not None:
@@ -483,7 +506,7 @@ def _json_brief(text: str, *, budget_chars: int, query: str = "") -> str | None:
     def build(k: int, notable_cap: int) -> tuple[str, int] | None:
         head, tail = parts(k)
         shown = set(head) | set(tail)
-        notable = [i for i in notable_all if i not in shown][:notable_cap]
+        notable = list(islice((i for i in notable_all if i not in shown), notable_cap))
         if size(head, tail, notable) > inner_budget + 3 * len(notable) + 4:
             return None
         omitted = n - len(shown) - len(notable)
