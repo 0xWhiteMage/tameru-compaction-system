@@ -1,0 +1,58 @@
+"""Regression tests for protocol.py hardening (request validation and the pin regex check)."""
+from __future__ import annotations
+
+import pytest
+
+from tameru import protocol
+from tameru.protocol import ProtocolError, validate_plan_request, validate_request
+
+PLAN = {"event": "trigger", "host_mode": "prune", "items": [], "cache": {"warm": True, "n_eff": 1},
+        "policy": {}, "prompt_tokens": 1, "trigger_tokens": 1}
+
+
+def code(fn, request):
+    with pytest.raises(ProtocolError) as err:
+        fn(request)
+    return err.value.code
+
+
+def test_an_int_too_large_for_a_float_is_a_protocol_error_not_an_overflow():
+    assert code(validate_request, {"text": "t", "budget_ratio": 10 ** 400}) == "bad_budget_ratio"
+    assert code(validate_request, {"text": "t", "pin_recent": -10 ** 400}) == "bad_pin_recent"
+    assert code(validate_plan_request, {**PLAN, "growth_tokens_per_step": 10 ** 400}) == "bad_growth"
+    assert code(validate_plan_request, {**PLAN, "cache": {"warm": True, "n_eff": 10 ** 400}}) == "bad_cache"
+
+
+def test_an_optional_escaped_paren_counts_as_an_optional_quantifier():
+    assert protocol.regex_risk("a?" * 5 + "a" * 5)
+    assert protocol.regex_risk(r"\(?" * 5 + r"\(" * 5)
+    assert not protocol.regex_risk(r"(?:ab)(?i:c)\(?")
+
+
+def test_a_bounded_repeat_of_a_group_holding_optional_quantifiers_is_refused():
+    # (a?a?){14}b takes over ten seconds to fail on "a" * 14: each repeat may match 0, 1 or 2 a's.
+    assert protocol.regex_risk("(a?a?){10}b")
+    assert protocol.regex_risk("(?:x?y){3}")
+    assert not protocol.regex_risk("(ab)?c?")
+    assert not protocol.regex_risk("(ab){3}")
+
+
+def test_the_verbose_flag_is_refused_because_comments_hide_constructs():
+    assert protocol.regex_risk("(?x)#[\n(a+)+b")
+    assert protocol.regex_risk("(?ix:a)")
+    assert not protocol.regex_risk("(?i)abc")
+
+
+def test_a_preset_mode_survives_when_the_request_names_no_mode(monkeypatch):
+    monkeypatch.setattr(protocol, "preset_names", lambda: ["fixed@1"])
+    monkeypatch.setattr(protocol, "resolve_preset", lambda name: {"mode": "fixed", "ccr": False})
+    assert validate_request({"text": "t", "preset": "fixed@1"})["mode"] == "fixed"
+    assert validate_request({"text": "t", "preset": "fixed@1", "mode": "compiler"})["mode"] == "compiler"
+    assert validate_request({"text": "t"})["mode"] == "adaptive"
+
+
+def test_clean_text_replaces_only_lone_surrogates():
+    assert protocol.clean_text("plain é 漢") == ("plain é 漢", False)
+    assert protocol.clean_text("a\ud800b\udfffc") == ("a\ufffdb\ufffdc", True)
+    assert protocol.request_was_sanitized({"selector_query": "q\udc00"})
+    assert not protocol.request_was_sanitized({"text": "t", "query": 3})

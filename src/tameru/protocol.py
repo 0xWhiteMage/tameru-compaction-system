@@ -19,13 +19,15 @@ I/O. Rules:
   ``derive_selector_query`` (a flag the worker resolves into ``selector_query`` from the query parts
   it accepts, via ``transcript.build_selector_query``; it is not a ``compress_context`` parameter,
   so the worker pops it before the call). It also adds the ``plan`` request: a closed ``PlanInput``
-  body validated by ``validate_plan_request``, answered with ``plan_to_dict``.
+  body validated by ``validate_plan_request``, answered with ``plan_to_dict``, and the ``stats``
+  request (``validate_stats_request``), answered with ``compress_context.cache_stats()``.
 * A rejection is a ``ProtocolError`` whose ``code`` is a fixed identifier. It never contains request
   text, not even a field name.
 """
 from __future__ import annotations
 
 import re
+from itertools import islice
 from typing import Any, Mapping
 
 from .compress_context import ENGINE_VERSION, RESULT_SCHEMA
@@ -50,7 +52,13 @@ from .prices import profile_names as price_profile_names
 PROTOCOL_VERSION = 3
 MAX_PIN_PATTERNS = 16
 MAX_PIN_CHARS = 200
+MAX_PIN_RECENT = 50
+MIN_BUDGET_RATIO = 0.01
 MAX_REPLY_REASONS = 20
+MAX_REASON_CHARS = 120          # per reply reason
+MAX_REPLY_DROPPED = 3           # entries of the reply's ``dropped`` list
+MAX_DROPPED_LOC_CHARS = 80      # per ``dropped`` location
+MIN_EV_QUANTILE = 1e-9          # quantile 0 has no finite loss bound
 MAX_PLAN_ITEMS = 2000
 MAX_PLAN_TOKENS = 1_000_000_000    # any token/character quantity in a plan request
 MAX_PLAN_STEPS = 1_000_000         # positions, ages and step counts
@@ -108,19 +116,34 @@ class ProtocolError(Exception):
         self.code = code
 
 
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def clean_text(text: str) -> tuple[str, bool]:
     """Lone surrogates (valid in JavaScript strings, not encodable as UTF-8) become U+FFFD."""
-    try:
-        text.encode("utf-8")
+    if not _has_lone_surrogate(text):
         return text, False
+    return _SURROGATE.sub("\ufffd", text), True
+
+
+def _has_lone_surrogate(text: str) -> bool:
+    try:
+        text.encode("utf-8")   # the common clean case: a C-speed check, far faster than a regex scan
     except UnicodeEncodeError:
-        return "".join("\ufffd" if 0xD800 <= ord(c) <= 0xDFFF else c for c in text), True
+        return True
+    return False
 
 
 def _number(value: Any, low: float, high: float, code: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not (low <= float(value) <= high):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ProtocolError(code)
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError:   # an int too large for a float is out of every range
+        raise ProtocolError(code) from None
+    if not (low <= number <= high):
+        raise ProtocolError(code)
+    return number
 
 
 _BRACE_BODY = re.compile(r"\{(\d*)(,?)(\d*)\}")
@@ -133,21 +156,24 @@ _BIG_BOUND = 50
 def regex_risk(pattern: str) -> bool:
     """True when ``pattern`` holds a construct this check refuses (conservative, nothing is matched).
 
-    Refused: back-references and conditionals; a quantified group that holds a quantifier or an
+    Refused: back-references, conditionals and the verbose flag ``(?x)`` (its ``#`` comments and
+    ignored whitespace would hide constructs from this scan); a quantified group that holds a quantifier or an
     alternation (``(a+)+``, ``(a|a)*b``); any unbounded quantifier (``*``, ``+``,
     ``{n,}``, or a bound of 50 or more), because even one (``a*b``) is quadratic on a long run and
     several (``a*a*b``, ``.*x.*y``) are polynomial, and pins match the full block; more than ``MAX_OPTIONAL`` (4) ``?`` or small-bound quantifiers (``a?a?a?...a`` is
     exponential); more than ``MAX_ALTERNATIONS`` (6) ``|``. Literals (``{"literal": ...}``) are
     escaped and never reach this check."""
-    if re.search(r"\\[1-9]|\(\?P=|\(\?\(", pattern):
+    if re.search(r"\\[1-9]|\(\?P=|\(\?\(|\(\?[aiLmsu-]*x", pattern):   # (?x): comments hide syntax
         return True
     unbounded = optional = alternations = 0
     stack: list[list[bool]] = []   # enclosing groups' [has_quantifier, has_alternation]
     cur = [False, False]
     in_class = False
+    group_opened = False   # the previous character was an unescaped `(`, so a `?` starts `(?...)`
     i, n = 0, len(pattern)
     while i < n:
         ch = pattern[i]
+        opens_group, group_opened = group_opened, False
         if ch == "\\":
             i += 2
             continue
@@ -167,6 +193,7 @@ def regex_risk(pattern: str) -> bool:
         if ch == "(":
             stack.append(cur)
             cur = [False, False]
+            group_opened = True
         elif ch == ")":
             if not stack:
                 return False  # unbalanced: compile rejects it
@@ -185,7 +212,8 @@ def regex_risk(pattern: str) -> bool:
         elif ch in "+*":
             cur[0] = True
             unbounded += 1
-        elif ch == "?" and pattern[i - 1:i] != "(":
+        elif ch == "?" and not opens_group:
+            cur[0] = True
             optional += 1
         elif ch == "{" and _BRACE_QUANT.match(pattern, i):
             cur[0] = True
@@ -221,6 +249,13 @@ def _pin_patterns(value: Any) -> list[str]:
     return out
 
 
+def _declared_protocol(request: Mapping[str, Any], allowed: tuple[int, ...]) -> int:
+    declared = request.get("protocol", PROTOCOL_VERSION)
+    if isinstance(declared, bool) or declared not in allowed:
+        raise ProtocolError("bad_protocol")
+    return declared
+
+
 def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     """Check a ``compress`` request and return the keyword arguments for ``compress_context``.
 
@@ -230,9 +265,7 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         raise ProtocolError("bad_request")
     if set(request) - ALL_FIELDS:
         raise ProtocolError("unknown_field")
-    declared = request.get("protocol", PROTOCOL_VERSION)
-    if isinstance(declared, bool) or declared not in (1, 2, 3):
-        raise ProtocolError("bad_protocol")
+    declared = _declared_protocol(request, (1, 2, 3))
     if declared == 1 and (set(request) & V2_FIELDS) - {"protocol"}:
         raise ProtocolError("field_needs_protocol_2")
     if declared <= 2 and set(request) & V3_FIELDS:
@@ -258,7 +291,7 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
         options.update(resolve_preset(preset))
     options.setdefault("strategy", "extract")   # the 1.x worker defaults, under any preset
     options.setdefault("citations", False)
-    mode = request.get("mode", "adaptive")
+    mode = request.get("mode", options.get("mode", "adaptive"))
     if mode not in MODES:
         raise ProtocolError("bad_mode")
     options["mode"] = mode
@@ -271,11 +304,11 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
             raise ProtocolError("bad_content_hint")
         options["content_hint"] = request["content_hint"]
     if "budget_ratio" in request:
-        options["budget_ratio"] = _number(request["budget_ratio"], 0.01, 1.0, "bad_budget_ratio")
+        options["budget_ratio"] = _number(request["budget_ratio"], MIN_BUDGET_RATIO, 1.0, "bad_budget_ratio")
     if "min_savings_ratio" in request:
         options["min_savings_ratio"] = _number(request["min_savings_ratio"], 0.0, 1.0, "bad_min_savings_ratio")
     if "pin_recent" in request:
-        options["pin_recent"] = int(_number(request["pin_recent"], 0, 50, "bad_pin_recent"))
+        options["pin_recent"] = int(_number(request["pin_recent"], 0, MAX_PIN_RECENT, "bad_pin_recent"))
     for flag in _BOOL_FIELDS:
         if flag in request:
             if not isinstance(request[flag], bool):
@@ -294,9 +327,10 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def request_was_sanitized(request: Mapping[str, Any]) -> bool:
-    """True when ``validate_request`` replaced a lone surrogate in the text or the query."""
+    """True when ``validate_request`` replaced a lone surrogate in the text, the query or the
+    selector query."""
     return any(
-        isinstance(request.get(k), str) and clean_text(request[k])[1]
+        isinstance(request.get(k), str) and _has_lone_surrogate(request[k])
         for k in ("text", "query", "selector_query")
     )
 
@@ -314,12 +348,13 @@ def result_to_dict(result: Any, *, sanitized: bool = False, preset: str | None =
         "risk": result.compression_risk,
         "confidence": result.confidence,
         "content_type": result.content_type,
-        "reasons": [str(r)[:120] for r in list(result.reasons)[:MAX_REPLY_REASONS]],
+        "reasons": [str(r)[:MAX_REASON_CHARS] for r in islice(result.reasons, MAX_REPLY_REASONS)],
         "sanitized": bool(sanitized),
         "result_schema": RESULT_SCHEMA,
         "confidence_basis": str(getattr(result, "confidence_basis", "none")),
         "stable_key": str(getattr(result, "stable_key", "")),
-        "dropped": [[str(c), int(n), str(loc)[:80]] for c, n, loc in (getattr(result, "dropped", None) or ())[:3]],
+        "dropped": [[str(c), int(n), str(loc)[:MAX_DROPPED_LOC_CHARS]]
+                    for c, n, loc in (getattr(result, "dropped", None) or ())[:MAX_REPLY_DROPPED]],
         "preset": preset if preset is not None else getattr(result, "preset", None),
         "fact_lines_dropped": int(getattr(result, "fact_lines_dropped", 0)),
         "query_specific": getattr(result, "query_specific", None),
@@ -332,18 +367,22 @@ def _integer(value: Any, low: int, high: int, code: str) -> int:
     return value
 
 
-def _bool_field(body: Mapping[str, Any], name: str, code: str) -> bool:
-    value = body.get(name)
-    if not isinstance(value, bool):
+def _choice(value: Any, allowed: tuple[str, ...], code: str) -> str:
+    if not isinstance(value, str) or value not in allowed:
         raise ProtocolError(code)
     return value
 
 
-def _opt_bool(body: Mapping[str, Any], name: str, default: bool, code: str) -> bool:
+def _opt_bool(body: Mapping[str, Any], name: str, default: bool | None, code: str) -> bool:
     value = body.get(name, default)
     if not isinstance(value, bool):
         raise ProtocolError(code)
     return value
+
+
+def _bool_field(body: Mapping[str, Any], name: str, code: str) -> bool:
+    """A required boolean: a missing field is rejected like a non-boolean one."""
+    return _opt_bool(body, name, None, code)
 
 
 def _bounded_text(value: Any, cap: int, code: str) -> str:
@@ -397,7 +436,7 @@ def _plan_item(body: Any) -> PlanItem:
             chars=_integer(body.get("chars"), 0, MAX_PLAN_TOKENS, "bad_item"),
             age_steps=_integer(body.get("age_steps", 0), 0, MAX_PLAN_STEPS, "bad_item"),
             protected=_opt_bool(body, "protected", False, "bad_item"),
-            stock_action=body.get("stock_action", "keep"),
+            stock_action=_choice(body.get("stock_action", "keep"), STOCK_ACTIONS, "bad_item"),
             stock_kept_chars=_integer(body.get("stock_kept_chars", 0), 0, MAX_PLAN_TOKENS, "bad_item"),
             candidate=_plan_candidate(body.get("candidate")),
             fact_lines=_integer(body.get("fact_lines", 0), 0, MAX_PLAN_TOKENS, "bad_item"),
@@ -429,15 +468,13 @@ def _plan_ev(body: Any) -> EVPolicy | None:
             price_profile=price_profile,
             loss_profile=loss_profile,
             strength=strength,
-            quantile=_number(body.get("quantile", 0.5), 1e-9, 1.0, "bad_ev"),
+            quantile=_number(body.get("quantile", 0.5), MIN_EV_QUANTILE, 1.0, "bad_ev"),
         )
     except (ValueError, TypeError):
         raise ProtocolError("bad_ev") from None
 
 
 def _plan_policy(body: Any) -> Policy:
-    if body is None:
-        raise ProtocolError("bad_policy")
     if not isinstance(body, Mapping) or set(body) - PLAN_POLICY_FIELDS:
         raise ProtocolError("bad_policy")
     fields: dict[str, Any] = {}
@@ -467,7 +504,7 @@ def _plan_policy(body: Any) -> Policy:
 
 
 def _plan_cache(body: Any) -> CacheState:
-    if not isinstance(body, Mapping) or set(body) - CACHE_FIELDS or not {"warm", "n_eff"} <= set(body):
+    if not isinstance(body, Mapping) or set(body) != CACHE_FIELDS:   # both fields, nothing else
         raise ProtocolError("bad_cache")
     try:
         return CacheState(
@@ -490,9 +527,7 @@ def validate_stats_request(request: Mapping[str, Any]) -> dict[str, Any]:
         raise ProtocolError("unknown_field")
     if request.get("op") != "stats":
         raise ProtocolError("bad_op")
-    declared = request.get("protocol", PROTOCOL_VERSION)
-    if isinstance(declared, bool) or declared != 3:
-        raise ProtocolError("bad_protocol")
+    _declared_protocol(request, (3,))
     return {}
 
 
@@ -505,9 +540,7 @@ def validate_plan_request(request: Mapping[str, Any]) -> PlanInput:
         raise ProtocolError("bad_request")
     if set(request) - PLAN_FIELDS:
         raise ProtocolError("unknown_field")
-    declared = request.get("protocol", PROTOCOL_VERSION)
-    if isinstance(declared, bool) or declared != 3:
-        raise ProtocolError("bad_protocol")
+    _declared_protocol(request, (3,))
     event, host_mode = request.get("event"), request.get("host_mode")
     if event not in EVENTS:
         raise ProtocolError("bad_event")
