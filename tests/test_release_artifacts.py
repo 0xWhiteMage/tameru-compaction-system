@@ -92,7 +92,7 @@ class ReleaseArtifactTests(unittest.TestCase):
     def test_installed_command_is_declared(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertRegex(
-            text, r'(?m)^tameru-compress\s*=\s*"tameru\.compress_context:main"\s*$'
+            text, r'(?m)^tameru-compress\s*=\s*"tameru\.cli:main"\s*$'
         )
 
 
