@@ -387,6 +387,9 @@ def detect_unified_diff(text: str) -> bool:
 
 _GREP_MATCH_RE = re.compile(r"^([^\s:][^:]*):(\d+):(.*)$")
 _GREP_CTX_RE = re.compile(r"^([^\s:][^:]*?)-(\d+)-(.*)$")
+_GREP_CTX_SPLIT_RE = re.compile(r"-(\d{1,10})(?=-)")
+_GREP_PATH_MAX = 512  # longer "paths" are text, and are not looked up
+_GREP_CTX_SPLITS = 64  # `-digits-` candidates tried per line
 
 
 def _pathish(path: str) -> bool:
@@ -410,21 +413,50 @@ def _grep_parse_line(line: str) -> tuple[str, str, int, str] | None:
     return None
 
 
+def _grep_parse_lines(lines: list[str]) -> list[tuple[str, str, int, str] | None]:
+    """Parse grep output line by line, then give each context line back to
+    the file it belongs to.
+
+    ``path-N-text`` is ambiguous on its own. When the text holds a clock
+    (``logs/api.log-6-2026-11-22 10:00:06 INFO``) the match pattern reads
+    ``logs/api.log-6-2026-11-22 10`` as a path and ``00`` as its line, and a
+    file name that holds ``-digits-`` defeats the shortest-path context
+    pattern. A context line always belongs to a file that has a match, so the
+    paths of the matches settle both: the shortest of them that the line
+    starts with, followed by ``-N-``, is its file.
+    """
+    parsed = [_grep_parse_line(line) for line in lines]
+    known = {p[1] for p in parsed if p is not None and p[0] == "m"}
+    if not known:
+        return parsed
+    lengths = {len(path) for path in known if len(path) <= _GREP_PATH_MAX}
+    if not lengths:
+        return parsed
+    longest = max(lengths)
+    for index, line in enumerate(lines):
+        if "-" not in line[: longest + 1]:
+            continue
+        for tried, m in enumerate(_GREP_CTX_SPLIT_RE.finditer(line, 0, longest + 12)):
+            if tried == _GREP_CTX_SPLITS:
+                break
+            if m.start() in lengths and line[: m.start()] in known:
+                parsed[index] = ("c", line[: m.start()], int(m.group(1)), line[m.end() + 1 :])
+                break
+    return parsed
+
+
 def detect_grep_lines(text: str) -> bool:
     """≥70% of the non-blank lines are ``path:N:text`` matches or
     ``path-N-text`` context lines (``--`` separators are neutral)."""
     if not text:
         return False
-    total = ok = real = 0
-    for raw in text.split("\n"):
-        if not raw.strip():
-            continue
-        total += 1
+    rows = [raw for raw in text.split("\n") if raw.strip()]
+    total = len(rows)
+    ok = real = 0
+    for raw, parsed in zip(rows, _grep_parse_lines(rows)):
         if raw == "--":
             ok += 1
-            continue
-        parsed = _grep_parse_line(raw)
-        if parsed is not None:
+        elif parsed is not None:
             ok += 1
             if parsed[0] == "m":
                 real += 1
@@ -791,13 +823,11 @@ def adapt_grep_lines(
     per_file: dict[str, list[_GrepRec]] = {}
     other: list[str] = []
     group = 0
-    for raw in text.split("\n"):
-        if not raw.strip():
-            continue
+    rows = [raw for raw in text.split("\n") if raw.strip()]
+    for raw, parsed in zip(rows, _grep_parse_lines(rows)):
         if raw == "--":
             group += 1
             continue
-        parsed = _grep_parse_line(raw)
         if parsed is None:
             other.append(raw)
             continue
@@ -3531,6 +3561,18 @@ def _classify_jest(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
 _GO_PKG_OK_RE = re.compile(r"^ok\s+(\S+)\s+(?:[\d.]+s|\(cached\))")
 _GO_PKG_NOTEST_RE = re.compile(r"^\?\s+\S+\s+\[no test files\]")
 _GO_PKG_FOLD_MIN = 5
+_GO_EVENT_RE = re.compile(r"^=== (?:RUN|PAUSE|CONT|NAME)\s+(\S+)")
+_GO_RESULT_NAME_RE = re.compile(r"^--- (?:PASS|SKIP|FAIL): (\S+)")
+
+
+def _go_take_pending(pending: dict[str | None, list[int]], name: str | None) -> list[int]:
+    """Remove and return the log lines of ``name`` and its subtests, with the
+    lines no ``=== `` line attributed. An unreadable name takes everything."""
+    taken: list[int] = []
+    for key in list(pending):
+        if name is None or key is None or key == name or key.startswith(name + "/"):
+            taken.extend(pending.pop(key))
+    return taken
 
 
 def _classify_go(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
@@ -3539,49 +3581,73 @@ def _classify_go(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     keep = [True] * n
     tests = [0] * n
     suites = [0] * n
-    pending: list[int] = []  # indented log lines since the last top-level result
+    # Indented log lines, by the test the last `=== ` line named. With
+    # t.Parallel() the output of several tests interleaves, so a `--- PASS:`
+    # may only drop the lines of the test it names.
+    pending: dict[str | None, list[int]] = {}
+    current: str | None = None
     dropping = False  # inside the indented children of a passing/skipped test
+    failed = False  # inside the indented children of a failed test
     for i, ln in enumerate(lines):
         indented = ln[:1] in {" ", "\t"}
         if ln.startswith(("--- PASS:", "--- SKIP:")):
-            for j in pending:  # `t.Log` output of a test that passed
-                keep[j] = False
-            pending = []
+            named = _GO_RESULT_NAME_RE.match(ln)
+            for j in _go_take_pending(pending, named.group(1) if named else None):
+                keep[j] = False  # `t.Log` output of a test that passed
             keep[i] = False
             tests[i] = 1 if ln.startswith("--- PASS:") else 0
             dropping = True
+            failed = False
         elif ln.startswith("--- FAIL:"):
-            pending = []
+            named = _GO_RESULT_NAME_RE.match(ln)
+            _go_take_pending(pending, named.group(1) if named else None)
             dropping = False
+            failed = True
         elif ln.startswith("=== "):
             keep[i] = False  # RUN / PAUSE / CONT / NAME
+            event = _GO_EVENT_RE.match(ln)
+            current = event.group(1) if event else None
             dropping = False
+            failed = False
         elif ln == "PASS":
             keep[i] = False
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
         elif indented and dropping:
             keep[i] = False
             if ln.lstrip().startswith("--- PASS:"):
                 tests[i] = 1
+        elif indented and failed:
+            # Subtest results under a failed test: the failures stay, a
+            # passing sibling is counted like any other passing test.
+            if ln.lstrip().startswith(("--- PASS:", "--- SKIP:")):
+                keep[i] = False
+                tests[i] = 1 if ln.lstrip().startswith("--- PASS:") else 0
         elif indented:
-            pending.append(i)
+            pending.setdefault(current, []).append(i)
         elif fold_pkgs and _GO_PKG_OK_RE.match(ln):
             m = _GO_PKG_OK_RE.match(ln)
             keep[i] = False
             suites[i] = 1
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
             if i > 0 and keep[i - 1] and lines[i - 1] == f"# {m.group(1)}":
                 keep[i - 1] = False
         elif fold_pkgs and _GO_PKG_NOTEST_RE.match(ln):
             keep[i] = False
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
         else:
-            pending = []
+            pending = {}
             dropping = False
+            failed = False
     return keep, tests, suites
+
+
+_CARGO_PANIC_RE = re.compile(r"^thread '[^']*' (?:\(\d+\) )?panicked at ")
 
 
 def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
@@ -3591,6 +3657,7 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
     suites = [0] * n
     in_failures = False
     in_error = False  # a compiler/cargo `error...` diagnostic, up to its blank line
+    in_panic = False  # a panic report printed between the test rows (`--nocapture`)
     for i, ln in enumerate(lines):
         if in_failures:
             keep[i] = True
@@ -3602,6 +3669,11 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
                 keep[i] = True
                 continue
             in_error = False
+        if in_panic:
+            if ln.strip() and not ln.startswith("test "):
+                keep[i] = True
+                continue
+            in_panic = False
         if ln == "failures:":
             in_failures = True
             keep[i] = True
@@ -3618,6 +3690,14 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
             # `error: test failed, to rerun pass ...`: never reduced away.
             keep[i] = True
             in_error = True
+        elif ln == "Caused by:":
+            # cargo's reason for the `error:` above it, after a blank line:
+            # the exit signal of a test binary that crashed.
+            keep[i] = True
+            in_error = True
+        elif _CARGO_PANIC_RE.match(ln):
+            keep[i] = True
+            in_panic = True
     return keep, tests, suites
 
 
