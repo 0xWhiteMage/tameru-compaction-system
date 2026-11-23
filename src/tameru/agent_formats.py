@@ -25,7 +25,7 @@ import csv
 import re
 import statistics
 from dataclasses import asdict, dataclass
-from typing import Callable
+from typing import Callable, Iterator
 
 from ._fingerprint_patterns import _DIGITS_RE
 from .contract_gates import query_has_distinctive_selectors
@@ -303,9 +303,25 @@ def is_kubectl_status_line(line: str) -> bool:
     return KUBECTL_STATUS_LINE_RE.search(line[:4096]) is not None
 
 
+def _head_lines(text: str, limit: int) -> Iterator[str]:
+    start = 0
+    for _ in range(limit):
+        end = text.find("\n", start)
+        if end == -1:
+            yield text[start:]
+            return
+        yield text[start:end]
+        start = end + 1
+
+
 def looks_like_diagnostics(text: str) -> bool:
-    lines = text.split("\n")[:2000]
-    return sum(1 for line in lines if is_diagnostic_line(line)) >= 2
+    hits = 0
+    for line in _head_lines(text, 2000):
+        if is_diagnostic_line(line):
+            hits += 1
+            if hits >= 2:
+                return True
+    return False
 
 _STACK_TRACE_LINE_RE = re.compile(
     r"^(?:goroutine \d+ \[[^\]]*\]:\s*$"
@@ -319,7 +335,7 @@ def looks_like_stack_trace(text: str) -> bool:
     """A Go goroutine header or Python traceback head, or two
     Java/Go frame lines: stack-trace text, never YAML."""
     hits = 0
-    for line in text.split("\n")[:5000]:
+    for line in _head_lines(text, 5000):
         m = _STACK_TRACE_LINE_RE.match(line)
         if m is None:
             continue
@@ -390,8 +406,8 @@ def detect_unified_diff(text: str) -> bool:
     return _DIFF_FILE_RE.search(text) is not None
 
 
-_GREP_MATCH_RE = re.compile(r"^([^\s:][^:]*):(\d+):(.*)$")
-_GREP_CTX_RE = re.compile(r"^([^\s:][^:]*?)-(\d+)-(.*)$")
+_GREP_MATCH_RE = re.compile(r"^((?:[A-Za-z]:[\\/])?[^\s:][^:]*):(\d+):(.*)$")
+_GREP_CTX_RE = re.compile(r"^((?:[A-Za-z]:[\\/])?[^\s:][^:]*?)-(\d+)-(.*)$")
 _GREP_CTX_SPLIT_RE = re.compile(r"-(\d{1,10})(?=-)")
 _GREP_PATH_MAX = 512  # longer "paths" are text, and are not looked up
 _GREP_CTX_SPLITS = 64  # `-digits-` candidates tried per line
@@ -399,7 +415,7 @@ _GREP_CTX_SPLITS = 64  # `-digits-` candidates tried per line
 
 def _pathish(path: str) -> bool:
     """A file path, not a clock ("12:00:00") or a date ("2026-03-14 12")."""
-    if not ("." in path or "/" in path):
+    if not ("." in path or "/" in path or "\\" in path):
         return False
     if re.fullmatch(r"[\d.\-/]+", path):
         return False
@@ -410,10 +426,10 @@ def _pathish(path: str) -> bool:
 
 def _grep_parse_line(line: str) -> tuple[str, str, int, str] | None:
     m = _GREP_MATCH_RE.match(line)
-    if m and _pathish(m.group(1)):
+    if m and len(m.group(2)) <= 18 and _pathish(m.group(1)):
         return "m", m.group(1), int(m.group(2)), m.group(3)
     m = _GREP_CTX_RE.match(line)
-    if m and _pathish(m.group(1)):
+    if m and len(m.group(2)) <= 18 and _pathish(m.group(1)):
         return "c", m.group(1), int(m.group(2)), m.group(3)
     return None
 
@@ -489,6 +505,8 @@ def _read_hunk(lines: list[str], i: int) -> int:
     """
     m = _HUNK_HEADER_RE.match(lines[i])
     assert m is not None
+    if any(len(value) > 18 for value in m.groups() if value is not None):
+        raise ValueError("oversized hunk count")
     old = int(m.group(2)) if m.group(2) is not None else 1
     new = int(m.group(4)) if m.group(4) is not None else 1
     j = i + 1
@@ -611,7 +629,9 @@ class _StemMatcher:
         for token in _STEM_TOKEN_RE.findall(text):
             stem = memo.get(token)
             if stem is None:
-                stem = memo[token] = light_stem(token)
+                stem = light_stem(token)
+                if len(memo) < 4096:
+                    memo[token] = stem
             if stem in stems:
                 return True
         return False
@@ -638,7 +658,10 @@ def adapt_unified_diff(
     if not detect_unified_diff(text):
         return None
     lines = text.split("\n")
-    preamble, files = _parse_diff(lines)
+    try:
+        preamble, files = _parse_diff(lines)
+    except ValueError:
+        return AdapterResult("diff", text, reason="malformed hunk; unchanged")
     if not files or not any(f.hunks for f in files):
         return None
     from .format_adapters import _query_selectors
@@ -825,6 +848,8 @@ def adapt_grep_lines(
     """
     if not detect_grep_lines(text):
         return None
+    if type(per_file_cap) is not int or per_file_cap < 1:
+        return AdapterResult("grep", text, reason="invalid per-file cap; unchanged")
     per_file: dict[str, list[_GrepRec]] = {}
     other: list[str] = []
     group = 0
@@ -840,6 +865,8 @@ def adapt_grep_lines(
         per_file.setdefault(path, []).append(_GrepRec(kind, lineno, body, raw, group))
     if not per_file:
         return None
+    if other:
+        return AdapterResult("grep", text, reason="unparsed lines; unchanged")
     matcher = _matcher_for(query)
     total_matches = sum(1 for recs in per_file.values() for r in recs if r.kind == "m")
 
@@ -860,6 +887,10 @@ def adapt_grep_lines(
                 if selector_hits * 5 < total_matches * 4:
                     remaining.append(selector)
             other_matcher = _Matcher(tuple(remaining)) if remaining else _Matcher(())
+            has_definition = any(
+                matcher.hit(body) and (_GREP_DEFINITION_RE.match(body) or _GREP_ASSIGNMENT_RE.match(body))
+                for body in match_texts
+            )
             seen_texts: set[str] = set()
             for path, recs in per_file.items():
                 selected: set[int] = set()
@@ -890,6 +921,10 @@ def adapt_grep_lines(
                         distinct_kept += 1
                     else:
                         seen_texts.add(key)
+                if not selected and not has_definition:
+                    first_match = next((i for i, r in enumerate(recs) if r.kind == "m"), None)
+                    if first_match is not None:
+                        selected.add(first_match)
                 saturated_keep[path] = selected
 
     any_hit = [False]
@@ -1121,7 +1156,7 @@ def _lint_key(message: str) -> str:
     return f"{sev.group(1)}{_LINT_NORM_RE.sub('#', message)}"
 
 
-_SLOWLOG_QT_RE = re.compile(r"^# Query_time:\s*([\d.]+)\s+Lock_time:\s*[\d.]+\s+Rows_sent:\s*\d+\s+Rows_examined:\s*(\d+)")
+_SLOWLOG_QT_RE = re.compile(r"^# Query_time:\s*([0-9]+(?:\.[0-9]+)?)\s+Lock_time:\s*[0-9]+(?:\.[0-9]+)?\s+Rows_sent:\s*[0-9]+\s+Rows_examined:\s*([0-9]+)\b")
 
 
 def _slowlog_median(values):
@@ -1148,6 +1183,11 @@ def _detect_slowlog(text: str) -> bool:
 
 def _classify_slowlog(lines):
     total = len(lines)
+    if any(
+        len(line) > _LINE_CAP and line.startswith(("# Query_time:", "# Time:", "# User@Host:"))
+        for line in lines
+    ):
+        return [True] * total, [0] * total, [0] * total
     keep = [False] * total
     tests = [0] * total
     suites = [0] * total
@@ -1195,7 +1235,11 @@ def _classify_slowlog(lines):
         for j in range(start, end):
             m = _SLOWLOG_QT_RE.match(lines[j])
             if m:
+                if len(m.group(2)) > 18:
+                    return [True] * total, tests, suites
                 qt = float(m.group(1))
+                if qt == float("inf"):
+                    return [True] * total, tests, suites
                 rows = int(m.group(2))
                 break
         entries.append((start, end, qt, rows))
@@ -1606,12 +1650,15 @@ def _classify_ansible(lines: list[str]) -> tuple[list[bool], list[int], list[int
                 in_recap = True
                 seen_recap = False
             else:
+                in_recap = False
                 seen_statuses.clear()
             keep[i] = True
             continue
 
         host_match = _ANSIBLE_HOST_RE.match(line)
         if host_match and not in_recap:
+            if line[host_match.end():].strip():
+                continue
             status = host_match.group(1)
             if status in seen_statuses:
                 keep[i] = False
@@ -1622,10 +1669,8 @@ def _classify_ansible(lines: list[str]) -> tuple[list[bool], list[int], list[int
 
         recap_match = _ANSIBLE_RECAP_ROW_RE.match(line)
         if recap_match and in_recap:
-            unreachable = int(recap_match.group(1))
-            failed = int(recap_match.group(2))
-            rescued = int(recap_match.group(3)) if recap_match.group(3) is not None else 0
-            if not seen_recap or unreachable > 0 or failed > 0 or rescued > 0:
+            unsuccessful = any(value and value.strip("0") for value in recap_match.groups())
+            if not seen_recap or unsuccessful:
                 keep[i] = True
             else:
                 keep[i] = False
@@ -1883,6 +1928,8 @@ def _classify_ps_aux(lines: list[str]) -> tuple[list[bool], list[int], list[int]
         except ValueError:
             keep[index] = True
             continue
+        if not (0 <= cpu < float("inf") and 0 <= mem < float("inf")):
+            return [True] * len(lines), [0] * len(lines), [0] * len(lines)
         parsed.append((index, cpu, mem, parts[7]))
 
     if parsed:
@@ -1993,12 +2040,12 @@ def _classify_npm_audit(lines: list[str]) -> tuple[list[bool], list[int], list[i
         end = i - 1
         block = lines[start : end + 1]
 
-        is_low_block = False
-        for line in block:
-            match = _NPM_AUDIT_SEVERITY_RE.match(line.strip())
-            if match and match.group(1).lower() == "low":
-                is_low_block = True
-                break
+        severities = [
+            match.group(1).lower()
+            for line in block
+            if (match := _NPM_AUDIT_SEVERITY_RE.match(line.strip()))
+        ]
+        is_low_block = severities == ["low"]
 
         if is_low_block:
             for idx in range(start, end + 1):
@@ -2014,6 +2061,7 @@ def _classify_npm_audit(lines: list[str]) -> tuple[list[bool], list[int], list[i
                         keep[idx + 1] = False
                 else:
                     first_header_seen = True
+                    keep[idx] = True
 
     return keep, [0] * len(lines), [0] * len(lines)
 
@@ -2095,6 +2143,8 @@ def _classify_top(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
                     mem = float(parts[9])
                 except ValueError:
                     continue
+                if not (0 <= cpu < float("inf") and 0 <= mem < float("inf")):
+                    return [True] * len(lines), [0] * len(lines), [0] * len(lines)
                 current_rows.append((i, cpu, mem, parts[7]))
 
     _finalize(current_rows)
@@ -2166,9 +2216,16 @@ def _classify_npm_tree(lines: list[str]) -> tuple[list[bool], list[int], list[in
     keep = [not _NPM_TREE_LINE_RE.match(line) for line in lines]
     first_tree = None
     problem_indices = []
+    ancestors: list[tuple[int, int]] = []
+    parents: dict[int, int | None] = {}
 
     for i, line in enumerate(lines):
         if _NPM_TREE_LINE_RE.match(line):
+            depth = len(_prefix(line))
+            while ancestors and ancestors[-1][0] >= depth:
+                ancestors.pop()
+            parents[i] = ancestors[-1][1] if ancestors else None
+            ancestors.append((depth, i))
             if first_tree is None:
                 first_tree = i
             if _NPM_TREE_PROBLEM_RE.search(line):
@@ -2179,24 +2236,10 @@ def _classify_npm_tree(lines: list[str]) -> tuple[list[bool], list[int], list[in
 
     for problem in problem_indices:
         keep[problem] = True
-        current = problem
-        current_prefix_len = len(_prefix(lines[current]))
-
-        while current_prefix_len > 0:
-            parent = None
-            for j in range(current - 1, -1, -1):
-                if _NPM_TREE_LINE_RE.match(lines[j]):
-                    parent_prefix_len = len(_prefix(lines[j]))
-                    if parent_prefix_len < current_prefix_len:
-                        parent = j
-                        break
-
-            if parent is None:
-                break
-
+        parent = parents[problem]
+        while parent is not None and not keep[parent]:
             keep[parent] = True
-            current = parent
-            current_prefix_len = len(_prefix(lines[current]))
+            parent = parents[parent]
 
     return keep, [0] * len(lines), [0] * len(lines)
 
@@ -2231,15 +2274,21 @@ def _classify_curl_verbose(lines: list[str]) -> tuple[list[bool], list[int], lis
         if _CURL_TLS_NOISE_RE.match(line):
             keep[index] = False
 
-    response_headers = [
-        index
-        for index, line in enumerate(lines)
-        if line.startswith("< ") and not _CURL_STATUS_RE.match(line)
-    ]
-    if len(response_headers) > 6:
-        for index in response_headers:
-            if not _CURL_KEY_HEADER_RE.match(lines[index]):
-                keep[index] = False
+    response_headers: list[int] = []
+
+    def flush_headers() -> None:
+        if len(response_headers) > 6:
+            for index in response_headers:
+                if not _CURL_KEY_HEADER_RE.match(lines[index]):
+                    keep[index] = False
+        response_headers.clear()
+
+    for index, line in enumerate(lines):
+        if _CURL_STATUS_RE.match(line):
+            flush_headers()
+        elif re.match(r"^< [!#$%&'*+.^_`|~0-9A-Za-z-]+:", line):
+            response_headers.append(index)
+    flush_headers()
 
     return keep, [0] * len(lines), [0] * len(lines)
 
@@ -2255,12 +2304,17 @@ def _detect_rollout_wait(text: str) -> bool:
 
 def _classify_rollout_wait(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     keep = [True] * len(lines)
-    matching = [index for index, line in enumerate(lines) if _ROLLOUT_WAIT_RE.match(line)]
-    if len(matching) >= 6:
-        keep_indices = {matching[0], *matching[-2:]}
-        for index in matching:
-            if index not in keep_indices:
-                keep[index] = False
+    groups: dict[str, list[int]] = {}
+    for index, line in enumerate(lines):
+        match = _ROLLOUT_WAIT_RE.match(line)
+        if match:
+            groups.setdefault(match.group(), []).append(index)
+    for matching in groups.values():
+        if len(matching) >= 6:
+            keep_indices = {matching[0], *matching[-2:]}
+            for index in matching:
+                if index not in keep_indices:
+                    keep[index] = False
     return keep, [0] * len(lines), [0] * len(lines)
 
 
