@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Licence: MIT to Apache License 2.0.** `LICENSE` is the Apache-2.0 text and `NOTICE` carries the copyright line; the package metadata declares `Apache-2.0`. Copies of earlier releases remain available under the MIT licence they were published with.
 - Documentation: the README is rewritten around 1.9.0 for users, with a recording for each feature; the CLI demo is re-rendered to show one failure and a note on what was kept; `docs/industrial-compaction-v1.2.md` is now `docs/ARCHITECTURE.md`; three stale images are removed.
 - Fixed: `go test -v` reduction no longer drops a failing test's log lines when tests run with `t.Parallel()` and another test passes first, and no longer drops a failed subtest's result line when a later test passes. Log lines are attributed to the test the last `=== ` line names; passing subtests under a failed test are counted in the marker. (#11, thanks @joeynyc)
+- Fixed: `cargo test` reduction keeps a panic report printed between the test rows (`cargo test -- --nocapture`: the `panicked at` line, the assertion message and its `left`/`right` values) and the `Caused by:` block that names the exit signal of a crashed test binary. (#12, thanks @joeynyc)
 
 ## [1.9.0] - 2026-11-09
 

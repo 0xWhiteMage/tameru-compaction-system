@@ -3610,6 +3610,9 @@ def _classify_go(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     return keep, tests, suites
 
 
+_CARGO_PANIC_RE = re.compile(r"^thread '[^']*' (?:\(\d+\) )?panicked at ")
+
+
 def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
     n = len(lines)
     keep = [False] * n
@@ -3617,6 +3620,7 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
     suites = [0] * n
     in_failures = False
     in_error = False  # a compiler/cargo `error...` diagnostic, up to its blank line
+    in_panic = False  # a panic report printed between the test rows (`--nocapture`)
     for i, ln in enumerate(lines):
         if in_failures:
             keep[i] = True
@@ -3628,6 +3632,11 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
                 keep[i] = True
                 continue
             in_error = False
+        if in_panic:
+            if ln.strip() and not ln.startswith("test "):
+                keep[i] = True
+                continue
+            in_panic = False
         if ln == "failures:":
             in_failures = True
             keep[i] = True
@@ -3644,6 +3653,14 @@ def _classify_cargo(lines: list[str]) -> tuple[list[bool], list[int], list[int]]
             # `error: test failed, to rerun pass ...`: never reduced away.
             keep[i] = True
             in_error = True
+        elif ln == "Caused by:":
+            # cargo's reason for the `error:` above it, after a blank line:
+            # the exit signal of a test binary that crashed.
+            keep[i] = True
+            in_error = True
+        elif _CARGO_PANIC_RE.match(ln):
+            keep[i] = True
+            in_panic = True
     return keep, tests, suites
 
 
