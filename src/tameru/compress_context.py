@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from ._fingerprint_patterns import _DIGITS_RE
+from ._protect_patterns import compile_pin_patterns
 from .agent_formats import (
     GUTTER_RE as _AGENT_GUTTER_RE,
     apply_agent_adapters,
@@ -3883,7 +3884,9 @@ def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> lis
     if not patterns and not recent:
         return []
     blocks = _segment_blocks_memo(text.split('\n'))
-    expressions = [re.compile(pattern) for pattern in patterns or ()]
+    expressions = compile_pin_patterns(patterns)
+    if expressions is None:
+        return [text]
     pinned = {block['id'] for block in blocks
               if any(expr.search(block['text']) for expr in expressions)}
     if recent and blocks:
@@ -9301,10 +9304,9 @@ def _apply_pins(
     # the floor/important/needle paths all respect score, and trust-risk is
     # bypassed for pins (a caller-pinned line outranks injection heuristics).
     if pin_patterns:
-        import re as _re
-        _pin_res = [_re.compile(pt) for pt in pin_patterns]
+        _pin_res = compile_pin_patterns(pin_patterns)
         for b in scored:
-            if any(rx.search(b["text"]) for rx in _pin_res):
+            if _pin_res is None or any(rx.search(b["text"]) for rx in _pin_res):
                 b["score"] = max(b["score"], 999.0)
                 b["pinned"] = True
 
@@ -10700,6 +10702,13 @@ def compress_context(
     _internal_sample: bool = False,
 ) -> CompressResult:
     full_text = str(context or "")
+    if compile_pin_patterns(pin_patterns) is None:
+        tokens = estimate_tokens(full_text)
+        return _with_schema_fields(CompressResult(
+            compressed_text=full_text, original_tokens=tokens, kept_tokens=tokens,
+            mode=mode, fail_open=True, reasons=["unsafe_pin_patterns"],
+            confidence=0.0, confidence_basis="none",
+        ), full_text, query, redact_secrets, selector_query)
     # the caller query's specificity feeds the S6 calibrator through every return path (result schema 4)
     caller_query = query if isinstance(query, str) else "\n".join(str(item) for item in query)
     q_specific = query_has_distinctive_selectors(caller_query)
