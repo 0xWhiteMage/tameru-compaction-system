@@ -7020,10 +7020,9 @@ def _detect_json_payloads(text: str) -> list[tuple[int, int, str]]:
 def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | None:
     """Crush redundant array items in a JSON payload.
 
-    Finds the top-level array (or arrays under known keys like "items"),
-    keeps only query-relevant items + up to max_keep others, and returns
-    the re-serialized JSON. Returns None if no array was found or the
-    result is not actually shorter.
+    Only arrays longer than max_keep and consisting entirely of objects
+    are eligible. An eligible array is reduced to its query matches only
+    if at least one item matches. Return None if rewriting does not help.
     """
     try:
         data = loads_for_rewrite(payload)
@@ -7032,18 +7031,16 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
 
     # Find arrays to crush: top-level list, or dicts with list values
     # whose items are dicts (the "catalog" pattern).
-    arrays_to_crush: list[tuple[tuple[str, ...], list]] = []
-
-    def _find_arrays(obj, path=()):
+    arrays_to_crush: list[list] = []
+    pending = [data]
+    while pending:
+        obj = pending.pop()
         if isinstance(obj, list) and len(obj) > max_keep:
-            # Check if items are dicts (the pattern we want to crush)
-            if obj and isinstance(obj[0], dict):
-                arrays_to_crush.append((path, obj))
+            if all(isinstance(item, dict) for item in obj):
+                arrays_to_crush.append(obj)
         elif isinstance(obj, dict):
-            for key, value in obj.items():
-                _find_arrays(value, (*path, key))
+            pending.extend(reversed(obj.values()))
 
-    _find_arrays(data)
     if not arrays_to_crush:
         return None
 
@@ -7055,39 +7052,29 @@ def _crush_json_items(payload: str, query: str, max_keep: int = 50) -> str | Non
     query_selectors = _selector_patterns(query_terms)
 
     total_crushed = 0
-    for path, arr in arrays_to_crush:
-        kept_indices = []
-        dropped_count = 0
-        for i, item in enumerate(arr):
-            item_str = json.dumps(item, ensure_ascii=False)
+    for arr in arrays_to_crush:
+        kept_items = []
+        for item in arr:
+            try:
+                item_str = json.dumps(item, ensure_ascii=False)
+            except RecursionError:
+                return None
             if any(selector.search(item_str) for selector in query_selectors):
-                kept_indices.append(i)
-            else:
-                dropped_count += 1
-        # No first-50 fallback. If nothing matched, do not crush this array.
-        if not kept_indices:
+                kept_items.append(item)
+        if not kept_items or len(kept_items) == len(arr):
             continue
 
-        if dropped_count == 0:
-            continue
+        total_crushed += len(arr) - len(kept_items)
 
-        # Rebuild the array with only kept items
-        new_arr = [arr[i] for i in sorted(kept_indices)]
-        total_crushed += dropped_count
-
-        # Walk back to the array location and replace it
-        if path:
-            target = data
-            for key in path[:-1]:
-                target = target[key]
-            target[path[-1]] = new_arr
-        else:
-            data = new_arr
+        arr[:] = kept_items
 
     if total_crushed == 0:
         return None
 
-    result = json.dumps(data, indent=2, ensure_ascii=False)
+    try:
+        result = json.dumps(data, indent=2, ensure_ascii=False)
+    except RecursionError:
+        return None
     # Only use the crushed version if it's actually shorter
     if len(result) < len(payload):
         return result
@@ -7107,15 +7094,18 @@ def _crush_embedded_json(text: str, query: str) -> str:
     if not payloads:
         return text
 
-    modified = False
-    result = text
-    for start, end, payload in reversed(payloads):  # reverse to preserve offsets
+    parts: list[str] = []
+    cursor = 0
+    for start, end, payload in payloads:
         crushed = _crush_json_items(payload, query)
         if crushed is not None:
-            result = result[:start] + crushed + result[end:]
-            modified = True
+            parts.extend((text[cursor:start], crushed))
+            cursor = end
 
-    return result if modified else text
+    if not parts:
+        return text
+    parts.append(text[cursor:])
+    return "".join(parts)
 
 
 def inspect_compressibility(text: str, query: str) -> dict[str, Any]:
@@ -7213,6 +7203,20 @@ def _query_hit_terms(query: str) -> list[str]:
     return terms
 
 
+def _rank_query_hits(
+    candidates: Iterable[tuple[int, str]], terms: list[str]
+) -> list[tuple[int, int]]:
+    tests = [_term_test(term) for term in terms]
+    ranked = []
+    for i, line in candidates:
+        low = line[:_RX_LINE_CAP].casefold()
+        hits = sum(1 for test in tests if test(low))
+        if hits:
+            ranked.append((-hits, i))
+    ranked.sort()
+    return ranked
+
+
 def _brief_scan(
     text: str, query: str
 ) -> tuple[tuple[str, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
@@ -7221,16 +7225,15 @@ def _brief_scan(
     and query-hit exemplar lines (original order)."""
     lines = text.split("\n")
     nonblank = [0] * (len(lines) + 1)
-    for i, line in enumerate(lines):
-        nonblank[i + 1] = nonblank[i] + (1 if line.strip() else 0)
-
     # Candidate lines by priority class (indices, original order).
     err_idx: list[int] = []
     warn_idx: list[int] = []
     seen_err: set[str] = set()
     seen_warn: set[str] = set()
     for i, line in enumerate(lines):
-        if not line.strip():
+        has_text = bool(line.strip())
+        nonblank[i + 1] = nonblank[i] + has_text
+        if not has_text:
             continue
         if _is_error_line(line):
             fp = _error_fp(line)
@@ -7245,17 +7248,12 @@ def _brief_scan(
     hit_idx: list[int] = []
     terms = _query_hit_terms(query)
     if terms:
-        tests = [_term_test(t) for t in terms]
-        ranked: list[tuple[int, int]] = []
+        ranked = _rank_query_hits(
+            ((i, line) for i, line in enumerate(lines) if nonblank[i + 1] != nonblank[i]),
+            terms,
+        )
         seen_hit: set[str] = set()
-        for i, line in enumerate(lines):
-            if not line.strip():
-                continue
-            low = line[:_RX_LINE_CAP].casefold()
-            hits = sum(1 for test in tests if test(low))
-            if hits:
-                ranked.append((-hits, i))
-        for _, i in sorted(ranked):
+        for _, i in ranked:
             fp = _error_fp(lines[i])
             if fp not in seen_hit:
                 seen_hit.add(fp)
@@ -7272,7 +7270,8 @@ def _brief_scan_memo(text: str, query: str):
     # Perf (v1.5.0): a host asks for the same output's brief at growing budgets;
     # the scan does not depend on the budget. Everything returned is a tuple.
     if (
-        type(query) is str
+        type(text) is str
+        and type(query) is str
         and len(query) <= _MEMO_MAX_QUERY_CHARS
         and _MEMO_MIN_CHARS <= len(text) <= _MEMO_MAX_CHARS
     ):
@@ -7361,13 +7360,10 @@ def brief_context(
         state = {"raw": 0, "gaps": 0}
 
         def gap_delta(p: int | None, q: int | None, i: int) -> int:
-            if p is None and q is None:
-                return has_content(0, i) + has_content(i + 1, n)
-            if p is None:
-                return has_content(0, i) + has_content(i + 1, q) - has_content(0, q)
-            if q is None:
-                return has_content(p + 1, i) + has_content(i + 1, n) - has_content(p + 1, n)
-            return has_content(p + 1, i) + has_content(i + 1, q) - has_content(p + 1, q)
+            lo = 0 if p is None else p + 1
+            hi = n if q is None else q
+            previous = 0 if p is None and q is None else has_content(lo, hi)
+            return has_content(lo, i) + has_content(i + 1, hi) - previous
 
         def try_add(i: int) -> bool:
             if i in chosen_set:
@@ -7387,7 +7383,7 @@ def brief_context(
         def add_head() -> None:
             used = 0
             for i in range(n):
-                if not lines[i].strip():
+                if not has_content(i, i + 1):
                     continue
                 c = len(eff(i)) + 1
                 if i > 0 and used + c > head_cap:
@@ -7401,7 +7397,7 @@ def brief_context(
             for i in range(n - 1, -1, -1):
                 if i in chosen_set and used:  # met the head
                     break
-                if not lines[i].strip():
+                if not has_content(i, i + 1):
                     continue
                 c = len(eff(i)) + 1
                 if used + c > tail_cap:
@@ -7428,12 +7424,12 @@ def brief_context(
             head_open = tail_open = True
             while (head_open or tail_open) and hi <= ti:
                 if head_open:
-                    while hi < n and (hi in chosen_set or not lines[hi].strip()):
+                    while hi < n and (hi in chosen_set or not has_content(hi, hi + 1)):
                         hi += 1
                     if hi >= n or not try_add(hi):
                         head_open = False
                 if tail_open:
-                    while ti >= 0 and (ti in chosen_set or not lines[ti].strip()):
+                    while ti >= 0 and (ti in chosen_set or not has_content(ti, ti + 1)):
                         ti -= 1
                     if ti < 0 or not try_add(ti):
                         tail_open = False
@@ -7475,9 +7471,7 @@ def brief_context(
     prev = -1
     for i in chosen:
         lo = prev + 1
-        if prev < 0 and i > 0:
-            parts.extend(gap_parts(0, i))
-        elif prev >= 0 and i > prev + 1:
+        if lo < i:
             parts.extend(gap_parts(lo, i))
         parts.append(eff(i))
         prev = i
@@ -7515,33 +7509,25 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
     seen_tpl: set[str] = set()
 
     def take(i: int) -> bool:
-        if len(picked) >= limit:
-            return False
         fp = _error_fp(lines[i])
-        if fp in seen_tpl or i in picked:
-            return True
-        seen_tpl.add(fp)
-        picked.add(i)
-        return True
+        if fp not in seen_tpl and i not in picked:
+            seen_tpl.add(fp)
+            picked.add(i)
+        return len(picked) >= limit
 
     for i, line in enumerate(lines):
         if line.strip() and _is_error_line(line):
-            if not take(i):
-                break
+            if take(i):
+                return [lines[j] for j in sorted(picked)]
     terms = _query_hit_terms(query)
     if terms and len(picked) < limit:
-        tests = [_term_test(t) for t in terms]
-        ranked = []
-        for i, line in enumerate(lines):
-            if not line.strip() or i in picked:
-                continue
-            low = line[:_RX_LINE_CAP].casefold()
-            hits = sum(1 for test in tests if test(low))
-            if hits:
-                ranked.append((-hits, i))
-        for _, i in sorted(ranked):
-            if not take(i):
-                break
+        ranked = _rank_query_hits(
+            ((i, line) for i, line in enumerate(lines) if i not in picked and line.strip()),
+            terms,
+        )
+        for _, i in ranked:
+            if take(i):
+                return [lines[j] for j in sorted(picked)]
     if len(picked) < limit:
         dense = []
         for i, line in enumerate(lines):
@@ -7557,7 +7543,7 @@ def extract_evidence_lines(text: str, query: str = "", limit: int = 20) -> list[
             if score >= 2:
                 dense.append((-score, i))
         for _, i in sorted(dense):
-            if not take(i):
+            if take(i):
                 break
     return [lines[i] for i in sorted(picked)]
 
@@ -7594,11 +7580,10 @@ _ANCHOR_LOGFMT_PAIR_RE = re.compile(r'(\w[\w.]*)=("(?:[^"\\]|\\.)*"|\S+)')
 
 def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
     stripped = line.strip()
-    current = -1
-    for idx, other in enumerate(lines):
-        if other.strip() == stripped:
-            current = idx
-            break
+    current = next((i for i, other in enumerate(lines) if other.strip() == stripped), -1)
+
+    def unique(marker: str) -> bool:
+        return not any(i != current and marker in other for i, other in enumerate(lines))
 
     extras: list[str] = []
 
@@ -7610,12 +7595,7 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
 
         if isinstance(obj, dict):
             for key, value in obj.items():
-                marker = f'"{key}"'
-                if not any(
-                    marker in lines[idx]
-                    for idx in range(len(lines))
-                    if idx != current and lines[idx].strip()
-                ):
+                if unique(f'"{key}"'):
                     extras.append(f"{key}={value}")
                 if len(extras) >= 4:
                     break
@@ -7626,18 +7606,38 @@ def _rare_anchor_extras(line: str, lines: list[str]) -> list[str]:
         for key, value in pairs:
             if value.startswith('"') and value.endswith('"') and len(value) >= 2:
                 value = value[1:-1]
-            if not any(
-                f"{key}=" in lines[idx]
-                for idx in range(len(lines))
-                if idx != current and lines[idx].strip()
-            ):
+            if unique(f"{key}="):
                 extras.append(f"{key}={value}")
             if len(extras) >= 4:
                 break
 
     return extras
 
+class _StructuredAnchorDepthFailure(Exception):
+    pass
+
+
+_STRUCTURED_ANCHOR_ACTIVE = contextvars.ContextVar("tameru_structured_anchor_active", default=False)
+
+
+def _structured_anchor_depth_noop_result(text, mode):
+    return dataclasses.replace(
+        _recursion_noop_result(caller_text=text, requested_mode=mode),
+        policy_name="local-noop-anchor-depth", compression_risk="high", confidence=0.0,
+        reasons=["structured anchor depth limit"],
+    )
+
+
 def _strip_structured_anchor(line):
+    try:
+        return _strip_structured_anchor_record(line)
+    except (RecursionError, OverflowError) as exc:
+        if _STRUCTURED_ANCHOR_ACTIVE.get():
+            raise _StructuredAnchorDepthFailure from exc
+        return line
+
+
+def _strip_structured_anchor_record(line):
     if line.lstrip().startswith("{"):
         try:
             record = loads_for_rewrite(line)
@@ -7754,6 +7754,8 @@ def _strip_anchor_prefix(line: str) -> str:
     if m:
         return f"{m.group(1)} {m.group(2)} {m.group(3)}"
     stripped = _strip_structured_anchor(line)
+    if stripped == line:
+        return line
     if stripped is not None:
         line = stripped
     m = _ANCHOR_LOG_PREFIX_RE.match(line)
@@ -8001,34 +8003,31 @@ def _state_change_lines(lines: list[str], max_regions: int) -> list[str]:
 
     nonblank = [line for line in lines if line.strip()]
     if len(nonblank) < 20:
-        return _state_summary_lines(lines, max_regions)
+        return []
 
     matches: list[str] = []
+    match_limit = min(2, len(nonblank) // 20)
     for line in nonblank:
         low = line.lower()
         if not any(token in low for token in _STATE_CHANGE_PREFILTER):
             continue
         if _STATE_CHANGE_RE.search(line):
             matches.append(line)
+            if len(matches) > match_limit:
+                return _state_summary_lines(lines, max_regions)
 
     if not matches:
         return _state_summary_lines(lines, max_regions)
-    if len(matches) > 2 or len(matches) * 100 > len(nonblank) * 5:
-        return _state_summary_lines(lines, max_regions)
 
-    fp_counts: dict[str, int] = {}
+    chosen = matches[:max_regions]
+    fp_counts = dict.fromkeys((_error_fp(line.strip()) for line in chosen), 0)
     for line in lines:
         fp = _error_fp(line.strip())
-        fp_counts[fp] = fp_counts.get(fp, 0) + 1
-
-    out: list[str] = []
-    for line in matches:
-        if fp_counts.get(_error_fp(line.strip()), 0) != 1:
-            return _state_summary_lines(lines, max_regions)
-        out.append(line)
-        if len(out) >= max_regions:
-            break
-    return out
+        if fp in fp_counts:
+            if fp_counts[fp]:
+                return _state_summary_lines(lines, max_regions)
+            fp_counts[fp] += 1
+    return chosen
 
 
 def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
@@ -8072,7 +8071,7 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
         fp = _error_fp(line.strip())
         counts[fp] = counts.get(fp, 0) + 1
         if fp not in first_lines:
-            first_lines[fp] = line.strip().lower()
+            first_lines[fp] = line
 
     dominant = [fp for fp, count in counts.items() if count >= min_count]
     if not 1 <= len(dominant) <= 3:
@@ -8082,13 +8081,13 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
     if dominant_cover * 10 < len(nonblank) * 9:
         return []
 
-    rare = [line for line in nonblank if counts[_error_fp(line.strip())] == 1]
+    rare = [first_lines[fp] for fp, count in counts.items() if count == 1]
     if not 1 <= len(rare) <= 2:
         return []
 
     dominant_words: set[str] = set()
     for fp in dominant:
-        dominant_words.update(re.findall(r"[A-Za-z]{4,}", first_lines[fp]))
+        dominant_words.update(re.findall(r"[A-Za-z]{4,}", first_lines[fp].lower()))
 
     for line in rare:
         words = set(re.findall(r"[A-Za-z]{4,}", line.lower()))
@@ -8099,6 +8098,16 @@ def _rare_template_lines(lines: list[str], max_regions: int) -> list[str]:
 
 
 def _anchor_regions(text: str, max_regions: int) -> list[str]:
+    token = _STRUCTURED_ANCHOR_ACTIVE.set(True)
+    try:
+        return _structured_anchor_regions(text, max_regions)
+    except (RecursionError, OverflowError) as exc:
+        raise _StructuredAnchorDepthFailure from exc
+    finally:
+        _STRUCTURED_ANCHOR_ACTIVE.reset(token)
+
+
+def _structured_anchor_regions(text: str, max_regions: int) -> list[str]:
     """Error regions for the error-anchored objective: for each of the first ``max_regions`` error
     fingerprint exemplars, the exemplar line plus the contiguous frame-like lines around it (up to
     ``_ANCHOR_REGION_BEFORE`` before and ``_ANCHOR_REGION_AFTER`` after). A neighbour line is frame-like
@@ -8340,7 +8349,8 @@ def _resolve_objective(
             # A generic query whose topic words are absent from the text or on
             # nearly every line carries no signal: anchor on the errors too,
             # keeping the caller's words in front.
-            sample = [ln.casefold() for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
+            originals = [ln for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
+            sample = [ln.casefold() for ln in originals]
             tests = [_term_test(t.casefold()) for t in topic]
             uninformative = bool(sample) and all(
                 (hits := sum(1 for ln in sample if test(ln))) == 0 or hits > 0.8 * len(sample)
@@ -8361,7 +8371,6 @@ def _resolve_objective(
                 and len(caller_text) <= _ANCHOR_RETRY_MAX_CHARS
                 and route_content_type(caller_text.split("\n", 50)[:50]) == "log"
             ):
-                originals = [ln for ln in caller_text.split("\n", 4000)[:4000] if ln.strip()]
                 rare_hits = []
                 seen_rare_lines = set()
                 rare_hit_limit = max(2, len(sample) // 50)
@@ -8370,7 +8379,7 @@ def _resolve_objective(
                     if 1 <= len(hit_idx) <= rare_hit_limit:
                         for k in hit_idx:
                             line = originals[k]
-                            if line not in seen_rare_lines:
+                            if line not in seen_rare_lines and not _is_trust_risk_line(line):
                                 seen_rare_lines.add(line)
                                 rare_hits.append(line)
                 if rare_hits and len(rare_hits) <= _ANCHOR_MAX_LINES:
@@ -8382,14 +8391,12 @@ def _resolve_objective(
                         _strip_anchor_prefix(line.strip())[:_ANCHOR_LINE_CHARS]
                         for line in rare_topic_lines
                     ]
-                if anchor_lines and len(caller_text) > _ANCHOR_RETRY_MAX_CHARS:
-                    # 1.10.0: above the probe cap the comparison probes (two extra full runs) are skipped: the
-                    # anchored objective is used directly, so a large text pays for one run, not three.
-                    query = (query or "") + "\n" + "\n".join(anchor_lines)
-                elif anchor_lines:
+                if anchor_lines:
                     anchored_query = (query or "") + "\n" + "\n".join(anchor_lines)
+                    if len(caller_text) > _ANCHOR_RETRY_MAX_CHARS:
+                        return anchored_query, query_as_given, derived_terms, anchor_lines, None
                     # Probe both objectives side-effect free (no CCR archive, log or
-                    # decision cache); keep the anchored one only when it fails closed,
+                    # decision cache); keep the anchored one only when it compresses successfully,
                     # retains every error fingerprint and is smaller than the plain one.
                     probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
                     probe = dict(
@@ -8424,7 +8431,7 @@ def _resolve_objective(
                         plain_lines = _output_lines(plain.compressed_text)
                         anchored_lines = _output_lines(anchored.compressed_text)
                         original_lines = caller_text.splitlines()
-                        template_counts = collections.Counter(mask_template(raw.strip().lower()) for raw in original_lines)
+                        template_counts = None
                         error_flags = [_is_error_line(line.strip()) for line in original_lines]
                         total = len(original_lines)
                         for index, raw in enumerate(original_lines):
@@ -8434,6 +8441,10 @@ def _resolve_objective(
                             if not any(error_flags[max(0, index - 2):min(total, index + 3)]):
                                 continue
                             if line in plain_lines and line not in anchored_lines:
+                                if template_counts is None:
+                                    template_counts = collections.Counter(
+                                        mask_template(original.strip().lower()) for original in original_lines
+                                    )
                                 if template_counts.get(mask_template(line.lower()), 0) >= 3:
                                     continue
                                 return False
@@ -8632,9 +8643,9 @@ def _write_audit_log(
             }
             log_file = log_path / "compactions.jsonl"
             fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-            if hasattr(os, "fchmod"):
-                os.fchmod(fd, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
                 fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
             pass  # logging must never break compression
@@ -8678,8 +8689,7 @@ def _finalize_result_text_and_ccr(
                 + f"\n[CC-Retrieve: {pending_ccr_hash}]\n"
             )
 
-    candidate_tokens = estimate_tokens(candidate_text)
-    if not fail_open and candidate_tokens > original_tokens and not trust_filtered:
+    if not fail_open and not trust_filtered and estimate_tokens(candidate_text) > original_tokens:
         result_text = caller_text
         compressed = caller_text
         kept = {b["id"] for b in scored}
@@ -8844,8 +8854,7 @@ def _builtin_anchor_lines(
         or mode_norm != "adaptive" or content_type != "log" or route_hint == "numbered_code"
     ):
         return []
-    q = query or ""
-    if (query_has_distinctive_selectors(q) or _topic_terms(q)) and not _objective_is_empty_or_absent(q, text):
+    if not _objective_is_empty_or_absent(query, text):
         return []
     if "[\u00d7" in text or "frames omitted" in text or "[\u2026" in text or "[last] " in text:
         return []  # already folded or cut by the engine: anchoring again would not be idempotent
@@ -10760,6 +10769,8 @@ def compress_context(
         selector_query=selector_query, _ccr_defer=_ccr_defer,
         _internal_sample=_internal_sample,
         )
+    except _StructuredAnchorDepthFailure:
+        result = _structured_anchor_depth_noop_result(full_text, mode)
     finally:
         _PINNED_LINES.reset(_pin_token)
         _FACT_OFF.reset(_fact_off_token)
