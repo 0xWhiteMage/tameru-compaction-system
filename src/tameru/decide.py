@@ -13,6 +13,7 @@ then ``no_gain``, ``low_confidence`` (skipped under EV) and ``not_enough_tokens`
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Mapping
 
 REASONS = (
@@ -48,6 +49,7 @@ class EVPolicy:
             raise ValueError(f"strength must be one of {_EV_STRENGTHS}")
         if not 0.0 < float(self.quantile) <= 1.0:
             raise ValueError("quantile must be within (0, 1]")
+        object.__setattr__(self, "quantile", float(self.quantile))
 
 
 @dataclass(frozen=True)
@@ -86,10 +88,15 @@ class Policy:
             raise ValueError("max_risk must be low, medium or high")
         for name in ("min_confidence", "min_saved_ratio"):
             value = getattr(self, name)
-            if value is not None and not 0.0 <= float(value) <= 1.0:
-                raise ValueError(f"{name} must be within 0..1")
-        if self.min_tokens_saved is not None and int(self.min_tokens_saved) < 0:
-            raise ValueError("min_tokens_saved must be >= 0")
+            if value is not None:
+                value = float(value)
+                if not 0.0 <= value <= 1.0:
+                    raise ValueError(f"{name} must be within 0..1")
+                object.__setattr__(self, name, value)
+        if self.min_tokens_saved is not None:
+            value = self.min_tokens_saved
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError("min_tokens_saved must be a nonnegative integer")
         if self.ev is not None and not isinstance(self.ev, EVPolicy):
             raise ValueError("ev must be an EVPolicy")
 
@@ -154,22 +161,37 @@ def ev_terms(
     the extract's better fact retention counts for it (a negative marginal ``L`` rewards
     preservation), so an extract no worse than the stub it replaces is never declined into the stub
     on L grounds."""
-    if ev.calibrator is not None:
-        p_hat = ev.calibrator(result)
-    else:
-        basis, specific = getattr(result, "confidence_basis", None), getattr(result, "query_specific", None)
-        if basis is not None and specific is not None:
-            # S6: the shipped per-stratum calibrator, over the result's own basis/query-style/fact-drop fields.
-            from .calibration import p_hat as _calibrated_p_hat
-            p_hat = _calibrated_p_hat(
-                basis, specific, getattr(result, "fact_lines_dropped", 0) or 0,
-                getattr(result, "confidence", None), quantile=ev.quantile,
-            )
+    try:
+        if ev.calibrator is not None:
+            p_hat = ev.calibrator(result)
         else:
-            p_hat = getattr(result, "confidence", None)
-    if p_hat is None:
+            basis = getattr(result, "confidence_basis", None)
+            specific = getattr(result, "query_specific", None)
+            if basis is not None and specific is not None:
+                # S6: the shipped per-stratum calibrator, over the result's own basis/query-style/fact-drop fields.
+                from .calibration import p_hat as _calibrated_p_hat
+                p_hat = _calibrated_p_hat(
+                    basis, specific, getattr(result, "fact_lines_dropped", 0) or 0,
+                    getattr(result, "confidence", None), quantile=ev.quantile,
+                )
+            else:
+                p_hat = getattr(result, "confidence", None)
+        if p_hat is None:
+            return None
+        p_hat = float(p_hat)
+    except Exception:  # fail-open boundary for a caller-supplied calibrator
         return None
-    p_hat = float(p_hat)
+    if not isfinite(p_hat) or not 0.0 <= p_hat <= 1.0:
+        return None
+    try:
+        saved_tokens, n_eff, suffix_tokens, item_tokens = (
+            float(value) for value in (saved_tokens, n_eff, suffix_tokens, item_tokens)
+        )
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if any(not isfinite(value) or value < 0
+           for value in (saved_tokens, n_eff, suffix_tokens, item_tokens)):
+        return None
     if getattr(result, "fact_lines_dropped", 0) and p_hat > 0.98:
         p_hat = 0.98
     from .loss import profile as _loss_profile
@@ -195,6 +217,8 @@ def ev_terms(
     else:
         V = saved_tokens * r * (n_eff + 1.0) - S * (w - r)
         L = L_item
+    if not isfinite(V) or not isfinite(L):
+        return None
     return p_hat, V, L
 
 
@@ -279,7 +303,7 @@ def decide(
         confidence = getattr(result, "confidence", None)
         if confidence is None:
             return Decision(False, "low_confidence", "confidence=None")
-        if confidence < policy.min_confidence:
+        if not isfinite(confidence) or not 0.0 <= confidence <= 1.0 or confidence < policy.min_confidence:
             return Decision(False, "low_confidence", f"confidence={confidence:.3f}<{policy.min_confidence}")
     if policy.min_tokens_saved is not None:
         saved_tokens = int(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0))

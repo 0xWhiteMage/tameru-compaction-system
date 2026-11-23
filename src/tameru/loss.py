@@ -13,6 +13,7 @@ with ``pathlib`` rather than ``importlib.resources``, as ``prices.py`` documents
 from __future__ import annotations
 
 import json
+from math import isfinite
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,9 +49,15 @@ class LossProfile:
 
 def _number(name: str, field_name: str, raw: dict[str, Any]) -> tuple[float, str, bool]:
     entry = raw.get(field_name)
-    if not isinstance(entry, dict) or not isinstance(entry.get("value"), (int, float)):
+    if not isinstance(entry, dict) or type(entry.get("value")) not in (int, float):
         raise ValueError(f"loss profile {name}: {field_name} needs a numeric value")
-    return float(entry["value"]), str(entry.get("source", "")), bool(entry.get("unverified"))
+    try:
+        value = float(entry["value"])
+    except OverflowError:
+        raise ValueError(f"loss profile {name}: {field_name} must be finite") from None
+    if not isfinite(value):
+        raise ValueError(f"loss profile {name}: {field_name} must be finite")
+    return value, str(entry.get("source", "")), bool(entry.get("unverified"))
 
 
 def _build(name: str, raw: dict[str, Any]) -> LossProfile:
@@ -73,6 +80,8 @@ def _build(name: str, raw: dict[str, Any]) -> LossProfile:
         raise ValueError(f"loss profile {name}: probabilities must be within 0..1")
     if values["recovery_output_tokens"] < 0 or values["lambda_base"] < 0:
         raise ValueError(f"loss profile {name}: token and lambda figures must be >= 0")
+    if not values["recovery_output_tokens"].is_integer():
+        raise ValueError(f"loss profile {name}: recovery_output_tokens must be integral")
     if any(m <= 0 for m in multipliers.values()):
         raise ValueError(f"loss profile {name}: strength multipliers must be > 0")
     return LossProfile(

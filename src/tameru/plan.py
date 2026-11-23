@@ -12,7 +12,7 @@ Supersession commits only when the successor covers the item's facts.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -159,7 +159,8 @@ def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: fl
         compressed_text="", fail_open=c.fail_open, compression_risk=c.risk, confidence=c.confidence,
         fact_lines_dropped=c.fact_lines_dropped, tokens_saved=c.tokens_saved,
         confidence_basis=c.confidence_basis, query_specific=c.query_specific,
-        original_tokens=item.tokens, kept_tokens=item.tokens - c.tokens_saved,
+        # decide uses these counts only for the savings ratio; planner budgets are characters.
+        original_tokens=item.chars, kept_tokens=c.compressed_chars,
     )
     if policy.ev is not None:
         terms = ev_terms(result, policy.ev, c.tokens_saved, n_eff=n_eff, suffix_tokens=suffix_tokens,
@@ -171,7 +172,8 @@ def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: fl
         alt_name = "stub" if host_mode == "prune" else "header"
         if p_hat * V - (1 - p_hat) * L <= 0:
             return "negative_ev", (p_hat, V, L, alt_name)
-        return "ok", (p_hat, V, L, alt_name)
+        verdict = decide(result, replace(policy, ev=None, min_confidence=None), fingerprints={})
+        return verdict.reason, (p_hat, V, L, alt_name)
     # no EV policy: the configured numeric gates decide (confidence included). The fingerprint veto
     # already ran on c.fingerprints_ok, so the recheck passes an empty wanted set.
     verdict = decide(result, policy, fingerprints={})
