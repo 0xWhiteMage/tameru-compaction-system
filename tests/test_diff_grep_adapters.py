@@ -240,3 +240,56 @@ class TestGrep:
         assert "call_321(arg)" in result.compressed_text
         assert len(result.compressed_text) < len(big) / 3
         assert not result.fail_open
+
+
+def _grep_context_over_timestamped_logs() -> str:
+    # The shape `grep -rn -C1 ERROR logs/` prints over timestamped logs: the
+    # context lines are `path-N-text`, and their text holds a clock.
+    out = []
+    for name in ("api", "worker"):
+        for n in range(7, 400, 20):
+            message = "write failed: disk full on /var/data" if n == 227 else "upstream timeout"
+            out += [
+                f"logs/{name}.log-{n - 1}-2026-11-22 10:{(n - 1) // 60:02d}:{(n - 1) % 60:02d},120 INFO  {name} request ok id=r{n - 1}",
+                f"logs/{name}.log:{n}:2026-11-22 10:{n // 60:02d}:{n % 60:02d},120 ERROR  {name} {message} shard={n}",
+                f"logs/{name}.log-{n + 1}-2026-11-22 10:{(n + 1) // 60:02d}:{(n + 1) % 60:02d},120 INFO  {name} request ok id=r{n + 1}",
+                "--",
+            ]
+    return "\n".join(out[:-1])
+
+
+def test_grep_context_lines_holding_a_clock_stay_with_their_file():
+    text = _grep_context_over_timestamped_logs()
+    assert detect_grep_lines(text)
+    result = adapt_grep_lines(text, "disk full")
+    assert result is not None
+    headers = [line for line in result.text.split("\n") if line and not line.startswith(" ")]
+    assert headers == ["logs/api.log  (20 matches)", "logs/worker.log  (20 matches)"]
+    assert result.total_records == 40
+    # The kept match keeps its own context lines, under the real line numbers.
+    assert "  L226- 2026-11-22 10:03:46,120 INFO  api request ok id=r226" in result.text
+    assert "  L227: 2026-11-22 10:03:47,120 ERROR  api write failed: disk full on /var/data shard=227" in result.text
+    assert "  L228- 2026-11-22 10:03:48,120 INFO  api request ok id=r228" in result.text
+    assert "L0" not in result.text
+    through = compress_context(text, "Which writes failed with disk full?", ccr=False, citations=False)
+    assert "logs/api.log-226-2026-11-22 10" not in through.compressed_text
+    assert "disk full on /var/data shard=227" in through.compressed_text
+
+
+def test_grep_context_lines_of_a_dated_file_name_stay_with_their_file():
+    # `grep -rn -C1 ERROR dated/` where the file name itself holds `-digits-`.
+    text = "\n--\n".join(
+        "\n".join(
+            [
+                f"dated/app-2026-11-22.log-{n - 1}-10:00:{n - 1:02d} INFO  job step {n - 1}",
+                f"dated/app-2026-11-22.log:{n}:10:00:{n:02d} ERROR  job step {n}",
+                f"dated/app-2026-11-22.log-{n + 1}-10:00:{n + 1:02d} INFO  job step {n + 1}",
+            ]
+        )
+        for n in (3, 13, 23, 33)
+    )
+    result = adapt_grep_lines(text, "")
+    assert result is not None
+    headers = [line for line in result.text.split("\n") if line and not line.startswith(" ")]
+    assert headers == ["dated/app-2026-11-22.log  (4 matches)"]
+    assert "  L12- 10:00:12 INFO  job step 12" in result.text

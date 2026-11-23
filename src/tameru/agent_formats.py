@@ -388,6 +388,9 @@ def detect_unified_diff(text: str) -> bool:
 
 _GREP_MATCH_RE = re.compile(r"^([^\s:][^:]*):(\d+):(.*)$")
 _GREP_CTX_RE = re.compile(r"^([^\s:][^:]*?)-(\d+)-(.*)$")
+_GREP_CTX_SPLIT_RE = re.compile(r"-(\d{1,10})(?=-)")
+_GREP_PATH_MAX = 512  # longer "paths" are text, and are not looked up
+_GREP_CTX_SPLITS = 64  # `-digits-` candidates tried per line
 
 
 def _pathish(path: str) -> bool:
@@ -411,21 +414,50 @@ def _grep_parse_line(line: str) -> tuple[str, str, int, str] | None:
     return None
 
 
+def _grep_parse_lines(lines: list[str]) -> list[tuple[str, str, int, str] | None]:
+    """Parse grep output line by line, then give each context line back to
+    the file it belongs to.
+
+    ``path-N-text`` is ambiguous on its own. When the text holds a clock
+    (``logs/api.log-6-2026-11-22 10:00:06 INFO``) the match pattern reads
+    ``logs/api.log-6-2026-11-22 10`` as a path and ``00`` as its line, and a
+    file name that holds ``-digits-`` defeats the shortest-path context
+    pattern. A context line always belongs to a file that has a match, so the
+    paths of the matches settle both: the shortest of them that the line
+    starts with, followed by ``-N-``, is its file.
+    """
+    parsed = [_grep_parse_line(line) for line in lines]
+    known = {p[1] for p in parsed if p is not None and p[0] == "m"}
+    if not known:
+        return parsed
+    lengths = {len(path) for path in known if len(path) <= _GREP_PATH_MAX}
+    if not lengths:
+        return parsed
+    longest = max(lengths)
+    for index, line in enumerate(lines):
+        if "-" not in line[: longest + 1]:
+            continue
+        for tried, m in enumerate(_GREP_CTX_SPLIT_RE.finditer(line, 0, longest + 12)):
+            if tried == _GREP_CTX_SPLITS:
+                break
+            if m.start() in lengths and line[: m.start()] in known:
+                parsed[index] = ("c", line[: m.start()], int(m.group(1)), line[m.end() + 1 :])
+                break
+    return parsed
+
+
 def detect_grep_lines(text: str) -> bool:
     """≥70% of the non-blank lines are ``path:N:text`` matches or
     ``path-N-text`` context lines (``--`` separators are neutral)."""
     if not text:
         return False
-    total = ok = real = 0
-    for raw in text.split("\n"):
-        if not raw.strip():
-            continue
-        total += 1
+    rows = [raw for raw in text.split("\n") if raw.strip()]
+    total = len(rows)
+    ok = real = 0
+    for raw, parsed in zip(rows, _grep_parse_lines(rows)):
         if raw == "--":
             ok += 1
-            continue
-        parsed = _grep_parse_line(raw)
-        if parsed is not None:
+        elif parsed is not None:
             ok += 1
             if parsed[0] == "m":
                 real += 1
@@ -790,13 +822,11 @@ def adapt_grep_lines(
     per_file: dict[str, list[_GrepRec]] = {}
     other: list[str] = []
     group = 0
-    for raw in text.split("\n"):
-        if not raw.strip():
-            continue
+    rows = [raw for raw in text.split("\n") if raw.strip()]
+    for raw, parsed in zip(rows, _grep_parse_lines(rows)):
         if raw == "--":
             group += 1
             continue
-        parsed = _grep_parse_line(raw)
         if parsed is None:
             other.append(raw)
             continue
