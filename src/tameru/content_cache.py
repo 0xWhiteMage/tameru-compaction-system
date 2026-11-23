@@ -37,19 +37,25 @@ def _env_max_bytes() -> int:
     return _DEFAULT_MAX_BYTES
 
 
-def weight_of(value: Any, _depth: int = 0) -> int:
+def weight_of(value: Any, _seen: set[int] | None = None) -> int:
     """Live memory of a record — the accounting weight the cache evicts on."""
+    if _seen is None:
+        _seen = set()
+    identity = id(value)
+    if identity in _seen:
+        return 0
+    _seen.add(identity)
     w = sys.getsizeof(value)
-    if _depth >= 6 or value is None or isinstance(value, (int, float, bool, str, bytes)):
+    if value is None or isinstance(value, (int, float, bool, str, bytes)):
         return w
     if isinstance(value, dict):
         for k, v in value.items():
-            w += weight_of(k, _depth + 1) + weight_of(v, _depth + 1)
+            w += weight_of(k, _seen) + weight_of(v, _seen)
     elif isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
-            w += weight_of(item, _depth + 1)
+            w += weight_of(item, _seen)
     elif hasattr(value, "__dict__"):
-        w += weight_of(vars(value), _depth + 1)
+        w += weight_of(vars(value), _seen)
     return w
 
 
@@ -150,7 +156,8 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
             hit = CACHE.get(key)
             if hit is _MISS:
                 hit = fn(text, *extra)
-                CACHE.set(key, hit)
+                if not isinstance(hit, str):
+                    CACHE.set(key, hit)
             return hit
 
         wrapper.cache_clear = CACHE.clear

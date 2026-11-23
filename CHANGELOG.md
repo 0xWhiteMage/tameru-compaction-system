@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [1.10.0] - Unreleased
 
 - Security: bound configured pin regex structure and aggregate search cost before searching tool output. Unsafe or invalid pin patterns preserve the full original input; bounded safe patterns retain their matching behavior.
+- Fix: cache segmentation as compact spans and rebuild block text from the caller's input; scored records omit source text and normalized full-text views are not retained. Reject oversized records without displacing unrelated entries, and account for nested records with shared-reference-safe live weight.
 - Documentation: clarify that the core imports the lightweight semantic resolver, model dependencies load only during tier construction, and unavailable dependencies raise `SemanticUnavailable` for direct construction.
 - Semantic ambiguity detection scores the dropped candidates and kept winner in one call, avoiding a duplicate query encoding while retaining the same similarity threshold and lexical fallback.
 - Fix: dictionary-configured semantic tiers fall back to lexical extraction when optional dependencies or model initialization fail, just as scorer failures do; regression tests cover both construction failures.

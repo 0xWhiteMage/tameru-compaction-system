@@ -3897,7 +3897,7 @@ def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> lis
 
 
 def _segment_blocks_memo(lines: list[str]) -> list[dict[str, Any]]:
-    """:func:`segment_blocks`, remembered for the newest few large inputs.
+    """:func:`segment_blocks`, remembered as compact spans without source text.
 
     A block is a flat dict of str/int values, so a shallow copy per block is
     a full copy: callers may mutate what they get back.
@@ -3934,9 +3934,11 @@ def _score_blocks_memo(
     key = content_key(ENGINE_VERSION, "scored", chr(0).join(score_lines), (query, content_type))
     hit = _SCORED.get(key)
     if hit is _MISS:
-        hit = tuple(score_blocks(blocks, query, content_type=content_type))
-        _SCORED.set(key, hit)
-    return [dict(b) for b in hit]
+        scored = score_blocks(blocks, query, content_type=content_type)
+        _SCORED.set(key, tuple({k: v for k, v in block.items() if k != "text"} for block in scored))
+        return scored
+    source = {block["id"]: block["text"] for block in blocks}
+    return [dict(block, text=source[block["id"]]) for block in hit]
 
 
 def _clear_memos() -> None:
