@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="assets/header.png" alt="The White Mage — Tameru Compaction System" width="100%"><br><br>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.9.0-blue.svg" alt="Version 1.9.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.10.0-blue.svg" alt="Version 1.10.0"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache 2.0 licence"></a>
@@ -117,18 +117,28 @@ measurements, which are measured against that harness's own stock behaviour and 
 
 Requires **Python 3.10+**.
 
-Install the verified **1.9.0** source, pinned to its commit:
+Install the **1.10.0** source, pinned to its commit (Git is required):
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@9f1f1c4"
+python -m venv .venv
+. .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@66c2668bf5cf3153596774ea6cbc41f6da1c38f3"
 ```
 
-That commit is the engine code of 1.9.0 (later commits change documentation only). No release tag, GitHub Release page or PyPI package is published yet.
+That commit declares version 1.10.0 on the `v1.10.0` **branch**. At this review, `main` still declares 1.9.0, no `v1.10.0` tag exists and the package is not available on PyPI. The commit pin above does not depend on a tag or a PyPI release.
 
 To use Tameru inside a harness, install that harness's plugin from the [Integrations](#integrations) table instead; it brings its own copy of the engine, so updating the plugin
 updates the engine.
 
 ## Engine results
+
+### New in 1.10.0
+
+Log and stack-trace folding now runs even for generic or tool-call-shaped questions. Rare assignment facts and error exemplars get additional protection; confidence reports its basis and results report dropped facts. Content-digest caches bound retained analysis memory, and inputs over 2 million characters use a bounded sample rather than full analysis.
+
+Hosts can share versioned presets, the `decide()` acceptance helper and protocol v3 schemas. A pure planner and price/loss helpers are available, but no host adoption or live billing benefit is claimed. See the [1.10.0 results and limitations](docs/RESULTS-1.10.0.md), [API controls](docs/USAGE.md#1100-results-and-bounded-analysis) and [integration contracts](docs/INTEGRATION.md#1100-host-contracts).
+
+The comparisons below remain **historical 1.9.0 measurements**, not a new 1.10.0 run.
 
 <!-- tameru:headline:start -->
 
@@ -258,7 +268,7 @@ Every operating point retained all required strings with no forbidden leaks in t
 <details>
 <summary><strong>Storage, credentials and optional model paths</strong></summary>
 
-Credential screening is heuristic. It gates recovery-cache writes; it does not redact returned text or encrypt the cache. A citation alone does not establish that an original was successfully stored.
+Credential screening is heuristic. It gates recovery-cache writes; by default it does not redact returned text or encrypt the cache. Opt-in `redact_secrets=True` redacts recognised credentials only in successful extracts, never in a fail-open original. A citation alone does not establish that an original was successfully stored.
 
 The default `strategy="extract"` makes no LLM call. Optional `summarise`/`auto` strategies and semantic-model paths have separate dependencies and inference behaviour. Default extraction adds no LLM inference charge; local CPU work still consumes resources.
 
@@ -270,15 +280,14 @@ The [usage guide](docs/USAGE.md) explains budgets, recovery, receipts, host mark
 
 ```bash
 python -m pip install -e '.[dev]'
-python -m pytest -q
+python -m pytest -q --ignore-glob='*test_engine_bench*.py' --ignore=tests/test_session_corpus.py --ignore=tests/test_s5_diagnose.py --ignore=tests/test_determinism.py
 python benchmarks/run_battery.py
 python benchmarks/threshold_sweep.py
-python benchmarks/compare.py --verify-against benchmarks/comparison-v1.9.0.json
 ```
 
-Verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests), **15/15 release QA cases**, and the comparison run reproducing its recorded output with **0 differing fields** over the 16 cases. Timing tests depend on hardware; the battery rewrites its JSON with your local timings.
+Historical 1.9.0 verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests), **15/15 release QA cases**, and the comparison run reproducing its recorded output with **0 differing fields** over the 16 cases. Timing tests depend on hardware; the battery rewrites its JSON with your local timings. The test command above excludes engine-benchmark and corpus/diagnosis tests; it does not reproduce that historical test count. Do not rebuild or run the sealed engine split or corpus holdout for routine checks.
 
-`compare.py --verify-against` exits non-zero if any output hash, saving or retention result differs; timings are not compared. `--render-from` regenerates the figures and tables in this section from a completed report of the same engine version. The [comparison report](benchmarks/COMPARISON.md#reproduce) lists the pins and commands for the third-party methods.
+`compare.py --verify-against` exits non-zero if any output hash, saving or retention result differs; timings are not compared. The 1.9.0 record is not an equality target for 1.10.0, whose outputs changed. `--render-from` regenerates figures from a completed report of the same engine version. The [comparison report](benchmarks/COMPARISON.md#reproduce) lists the pins and commands for the third-party methods.
 
 ## Documentation
 
@@ -292,7 +301,7 @@ Verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests
 | [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what each harness plugin repository owns |
 | [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework, write a harness plugin and keep vendored copies current |
 | [Comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
-| [Release notes](docs/releases/v1.9.0.md) and [changelog](CHANGELOG.md) | Review this release's changes and the version history |
+| [1.10.0 results](docs/RESULTS-1.10.0.md) and [changelog](CHANGELOG.md) | Review the current engine's results, limitations and version history |
 | [Red-team findings](benchmarks/redteam/FINDINGS-1.9.0.md) | Read what 228 adversarial cases found and what was fixed ([notes](benchmarks/redteam/NOTES-1.9.0.md)) |
 | [Architecture](docs/ARCHITECTURE.md) | Understand the format adapters, Unicode handling and bounded-work limits |
 | [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |

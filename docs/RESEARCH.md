@@ -2,7 +2,7 @@
 
 Continuously-updated study notes. Sources are grouped by kind; each entry lists
 what it does and what maps onto Tameru's deterministic, extractive, local-first
-design. The current measured comparisons were recorded on Tameru **v1.6.0** (2026-11-05); see
+design. The full multi-method comparison was recorded on Tameru **v1.6.0** (2026-11-05); a later **v1.9.0** run covers Tameru and TF-IDF only. Neither is a 1.10.0 re-measurement; see
 [results and methodology](../benchmarks/COMPARISON.md). Research origins and
 historical implementation versions below are not additional benchmark scores.
 
@@ -61,7 +61,7 @@ historical implementation versions below are not additional benchmark scores.
   boundaries from prose paragraphs. Component-level results do not describe
   every compressor in a parent product's router.
 - **Check repeatability rather than assume it.** The comparison measures
-  a warmup and three timed outputs, then records whether their text is identical.
+  a warmup and repeated timed outputs (five in the 1.9.0 run), then records whether their text is identical.
 
 ## 2026-10 survey takeaways
 

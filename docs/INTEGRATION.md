@@ -7,10 +7,10 @@ the guide for writing a new one.
 
 ## 1. Python API (pip)
 
-Install the reviewed v1.6.0 engine source directly from its Git tag; see the [README](../README.md#install) for the current pinned install:
+Install the 1.10.0 engine source from its immutable commit; see the [README](../README.md#install) for virtual-environment setup and release availability:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.6.0"
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@66c2668bf5cf3153596774ea6cbc41f6da1c38f3"
 ```
 
 ```python
@@ -82,13 +82,47 @@ retention checks).
 
 The engine repository retired its duplicate Hermes bundle in v1.4.0. Existing `tameru.agent_extractive_engine` and `tameru.hermes_extractive_engine` import paths remain compatibility aliases of the generic adapter; new integrations should use `tameru.transcript`.
 
+### 1.10.0 host contracts
+
+Use the engine-owned presets and decision helper instead of duplicating a host's acceptance rule:
+
+```python
+from tameru.compress_context import compress_context
+from tameru.decide import HERMES_POLICY, decide
+from tameru.presets import resolve_preset
+from tameru.transcript import build_query, build_selector_query
+
+messages = [
+    {"role": "user", "content": "Why did the deployment fail?"},
+    {"role": "tool", "content": "ERROR deployment failed: missing image"},
+]
+idx = 1
+source = messages[idx]["content"]
+result = compress_context(
+    source,
+    build_query(messages, idx),
+    selector_query=build_selector_query(messages, idx),
+    **resolve_preset("tool-result@1"),
+)
+decision = decide(result, HERMES_POLICY, original=source)
+replacement = result.compressed_text if decision.accept else source
+```
+
+`tool-result@1` and `dsh-tool-result@1` resolve to explicit keyword options, not a `preset=` argument to `compress_context`. Both disable CCR. Overrides go in `resolve_preset(name, overrides={...})`. Supply `original` (or precomputed `fingerprints`) to fingerprint-requiring policies; without either they decline. The full query drives scoring and confidence, while `build_selector_query` omits the producing call's name and arguments for destructive pre-filters.
+
+`tameru.protocol` is a pure schema library, **not an executable worker**. A host owns process startup, line framing and dispatch. `version_info()` reports protocol **3** and result schema **3**. `validate_request` validates a compress request into `compress_context` keyword arguments, forcing CCR off; `result_to_dict` serialises the result. Unknown fields and unsafe regex pins raise `ProtocolError` with a fixed `code`, never echoed request text. Earlier protocol versions remain supported. A worker must pop and resolve `derive_selector_query` itself before calling the engine; it is not a compression keyword.
+
+Protocol v3 also defines `stats` and `plan` requests (`validate_stats_request`, `validate_plan_request`, `plan_to_dict`); the host dispatches these separately, not through `validate_request`. Regex pins are capped at 16 patterns of 200 characters and reject unbounded quantifiers and other risky shapes; `{"literal": "..."}` pins avoid regex syntax.
+
+The pure `tameru.plan.plan(PlanInput)` planner and optional `Policy.ev` rule consume caller-supplied stock actions, candidates and cache assumptions. They do not measure a host's prompt cache, call a model or change host defaults. Price/loss profiles and calibration are replay-derived or explicitly unverified; see [price assumptions](PRICES.md) and the [architecture](ARCHITECTURE.md#6a-interface-layer-1100).
+
 ## 2. CLI shell-out (any language)
 
 `tameru-compress` is the universal contract — stdin or file in, compacted
 text on stdout, JSON diagnostics followed by `---` and compacted text with `--stats`:
 
 ```bash
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.6.0"   # provides tameru-compress on PATH
+# After the install above, tameru-compress is on the environment's PATH.
 tameru-compress context.txt "Find the deployment failure" --no-ccr --stats
 cat context.txt | tameru-compress - "Find the deployment failure" --no-ccr --pin-recent 4
 ```
@@ -98,7 +132,7 @@ Hosts written in TypeScript, shell or another language can use this interface wi
 ## 3. Vendored copy
 
 When the host requires self-contained plugins with no external dependencies, vendor
-`src/tameru/*.py` into the plugin directory and let the sync script keep it current:
+`src/tameru/*.py` and its JSON package data into the plugin directory and let the sync script keep it current. Run it from an engine checkout, with an existing target directory:
 
 ```bash
 python scripts/sync_to_harness.py <plugin_dir>
@@ -123,11 +157,12 @@ directory that vendors no modules.
 | File | Owner | Updated by sync? |
 |---|---|---|
 | `src/tameru/*.py` (all modules except `__init__.py`) | upstream | **yes** — copied wholesale |
+| `presets.json`, `prices.json`, `loss_profiles.json`, `calibration.json` | upstream | **yes** — copied alongside the modules |
 | `__init__.py` (registration/engine class) | harness | no — upstream's `__init__.py` is package metadata, not shipped |
 | `plugin.yaml` / manifest | harness | no, unless `--manifest` is given (version + description stamped only) |
 | tests, docs, benchmarks | upstream | not vendored |
 
-**Update workflow:** merge changes here → run `sync_to_harness.py` in the plugin repo →
+**Update workflow:** merge changes here → run the engine checkout's `scripts/sync_to_harness.py` with the plugin's vendored directory as target →
 record the engine commit it now matches (`VENDORED_FROM`) → commit. The sync is a file
 copy; nothing else to maintain. Run `sync_to_harness.py --check` in the plugin repo's CI
 to catch a vendored copy that has drifted from upstream.
@@ -157,15 +192,12 @@ What a plugin decides, and the engine does not:
 If the plugin talks to the engine through a worker process, the contract is small and
 should stay that way:
 
-- One request per line on stdin, one reply per line on stdout, UTF-8, `
-`-terminated.
+- One request per line on stdin, one reply per line on stdout, UTF-8, `\n`-terminated.
 - A fixed, short list of accepted fields (text, query, and the budget options). Reject
   everything else; in particular never accept options that write to disk (`ccr`,
   `log_dir`) or reach a network or a model (summary endpoints, semantic tier).
 - Always reply with `fail_open` so the caller knows whether the original was returned.
-- Start it isolated (`python -I -B -P`, the plugin folder as working directory) so a
-  planted module in a workspace cannot be imported, and exit on stdin end-of-file so it
-  never outlives the harness.
+- Start it isolated (`python -I -B /absolute/path/to/worker.py`) so a planted module in a workspace cannot be imported. The host bootstrap must explicitly locate its vendored engine under isolation. `-I` already excludes the script/current directory from `sys.path`; do not require `-P`, which was added only in Python 3.11. Exit on stdin end-of-file so the worker never outlives the harness.
 
 Whatever the harness, follow the rules below and the [repository guide](REPOSITORIES.md).
 

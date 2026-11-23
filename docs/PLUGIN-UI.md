@@ -79,7 +79,7 @@ A problem on the bar clears on the next success of the same kind, or 10 seconds 
 
 ## Where each plugin follows this
 
-The [DeepSeek Harness plugin](https://github.com/0xWhiteMage/dsh-tameru-plugin) draws the bar as a pill built like that harness's own goal bar and opens a floating card. The [Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) (from 1.10.0) keeps its card head and its table. Both use the same strings, the same drawings and the same meanings. A new plugin follows the same rules in its own host's idiom and adds the two JSON files to its tests.
+The DeepSeek Harness plugin (`dsh-tameru-plugin`, in development; repository not publicly available at this review) draws the bar as a pill built like that harness's own goal bar and opens a floating card. The [Hermes plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) (from 1.10.0) keeps its card head and its table. Both use the same strings, the same drawings and the same meanings. A new plugin follows the same rules in its own host's idiom and adds the two JSON files to its tests.
 
 Where a host differs, the difference is in the host, not in the words:
 

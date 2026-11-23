@@ -4,6 +4,8 @@ All numbers come from `benchmarks/engine_bench`, a replay of recorded and genera
 None of them is a measurement against a real model, an answer-quality check or a bill. Plan, margins and rules: [`ANALYSIS-PLAN-1.10.md`](ANALYSIS-PLAN-1.10.md).
 Result files are committed under `benchmarks/engine_bench/results/`.
 
+This page records the historical look on `99db5bd`, not a fresh evaluation of every later 1.10.0 commit. Later development changes (fact-line protection, bounded caches and the shipped calibration table) are described in the [changelog](../CHANGELOG.md#1100---unreleased). Do not rebuild or rerun the sealed split or corpus holdout to reproduce this page during routine checks.
+
 ## The sealed look (one, on commit 99db5bd, taken 2026-11-19)
 
 94 cases in 62 source clusters that were not used for building or checking. Paired against engine 1.9.0 on the same cases
@@ -34,7 +36,7 @@ The Hermes plugin does not use confidence. For the generic question under Hermes
 - **No real model has run.** Answer quality, the provider's cache behaviour and billing are unverified.
 - **Calls with `pin_patterns` or `pin_recent`** keep 1.9.0 behaviour for the structural features.
 - **Squeez** (618 SWE-bench outputs, 1.9.0): the engine compresses about 39% of the input and falls open on 200 samples, with span precision 0.09 and recall 0.74. It is not a span extractor.
-- The speed budgets in `benchmarks/latency.py`: the `--quick` run passes all 84 cells (200K inputs about 0.2 to 0.3 s); the full run including 2M inputs has not been repeated for 1.10.0.
+- At this look, the speed budgets in `benchmarks/latency.py`: the `--quick` run passed all 84 cells (200K inputs about 0.2 to 0.3 s); the full run including 2M inputs had not been repeated. The changelog records a later development run including 2M and 4M classes; it is not a rerun of this sealed evaluation.
 
 ## The DeepSeek plugin's whole-session replay (gate 8): not met
 
