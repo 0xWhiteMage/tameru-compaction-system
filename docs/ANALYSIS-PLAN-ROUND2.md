@@ -395,3 +395,14 @@ No margin, bar or gate changes.
   judged in the host-default validation phase; this entry registers the instrument only.
 
 No margin, bar or gate changes.
+### 2026-11-28: noted for the next round — the Hermes gate pair can pull apart
+
+- Hermes's non-inferiority set asks the candidate for cache breaks (prunes + compactions) `<= stock`
+  *and* whole-session cost `<=` the 1.9.0-era plugin within +1.0 point (sections 4-5). A build that
+  compacts *less* than stock satisfies the break bound but keeps more original text, so its cost drifts
+  toward stock's — the two bounds cannot both be met by a build whose only savings come from acting less.
+  No contradiction inside this round's registrations (the bound pair stands as written), but a candidate
+  tuned toward fewer breaks should not be evaluated on cost, and vice versa, without the next round
+  stating which bound a setting is aimed at.
+
+No margin, bar or gate changes.
