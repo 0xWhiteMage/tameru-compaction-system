@@ -378,3 +378,20 @@ No margin, bar or gate changes.
   decision, is the judgment left open by this look.
 
 No margin, bar or gate changes.
+### 2026-11-28: the S3 prompt set and harness are registered (P4)
+
+- **The set.** `benchmarks/engine_bench/s3_prompts.json` is the fixed prompt set, pinned by
+  `benchmarks/engine_bench/S3-PROMPTS.sha256` (`7c88c08115569c78...`): 400 prompts = the 100 dev
+  families of rounds 2-4 x the four registered windows (128K, 252K, 500K, 1M tokens at 4 chars/token),
+  each a dev needle case spliced at a depth rotating 0.2/0.5/0.8 by family index into filler tiled
+  from the other needles. The question is the case's `task_specific` query; expected answers are
+  salient needles derived from its gold lines. Sealed and validation cases are never read.
+- **The harness.** `benchmarks/engine_bench/s3_quality.py` takes `--base-url` and `--model`, posts the
+  OpenAI `/chat/completions` shape, and records `endpoint_url`, `model`, `model_digest` (Ollama
+  `/api/tags`, else the served `/v1/models` id, else null) and `served_model_id` on every result row.
+  Arms: `stock` verbatim; `deepseek`/`hermes` the engine output under that profile's call settings and
+  acceptance rules, original on decline. The endpoint is a reporting parameter, not a tunable.
+- The S3 gate itself (vs stock, -3 points, windows <= the model's needle-ladder working window) is
+  judged in the host-default validation phase; this entry registers the instrument only.
+
+No margin, bar or gate changes.
