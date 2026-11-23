@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-from .decide import EVPolicy, Policy, decide, ev_terms
+from .decide import EVPolicy, ForcedAlternative, Policy, decide, ev_terms
 
 EVENTS = ("trigger", "cache_cold", "prefix_rewritten", "step")
 """Moments a plan may be asked for. The first three are cache-broken: the suffix is rewritten anyway."""
@@ -95,7 +95,9 @@ class PlanInput:
 
 @dataclass(frozen=True)
 class PlanAction:
-    """The plan for one item. ``p_hat``, ``V`` and ``L`` are filled when the EV check ran for it."""
+    """The plan for one item. ``p_hat``, ``V`` and ``L`` are filled when the EV check ran for it;
+    ``alternative`` names the forced alternative those terms were priced against (the stock
+    remnant in each mode — ``stub`` under prune, ``header`` under compact — per plan P5)."""
 
     id: str
     event: str
@@ -104,6 +106,7 @@ class PlanAction:
     p_hat: float | None = None
     V: float | None = None
     L: float | None = None
+    alternative: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,8 +139,21 @@ def _veto(item: PlanItem, policy: Policy) -> str | None:
     return None
 
 
-def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: float, cache_broken: bool):
-    """The decision and the EV terms for one item with a veto-clean candidate, via ``decide``."""
+def _forced_alternative(item: PlanItem, host_mode: str) -> ForcedAlternative:
+    """The stock remnant a forced event leaves in place of the item: ``stub`` under prune, the
+    demote remnant ``header`` under compact (plan P5). A bare remnant carries no fact lines."""
+    kept = min(item.stock_kept_chars, item.chars)
+    saved = item.tokens * (1.0 - kept / item.chars) if item.chars > 0 else 0.0
+    return ForcedAlternative(saved_tokens=saved, kept_facts=0.0,
+                             name="stub" if host_mode == "prune" else "header")
+
+
+def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: float,
+              cache_broken: bool, host_mode: str):
+    """The decision and the EV terms for one item with a veto-clean candidate, via ``decide``.
+
+    Under an EV policy the terms are priced against the forced alternative — the stock remnant
+    the host leaves anyway — not against the original (plan P5)."""
     c = item.candidate
     result = SimpleNamespace(
         compressed_text="", fail_open=c.fail_open, compression_risk=c.risk, confidence=c.confidence,
@@ -147,19 +163,21 @@ def _evaluate(item: PlanItem, policy: Policy, *, n_eff: float, suffix_tokens: fl
     )
     if policy.ev is not None:
         terms = ev_terms(result, policy.ev, c.tokens_saved, n_eff=n_eff, suffix_tokens=suffix_tokens,
-                         item_tokens=item.tokens, cache_broken=cache_broken)
+                         item_tokens=item.tokens, cache_broken=cache_broken,
+                         alternative=_forced_alternative(item, host_mode), item_facts=item.fact_lines)
         if terms is None:
-            return "low_confidence", (None, None, None)
+            return "low_confidence", (None, None, None, None)
         p_hat, V, L = terms
+        alt_name = "stub" if host_mode == "prune" else "header"
         if p_hat * V - (1 - p_hat) * L <= 0:
-            return "negative_ev", (p_hat, V, L)
-        return "ok", (p_hat, V, L)
+            return "negative_ev", (p_hat, V, L, alt_name)
+        return "ok", (p_hat, V, L, alt_name)
     # no EV policy: the configured numeric gates decide (confidence included). The fingerprint veto
     # already ran on c.fingerprints_ok, so the recheck passes an empty wanted set.
     verdict = decide(result, policy, fingerprints={})
     if not verdict.accept:
-        return verdict.reason, (None, None, None)
-    return "ok", (None, None, None)
+        return verdict.reason, (None, None, None, None)
+    return "ok", (None, None, None, None)
 
 
 def _gate(inp: PlanInput) -> str | None:
@@ -266,28 +284,30 @@ def _plan_prune(inp: PlanInput) -> Plan:
             actions.append(PlanAction(item.id, inp.event, "stub", veto))
             continue
         S = 0.0 if cache_broken else suffix[item.id]
-        verdict, (p_hat, V, L) = _evaluate(item, inp.policy, n_eff=inp.cache.n_eff, suffix_tokens=S,
-                                           cache_broken=cache_broken)
+        verdict, (p_hat, V, L, alt) = _evaluate(item, inp.policy, n_eff=inp.cache.n_eff,
+                                                suffix_tokens=S, cache_broken=cache_broken,
+                                                host_mode=inp.host_mode)
         if V is not None:
             V_total += V
             L_total += L or 0.0
         if verdict == "ok" and c.compressed_chars <= item.stock_kept_chars:
             chars_after += c.compressed_chars
-            actions.append(PlanAction(item.id, inp.event, "extract", "ok", p_hat, V, L))
+            actions.append(PlanAction(item.id, inp.event, "extract", "ok", p_hat, V, L, alt))
             continue
         chars_after += stub_chars
         actions.append(PlanAction(item.id, inp.event, "stub",
-                                  verdict if verdict != "ok" else "longer_than_stock_cut", p_hat, V, L))
+                                  verdict if verdict != "ok" else "longer_than_stock_cut",
+                                  p_hat, V, L, alt))
     return Plan(inp.event, inp.host_mode, True, "acted", tuple(actions), chars_after,
                 _stock_chars(inp.items, inp.host_mode), V_total, L_total)
 
 
 def _score_demote(inp: PlanInput):
     """Veto- and EV-score every demote candidate; returns (scored, demote). ``scored`` maps item id
-    to ``(verdict, ev_per_char, p_hat, V, L)`` for candidates that passed the hard vetoes."""
+    to ``(verdict, ev_per_char, p_hat, V, L, alt)`` for candidates that passed the hard vetoes."""
     cache_broken = inp.event in BROKEN_EVENTS or not inp.cache.warm
     suffix = _suffix_after(inp.items)
-    scored: dict[str, tuple[str, float, float | None, float | None, float | None]] = {}
+    scored: dict[str, tuple[str, float, float | None, float | None, float | None, str | None]] = {}
     demote: list[PlanItem] = []
     for item in inp.items:
         if item.protected or item.stock_action != "demote":
@@ -296,10 +316,11 @@ def _score_demote(inp: PlanInput):
         if item.candidate is None or _veto(item, inp.policy) is not None:
             continue
         S = 0.0 if cache_broken else suffix[item.id]
-        verdict, (p_hat, V, L) = _evaluate(item, inp.policy, n_eff=inp.cache.n_eff, suffix_tokens=S,
-                                           cache_broken=cache_broken)
+        verdict, (p_hat, V, L, alt) = _evaluate(item, inp.policy, n_eff=inp.cache.n_eff,
+                                                suffix_tokens=S, cache_broken=cache_broken,
+                                                host_mode=inp.host_mode)
         scored[item.id] = (verdict, (p_hat * V - (1 - p_hat) * L) / max(1, item.candidate.compressed_chars)
-                           if p_hat is not None else float("-inf"), p_hat, V, L)
+                           if p_hat is not None else float("-inf"), p_hat, V, L, alt)
     return scored, demote
 
 
@@ -369,19 +390,19 @@ def _plan_compact_replace(inp: PlanInput) -> Plan:
             decisions[item.id] = PlanAction(item.id, inp.event, "header",
                                             _veto(item, inp.policy) or "no_candidate")
             continue
-        verdict, _epc, p_hat, V, L = entry
+        verdict, _epc, p_hat, V, L, alt = entry
         kept = min(item.stock_kept_chars, item.chars)
         cost = (item.tokens * max(0, item.candidate.compressed_chars - kept) / item.chars
                 if item.chars > 0 else 0.0)
         if verdict == "ok" and item.candidate.compressed_chars <= room and cost <= slack:
             room -= item.candidate.compressed_chars
             slack -= cost
-            decisions[item.id] = PlanAction(item.id, inp.event, "extract", "ok", p_hat, V, L)
+            decisions[item.id] = PlanAction(item.id, inp.event, "extract", "ok", p_hat, V, L, alt)
         elif verdict == "ok":
             reason = "over_budget" if item.candidate.compressed_chars > room else "no_runway"
-            decisions[item.id] = PlanAction(item.id, inp.event, "header", reason, p_hat, V, L)
+            decisions[item.id] = PlanAction(item.id, inp.event, "header", reason, p_hat, V, L, alt)
         else:
-            decisions[item.id] = PlanAction(item.id, inp.event, "header", verdict, p_hat, V, L)
+            decisions[item.id] = PlanAction(item.id, inp.event, "header", verdict, p_hat, V, L, alt)
     return _assemble_compact(inp, decisions, reaches_target=True)
 
 
@@ -407,13 +428,13 @@ def _plan_compact(inp: PlanInput, *, reaches_target: bool = False) -> Plan:
             decisions[item.id] = PlanAction(item.id, inp.event, "header",
                                             _veto(item, inp.policy) or "no_candidate")
             continue
-        verdict, _epc, p_hat, V, L = entry
+        verdict, _epc, p_hat, V, L, alt = entry
         if verdict == "ok" and item.candidate.compressed_chars <= room:
             room -= item.candidate.compressed_chars
-            decisions[item.id] = PlanAction(item.id, inp.event, "extract", "ok", p_hat, V, L)
+            decisions[item.id] = PlanAction(item.id, inp.event, "extract", "ok", p_hat, V, L, alt)
         elif verdict == "ok":
-            decisions[item.id] = PlanAction(item.id, inp.event, "brief", "over_budget", p_hat, V, L)
+            decisions[item.id] = PlanAction(item.id, inp.event, "brief", "over_budget", p_hat, V, L, alt)
         else:
-            decisions[item.id] = PlanAction(item.id, inp.event, "brief", verdict, p_hat, V, L)
+            decisions[item.id] = PlanAction(item.id, inp.event, "brief", verdict, p_hat, V, L, alt)
 
     return _assemble_compact(inp, decisions, reaches_target=reaches_target)

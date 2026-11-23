@@ -229,3 +229,87 @@ def test_negative_ev_basis_is_codes_and_numbers():
     assert "stratum=deepseek" in d.basis
     assert _re.fullmatch(r"p=[-0-9.e+]+,V=[-0-9.e+]+,L=[-0-9.e+]+,stratum=[a-z_]+",
                          evdecide(fake(kept=0, orig=1000, confidence=0.5)).basis)
+
+
+# --- P5: EV at forced events — priced against the forced alternative --------
+
+from tameru.decide import ForcedAlternative, ev_terms
+
+
+def evres(saved=10_000, conf=0.95, dropped=0):
+    r = fake(kept=0, orig=saved, confidence=conf)
+    r.fact_lines_dropped = dropped
+    return r
+
+
+def test_ev_terms_stub_alternative_gives_zero_marginal_loss_on_shared_drops():
+    # a bare stub keeps no facts: a fact the stub also loses is not lost by accepting
+    terms = ev_terms(evres(dropped=4), EV, 10_000, n_eff=80, suffix_tokens=0,
+                     item_tokens=2500, cache_broken=True, item_facts=4,
+                     alternative=ForcedAlternative(saved_tokens=9_000, kept_facts=0.0))
+    p_hat, V, L = terms
+    assert L == 0.0
+    # V is the savings over the stub: (10_000 - 9_000) * r * (n_eff+1), S = 0 at a broken event
+    p = prices.profile("deepseek-v4-pro")
+    assert V == pytest.approx(1_000 * p.r * 81)
+
+
+def test_ev_terms_remnant_keeping_facts_gives_partial_marginal_loss():
+    # a header remnant keeps 1 of the item's 4 facts; the extract drops all 4 →
+    # marginal loss prices only the 1 fact the remnant would have carried
+    item_tokens = 2500
+    full = ev_terms(evres(dropped=4), EV, 10_000, n_eff=80, suffix_tokens=0,
+                    item_tokens=item_tokens, cache_broken=True)
+    _, _, L_full = full
+    _, _, L_marg = ev_terms(evres(dropped=4), EV, 10_000, n_eff=80, suffix_tokens=0,
+                            item_tokens=item_tokens, cache_broken=True, item_facts=4,
+                            alternative=ForcedAlternative(saved_tokens=9_000, kept_facts=1.0,
+                                                          name="header"))
+    assert L_marg == pytest.approx(L_full * (4 - 3) / 4)
+
+
+def test_ev_terms_extract_keeping_facts_gets_credit_over_the_stub():
+    # the extract drops 1 fact where the stub drops all 4: marginal L is negative
+    _, _, L = ev_terms(evres(dropped=1), EV, 10_000, n_eff=80, suffix_tokens=0,
+                       item_tokens=2500, cache_broken=True, item_facts=4,
+                       alternative=ForcedAlternative(saved_tokens=9_000, kept_facts=0.0))
+    assert L < 0
+
+
+def test_ev_terms_extract_worse_than_the_remnant_has_negative_marginal_v():
+    # the remnant saves 9_950; an extract saving 5_000 is worse than declining into it
+    _, V, _ = ev_terms(evres(), EV, 5_000, n_eff=80, suffix_tokens=0,
+                       item_tokens=2500, cache_broken=True,
+                       alternative=ForcedAlternative(saved_tokens=9_950, kept_facts=0.0))
+    assert V < 0
+
+
+def test_forced_event_accepts_extract_better_than_its_stub():
+    # the registered rule: an extract better than the stub must not be declined into the stub —
+    # saved 10_000 vs the stub's 500 at a broken event is +EV for any p_hat > 0
+    stub = ForcedAlternative(saved_tokens=500, kept_facts=0.0)
+    for conf in (0.05, 0.5, 0.95, 1.0):
+        d = decide(evres(10_000, conf), Policy(ev=EV), n_eff=80, suffix_tokens=0,
+                   item_tokens=2500, cache_broken=True, alternative=stub)
+        assert d.accept, (conf, d.basis)
+        assert "alt=stub" in d.basis
+
+
+def test_forced_event_suffix_cost_cancels_at_broken_events():
+    # both arms rewrite the same position at a broken event: S = 0 for both
+    stub = ForcedAlternative(saved_tokens=500, kept_facts=0.0)
+    d = decide(evres(10_000, 0.95), Policy(ev=EV), n_eff=80, suffix_tokens=10**9,
+               item_tokens=2500, cache_broken=True, alternative=stub)
+    assert d.accept, d.basis
+
+
+def test_warm_step_keeps_the_marginal_suffix_cost():
+    # a warm-step extract pays the suffix rewrite the stock alternative doesn't
+    stub = ForcedAlternative(saved_tokens=500, kept_facts=0.0)
+    kw = dict(n_eff=80, item_tokens=2500, alternative=stub)
+    warm = decide(evres(10_000, 0.95), Policy(ev=EV), suffix_tokens=10**9,
+                  cache_broken=False, **kw)
+    broken = decide(evres(10_000, 0.95), Policy(ev=EV), suffix_tokens=10**9,
+                    cache_broken=True, **kw)
+    assert warm.reason == "negative_ev" and broken.accept
+    assert "alt=stub" in warm.basis

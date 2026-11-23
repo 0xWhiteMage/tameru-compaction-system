@@ -213,7 +213,7 @@ def _plan_body(**overrides):
         "items": [
             {"id": "a", "position": 0, "tokens": 5000, "chars": 20_000, "stock_action": "cut",
              "stock_kept_chars": 200,
-             "candidate": {"compressed_chars": 150, "tokens_saved": 4000, "confidence": 0.95,
+             "candidate": {"compressed_chars": 150, "tokens_saved": 4960, "confidence": 0.95,
                            "fail_open": False, "risk": "low", "fingerprints_ok": True}},
             {"id": "b", "position": 1, "tokens": 3000, "chars": 12_000, "stock_action": "cut",
              "stock_kept_chars": 200},
@@ -239,7 +239,7 @@ def _plan_input(**overrides):
         "items": (
             PlanItem(id="a", position=0, tokens=5000, chars=20_000, stock_action="cut",
                      stock_kept_chars=200,
-                     candidate=Candidate(compressed_chars=150, tokens_saved=4000, confidence=0.95,
+                     candidate=Candidate(compressed_chars=150, tokens_saved=4960, confidence=0.95,
                                          fail_open=False, risk="low", fingerprints_ok=True)),
             PlanItem(id="b", position=1, tokens=3000, chars=12_000, stock_action="cut",
                      stock_kept_chars=200),
@@ -314,8 +314,10 @@ def test_plan_to_dict_shape():
                           "predicted_L", "reaches_target"}
     assert reply["acted"] is True and reply["gate"] == "acted"
     assert [a["id"] for a in reply["actions"]] == ["a", "b", "c"]
-    assert set(reply["actions"][0]) == {"id", "event", "action", "reason", "p_hat", "V", "L"}
+    assert set(reply["actions"][0]) == {"id", "event", "action", "reason", "p_hat", "V", "L",
+                                        "alternative"}
     assert reply["actions"][0]["action"] == "extract" and reply["actions"][0]["V"] is not None
+    assert reply["actions"][0]["alternative"] == "stub"
     assert reply["actions"][1]["action"] == "stub"
     json.dumps(reply)
 

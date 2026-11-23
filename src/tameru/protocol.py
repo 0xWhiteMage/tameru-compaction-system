@@ -562,6 +562,7 @@ def plan_to_dict(plan: Plan) -> dict[str, Any]:
                 "p_hat": action.p_hat,
                 "V": action.V,
                 "L": action.L,
+                "alternative": action.alternative,
             }
             for action in plan.actions
         ],

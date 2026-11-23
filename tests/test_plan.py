@@ -189,10 +189,71 @@ def test_warm_step_ev_decline_falls_back_to_brief():
 
 
 def test_plan_totals():
-    p = plan(inp([item(0), item(1)]))
+    # forced-event pricing: L is the marginal loss over the stub. Fact rows the stub
+    # would drop give a negative marginal L (the extract preserves them).
+    p = plan(inp([item(0, fact_lines=2), item(1, fact_lines=2)]))
     assert p.predicted_chars_after == 2 * GOOD.compressed_chars
     assert p.predicted_chars_stock == 2 * 3000
-    assert p.predicted_V > 0 and p.predicted_L > 0
+    assert p.predicted_V > 0 and p.predicted_L < 0
+
+
+# --- P5: EV at forced events — the stock remnant is the alternative ----------
+
+def test_prune_actions_report_the_stub_alternative():
+    p = plan(inp([item(0)]))
+    a = by_id(p)["i0"]
+    assert a.action == "extract" and a.alternative == "stub"
+    # evaluated but declined items name the alternative they lost to
+    weak = replace(GOOD, tokens_saved=1, confidence=0.5)
+    p = plan(inp([item(0, candidate=weak)]))
+    a = by_id(p)["i0"]
+    assert a.action == "stub" and a.alternative == "stub"
+
+
+def test_compact_actions_report_the_header_alternative():
+    p = compact([item(0, stock_action="demote")], budget=10_000)
+    a = by_id(p)["i0"]
+    assert a.action == "extract" and a.alternative == "header"
+
+
+def test_extract_saving_less_than_the_stock_remnant_is_declined():
+    # stock cut leaves 3000/40_000 chars ≈ 9_250 tokens saved; an extract saving less
+    # is declined into the remnant — negative marginal V, not the old absolute rule
+    poor = replace(GOOD, tokens_saved=8_000, confidence=1.0)
+    p = plan(inp([item(0, candidate=poor)]))
+    a = by_id(p)["i0"]
+    assert a.action == "stub" and a.reason == "negative_ev" and a.V < 0
+
+
+def test_extract_better_than_the_stub_is_never_declined_into_it():
+    # factless item, extract saves just past the remnant: marginal V > 0, L = 0 → accept
+    edge = replace(GOOD, tokens_saved=9_300, confidence=0.99)
+    p = plan(inp([item(0, candidate=edge)]))
+    a = by_id(p)["i0"]
+    assert a.action == "extract" and a.V > 0 and a.L == 0.0
+
+
+def test_fact_rows_get_a_negative_marginal_l_over_the_stub():
+    # the stub drops all 3 facts; the extract keeps them → L < 0 rewards preservation
+    p = plan(inp([item(0, fact_lines=3)]))
+    a = by_id(p)["i0"]
+    assert a.action == "extract" and a.L < 0
+
+
+def test_marginal_suffix_cost_binds_on_warm_steps_not_broken_events():
+    # candidate barely beats the remnant on savings: at a warm step the suffix rewrite
+    # the extract alone causes turns marginal V negative; at the broken trigger both arms
+    # rewrite anyway and it accepts
+    edge = replace(GOOD, tokens_saved=9_300, confidence=0.99)
+    demote = item(0, stock_action="demote", candidate=edge)
+    follower = item(1, stock_action="keep", tokens=80_000, chars=200_000)
+    warm = plan(inp([demote, follower], event="step", host_mode="compact", warm=True,
+                    H=4, steps_to_trigger=1, prompt_tokens=300_000, trigger_tokens=320_000,
+                    growth_tokens_per_step=1000, retained_budget_chars=50_000))
+    assert by_id(warm)["i0"].action == "brief" and by_id(warm)["i0"].reason == "negative_ev"
+    broken = plan(inp([demote, follower], event="trigger", host_mode="compact", warm=True,
+                      retained_budget_chars=50_000))
+    assert by_id(broken)["i0"].action == "extract"
 
 
 # --- compact mode -----------------------------------------------------------
@@ -277,10 +338,11 @@ def test_replace_compaction_unreachable_falls_back_to_normal():
 
 def test_replace_compaction_fact_rows_keep_extracts_first():
     # Slack funds exactly one extract (cost ≈ 450 tokens each); the fact row wins it over the
-    # higher-EV-per-char plain row, which drops to header.
+    # higher-EV-per-char plain row, which drops to header. Under forced-event EV pricing the
+    # fact candidate must beat the header remnant's ~9_950 saved tokens on marginal V.
     plain = item(0, stock_action="demote", stock_kept_chars=200)
     fact = item(1, stock_action="demote", stock_kept_chars=200, fact_lines=3,
-                candidate=replace(GOOD, tokens_saved=5_000))
+                candidate=replace(GOOD, tokens_saved=15_000))
     p = replace_inp([plain, fact], prompt_tokens=200_000, trigger_tokens=190_000,
                     growth_tokens_per_step=920, margin_steps=10)    # target 180_800, slack 700
     acts = by_id(p)

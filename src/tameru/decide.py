@@ -51,6 +51,25 @@ class EVPolicy:
 
 
 @dataclass(frozen=True)
+class ForcedAlternative:
+    """The action a host takes at a forced event whether or not the engine accepts — the
+    DeepSeek pruner's stock-trigger cut, Hermes's compaction remnant — rendered as a stub, a
+    header or the host's own summary (analysis plan 2026-11-22, P5).
+
+    At a forced event the EV rule compares the extract against this alternative, not against
+    the original: ``V`` prices the savings *beyond* what the alternative already yields and
+    ``L`` the fact loss *over* it (a fact the alternative also loses is not lost by accepting).
+
+    ``saved_tokens``: tokens the alternative saves over the original. ``kept_facts``: of the
+    item's fact lines, how many the alternative carries — a bare stub keeps none; a summary may
+    keep some. ``name`` is reported on the decision basis and the plan action."""
+
+    saved_tokens: float
+    kept_facts: float = 0.0
+    name: str = "stub"
+
+
+@dataclass(frozen=True)
 class Policy:
     """What a host accepts. ``None`` switches a numeric check off."""
 
@@ -118,12 +137,23 @@ def ev_terms(
     suffix_tokens: float,
     item_tokens: float,
     cache_broken: bool = False,
+    alternative: ForcedAlternative | None = None,
+    item_facts: float = 0.0,
 ) -> tuple[float, float, float] | None:
     """``(p_hat, V, L)`` for ``result`` under ``ev``; ``None`` when no confidence exists to price.
 
     ``V = saved_tokens * r * (n_eff + 1) - S * (w - r)`` with ``S`` the suffix tokens the write makes the
     provider re-cache (0 on a cache-broken event — the rewrite happens anyway). A profile without an output
-    price prices recovery output at the uncached input unit (``o = 1``)."""
+    price prices recovery output at the uncached input unit (``o = 1``).
+
+    ``alternative`` prices the event against the forced alternative instead of the original (plan
+    2026-11-22, P5): ``V`` becomes the savings *over* the alternative; the alternative's own rewrite
+    rides the forced (cache-broken) event so the marginal ``S`` is this arm's alone — ``L`` becomes
+    the marginal loss over it: the extract drops ``fact_lines_dropped`` of ``item_facts``; the
+    alternative drops all but its ``kept_facts``. Only the excess counts against the accept rule, and
+    the extract's better fact retention counts for it (a negative marginal ``L`` rewards
+    preservation), so an extract no worse than the stub it replaces is never declined into the stub
+    on L grounds."""
     if ev.calibrator is not None:
         p_hat = ev.calibrator(result)
     else:
@@ -149,17 +179,29 @@ def ev_terms(
     r, w = price.r, price.w
     o = price.o if price.o is not None else 1.0
     S = 0.0 if cache_broken else float(suffix_tokens)
-    V = saved_tokens * r * (n_eff + 1.0) - S * (w - r)
     mult = loss.multiplier(ev.strength)
-    L = loss.p_needed * (
+    L_item = loss.p_needed * (
         loss.p_recovered * (item_tokens * w + loss.recovery_output_tokens * o)
         + (1 - loss.p_recovered) * loss.lambda_base * mult * item_tokens
     )
+    if alternative is not None:
+        # V is the savings the extract buys over the forced alternative. The alternative's own
+        # rewrite rides the forced (cache-broken) event, so the marginal S is this arm's alone —
+        # at a broken event S = 0 for both and the whole term cancels anyway.
+        V = (saved_tokens - float(alternative.saved_tokens)) * r * (n_eff + 1.0) - S * (w - r)
+        dropped_e = float(getattr(result, "fact_lines_dropped", 0) or 0)
+        dropped_a = max(0.0, float(item_facts) - float(alternative.kept_facts))
+        L = L_item * ((dropped_e - dropped_a) / item_facts) if item_facts > 0 else 0.0
+    else:
+        V = saved_tokens * r * (n_eff + 1.0) - S * (w - r)
+        L = L_item
     return p_hat, V, L
 
 
-def _ev_basis(p_hat: float, V: float, L: float, stratum: str | None) -> str:
-    return f"p={p_hat:.4g},V={V:.4g},L={L:.4g},stratum={stratum or 'default'}"
+def _ev_basis(p_hat: float, V: float, L: float, stratum: str | None,
+              alternative: ForcedAlternative | None = None) -> str:
+    base = f"p={p_hat:.4g},V={V:.4g},L={L:.4g},stratum={stratum or 'default'}"
+    return f"{base},alt={alternative.name}" if alternative is not None else base
 
 
 def decide(
@@ -175,6 +217,8 @@ def decide(
     item_tokens: float | None = None,
     cache_broken: bool = False,
     stratum: str | None = None,
+    alternative: ForcedAlternative | None = None,
+    item_facts: float = 0.0,
 ) -> Decision:
     """Accept or decline ``result`` under ``policy``. Never raises on a well-formed result.
 
@@ -187,7 +231,10 @@ def decide(
     When ``policy.ev`` is set, ``min_confidence`` is ignored and an EV check runs after the hard vetoes:
     ``n_eff``, ``suffix_tokens``, ``item_tokens`` and ``cache_broken`` are the caller's quantities for it
     (all required); ``stratum`` is echoed in the basis. The saved-ratio and tokens-saved checks still
-    apply after the EV check."""
+    apply after the EV check. ``alternative`` prices the EV terms against the host's forced action (a
+    stub, a header or a host summary) instead of the original — the choice at a forced event, per the
+    analysis plan's P5 rule — and is named in the basis as ``alt=``; ``item_facts`` is the item's fact
+    count for the marginal-L share."""
     if result is None or getattr(result, "fail_open", True):
         return Decision(False, "fail_open")
     if sanitized and not policy.allow_sanitized:
@@ -210,13 +257,14 @@ def decide(
             raise ValueError("an EV policy needs n_eff, suffix_tokens and item_tokens")
         saved = float(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0) or 0)
         terms = ev_terms(result, policy.ev, saved, n_eff=n_eff, suffix_tokens=suffix_tokens,
-                         item_tokens=item_tokens, cache_broken=cache_broken)
+                         item_tokens=item_tokens, cache_broken=cache_broken,
+                         alternative=alternative, item_facts=item_facts)
         if terms is None:
             return Decision(False, "low_confidence", "confidence=None")
         p_hat, V, L = terms
         if p_hat * V - (1 - p_hat) * L <= 0:
-            return Decision(False, "negative_ev", _ev_basis(p_hat, V, L, stratum))
-        ev_basis = _ev_basis(p_hat, V, L, stratum)
+            return Decision(False, "negative_ev", _ev_basis(p_hat, V, L, stratum, alternative))
+        ev_basis = _ev_basis(p_hat, V, L, stratum, alternative)
     else:
         ev_basis = None
     if policy.min_saved_ratio is not None:
