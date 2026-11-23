@@ -4,316 +4,171 @@
   <img src="assets/header.png" alt="The White Mage — Tameru Compaction System" width="100%"><br><br>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-v1.10.0-blue.svg" alt="Version 1.10.0"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10 and above"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/core-standard_library-orange.svg" alt="Standard-library core"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/deps-standard_library-orange.svg" alt="Standard-library core"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache 2.0 licence"></a>
-  <a href="#integrations"><img src="https://img.shields.io/badge/harness-agnostic-8A2BE2.svg" alt="Harness-agnostic engine"></a>
+  <a href="https://github.com/0xWhiteMage/tameru-compaction-system/releases"><img src="https://img.shields.io/github/v/release/0xWhiteMage/tameru-compaction-system" alt="Latest release"></a>
   <a href="https://x.com/0xWhiteMage"><img src="https://img.shields.io/badge/X-@0xWhiteMage-000000?logo=x&logoColor=white" alt="Follow 0xWhiteMage on X"></a>
   <a href="https://ko-fi.com/0xwhitemage"><img src="https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
 </p>
 
 **Deterministic, query-aware context compaction for long-running AI agents. Local, fail-open, with recoverable originals.**
 
-Long agent sessions get expensive in a predictable way: bulky tool output (build logs, test runs, `grep` dumps, API responses) stays in the context and is paid for on every
-later turn. Tameru shortens that output to the part the task needs, keeps every distinct error, and hands back the original text whenever it is unsure:
+Tool output is the expensive part of a long agent session: a 600-line build log stays in context and gets paid for on every later turn.
+Tameru shortens that output to the part the task needs, keeps every distinct error, and hands back the original text whenever it is unsure.
 
-- **Shorten the bulk, keep the evidence.** An extract chosen against the question you are working on, not a blind head-and-tail cut. Every distinct error survives.
-- **No new bill.** No LLM call, no GPU, nothing beyond Python's standard library. The default engine is deterministic: about 3 ms for a typical input, the same answer every run.
-- **Fail open.** Ambiguous, malformed or low-saving input returns the exact original. Output that looks like a credential is never stored.
-- **Recoverable.** A cut can point to its original (optional, off when you want no persistence), so a host can let the agent read any stretch back.
-
-It is a Python function, a command-line tool and a transcript adapter. It has no dependency on any agent harness; harness plugins are separate repositories that vendor this
-engine unchanged (see [Integrations](#integrations)).
+- **Keep the evidence** — an extract chosen against your question, not a blind head-and-tail cut
+- **No model bill** — no LLM call, no GPU, nothing beyond Python's standard library; ~5 ms for a typical log
+- **Fail open** — ambiguous, malformed or low-saving input returns the exact original
+- **Recoverable** — a cut can point to its original (optional, off by default in plugins), so the agent can read any stretch back
 
 ![A terminal recording: tameru-compress turns a 200-line Gradle build log into 20 lines that keep the failing test, its assertion and the build result](assets/demo-cli.gif)
 
-*Recorded output of the real engine (rendered by [`scripts/render_demo_gif.py`](scripts/render_demo_gif.py) from what `compress_context` returns): 200 lines in, 20 out, 93% fewer tokens, and the failing test, its assertion and the build result are all still there.*
+*Real engine output: 200 lines in, 20 out, 93% fewer tokens — failing test, assertion and build result all intact.*
 
-[Why Tameru](#why-tameru) · [Use it](#use-it) · [Integrations](#integrations) · [Install](#install) · [Engine results](#engine-results) · [Recovery and limits](#recovery-and-limits) · [Documentation](#documentation)
+[Install](#install) · [Quick start](#quick-start) · [Benchmarks](#benchmarks) · [Integrations](#integrations) · [Docs](#documentation) · [Contributing](#contributing)
 
-## Why Tameru
+## Install
 
-| You want to… | Tameru gives you… |
-|---|---|
-| Stop re-paying for the same 600-line log on every turn | **Shortened tool output**: a query-aware extract that keeps every distinct error, with the original one call away. |
-| Trust that nothing important was thrown away | **Recoverable originals** and per-call diagnostics (tokens, savings, risk, verifier result) so you can see what was kept and what was dropped. |
-| Run it anywhere, offline | A pure-Python core with no model call, a CLI for any language, and a message-list adapter for any harness. |
-| Read logs, diffs, reports and tables the way they are written | Structure-aware handling: SARIF, notebooks, Kubernetes, Git, LCOV, JUnit, unified diffs, grep output, shell and OS tool output. |
-| Work in your language | Script-aware matching, tested across 20 script and language families, including Japanese, Chinese and Arabic. |
+Requires **Python 3.10+**. The engine itself has no dependencies beyond the standard library.
 
-Safety defaults: output that looks like a credential is never stored, and when the engine is unsure it returns the original text.
+```bash
+python -m venv .venv
+. .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@v1.10.0"
+```
 
-## Use it
+Not on PyPI yet — install from the release tag. To use Tameru inside an agent harness, install its [plugin](#integrations) instead; the plugin brings its own copy of the engine.
+
+## Quick start
 
 ### Python
 
 ```python
 from tameru.compress_context import compress_context
 
-archive = "\n\n".join(
-    f"Routine archive section {i}: ordinary status record with no relevant operational facts."
-    for i in range(30)
-)
-context = (
-    archive
-    + "\n\nProject Orion uses warehouse Cedar.\n\n"
-    + "Cedar routes writes through endpoint DB-EU-7.\n\n"
-    + archive
-)
-result = compress_context(
-    context,
-    "Which database endpoint does Project Orion use?",
-    ccr=False,
-    citations=False,
-)
-print(result.compressed_text)
-print(f"Estimated token savings: {result.tokens_saved_pct:.1f}%")
+result = compress_context(build_log_text, "Why did the build fail?")
+print(result.compressed_text)          # the extract
+print(f"{result.tokens_saved_pct:.0f}% fewer tokens")
+print(result.receipt["verifier"])      # what the evidence check found
 ```
 
-Supply the task's question alongside the source text. The example uses the default extractive strategy and disables recovery persistence: 5,342 characters in, 266 out
-(95.0% fewer tokens), with the two linking facts (**Project Orion → warehouse Cedar → endpoint DB-EU-7**) intact. [API options and receipts →](docs/USAGE.md)
+Pass the task's question along with the text. Ambiguous input, malformed data or thin savings return the original unchanged — you always get usable output. [Full API →](docs/USAGE.md)
 
 ### Command line
 
-`tameru-compress` is installed with the package and works from any language or shell:
-
 ```bash
-tameru-compress build.log "Why did the build fail?" --no-ccr
-tameru-compress build.log "Why did the build fail?" --no-ccr --stats    # JSON diagnostics, then ---, then the extract
-cat build.log | tameru-compress - "Find the active error" --no-ccr        # read stdin
-tameru-compress notes.md "What is the backup host?" --mode fixed --budget-ratio 0.3 --no-ccr   # ask for a smaller extract
+tameru-compress build.log "Why did the build fail?"
+tameru-compress build.log "Why did the build fail?" --stats   # JSON diagnostics, then ---, then extract
+cat build.log | tameru-compress - "Find the active error"
 ```
 
-| Option | What it does |
-|---|---|
-| `--no-ccr` / `--ccr` | Turn the reversible recovery store off or on (on by default). |
-| `--citations` / `--no-citations` | Mark dropped blocks with a citation (on by default). |
-| `--stats` | Print JSON diagnostics (tokens, savings, risk, verifier), then `---`, then the extract. |
-| `--mode {adaptive,fixed,compiler,precision}` and `--budget-ratio R` | Ask for a smaller extract; lower ratios request less text. |
-| `--strategy {clear,extract,summarise,auto}` | `extract` (default, no model), `clear` (drop tool payloads), `auto` (extract, escalate only if extraction fails open). |
-| `--pin-recent N` | Always keep the first block and the newest N blocks. |
-| `--min-savings-ratio R` | Return the original when the achieved savings fall below this ratio (0 disables). |
-| `--derive-query` | On an empty or generic query, infer a conservative objective from recurring rare terms instead of failing open. |
+Key options: `--mode fixed --budget-ratio 0.3` (smaller extract) · `--strategy extract|clear|auto` · `--pin-recent N` · `--min-savings-ratio R` · `--no-ccr` (disable the recovery store) · `--derive-query`.
 
 ### Message lists
 
-For an OpenAI-style transcript, the generic adapter prunes old tool results in place and leaves everything else alone. The [integration guide](docs/INTEGRATION.md) covers
-message lists, task-derived queries and keeping vendored copies current.
+For an OpenAI-style transcript, `tameru.transcript.apply_extractive_tool_prune` prunes old tool results in place and leaves everything else alone. See the [integration guide](docs/INTEGRATION.md).
 
-## Integrations
+## Benchmarks
 
-The engine is the same everywhere. A harness plugin adds what is specific to that harness: when to act, how to show it, where to keep state. Each plugin lives in its own
-repository and vendors this engine unchanged.
+### vs other compressors
 
-| Harness | Plugin | State | What it adds |
-|---|---|---|---|
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | Released, **1.9.1**, listed in the Hermes plugin catalogue | Adaptive policy and self-tuning, pinned instructions, Keep and Restore, the Artifact Trail, a Desktop panel and `/tameru` commands |
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `dsh-tameru` (new) | In development, not released | Planned: the same functions on the Harness's own extension points |
-
-Each plugin has its own version, independent of this engine's. The plugin README is the place for that harness's install steps, commands, screenshots and cost
-measurements, which are measured against that harness's own stock behaviour and do not carry over to another harness. To integrate Tameru with another harness, see
-[Writing a harness plugin](docs/INTEGRATION.md#4-writing-a-harness-plugin) and the [repository guide](docs/REPOSITORIES.md).
-
-## Install
-
-Requires **Python 3.10+**.
-
-Install the **1.10.0** source, pinned to its commit (Git is required):
-
-```bash
-python -m venv .venv
-. .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
-python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@66c2668bf5cf3153596774ea6cbc41f6da1c38f3"
-```
-
-That commit declares version 1.10.0 on the `v1.10.0` **branch**, which is the repository's default branch. No `v1.10.0` tag exists yet and the package is not available on PyPI. The commit pin above does not depend on a tag or a PyPI release.
-
-To use Tameru inside a harness, install that harness's plugin from the [Integrations](#integrations) table instead; it brings its own copy of the engine, so updating the plugin
-updates the engine.
-
-## Engine results
-
-### New in 1.10.0
-
-Log and stack-trace folding now runs even for generic or tool-call-shaped questions. Rare assignment facts and error exemplars get additional protection; confidence reports its basis and results report dropped facts. Content-digest caches bound retained analysis memory, and inputs over 2 million characters use a bounded sample rather than full analysis.
-
-Hosts can share versioned presets, the `decide()` acceptance helper and protocol v3 schemas. A pure planner and price/loss helpers are available, but no host adoption or live billing benefit is claimed. See the [1.10.0 results and limitations](docs/RESULTS-1.10.0.md), [API controls](docs/USAGE.md#1100-results-and-bounded-analysis) and [integration contracts](docs/INTEGRATION.md#1100-host-contracts).
-
-The comparisons below remain **historical 1.9.0 measurements**, not a new 1.10.0 run.
-
-<!-- tameru:headline:start -->
-
-| Mean characters saved | Required strings retained | Forbidden strings retained | Median wall time |
-|:---:|:---:|:---:|:---:|
-| **82.4%** | **25/25** | **0** | **3.05 ms** |
-
-Measured on Tameru **1.9.0** on **16 shared task cases**, 2026-11-11 (Windows 11, Python 3.13, CPU only). These are source-evidence checks on Tameru's regression corpus; agent answer accuracy and model-token costs are outside this evaluation.
-
-<!-- tameru:headline:end -->
-
-<!-- tameru:comparison:start -->
-
-**Same input. Same query. Same 16 tasks**, covering documents, configuration, Git/npm/YAML output, multilingual text, saturated grep, captured pytest and numbered-source cases (Windows 11, Python 3.13, 1 warmup and 5 timed calls per case):
+**Same input, same query, same 16 tasks** — documents, configuration, Git/npm/YAML output, Japanese/Chinese/Arabic text, saturated grep, captured pytest, numbered source reads. Measured 2026-11-22 on Tameru **1.10.0** (Windows 11, Python 3.13, CPU only, 1 warmup + 2 timed calls per case):
 
 | Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ |
 |---|---:|---:|---:|---:|---:|
-| **Tameru v1.9.0** | 25/25 | 0 | 16/16 | 82.4% | 3.05 ms |
-| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.10 ms |
+| **Tameru v1.10.0** | **25/25** | **0** | **16/16** | **80.2%** | 5.05 ms |
+| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.11 ms |
+| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.38 ms |
+| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.38 ms |
+| LCC → Laya (RTX 4080, CUDA) | 25/25 | 5 | 11/16 | 8.0% | 61.8 ms |
 
-**A clean case keeps every required string and excludes every planted forbidden string.** Savings are the arithmetic mean per case; wall time is the median of per-case medians.
-Third-party methods (LCC, Headroom, Laya) were measured on an earlier release, have not been re-run for 1.9.0, and are reported separately in the [full comparison](benchmarks/COMPARISON.md).
-
-[Complete comparison and per-task results →](benchmarks/COMPARISON.md) · [1.9.0 run, raw →](benchmarks/comparison-v1.9.0.json)
+A **clean case** keeps every required string and excludes every planted forbidden string. Tameru is the only method here that leaked nothing and kept everything — and the only one that is a pure function of its input. Full per-task table, environment pins and every timing sample: [COMPARISON.md](benchmarks/COMPARISON.md).
 
 <details>
-<summary><strong>Evaluation details: corpus, methods, timing and limits</strong></summary>
+<summary><strong>Methodology and limits</strong></summary>
 
-**Corpus.** All scored methods see identical text and task queries. The 16 cases include 25 required source strings plus planted stale, excluded or distracting strings. The large synthetic performance case and empty-query case belong to the separate release QA battery.
-
-**Metrics.** Required strings must survive every output; a forbidden string in any output counts as a leak. Character savings measure text length, rather than model tokens or monetary cost. These checks cover specified fixture evidence and do not measure downstream agent answers or every possible semantic loss.
-
-**Methods.** Tameru uses default extraction with `ccr=False`, `citations=True`. TF-IDF is a simple paragraph-retrieval baseline.
-
-**Timing.** One untimed warmup and 5 timed complete calls per case. Parsing, scoring and rendering are inside the timer; imports are outside it. Hardware and scheduling affect latency. Tameru remembers analyses of repeated identical text, so this repeat-timing protocol flatters it.
-
-**Runtime and provenance.** Python 3.13.17 on Windows 11 (AMD64, 16 logical CPUs), engine commit `cab2edc`; package versions and every timing sample are in `benchmarks/comparison-v1.9.0.json`.
-
-**Interpretation.** This is Tameru's own regression corpus, including adversarial fixtures. Broader independent and live-agent evaluations are still needed to establish generality.
+This is Tameru's own regression corpus, including deliberately adversarial fixtures — not an independent evaluation. String retention cannot catch every semantic loss, and extractive output has a source-line size floor. Repeat timing favours Tameru's analysis memoisation. Measure your own workload before choosing a budget.
 
 </details>
 
-<!-- tameru:comparison:end -->
+### vs Tameru 1.9.0 (sealed holdout)
 
-### Where the engine helps
+94 unseen cases paired against engine 1.9.0 — cluster bootstrap, one sealed look ([full results →](docs/RESULTS-1.10.0.md)):
 
-| Your agent is reading… | Tameru focuses on… |
-|---|---|
-| Pages of logs around a failure | Error fingerprints, relevant messages, hosts and ports |
-| Search results repeating the same name | Matching definitions and assignments, distinct matches and file context |
-| A failed test with long captured output | The failure, recognised errors, warning-or-higher lines and section boundaries |
-| Configuration containing an old value and a later override | The current value and its qualifier when supersession is explicit |
-| A document with an answer spread across sections | Related entities and the source facts linking them |
-| Git history, JSON, CSV or YAML dumps | Relevant records with enough structure to interpret them |
+| Question type | Saved, 1.10.0 | vs 1.9.0 | Evidence kept |
+|---|---:|---:|---:|
+| Generic | 76.9–80.2% | +13.7 to +63.7 pts | 98.9–100% |
+| Tool-call-shaped | 76.6–76.7% | +11.2 to +17.0 pts | 99.5% |
+| Task | 86.0–86.6% | +6.5 to +21.7 pts | 98.9–100% |
 
-<details>
-<summary><strong>Formats and languages</strong></summary>
+Fallback-to-original rate dropped from 83% to 13.8% on the generic question. Stack traces: 84–89% saved with all evidence kept.
 
-| Input | Handling |
-|---|---|
-| Terminal and build logs | ANSI handling, repeated-template reduction, structured (logfmt/JSON) levels, error exemplars and last-occurrence retention |
-| Numbered source reads | `cat -n` and common `read_file` gutters; code stays recognisable |
-| Unified diffs and grep/rg | Hunk or file grouping, query matches, headers and saturated-query selection |
-| Pytest (incl. quiet mode), Jest, Go, Cargo, Gradle, RSpec, PHPUnit, dotnet test, Maven Surefire | Failure evidence and summaries, with conservative handling of unknown surrounding lines |
-| kubectl output | `describe`, `get events`, `get pods`, `top` and `rollout status` reducers; events collapsed and only abnormal node Conditions kept |
-| Linux, macOS and Windows tool output | syslog/journal/dmesg, macOS unified log, `ps aux`, `top`, `vmstat`, `df`, `ping`, `traceroute`, `netstat`, `nmap`, `ipconfig /all`, `systeminfo`, PowerShell tables and error records, msiexec logs and `sysctl`/`pg_settings` listings: normal rows fold, outliers and failures stay |
-| Build, package and container tools | Docker build, `docker ps`/`docker compose ps`, Terraform plans, Ansible, CMake, cargo, bundlers, pip/npm/yarn/composer installs, `npm ls`, `npm audit`, `pip freeze`, `apt`, lint and type checkers |
-| Service logs | nginx, Apache, Redis, PHP, MySQL slow query, HAProxy, klog, web access logs and logfmt |
-| Structured reports | SARIF findings, notebook cells, Kubernetes identity and status, whole Git log entries and patches, LCOV records, JUnit testcases: selected records keep their raw byte spans |
-| JSON/NDJSON and CSV/TSV | Query-aware records, quote-aware framing, headers, and summaries (one example, unusual and matching records, a count) for large arrays, JSON Lines and tables |
-| Markdown | Heading ancestry, fenced-code protection and outlier rows for large pipe tables |
-| YAML, XML/HTML, SQL, INI/TOML-style sections | Conservative format-specific selection; ambiguous shapes can decline specialised reduction |
-| Text extracted from OCR or vertical layouts | Matching in logical source order; text extraction happens upstream |
+### Latency (1.10.0, p50 across all profiles)
 
-Script-aware matching has regression coverage across **20 script/language families**, including Japanese, Chinese and Arabic release cases. Matching uses a normalised shadow while extracts retain the source text. Accented query words stay whole, question words and generic asks count as filler in 20 languages besides English, and the opt-in no-query `prose_brief` splits sentences in Latin scripts, CJK, Thai, Devanagari and Arabic so templated repeats can fold. Coverage varies by language and task; Tameru accepts text and relies on upstream tools for OCR.
+| Input size | Median | Worst case |
+|---|---:|---:|
+| 6–20K chars | 40 ms | 54 ms |
+| 50K | 114 ms | 139 ms |
+| 200K | 367 ms | 436 ms |
+| 2M | 211 ms | 535 ms |
+| 4M | 4.1 s | 9.3 s (bounded sample) |
 
-</details>
+## How it works
 
-### Release QA battery
+1. **Size guard** — over 8M chars returns the original; over 2M analyses a bounded sample
+2. **Format adapters** — logs, diffs, test output, kubectl, JSON/CSV, SARIF and ~30 more shapes get structure-aware handling; unknown shapes fall back to generic scoring
+3. **Query-aware scoring** — each block is scored against the question plus structural signals (errors, fingerprints, assignments)
+4. **Extract + verify** — the extract is checked for dropped evidence before it ships; credentials never reach the recovery store
+5. **Receipt + recovery** — per-call diagnostics (tokens, savings, verifier result) and an optional pointer to the stored original
 
-The separate **15-case release QA battery passes every case** on v1.9.0. All required answer strings survive, and no planted forbidden strings leak. These figures use **estimated tokens**, whereas the comparison above measures **characters**.
+Deterministic: same input, same output, every run.
 
-| Workload | Evidence checked | Estimated token savings |
-|---|---|---:|
-| **Documents and configuration** | | |
-| Lexical distractor | Required backup host; distracting glossary excluded | **96.7%** |
-| Multi-hop document | Endpoint linked through its warehouse | **95.0%** |
-| Release evidence chain | Release alias, deployment identifier and checksum | **95.6%** |
-| Current configuration | New timeout; explicitly superseded value excluded | **90.1%** |
-| Negation and override | “Not enabled”; obsolete enabled state excluded | **92.5%** |
-| Ambiguous configuration | Required value retained without an explicit supersession marker | **88.4%** |
-| Excluded sample | Operational host; excluded example absent | **87.3%** |
-| YAML configuration | Distro and language; excluded dependency absent | **76.0%** |
-| **Agent tool outputs** | | |
-| Git history | Required commit hash | **94.0%** |
-| npm log | Requested Playwright version | **31.0%** |
-| **Multilingual text** | | |
-| Japanese document | Required layer count | **46.8%** |
-| Chinese needle case | Required backup host | **90.9%** |
-| Arabic needle case | Required backup host | **88.6%** |
-| **Robustness** | | |
-| Large synthetic document | Savings, repeatability and timing; no answer-string check | **99.9%** |
-| Empty query | Original input returned | **0.0%** |
+## Integrations
 
-The 4,000-record synthetic document completed in about **140 ms wall time** (the gate is 1,200 ms). Its maximum saving is specific to that input. Token counts use Tameru's estimator; savings with a model's own tokenizer will vary. [Full release results →](benchmarks/production-qa-v3-results.json)
+The engine is harness-agnostic. Each plugin lives in its own repository and vendors this engine unchanged — plugin cost measurements are taken against that harness's stock behaviour.
 
-### Choose a context budget
+| Harness | Plugin | Status |
+|---|---|---|
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | **v1.9.1** released · engine-1.10.0 update on `feat/engine-1.10.0` |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | [dsh-tameru-plugin](https://github.com/0xWhiteMage/dsh-tameru-plugin) | v0.2.0, in development (Beta) |
 
-Use `mode="fixed"` and `budget_ratio` to request a smaller extract. Lower ratios request a smaller budget for compressible content; pinned evidence can exceed that budget.
+Writing your own: [harness plugin guide](docs/INTEGRATION.md#4-writing-a-harness-plugin) · [what each repo owns](docs/REPOSITORIES.md).
 
-| `budget_ratio` | Mean character savings | Clean release cases |
-|---:|---:|---:|
-| 0.1 | **77.8%** | 15/15 |
-| 0.2 | **69.9%** | 15/15 |
-| 0.3 | **61.9%** | 15/15 |
-| 0.5 | **41.7%** | 15/15 |
-| 0.7 | **24.8%** | 15/15 |
+## Limits
 
-Every operating point retained all required strings with no forbidden leaks in this corpus. Validate the evidence your own tasks need before choosing a ratio. [Replay the sweep →](benchmarks/threshold_sweep.py)
-
-## Recovery and limits
-
-**Recovery is optional.** The standalone API defaults to `ccr=True`; a successful store write can attach a pointer to the original context. Retrieval needs valid, unexpired records and a host that can follow that pointer. Set `ccr=False` when you do not want persistence or your host has no retrieval path.
-
-**Evidence retention is task-dependent.** Extraction can miss relationships with no shared terms, and source lines impose a minimum output size. Weak queries, malformed input or insufficient savings can return the original text. Required-string checks measure fixture evidence, rather than an agent's final-answer accuracy.
-
-<details>
-<summary><strong>Storage, credentials and optional model paths</strong></summary>
-
-Credential screening is heuristic. It gates recovery-cache writes; by default it does not redact returned text or encrypt the cache. Opt-in `redact_secrets=True` redacts recognised credentials only in successful extracts, never in a fail-open original. A citation alone does not establish that an original was successfully stored.
-
-The default `strategy="extract"` makes no LLM call. Optional `summarise`/`auto` strategies and semantic-model paths have separate dependencies and inference behaviour. Default extraction adds no LLM inference charge; local CPU work still consumes resources.
-
-The [usage guide](docs/USAGE.md) explains budgets, recovery, receipts, host markers, optional models and known limits.
-
-</details>
-
-## Reproduce the checks
-
-```bash
-python -m pip install -e '.[dev]'
-python -m pytest -q --ignore-glob='*test_engine_bench*.py' --ignore=tests/test_session_corpus.py --ignore=tests/test_s5_diagnose.py --ignore=tests/test_determinism.py
-python benchmarks/run_battery.py
-python benchmarks/threshold_sweep.py
-```
-
-Historical 1.9.0 verification (2026-11-11): **2,016 tests passed / 4 skipped** (plus 146 subtests), **15/15 release QA cases**, and the comparison run reproducing its recorded output with **0 differing fields** over the 16 cases. Timing tests depend on hardware; the battery rewrites its JSON with your local timings. The test command above excludes engine-benchmark and corpus/diagnosis tests; it does not reproduce that historical test count. Do not rebuild or run the sealed engine split or corpus holdout for routine checks.
-
-`compare.py --verify-against` exits non-zero if any output hash, saving or retention result differs; timings are not compared. The 1.9.0 record is not an equality target for 1.10.0, whose outputs changed. `--render-from` regenerates figures from a completed report of the same engine version. The [comparison report](benchmarks/COMPARISON.md#reproduce) lists the pins and commands for the third-party methods.
+- **Extraction, not summarisation.** The default strategy never calls a model — it selects source lines. Optional `summarise`/`auto` paths exist but are opt-in and use your configured endpoint.
+- **Evidence retention is task-dependent.** Extraction can miss relationships that share no terms; weak queries and thin savings return the original.
+- **Credential screening is heuristic.** It gates recovery-store writes and opt-in redaction — it is not a DLP product.
+- **Replay numbers, not bills.** Benchmarks measure characters/tokens and wall time on recorded inputs; whole-session cost and answer quality are measured in the plugin repos, and no live-model claim is made here.
 
 ## Documentation
 
-| Start here | Find out how to… |
+| I want to… | Go to |
 |---|---|
-| [Integrations](#integrations) | Find the plugin for your harness: install steps, commands, screenshots and cost measurements live in each plugin's own README |
-| [Usage and API](docs/USAGE.md) | Set budgets, inspect receipts, configure recovery and use advanced controls |
-| [Contributing](CONTRIBUTING.md) | Set up, run the checks, and open a pull request; how contributors are credited |
-| [Plugin interface](docs/PLUGIN-UI.md) | The bar, icons and words every Tameru plugin shares, with the shared string and drawing files |
-| [Host restrictions](docs/HOST-RESTRICTIONS.md) | The rules harness maintainers have taught us a plugin must follow, and how they are checked |
-| [Repositories](docs/REPOSITORIES.md) | See what this engine repository owns and what each harness plugin repository owns |
-| [Agent integration](docs/INTEGRATION.md) | Apply compaction in a host framework, write a harness plugin and keep vendored copies current |
-| [Comparisons](benchmarks/COMPARISON.md) | Inspect every task, provider setting, timing sample and measurement limitation |
-| [1.10.0 results](docs/RESULTS-1.10.0.md) and [changelog](CHANGELOG.md) | Review the current engine's results, limitations and version history |
-| [Red-team findings](benchmarks/redteam/FINDINGS-1.9.0.md) | Read what 228 adversarial cases found and what was fixed ([notes](benchmarks/redteam/NOTES-1.9.0.md)) |
-| [Architecture](docs/ARCHITECTURE.md) | Understand the format adapters, Unicode handling and bounded-work limits |
-| [Research digest](docs/RESEARCH.md) | Follow the research and ecosystem work behind the project |
+| Use the API, budgets, receipts, recovery | [docs/USAGE.md](docs/USAGE.md) |
+| Integrate with a harness / write a plugin | [docs/INTEGRATION.md](docs/INTEGRATION.md) |
+| See every benchmark measurement | [benchmarks/COMPARISON.md](benchmarks/COMPARISON.md) |
+| Read the full 1.10.0 results & limits | [docs/RESULTS-1.10.0.md](docs/RESULTS-1.10.0.md) |
+| Understand the architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Know the plugin safety rules | [docs/HOST-RESTRICTIONS.md](docs/HOST-RESTRICTIONS.md) |
+| See what's new | [CHANGELOG.md](CHANGELOG.md) |
+
+## Reproduce
+
+```bash
+python -m pip install -e '.[dev]'
+python -m pytest -q          # 3,032 tests
+python scripts/check_host_rules.py
+python benchmarks/run_battery.py
+python benchmarks/compare.py # re-run the comparison table (see COMPARISON.md for third-party pins)
+```
 
 ## Contributing
 
-Contributions are welcome: bug reports with a small failing input, fixes, new tool-output formats with real samples, and documentation. Start with [CONTRIBUTING.md](CONTRIBUTING.md). Because the engine runs inside other people's agent harnesses, every pull request must also respect the [known host restrictions](docs/HOST-RESTRICTIONS.md) (no network, no unrequested writes, no credentials, standard library only), which CI checks. Contributors are credited by their GitHub profile; see [`contributors/`](contributors/README.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Bug reports with a small failing input, fixes, new tool-output formats with real samples, and documentation are all welcome — start with [CONTRIBUTING.md](CONTRIBUTING.md). The engine runs inside other people's harnesses, so pull requests must respect the [host restrictions](docs/HOST-RESTRICTIONS.md), which CI checks. Report security problems privately via [SECURITY.md](SECURITY.md); reporters are credited in the changelog.
 
-## Credits and support
+## Credits
 
-Built by **The White Mage**. Tameru (ためる) means “to store up”. Research and ecosystem acknowledgements, including LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery, are recorded in the [research digest](docs/RESEARCH.md) and [changelog](CHANGELOG.md).
+Built by thewhitemage. *Tameru* (ためる) means "to store up". Research acknowledgements — LCC/JEV, Headroom, SelfCompact, PAACE, TPC, Compactor and ARC-style recovery — are in [docs/RESEARCH.md](docs/RESEARCH.md).
 
-[Follow on X](https://x.com/0xWhiteMage) · [Support on Ko-fi](https://ko-fi.com/0xwhitemage) · [Report an issue](https://github.com/0xWhiteMage/tameru-compaction-system/issues) · [Contribute](CONTRIBUTING.md)
-
-Released under the [Apache License 2.0](LICENSE).
+[Follow on X](https://x.com/0xWhiteMage) · [Ko-fi](https://ko-fi.com/0xwhitemage) · [Issues](https://github.com/0xWhiteMage/tameru-compaction-system/issues) · [Apache-2.0](LICENSE)

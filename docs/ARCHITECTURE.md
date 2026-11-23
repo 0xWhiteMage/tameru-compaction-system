@@ -101,7 +101,7 @@ On the normal, unsampled path, the original caller text remains the CCR source a
 
 ## 6a. Interface layer (1.10.0)
 
-Additive modules let a host keep its acceptance rule, option set and worker schema as data instead of code. These helpers do not themselves change extraction. The full 1.10.0 release also changes extraction and result metadata; its golden record was regenerated (see the historical [build notes](1.10.0-BUILD-NOTES.md#golden-regeneration-review-1100-done-once-after-steps-2a-and-2b)).
+Additive modules let a host keep its acceptance rule, option set and worker schema as data instead of code. These helpers do not themselves change extraction. The full 1.10.0 release also changes extraction and result metadata; its golden record was regenerated.
 
 - `decide.py`: `decide(result, policy)` returns `Decision(accept, reason, basis)` with the closed reasons `fail_open`, `sanitized`,
   `risk`, `lost_fingerprint`, `no_gain`, `low_confidence`, `not_enough_tokens`, `negative_ev`, `ok`. `HERMES_POLICY` and

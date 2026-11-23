@@ -1,17 +1,17 @@
-# Tameru v1.6.0 — current comparisons
+# Tameru v1.10.0 — current comparisons
 
-Freshly measured on **2026-11-05**, using **Tameru v1.6.0** and the same **16 task cases** for every scored method. The corpus includes evidence chains, stale configuration, Git/YAML/npm output, Japanese/Chinese/Arabic text, saturated grep, captured pytest logs with blank lines and numbered source reads.
+Freshly measured on **2026-11-23**, using **Tameru v1.10.0** and the same **16 task cases** for every scored method. The corpus includes evidence chains, stale configuration, Git/YAML/npm output, Japanese/Chinese/Arabic text, saturated grep, captured pytest logs with blank lines and numbered source reads.
 
 | Method | Required strings kept | Forbidden strings ↓ | Clean cases | Mean chars saved ↑ | Median wall time ↓ | Repeat output identical |
 |---|---:|---:|---:|---:|---:|---|
-| **Tameru v1.6.0** | 25/25 | 0 | 16/16 | 82.4% | 2.79 ms | Yes |
-| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 3.92 ms | Yes |
-| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.36 ms | Yes |
-| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.09 ms | Yes |
-| LCC → Laya (CPU) | 25/25 | 5 | 11/16 | 8.0% | 2,839.60 ms | Yes |
+| **Tameru v1.10.0** | 25/25 | 0 | 16/16 | 80.2% | 5.05 ms | Yes |
+| LCC mechanical | 25/25 | 5 | 11/16 | 36.3% | 6.38 ms | Yes |
+| Headroom TextCrusher | 21/25 | 4 | 9/16 | 50.5% | 0.38 ms | Yes |
+| TF-IDF paragraph baseline | 22/25 | 5 | 9/16 | 53.4% | 0.11 ms | Yes |
+| LCC → Laya | 25/25 | 5 | 11/16 | 8.0% | 61.78 ms | Yes |
 | LCC → JEV — unmeasured | — | — | — | — | — | — |
 
-All numeric cells are new measurements from this run. The earlier v1.2.0 holdout and v1.3.0 comparison have been retired from active documentation; their original records remain in Git history. No older score is relabelled as v1.6.0.
+All numeric cells are new measurements from this run. The earlier v1.2.0 holdout and v1.3.0 comparison have been retired from active documentation; their original records remain in Git history. No older score is relabelled as v1.10.0.
 
 ## What the measurements mean
 
@@ -26,7 +26,7 @@ The 4,000-record synthetic performance case and empty-query fail-open case are o
 
 ## Per-case character savings
 
-| Case | **Tameru v1.6.0** | LCC mechanical | Headroom TextCrusher | TF-IDF paragraph baseline | LCC → Laya (CPU) |
+| Case | **Tameru v1.10.0** | LCC mechanical | Headroom TextCrusher | TF-IDF paragraph baseline | LCC → Laya |
 |---|---:|---:|---:|---:|---:|
 | lexical_distractor | 96.8% ✓ | 96.6% ‡ | 50.5% ‡ | 95.7% †‡ | 0.0% ‡ |
 | multi_hop_chain | 95.0% ✓ | 98.4% ✓ | 49.8% ✓ | 96.8% ✓ | 6.5% ✓ |
@@ -34,29 +34,29 @@ The 4,000-record synthetic performance case and empty-query fail-open case are o
 | negation_override | 92.5% ✓ | 94.8% ‡ | 48.1% ‡ | 90.2% ‡ | 18.9% ‡ |
 | no_marker_keeps_both | 89.4% ✓ | 94.4% ✓ | 47.8% ✓ | 89.7% ✓ | 84.8% ✓ |
 | evidence_chain_holdout | 95.9% ✓ | 98.4% ✓ | 49.8% ✓ | 97.8% ✓ | 0.0% ✓ |
-| git_log | 93.9% ✓ | 0.0% ✓ | 49.9% † | 0.0% ✓ | 0.0% ✓ |
-| npm_log | 30.5% ✓ | 0.0% ✓ | 48.8% ✓ | 0.0% ✓ | 0.0% ✓ |
-| jp_musubi | 27.3% ✓ | 5.6% ✓ | 49.8% ✓ | 42.6% ✓ | 0.0% ✓ |
+| git_log | 87.3% ✓ | 0.0% ✓ | 49.9% † | 0.0% ✓ | 0.0% ✓ |
+| npm_log | 28.1% ✓ | 0.0% ✓ | 48.8% ✓ | 0.0% ✓ | 0.0% ✓ |
+| jp_musubi | 31.6% ✓ | 5.6% ✓ | 49.8% ✓ | 42.6% ✓ | 0.0% ✓ |
 | zh_needle | 89.3% ✓ | 0.0% ✓ | 48.1% ✓ | 95.7% † | 0.0% ✓ |
 | ar_needle | 89.0% ✓ | 0.0% ✓ | 47.4% ✓ | 95.5% † | 0.0% ✓ |
-| travis_yaml | 76.8% ✓ | 0.0% ‡ | 56.2% † | 61.1% ‡ | 0.0% ‡ |
+| travis_yaml | 47.9% ✓ | 0.0% ‡ | 56.2% † | 61.1% ‡ | 0.0% ‡ |
 | excluded_sample | 87.6% ✓ | 0.0% ‡ | 47.1% ‡ | 0.0% ‡ | 0.0% ‡ |
 | grep_saturated_command | 79.8% ✓ | 0.0% ✓ | 68.0% ✓ | 0.0% ✓ | 0.0% ✓ |
-| pytest_captured_blank_lines | 84.6% ✓ | 0.0% ✓ | 49.0% † | 0.0% ✓ | 0.0% ✓ |
+| pytest_captured_blank_lines | 83.0% ✓ | 0.0% ✓ | 49.0% † | 0.0% ✓ | 0.0% ✓ |
 | numbered_source | 98.5% ✓ | 0.0% ✓ | 50.2% ✓ | 0.0% ✓ | 0.0% ✓ |
 
 ✓ all required strings retained, no forbidden leaks; † required evidence lost; ‡ forbidden evidence retained. Savings alone do not establish success.
 
 ## Versions and settings
 
-- Tameru **1.6.0**, source commit `fa988eb1153d55bd5c23ecdd3e30ea9e5526dbe6`; default extraction, `ccr=False`, `citations=True`.
+- Tameru **1.10.0**, source commit `d37fd43811615beb6a39617cc56679924ee67413`; default extraction, `ccr=False`, `citations=True`.
 - LCC **1.0.0**, source `16f0ddf2b136154e5c80301237d3c860df42baac`; requested provider, `marker=False`, `max_workers=1`, remaining compaction options at defaults. A fallback is a failed provider measurement and receives no summary score.
 - Headroom **0.40.0**, Rust `TextCrusher` at defaults. The full router, other compressors and recovery store are not exercised.
 - TF-IDF: this runner's ASCII-term paragraph retrieval, original order and first paragraph retained. It is a deliberately simple baseline.
-- Laya **0.4.4**, source `682ac6719faa5b1c04b529501feb93e58ee91f3d`, model `convaiinnovations/laya-multilingual` at `1720e3e3357cfe1e281542e223f8273b0890ca34`, CPU. LCC's model settings remain at defaults.
-- Runtime: Python **3.12.16**, `x86_64`, Intel(R) Xeon(R) Processor; CPU quota `not recorded`, thread settings `{'OMP_NUM_THREADS': '8', 'MKL_NUM_THREADS': '8', 'RAYON_NUM_THREADS': '8'}`. Hardware and scheduling affect latency.
+- Laya **0.4.4**, source `682ac6719faa5b1c04b529501feb93e58ee91f3d`, model `convaiinnovations/laya-multilingual` at `1720e3e3357cfe1e281542e223f8273b0890ca34`, device `cuda`. LCC's model settings remain at defaults.
+- Runtime: Python **3.13.17**, `AMD64`, CPU model unavailable; CPU quota `not recorded`, thread settings `{'OMP_NUM_THREADS': None, 'MKL_NUM_THREADS': None, 'RAYON_NUM_THREADS': None}`. Hardware and scheduling affect latency.
 
-The [raw JSON](comparison-v1.6.0.json) records the corpus and input hashes, runner hash, source pins, package versions, output hashes, missing/leaked strings and individual timing samples.
+The [raw JSON](comparison-v1.10.0.json) records the corpus and input hashes, runner hash, source pins, package versions, output hashes, missing/leaked strings and individual timing samples.
 
 Documentation and chart rendering can change after a measurement run. Recorded runner hashes identify the code used for those measurements, rather than necessarily matching the current documentation renderer.
 
@@ -70,7 +70,7 @@ The old BM25/vector-RAG, LLM-summary and LCM table did not include sufficient im
 
 ## Reproduce
 
-Install the engine's dev extra, Headroom 0.40.0 and the recorded LCC/Laya source pins in an isolated environment. Laya additionally needs CPU PyTorch, its runtime dependencies and the pinned public checkpoint. Full installed package versions are in the JSON.
+Install the engine's dev extra, Headroom 0.40.0 and the recorded LCC/Laya source pins in an isolated environment. Laya additionally needs PyTorch (CPU or CUDA matching `--laya-device`), its runtime dependencies and the pinned public checkpoint. Full installed package versions are in the JSON.
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -79,10 +79,11 @@ python -m pip install "git+https://github.com/lucasmartins-ai/lcc.git@16f0ddf2b1
 python -m pip install "git+https://github.com/NandhaKishorM/laya.git@682ac6719faa5b1c04b529501feb93e58ee91f3d"
 OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 RAYON_NUM_THREADS=8 USE_TF=0 \
   python benchmarks/compare.py --laya-revision 1720e3e3357cfe1e281542e223f8273b0890ca34 \
+  --laya-device cuda \
   --lcc-source-sha 16f0ddf2b136154e5c80301237d3c860df42baac \
   --laya-source-sha 682ac6719faa5b1c04b529501feb93e58ee91f3d
-python benchmarks/compare.py --verify-against benchmarks/comparison-v1.6.0.json
-python benchmarks/compare.py --render-from benchmarks/comparison-v1.6.0.json
+python benchmarks/compare.py --verify-against benchmarks/comparison-v1.10.0.json
+python benchmarks/compare.py --render-from benchmarks/comparison-v1.10.0.json
 ```
 
 The default command excludes paid JEV calls. Add `--include-jev` only when you have configured `TYPESAFE_API_KEY` and intend to run that provider. `--verify-against` re-runs only the Tameru arm and exits non-zero if any output hash, saving or retention result differs from the record (timings excluded). `--render-from` regenerates this page, the README headline/comparison blocks and the theme-aware SVG chart from the JSON. It preserves the rest of the README.

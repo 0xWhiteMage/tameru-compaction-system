@@ -40,7 +40,7 @@ Runner = Callable[[dict], tuple[str, dict]]
 LABELS = {
     "tameru": f"**Tameru v{__version__}**", "lcc-mech": "LCC mechanical",
     "headroom": "Headroom TextCrusher", "tfidf": "TF-IDF paragraph baseline",
-    "lcc-laya": "LCC → Laya (CPU)", "lcc-jev": "LCC → JEV",
+    "lcc-laya": "LCC → Laya", "lcc-jev": "LCC → JEV",
 }
 
 
@@ -165,6 +165,10 @@ def make_runner(arm: str, args: argparse.Namespace) -> Runner:
         import laya  # noqa: F401
         if not args.laya_revision:
             raise RuntimeError("Laya requires --laya-revision for a recorded model pin")
+        if args.laya_device.startswith("cuda"):
+            import torch  # noqa: F401
+            if not torch.cuda.is_available():
+                raise RuntimeError("--laya-device cuda requested but CUDA is not available")
         os.environ["LAYA_REVISION"] = args.laya_revision
     from lcc.relevance.compactor import RelevanceCompactionRequest, compact_context
     provider = {"lcc-mech": "mechanical", "lcc-laya": "laya", "lcc-jev": "jev"}[arm]
@@ -172,7 +176,7 @@ def make_runner(arm: str, args: argparse.Namespace) -> Runner:
     def lcc(case):
         request = RelevanceCompactionRequest(
             text=case["ctx"], question=case["q"], provider=provider,
-            marker=False, max_workers=1, laya_model=MODEL, laya_device="cpu",
+            marker=False, max_workers=1, laya_model=MODEL, laya_device=args.laya_device,
         )
         result = compact_context(request)
         report = result.report
@@ -382,7 +386,7 @@ def render_report(report: dict) -> None:
         f"| **{tameru['mean_character_savings_pct']:.1f}%** | "
         f"**{tameru['gold_kept']}/{tameru['gold_total']}** | **{tameru['forbid_leaks']}** | "
         f"**{tameru['median_wall_ms']:,.2f} ms** |\n\n"
-        f"Measured on **{count} shared task cases**, with {len(measured)} runnable methods on CPU, "
+        f"Measured on **{count} shared task cases**, with {len(measured)} runnable methods, "
         f"**{date}**. These are source-evidence checks on Tameru's regression corpus; "
         "agent answer accuracy and model-token costs are outside this evaluation.\n"
     )
@@ -419,7 +423,7 @@ def render_report(report: dict) -> None:
         f"and no marker; Headroom {packages.get('headroom-ai', 'not installed')} uses Rust TextCrusher "
         "at defaults, without the full router or recovery store. TF-IDF is a simple "
         f"paragraph-retrieval baseline. Laya {packages.get('laya', 'not installed')} runs "
-        "its pinned multilingual model on CPU. "
+        f"its pinned multilingual model on {report['protocol']['laya'].get('device', 'cpu')}. "
         "LCC's protected no-ops are valid policy outcomes; model fallbacks receive no score.\n\n"
         f"**Timing.** One untimed warmup and {repeats} timed complete calls per case. "
         "Parsing, scoring and rendering are inside the timer; imports and model loading are "
@@ -440,9 +444,12 @@ def render_report(report: dict) -> None:
         "</details>\n"
     )
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    readme = replace_readme_block(readme, "headline", headline)
-    readme = replace_readme_block(readme, "comparison", short)
-    (ROOT / "README.md").write_text(readme, encoding="utf-8")
+    if "<!-- tameru:headline:start -->" in readme:
+        readme = replace_readme_block(readme, "headline", headline)
+        readme = replace_readme_block(readme, "comparison", short)
+        (ROOT / "README.md").write_text(readme, encoding="utf-8")
+    else:
+        print("README has no tameru: marker blocks; leaving it unchanged")
     assets = ROOT / "assets"
     assets.mkdir(exist_ok=True)
     (assets / f"comparison-v{__version__}.svg").write_text(comparison_svg(report), encoding="utf-8")
@@ -497,7 +504,9 @@ def render_report(report: dict) -> None:
         "first paragraph retained. It is a deliberately simple baseline.\n"
         f"- Laya **{env['packages'].get('laya', 'not installed')}**, source "
         f"`{pins.get('laya')}`, model `{MODEL}` at "
-        f"`{report['protocol']['laya']['revision']}`, CPU. LCC's model settings remain at defaults.\n"
+        f"`{report['protocol']['laya']['revision']}`, device "
+        f"`{report['protocol']['laya'].get('device', 'cpu')}`. "
+        "LCC's model settings remain at defaults.\n"
         f"- Runtime: Python **{env['python']}**, `{env['machine']}`, "
         f"{env.get('cpu_model', 'CPU model unavailable')}; CPU quota "
         f"`{env.get('cpu_quota', 'not recorded')}`, thread settings "
@@ -523,8 +532,9 @@ def render_report(report: dict) -> None:
         "a local fallback is never shown as a JEV measurement.\n\n"
         "## Reproduce\n\n"
         "Install the engine's dev extra, Headroom 0.40.0 and the recorded LCC/Laya "
-        "source pins in an isolated environment. Laya additionally needs CPU PyTorch, "
-        "its runtime dependencies and the pinned public checkpoint. Full installed "
+        "source pins in an isolated environment. Laya additionally needs PyTorch "
+        "(CPU or CUDA matching `--laya-device`), its runtime dependencies and the "
+        "pinned public checkpoint. Full installed "
         "package versions are in the JSON.\n\n"
         "```bash\npython -m pip install -e '.[dev]'\n"
         "python -m pip install headroom-ai==0.40.0\n"
@@ -532,6 +542,7 @@ def render_report(report: dict) -> None:
         f'python -m pip install "git+https://github.com/NandhaKishorM/laya.git@{pins.get("laya")}"\n'
         "OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 RAYON_NUM_THREADS=8 USE_TF=0 \\\n"
         f"  python benchmarks/compare.py --laya-revision {report['protocol']['laya']['revision']} \\\n"
+        f"  --laya-device {report['protocol']['laya'].get('device', 'cpu')} \\\n"
         f"  --lcc-source-sha {pins.get('lcc')} \\\n"
         f"  --laya-source-sha {pins.get('laya')}\n"
         f"python benchmarks/compare.py --verify-against benchmarks/comparison-v{__version__}.json\n"
@@ -591,6 +602,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=ROOT / f"benchmarks/comparison-v{__version__}.json")
     parser.add_argument("--include-jev", action="store_true")
     parser.add_argument("--laya-revision")
+    parser.add_argument("--laya-device", default="cpu", help="device for the Laya model (cpu, cuda, cuda:0, ...)")
     parser.add_argument("--lcc-source-sha")
     parser.add_argument("--laya-source-sha")
     parser.add_argument("--resume", action="store_true", help="resume matching inputs/settings without repeating completed measurements")
@@ -623,7 +635,7 @@ def main(argv: list[str] | None = None) -> int:
             "lcc": {"marker": False, "max_workers": 1, "other_options": "defaults"},
             "headroom": "Rust TextCrusher defaults; full Headroom router not tested",
             "tfidf": "ASCII paragraph retrieval, first paragraph retained; full scoring timed",
-            "laya": {"model": MODEL, "revision": args.laya_revision, "device": "cpu"},
+            "laya": {"model": MODEL, "revision": args.laya_revision, "device": args.laya_device},
         },
         "environment": {"python": platform.python_version(), "platform": platform.platform(),
                         "machine": platform.machine(), "cpu_count": os.cpu_count(),
