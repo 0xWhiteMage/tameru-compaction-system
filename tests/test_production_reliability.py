@@ -448,7 +448,7 @@ class SummaryReliabilityTests(unittest.TestCase):
             def read(self, _size=-1):
                 return json.dumps({"choices": None}).encode("utf-8")
 
-        with patch("urllib.request.urlopen", return_value=Response()):
+        with patch("urllib.request.OpenerDirector.open", return_value=Response()):
             self.assertIsNone(
                 cc._summarise_with_llm(
                     "source context " * 20,
@@ -463,7 +463,7 @@ class SummaryReliabilityTests(unittest.TestCase):
 
         for timeout in (math.inf, -math.inf, math.nan):
             with self.subTest(timeout=timeout), patch(
-                "urllib.request.urlopen"
+                "urllib.request.OpenerDirector.open"
             ) as mocked_open:
                 self.assertIsNone(
                     cc._summarise_with_llm(
@@ -488,7 +488,7 @@ class SummaryReliabilityTests(unittest.TestCase):
             def read(self, size=-1):
                 return b"x" * size
 
-        with patch("urllib.request.urlopen", return_value=OversizedResponse()):
+        with patch("urllib.request.OpenerDirector.open", return_value=OversizedResponse()):
             self.assertIsNone(
                 cc._summarise_with_llm(
                     "source " * 100,
@@ -501,7 +501,7 @@ class SummaryReliabilityTests(unittest.TestCase):
     def test_nonlocal_endpoint_requires_explicit_opt_in(self):
         import tameru.compress_context as cc
 
-        with patch("urllib.request.urlopen") as mocked_open:
+        with patch("urllib.request.OpenerDirector.open") as mocked_open:
             self.assertIsNone(
                 cc._summarise_with_llm(
                     "source " * 100,

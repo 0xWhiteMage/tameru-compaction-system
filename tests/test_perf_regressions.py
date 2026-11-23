@@ -173,10 +173,8 @@ def test_critical_line_recall_result_is_exact():
     kept, total = cc._critical_line_recall(original, compressed)
     critical = cc._extract_critical_lines(original)
     assert total == len(critical) == 5  # the INFO heartbeat is not critical
-    expected = sum(1 for ln in critical if ln.lower()[:80] in compressed.lower())
-    # error, key=value, re-indented key=value, and the substring-only match are
-    # kept; "deployed version 1.4.0" was dropped.
-    assert kept == expected == 4
+    # A longer, changed line is not evidence that its original facts survived.
+    assert kept == 3
 
 
 @pytest.mark.perf

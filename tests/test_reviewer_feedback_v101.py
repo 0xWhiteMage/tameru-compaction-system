@@ -181,9 +181,9 @@ class CcrPrivacyRegressionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             now = time.time()
-            expired = root / "expired.json"
-            fresh = root / "fresh.json"
-            malformed = root / "malformed.json"
+            expired = root / ("a" * 24 + ".json")
+            fresh = root / ("b" * 24 + ".json")
+            malformed = root / ("c" * 24 + ".json")
             expired.write_text(json.dumps({"stored_at": now - 100, "ttl": 10}), encoding="utf-8")
             fresh.write_text(json.dumps({"stored_at": now - 5, "ttl": 10}), encoding="utf-8")
             malformed.write_text("not json", encoding="utf-8")
@@ -204,9 +204,9 @@ class CcrPrivacyRegressionTests(unittest.TestCase):
     def test_invalid_zero_timestamp_is_removed_and_never_retrieved(self):
         with tempfile.TemporaryDirectory() as td:
             invalid_records = {
-                "zero-time.json": {"stored_at": 0, "ttl": 10, "original": "secret"},
-                "zero-ttl.json": {"stored_at": time.time(), "ttl": 0, "original": "secret"},
-                "bad-time.json": {"stored_at": "not-a-time", "ttl": 10, "original": "secret"},
+                "a" * 24 + ".json": {"stored_at": 0, "ttl": 10, "original": "secret"},
+                "b" * 24 + ".json": {"stored_at": time.time(), "ttl": 0, "original": "secret"},
+                "c" * 24 + ".json": {"stored_at": "not-a-time", "ttl": 10, "original": "secret"},
             }
             for name, payload in invalid_records.items():
                 (Path(td) / name).write_text(json.dumps(payload), encoding="utf-8")
@@ -253,7 +253,7 @@ class EscapedJsonPreprocessTests(unittest.TestCase):
 
 
 class ConfigurableSummariserTests(unittest.TestCase):
-    @patch("urllib.request.urlopen")
+    @patch("urllib.request.OpenerDirector.open")
     def test_environment_configures_endpoint_models_and_total_timeout(self, mocked_open):
         class Response:
             def __enter__(self):
@@ -285,7 +285,7 @@ class ConfigurableSummariserTests(unittest.TestCase):
         self.assertEqual(payload["model"], "review-model-a")
         self.assertLessEqual(mocked_open.call_args.kwargs["timeout"], 2.5)
 
-    @patch("urllib.request.urlopen", side_effect=TimeoutError)
+    @patch("urllib.request.OpenerDirector.open", side_effect=TimeoutError)
     def test_timeout_is_one_budget_not_renewed_per_model(self, mocked_open):
         with patch.object(cc.time, "monotonic", side_effect=[100.0, 100.0, 102.1]):
             summary = cc._summarise_with_llm(

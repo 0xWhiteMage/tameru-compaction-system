@@ -13,6 +13,7 @@ import collections
 import contextvars
 import functools
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -5595,9 +5596,11 @@ def _source_keys(query: str, blob: str) -> list[str]:
     """The entities and terms of ``query`` that occur in ``blob`` (a folded source). Only these can count for or
     against recall: a query word the text never contains says nothing about what was kept."""
     keys: list[str] = []
+    seen: set[str] = set()
     for item in _extract_entities(query) + _extract_terms(query):
-        if item not in keys and item.lower() in blob:
+        if item not in seen and item.lower() in blob:
             keys.append(item)
+            seen.add(item)
     return keys
 
 
@@ -5694,9 +5697,6 @@ def _entity_recall(original: str, compressed: str, query: str) -> float:
     return hit / len(keys)
 
 
-# Substring-scan work allowed per verification (characters examined).
-_RECALL_SCAN_BUDGET_CHARS = 40_000_000
-
 _CRITICAL_ERROR_RE = re.compile(
     r"\b(?:error|exception|traceback|fail|fatal|timeout|denied|invalid)\b", re.IGNORECASE
 )
@@ -5763,33 +5763,18 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
     # the per-line loop was O(lines x output) — 30 s of a 35 s run on a 650 KB
     # log (and ~10x worse again when the output holds a non-ASCII "[…]").
     compressed_lower = compressed.lower()
-    # Whole-line fast path: the engine emits original lines (optionally with a
-    # "[×N] " collapse prefix), so nearly every kept critical line is a line of
-    # the output and a set lookup answers it. Only lines the sets cannot place
-    # fall back to the substring scan, under a work budget so the scan stays
-    # linear on big outputs; with small outputs the budget never binds and the
-    # result is exactly "core is a substring of the compressed text".
+    # Collapse prefixes do not change a line's facts.
     out_lines: set[str] = set()
-    out_prefixes: set[str] = set()
     for out_line in compressed_lower.split("\n"):
         out_line = out_line.strip()
         out_lines.add(out_line)
-        out_prefixes.add(out_line[:80])
         bare = _COUNT_PREFIX_RE.sub("", out_line, count=1)
         if bare is not out_line:
             out_lines.add(bare)
-            out_prefixes.add(bare[:80])
-    scan_budget = _RECALL_SCAN_BUDGET_CHARS
     for line in critical:
-        # A critical line is "kept" if its core content (first 80 chars,
-        # lowercased) appears in the compressed text.
-        core = line.lower()[:80]
-        if core in out_lines or core in out_prefixes:
+        core = line.strip().lower()
+        if core in out_lines:
             kept += 1
-        elif scan_budget > 0:
-            scan_budget -= len(compressed_lower)
-            if core in compressed_lower:
-                kept += 1
     return kept
 
 
@@ -5808,7 +5793,7 @@ _KEY_LINE_MAX = 12  # a key found on more lines than this names a topic, not a l
 def _verification_critical_lines(original: str, keys: list[str]) -> list[str]:
     """The lines whose loss the verifier counts (1.10.0): error lines, and the lines that hold a query key the
     source contains and that are rare (at most ``_KEY_LINE_MAX`` lines). A line with only a number or a
-    ``key: value`` in it is not critical. Trust-risk lines never count; repeats of one template count once."""
+    ``key: value`` in it is not critical. Trust-risk lines never count; identical stripped lines count once."""
     lines = original.split("\n")
     flines = [ln.lower() for ln in lines] if original.isascii() else [_match_fold(ln) for ln in lines]
     key_hits: set[int] = set()
@@ -5840,7 +5825,7 @@ def _verification_critical_lines(original: str, keys: list[str]) -> list[str]:
             continue
         if _is_trust_risk_line(scan):
             continue
-        shape = _DIGITS_RE.sub("#", flines[i].strip()[:80])
+        shape = flines[i].strip()
         if shape in seen:
             continue
         seen.add(shape)
@@ -5987,8 +5972,8 @@ def _compute_confidence(
 ) -> float:
     """The confidence a result reports, by what the objective rests on.
 
-    ``lexical`` / ``tool_call``: the selection's recall blended with the verifier's score (both over the keys
-    the text contains). ``structural`` / ``anchored``: error-fingerprint and error-head retention. ``derived``:
+    ``lexical`` / ``tool_call``: the selection's recall over the keys the text contains.
+    ``structural`` / ``anchored``: error-fingerprint and error-head retention. ``derived``:
     the same, capped below 0.7, and never the recall of the derived terms themselves. ``cross_lingual`` /
     ``none``: capped at 0.5. A fail-open result keeps the recall it was given (it returns the original)."""
     if fail_open:
@@ -6066,8 +6051,8 @@ def _render(
     total_chars: int | None = None,
     content_lines: list[str] | None = None,
 ) -> str:
-    chronological_blocks = sorted(blocks, key=lambda block: block["start"])
-    block_starts = [block["start"] for block in chronological_blocks]
+    chronological_blocks: list[dict[str, Any]] | None = None
+    block_starts: list[int] = []
     order = sorted((b for b in blocks if b["id"] in kept), key=lambda b: b["start"])
     chronological = True
     if reorder_best and len(order) >= 3:
@@ -6116,6 +6101,8 @@ def _render(
     parts: list[str] = []
     prev_end = -1
     for b in order:
+        if chronological and b["end"] <= prev_end:
+            continue
         if marker_fn is not None:
             if prev_end < 0 and chronological and b["start"] > 0:
                 lead = _gap(0, b["start"])
@@ -6127,6 +6114,9 @@ def _render(
                     parts.extend(between)
         elif prev_end >= 0 and b["start"] > prev_end + 1:
             if citations:
+                if chronological_blocks is None:
+                    chronological_blocks = sorted(blocks, key=lambda block: block["start"])
+                    block_starts = [block["start"] for block in chronological_blocks]
                 # ARC-style citation: name every dropped block so the model
                 # knows it can recall the exact head/tail by hash later.
                 # Only emit citations when they're net-positive: the stub
@@ -6171,6 +6161,8 @@ def _render(
             else:
                 parts.append("[…]")
         start, end = b["start"], b["end"]
+        if chronological:
+            start = max(start, prev_end + 1)
         # Structural verbatim invariant (leanctx-inspired): a kept fenced
         # code block must survive whole — extend the keep range to the
         # closing fence if it lands just outside, so agents see exact tokens.
@@ -6252,6 +6244,9 @@ def _block_fingerprint(block: dict[str, Any]) -> str:
     return f"{block['type']}:{block.get('id', '?')}:{content_hash}"
 
 
+_FREEZE_PREFIX_CHARS = 500
+
+
 def _apply_freeze(
     decision_cache: dict,
     scored: list[dict[str, Any]],
@@ -6294,8 +6289,11 @@ def _apply_freeze(
     # the next turn would include appended content and falsely invalidate the
     # cache. No plaintext context is retained in the decision cache.
     cached_prefix_len = decision_cache.get("ctx_prefix_len")
-    if not isinstance(cached_prefix_len, int) or cached_prefix_len < 0:
-        cached_prefix_len = min(len(original_text), 500)
+    if (
+        not isinstance(cached_prefix_len, int)
+        or not 0 <= cached_prefix_len <= _FREEZE_PREFIX_CHARS
+    ):
+        cached_prefix_len = min(len(original_text), _FREEZE_PREFIX_CHARS)
         decision_cache["ctx_prefix_len"] = cached_prefix_len
     ctx_hash = hashlib.sha256(
         original_text[:cached_prefix_len].encode("utf-8", errors="surrogatepass")
@@ -6306,7 +6304,7 @@ def _apply_freeze(
         # Context changed fundamentally — clear decisions to avoid stale replay.
         decisions = {}
         decision_cache[cache_key] = decisions
-        cached_prefix_len = min(len(original_text), 500)
+        cached_prefix_len = min(len(original_text), _FREEZE_PREFIX_CHARS)
         decision_cache["ctx_prefix_len"] = cached_prefix_len
         ctx_hash = hashlib.sha256(
             original_text[:cached_prefix_len].encode("utf-8", errors="surrogatepass")
@@ -6318,7 +6316,7 @@ def _apply_freeze(
     for b in scored:
         fp = _block_fingerprint(b)
         decision = decisions.get(fp)
-        if decision not in {"keep", "drop"}:
+        if not isinstance(decision, str) or decision not in {"keep", "drop"}:
             decision = None
         result.append(
             {
@@ -6377,7 +6375,7 @@ def _ccr_metadata(data: Any) -> tuple[float, float] | None:
     try:
         stored = float(data["stored_at"])
         ttl = float(data.get("ttl", CCR_TTL_SECONDS))
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         return None
     if (
         not math.isfinite(stored)
@@ -6405,7 +6403,12 @@ def sweep_ccr_cache(
     root = Path(ccr_dir)
     if not root.is_dir():
         return 0
-    current = time.time() if now is None else float(now)
+    try:
+        current = time.time() if now is None else float(now)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if not math.isfinite(current) or current <= 0:
+        return 0
     removed = 0
     limit = None if max_records is None else max(0, int(max_records))
     # Cursor progression only works when every call sees the same ordering;
@@ -6422,9 +6425,11 @@ def sweep_ccr_cache(
             _CCR_SWEEP_CURSOR[key] = (start + count) % total
         records = [records[(start + offset) % total] for offset in range(count)]
     for fp in records:
+        if not _CCR_HASH_RE.fullmatch(fp.stem):
+            continue
         try:
-            data = json.loads(fp.read_text(encoding="utf-8-sig"))
-        except (OSError, json.JSONDecodeError, RecursionError):
+            data = _read_ccr_record(fp)
+        except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
             continue
         metadata = _ccr_metadata(data)
         if (
@@ -6463,51 +6468,33 @@ def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any] | None:
     }
     record = path / f"{digest}.json"
     encoded = json.dumps(payload).encode("utf-8")
-    fd: int | None = None
-    temporary: str | None = None
-    try:
-        fd, temporary = tempfile.mkstemp(prefix=".ccr-", dir=path)
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as fh:
-            fd = None
-            fh.write(encoded)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(temporary, record)
-        temporary = None
-        record.chmod(0o600)
-    except OSError:
-        if fd is not None:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        raise
-    finally:
-        if temporary is not None:
-            try:
-                Path(temporary).unlink()
-            except OSError:
-                pass
+    if len(encoded) > _CCR_MAX_RECORD_BYTES:
+        return None
+    _write_private_atomic(record, encoded)
     return {"hash": digest, "path": str(record)}
 
 
-def _write_private_atomic(path: str | Path, content: str) -> None:
-    """Atomically replace a UTF-8 sidecar with owner-only permissions."""
+def _write_private_atomic(path: str | Path, content: str | bytes) -> None:
+    """Atomically replace bytes or a UTF-8 sidecar with owner-only permissions."""
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
-        target.parent.chmod(0o700)
-    except OSError:
-        pass
+        target.parent.mkdir(parents=True, mode=0o700)
+    except FileExistsError:
+        if not target.parent.is_dir():
+            raise
+    else:
+        try:
+            target.parent.chmod(0o700)
+        except OSError:
+            pass
     fd: int | None = None
     temporary: str | None = None
     try:
         fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         if hasattr(os, "fchmod"):
             os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with (os.fdopen(fd, "wb") if isinstance(content, bytes)
+              else os.fdopen(fd, "w", encoding="utf-8")) as fh:
             fd = None
             fh.write(content)
             fh.flush()
@@ -6565,8 +6552,8 @@ def _clear_tool_payloads(text: str) -> str:
 
         if is_tool_result:
             # Collect the full payload (consecutive indented lines)
-            j = i
-            total_chars = 0
+            j = i + 1
+            total_chars = len(line)
             while j < len(lines):
                 payload_line = lines[j]
                 if payload_line.strip() == "":
@@ -6588,7 +6575,6 @@ def _clear_tool_payloads(text: str) -> str:
                     j += 1
                 else:
                     break
-            total_chars += len(line)
             # Only clear if the payload is substantial (> 100 chars)
             if total_chars > 100:
                 # Extract the tool name if visible
@@ -6603,6 +6589,10 @@ def _clear_tool_payloads(text: str) -> str:
         out.append(line)
         i += 1
     return "\n".join(out)
+
+
+_SUMMARY_MAX_MODELS = 16
+_SUMMARY_MAX_MODEL_CHARS = 1024
 
 
 def _summarise_with_llm(
@@ -6638,7 +6628,13 @@ def _summarise_with_llm(
     import urllib.parse
 
     # Target length in tokens
-    target_tokens = max(50, int(estimate_tokens(text) * target_ratio))
+    try:
+        ratio = float(target_ratio)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(ratio) or not 0 < ratio <= 1:
+        return None
+    target_tokens = max(50, int(estimate_tokens(text) * ratio))
 
     prompt = (
         f"Summarise the following context faithfully. Keep ALL entities, "
@@ -6666,13 +6662,21 @@ def _summarise_with_llm(
         return None
     if model_candidates is None:
         configured = os.environ.get("TAMERU_SUMMARY_MODELS", "")
-        models = tuple(m.strip() for m in configured.split(",") if m.strip())
-        if not models:
-            models = DEFAULT_SUMMARY_MODELS
-    elif isinstance(model_candidates, str):
-        models = tuple(m.strip() for m in model_candidates.split(",") if m.strip())
-    else:
-        models = tuple(str(m).strip() for m in model_candidates if str(m).strip())
+        model_candidates = configured if configured.strip() else DEFAULT_SUMMARY_MODELS
+    if isinstance(model_candidates, str):
+        model_candidates = model_candidates.split(",", _SUMMARY_MAX_MODELS)[:_SUMMARY_MAX_MODELS]
+    models: list[str] = []
+    try:
+        for model in itertools.islice(model_candidates, _SUMMARY_MAX_MODELS):
+            if not isinstance(model, str):
+                return None
+            if len(model) > _SUMMARY_MAX_MODEL_CHARS:
+                return None
+            model = model.strip()
+            if model:
+                models.append(model)
+    except Exception:  # caller-provided iterators must fail open
+        return None
     if not models:
         return None
     if timeout is None:
@@ -6689,6 +6693,11 @@ def _summarise_with_llm(
     timeout = max(0.1, timeout)
     deadline = time.monotonic() + timeout
 
+    class _NoSummaryRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise urllib.error.HTTPError(req.full_url, code, "summary redirects disabled", headers, fp)
+
+    opener = urllib.request.build_opener(_NoSummaryRedirect())
     for model in models:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -6707,7 +6716,7 @@ def _summarise_with_llm(
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=remaining) as resp:
+            with opener.open(req, timeout=remaining) as resp:
                 raw = resp.read(MAX_SUMMARY_RESPONSE_BYTES + 1)
                 if len(raw) > MAX_SUMMARY_RESPONSE_BYTES:
                     continue
@@ -6841,6 +6850,32 @@ def _summary_preserves_required_facts(
     return recall == 1.0 and no_novel_ids, recall
 
 
+_CCR_MAX_RECORD_BYTES = 128 * 1024 * 1024  # exceeds 8M input chars at 12 JSON bytes per char
+
+
+def _read_ccr_record(fp: Path) -> Any:
+    info = fp.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise OSError("CCR record must be a regular file")
+    if info.st_size > _CCR_MAX_RECORD_BYTES:
+        raise OSError("CCR record exceeds size limit")
+    with fp.open("rb") as fh:
+        raw = fh.read(_CCR_MAX_RECORD_BYTES + 1)
+    if len(raw) > _CCR_MAX_RECORD_BYTES:
+        raise OSError("CCR record exceeds size limit")
+    return json.loads(raw.decode("utf-8-sig"))
+
+
+def _ccr_original(data: Any, digest: str) -> str | None:
+    if not isinstance(data, dict) or data.get("hash") != digest:
+        return None
+    original = data.get("original")
+    if not isinstance(original, str):
+        return None
+    actual = hashlib.sha256(original.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
+    return original if actual == digest else None
+
+
 def retrieve(
     ccr_hash: str,
     ccr_dir: str | Path = DEFAULT_CCR_DIR,
@@ -6857,14 +6892,8 @@ def retrieve(
         return None
     fp = root / f"{ccr_hash}.json"
     try:
-        info = fp.lstat()
-    except OSError:
-        return None
-    if not stat.S_ISREG(info.st_mode):
-        return None
-    try:
-        data = json.loads(fp.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError, RecursionError):
+        data = _read_ccr_record(fp)
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
         return None
     if not isinstance(data, dict) or data.get("hash") != ccr_hash:
         return None
@@ -6880,10 +6909,8 @@ def retrieve(
         except OSError:
             pass
         return None
-    original = data.get("original")
-    if not isinstance(original, str):
-        return None
-    if hashlib.sha256(original.encode("utf-8", errors="surrogatepass")).hexdigest()[:24] != ccr_hash:
+    original = _ccr_original(data, ccr_hash)
+    if original is None:
         return None
     if offset or limit is not None:
         start = max(0, int(offset))
@@ -6911,8 +6938,8 @@ def list_ccr(
     for fp in root.glob("*.json"):
         if not fp.name.startswith(".") and _CCR_HASH_RE.fullmatch(fp.stem):
             try:
-                data = json.loads(fp.read_text(encoding="utf-8-sig"))
-            except (OSError, json.JSONDecodeError, RecursionError):
+                data = _read_ccr_record(fp)
+            except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
                 continue
             if not isinstance(data, dict):
                 continue
@@ -6924,7 +6951,7 @@ def list_ccr(
             ):
                 continue
             record_hash = data.get("hash")
-            original = data.get("original")
+            original = _ccr_original(data, fp.stem)
             if (
                 not isinstance(record_hash, str)
                 or record_hash != fp.stem
