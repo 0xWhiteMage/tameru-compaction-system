@@ -143,10 +143,13 @@ def test_marker_recognition_rejects_trailing_newlines():
     assert markers.marker_name("") is None
 
 
-def planning_input(policy, *, chars=1000, compressed_chars=100, tokens=1000, saved=900):
+def planning_input(policy, *, chars=1000, compressed_chars=100, tokens=1000, saved=900,
+                   stock_kept_chars=400):
     candidate = Candidate(compressed_chars, saved, 1.0, False, "low", True)
+    # stock_kept_chars > compressed_chars: at confidence 1.0 the P5 extract must beat the
+    # forced remnant on value; a remnant of 400 lets these fixtures exercise the accept path.
     item = PlanItem("one", 0, tokens, chars, stock_action="cut",
-                    stock_kept_chars=compressed_chars, candidate=candidate)
+                    stock_kept_chars=stock_kept_chars, candidate=candidate, fact_lines=4)
     return PlanInput("trigger", "prune", tokens, tokens, (item,), CacheState(False, 80), policy)
 
 
