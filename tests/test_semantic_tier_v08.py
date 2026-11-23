@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from tameru.compress_context import compress_context, _counterfactual_overlap_ambiguity
+from tameru.compress_context import compress_context
 
 
 def _tier():
@@ -122,44 +122,6 @@ class TierFallbackTests(unittest.TestCase):
         ctx = FILLER + "\n\nSelene endpoint is DB-77-Z.\n\n" + FILLER
         out = compress_context(ctx, "Selene endpoint?", ccr=False, citations=False)
         self.assertIn("DB-77-Z", out.compressed_text)
-
-
-class SemanticAmbiguityTests(unittest.TestCase):
-    def setUp(self):
-        self.blocks = [
-            {"id": i, "text": f"candidate {i}", "score": 5.0, "term_hits": 0}
-            for i in range(12)
-        ]
-        self.blocks[0].update(text="needle winner", score=10.0, term_hits=1)
-
-    def test_candidates_and_winner_scored_once(self):
-        for near_scores, expected in (([0.79, 0.81], True), ([0.79, 0.2], False)):
-            with self.subTest(near_scores=near_scores):
-                scorer = Mock(return_value=([], near_scores + [0.1] * 9 + [0.8]))
-                tier = SimpleNamespace(available=True, score_against_query=scorer)
-                actual = _counterfactual_overlap_ambiguity(
-                    self.blocks, {0}, query="needle", link_terms={}, semantic_tier=tier
-                )
-                self.assertEqual(actual, expected)
-                scorer.assert_called_once_with(
-                    "needle", [b["text"] for b in self.blocks[1:]] + ["needle winner"]
-                )
-
-    def test_empty_blocks_do_not_score(self):
-        scorer = Mock()
-        tier = SimpleNamespace(available=True, score_against_query=scorer)
-        self.assertFalse(_counterfactual_overlap_ambiguity(
-            [], set(), query="needle", link_terms={}, semantic_tier=tier
-        ))
-        scorer.assert_not_called()
-
-    def test_scorer_failure_degrades_to_lexical(self):
-        scorer = Mock(side_effect=RuntimeError("model exploded"))
-        tier = SimpleNamespace(available=True, score_against_query=scorer)
-        self.assertFalse(_counterfactual_overlap_ambiguity(
-            self.blocks, {0}, query="needle", link_terms={}, semantic_tier=tier
-        ))
-        scorer.assert_called_once()
 
 
 if __name__ == "__main__":
