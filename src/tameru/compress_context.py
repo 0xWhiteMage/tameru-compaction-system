@@ -110,6 +110,7 @@ CCR_MAX_CLOCK_SKEW_SECONDS = 5 * 60
 FREEZE_MAX_DECISIONS = 4096
 MAX_QUERY_TEMPLATE_MATCHES = 64
 CCR_SWEEP_MAX_RECORDS = 256
+_CCR_TEMP_GRACE_SECONDS = 600
 MAX_SUMMARY_RESPONSE_BYTES = 1_000_000
 DEFAULT_SUMMARY_ENDPOINT = "http://127.0.0.1:18000/v1/chat/completions"
 DEFAULT_SUMMARY_MODELS = (
@@ -150,8 +151,9 @@ _SECRETS_RE = re.compile(
     # 1.4.1 red-team: an unquoted value that is code (a call, an index, a
     # ``${...}`` / ``<...>`` placeholder, an attribute chain, a snake_case
     # variable such as ``api_key=fallback_api_key,``) names no credential.
-    r"(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*(?![^\s,;)\]}]))"
-    r"(?![a-z_](?=[a-z0-9_]*_)[a-z0-9_]*(?![^\s,;)\]}]))"
+    # The exclusions are bounded, as in ``_SECRET_NOT_CODE``.
+    r"(?![^\s\"']{0,256}[(\[{<$])(?!(?:[A-Za-z_]\w{0,63}\.){1,8}[A-Za-z_]\w{0,63}(?![^\s,;)\]}]))"
+    r"(?![a-z_](?=[a-z0-9_]{0,63}_)[a-z0-9_]{0,63}(?![^\s,;)\]}]))"
     r"[^\s\"']{16,})"
     # 1.4.1 fix-all: the code exclusions above also let through unquoted
     # snake_case passphrases and dotted passwords. A whole-line ``.env`` /
@@ -162,15 +164,16 @@ _SECRETS_RE = re.compile(
     # exclusion (``api_key: pydantic.types.SecretStr`` is an annotation).
     r"|(?im:^[ \t]*(?:export[ \t]+)?(?:[A-Za-z0-9_]+_)?"
     r"(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)"
-    r"=(?![^\s\"']*[(\[{<$])[^\s\"']{15,}[^\s\"',;)][ \t]*$)"
+    r"=(?![^\s\"']*[(\[{<$])[^\s\"']{15,}[^\s\"',;)][ \t]*\r?$)"
     r"|(?im:^[ \t]*(?:[A-Za-z0-9_]+_)?"
     r"(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)"
     r":[ \t]+(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*[ \t]*$)"
-    r"[^\s\"']{15,}[^\s\"',;)][ \t]*$)"
+    r"[^\s\"']{15,}[^\s\"',;)][ \t]*\r?$)"
 )
 
-# Recursion guard markers: output Tameru itself produced.
-_RECURSION_MARKERS = ("<compressed_context", "[CC-Retrieve:", "[tameru:report ")
+# Recursion guard markers: output Tameru itself produced. Both wrapper tags
+# are listed: ``</compressed_context`` is not a substring of the open tag.
+_RECURSION_MARKERS = ("<compressed_context", "</compressed_context", "[CC-Retrieve:", "[tameru:report ")
 
 # Already-elided standalone marker lines ([…] or the counted omitted form): a
 # conservative no-op check so previously compressed text short-circuits instead
@@ -217,9 +220,13 @@ _SECRET_NEW_KEYWORD = (
     r"|(?:session|refresh|bearer|id|security)[_-]?token|private[_-]?key|signing[_-]?key"
     r"|db[_-]?pass|mysql[_-]?pwd|pgpassword|rediscli[_-]?auth)"
 )
+# The three exclusions are bounded: an unbounded ``[^\s\"']*`` / ``\w*``
+# rescans the remainder of a run from every candidate position (quadratic on
+# crafted input). A chain or name longer than the bound escapes the
+# exclusion and is screened — over-flagging a credential is the safe side.
 _SECRET_NOT_CODE = (
-    r"(?![^\s\"']*[(\[{<$])(?!(?:[A-Za-z_]\w*\.)+[A-Za-z_]\w*(?![^\s,;)\]}]))"
-    r"(?![a-z_](?=[a-z0-9_]*_)[a-z0-9_]*(?![^\s,;)\]}]))"
+    r"(?![^\s\"']{0,256}[(\[{<$])(?!(?:[A-Za-z_]\w{0,63}\.){1,8}[A-Za-z_]\w{0,63}(?![^\s,;)\]}]))"
+    r"(?![a-z_](?=[a-z0-9_]{0,63}_)[a-z0-9_]{0,63}(?![^\s,;)\]}]))"
 )
 _SECRETS_EXTRA_RE = re.compile(
     r"\bASIA[0-9A-Z]{16}\b"
@@ -257,11 +264,14 @@ _SECRETS_EXTRA_RE = re.compile(
     r"(?:\"(?=[^\"\s]*\d)[^\"\s]{16,}\"|'(?=[^'\s]*\d)[^'\s]{16,}'))"
     # unquoted value of the keywords the original rule does not list
     r"|(?i:\b" + _SECRET_NEW_KEYWORD + r"[\"']?\s*[:=]\s*" + _SECRET_NOT_CODE
-    + r"(?=[^\s\"']*\d)[^\s\"']{16,}(?<![,;)\]}])(?![^\s\"']))"
+    + r"(?=[^\s\"']{0,256}\d)[^\s\"']{16,}(?<![,;)\]}])(?![^\s\"']))"
     # ``GITHUB_TOKEN=ghx...``: upper-case variable names are environment
     # variables, not code
     r"|\b(?:[A-Z][A-Z0-9_]{0,60}_)?(?:TOKEN|ACCESS_KEY)\s*[:=]\s*[\"']?" + _SECRET_NOT_CODE
-    + r"(?=[A-Za-z0-9_./+=-]*\d)[A-Za-z0-9_./+=-]{19,}[A-Za-z0-9_/+=](?![^\s\"'])"
+    # The lookahead and the value are both bounded: an unbounded ``*\d``
+    # lookahead rescans the remainder of a digit-free run from every keyword
+    # hit, which is quadratic on crafted input such as ``TOKEN=`` repeated.
+    + r"(?=[A-Za-z0-9_./+=-]{0,512}\d)[A-Za-z0-9_./+=-]{19,512}[A-Za-z0-9_/+=](?![^\s\"'])"
     # Short literal credentials with both digits and punctuation; code references stay excluded.
     r"|(?i:\b" + _SECRET_KEYWORD + r"[\"']?\s*[:=]\s*[\"']?" + _SECRET_NOT_CODE
     + r"(?=[^\s\"']{0,15}\d)(?=[^\s\"']{0,15}[!@#%&*+=?/~])"
@@ -6135,9 +6145,12 @@ def _render(
                 for d in dropped:
                     dropped_tokens += d["tokens"]
                     d_text = d.get("full_text") or d["text"]
-                    head = d_text.split("\n", 1)[0][:60]
-                    tail = d_text.rsplit("\n", 1)[-1][:60]
-                    stub = f'[§] "{head}"…"{tail}"'
+                    if d.get("trust_risk") and not d.get("pinned"):
+                        stub = "[§] (flagged block withheld)"
+                    else:
+                        head = d_text.split("\n", 1)[0][:60]
+                        tail = d_text.rsplit("\n", 1)[-1][:60]
+                        stub = f'[§] "{head}"…"{tail}"'
                     gap_tokens += estimate_tokens(stub)
                 if gap_tokens < dropped_tokens:
                     # Citations save tokens — emit them. For long runs of
@@ -6154,6 +6167,11 @@ def _render(
                         for d in dropped:
                             d_text = d.get("full_text") or d["text"]
                             digest = hashlib.sha256(d_text.encode("utf-8", errors="surrogatepass")).hexdigest()[:8]
+                            if d.get("trust_risk") and not d.get("pinned"):
+                                # A block dropped as a suspected injection is
+                                # not quoted back into its citation stub.
+                                parts.append(f"[§{digest}] (flagged block withheld)")
+                                continue
                             head = d_text.split("\n", 1)[0][:60]
                             tail = d_text.rsplit("\n", 1)[-1][:60]
                             parts.append(f'[§{digest}] "{head}"…"{tail}"')
@@ -6413,9 +6431,13 @@ def sweep_ccr_cache(
         return 0
     removed = 0
     limit = None if max_records is None else max(0, int(max_records))
-    # Cursor progression only works when every call sees the same ordering;
-    # filesystem glob order is unspecified and may change between writes.
-    records = sorted(root.glob("*.json"), key=lambda path: path.name)
+    # Cursor progression only works when every call sees the same ordering,
+    # so the directory is listed once, partitioned by name, and sorted.
+    try:
+        names = [entry.name for entry in root.iterdir()]
+    except OSError:
+        return 0
+    records = sorted((root / name) for name in names if name.endswith(".json"))
     if limit is not None and records:
         total = len(records)
         key = str(root.resolve())
@@ -6445,12 +6467,32 @@ def sweep_ccr_cache(
             removed += 1
         except OSError:
             continue
+    # A killed store leaves a ``.<name>.XXXXXX`` temp file holding the full
+    # original. Remove it once it is old enough that no live writer could
+    # still hold it.
+    for name in names:
+        if not name.startswith(".") or ".json." not in name:
+            continue
+        fp = root / name
+        try:
+            info = fp.lstat()
+        except OSError:
+            continue
+        if stat.S_ISREG(info.st_mode) and current - info.st_mtime > _CCR_TEMP_GRACE_SECONDS:
+            try:
+                fp.unlink()
+                removed += 1
+            except OSError:
+                continue
     return removed
 
 
 def _ccr_store(original: str, ccr_dir: str | Path) -> dict[str, Any] | None:
     # Secrets screen: archival would persist credentials to disk at rest.
-    if _contains_secret(original):
+    # The unwrapped payload is screened too — inside a JSON tool envelope a
+    # line-start credential is escaped as ``\nX``, which the line-anchored
+    # rules cannot see on the raw envelope text.
+    if _contains_secret(original) or _contains_secret(unwrap_tool_payload(original).inner):
         return None
     path = Path(ccr_dir)
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -8431,7 +8473,7 @@ def _resolve_objective(
                     probe_ccr = bool(ccr) and (strategy or "extract").strip().lower() == "extract"
                     probe = dict(
                         mode=mode, budget_ratio=budget_ratio, ccr=probe_ccr, cache_prefix=False,
-                        citations=citations, ccr_dir=ccr_dir, decision_cache=None, strategy=strategy,
+                        citations=citations, ccr_dir=ccr_dir, decision_cache=None, strategy="extract",
                         ambiguity_fail_open=ambiguity_fail_open, reorder_best=reorder_best,
                         semantic_tier=semantic_tier, log_dir=None, pin_patterns=pin_patterns,
                         pin_recent=pin_recent, min_savings_ratio=min_savings_ratio,
@@ -8671,12 +8713,26 @@ def _write_audit_log(
                 "input_lines": industrial.profile.lines,
                 "profile_truncated": industrial.profile.profile_truncated,
             }
+            if log_path.is_symlink():
+                raise OSError("log directory must be a real directory")
             log_file = log_path / "compactions.jsonl"
-            fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-            with os.fdopen(fd, "a", encoding="utf-8") as fh:
-                if hasattr(os, "fchmod"):
-                    os.fchmod(fd, 0o600)
-                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            if log_file.is_symlink():
+                raise OSError("audit log must not be a symlink")
+            open_flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+            if hasattr(os, "O_NOFOLLOW"):
+                open_flags |= os.O_NOFOLLOW
+            fd = os.open(log_file, open_flags, 0o600)
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    raise OSError("audit log must be a regular file")
+                with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                    fd = None
+                    if hasattr(os, "fchmod"):
+                        os.fchmod(fh.fileno(), 0o600)
+                    fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            finally:
+                if fd is not None:
+                    os.close(fd)
         except OSError:
             pass  # logging must never break compression
     return 
@@ -8705,19 +8761,28 @@ def _finalize_result_text_and_ccr(
     result_text = compressed
     cache_applied = False
     if cache_prefix and not fail_open:
-        result_text = cache_wrap(compressed, query_as_given or "")
-        cache_applied = True
+        # Kept text that already carries a wrapper delimiter would make the
+        # real closing tags ambiguous — a forged ``</compressed_context>``
+        # lets trailing tool text sit outside the extract frame. Emit the
+        # extract unwrapped rather than give that text the engine's framing.
+        if not any(
+            delimiter in compressed
+            for delimiter in ("<compressed_context", "</compressed_context", "--- end context ---")
+        ):
+            result_text = cache_wrap(compressed, query_as_given or "")
+            cache_applied = True
 
     ccr_info = None
     pending_ccr_hash = None
     candidate_text = result_text
     if ccr and not fail_open and compressed != original_text and not secret_in_input:
         pending_ccr_hash = hashlib.sha256(caller_text.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
-        if "[CC-Retrieve:" not in candidate_text:
-            candidate_text = (
-                candidate_text.rstrip()
-                + f"\n[CC-Retrieve: {pending_ccr_hash}]\n"
-            )
+        # A pointer-shaped line inside the kept text must not suppress the
+        # real record reference — withhold only when this exact pointer is
+        # already present.
+        real_pointer = f"[CC-Retrieve: {pending_ccr_hash}]"
+        if real_pointer not in candidate_text:
+            candidate_text = candidate_text.rstrip() + f"\n{real_pointer}\n"
 
     if not fail_open and not trust_filtered and estimate_tokens(candidate_text) > original_tokens:
         result_text = caller_text
@@ -10215,8 +10280,16 @@ def _compress_context_impl(
     # back as input would nest wrappers and could drop the CCR pointer
     # that makes earlier drops recoverable. Refuse to compact our own
     # output — the caller already has the compacted form.
+    # Recursion and secret screens also judge the unwrapped payload: inside a
+    # JSON tool envelope a marker can hide behind a ``[`` escape and a
+    # line-start credential behind a ``\n`` escape.
+    unwrapped_payload = unwrap_tool_payload(caller_text).inner
     if (
         any(marker in caller_text for marker in _RECURSION_MARKERS)
+        or (
+            unwrapped_payload != caller_text
+            and any(marker in unwrapped_payload for marker in _RECURSION_MARKERS)
+        )
         or (_DEFAULT_ELISION_LINE.search(caller_text) is not None and not _internal_sample)
         or (_has_anchored_marker(caller_text, recursion_markers))
     ):
@@ -10224,7 +10297,9 @@ def _compress_context_impl(
             caller_text=caller_text,
             requested_mode=requested_mode,
         )
-    secret_in_input = _contains_secret(caller_text)
+    secret_in_input = _contains_secret(caller_text) or (
+        unwrapped_payload != caller_text and _contains_secret(unwrapped_payload)
+    )
     savings_gate = False
     degraded = False
     # content_hint code/numbered_code (and log): the caller says what this is,

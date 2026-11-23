@@ -1,12 +1,12 @@
 {
   "reasons": {
-    "file-write": "The optional recovery cache (CCR) and optional log directory write only when a caller leaves ccr on or names a log_dir. Hosts pass ccr=False and no log_dir (the Hermes plugin and the DeepSeek Harness worker both do). Retire by making ccr default to False in a major version.",
+    "file-write": "The optional recovery cache (CCR) and optional log directory write only when a caller leaves ccr on or names a log_dir. Hosts pass ccr=False and no log_dir (the Hermes plugin and the DeepSeek Harness worker both do). The sweep additionally removes stale '.json.' temp orphans the engine itself left inside that caller-named directory (GHSA-hmpw). Retire by making ccr default to False in a major version.",
     "home-path": "DEFAULT_CCR_DIR is the default location of that optional cache. A host never relies on it. New code must take every path from the caller.",
     "network": "The optional LLM-summary strategy (strategy='summarise') posts to a caller-supplied endpoint, loopback by default, remote only with an explicit opt-in. The default strategy never reaches it, and no host enables it."
   },
   "allowed": {
     "compress_context.py::file-write::.mkdir()": 3,
-    "compress_context.py::file-write::.unlink()": 3,
+    "compress_context.py::file-write::.unlink()": 4,
     "compress_context.py::file-write::open(mode='a')": 1,
     "compress_context.py::file-write::open(mode='w')": 1,
     "compress_context.py::file-write::open(mode='wb')": 1,

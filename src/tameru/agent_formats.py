@@ -225,8 +225,11 @@ def looks_like_code(text: str) -> bool:
 
 # Compiler/test/runtime diagnostics of many languages (file:line errors, error codes, frames, signals).
 DIAGNOSTIC_CODE_LINE_RE = re.compile(
-    r"[\w./\\-]+\.\w{1,8}:\d+(?::\d+)?:\s*(?:fatal\s+)?(?:error|warning)\b"
-    r"|[\w./\\-]+\.\w{1,8}\(\d+(?:,\d+)?\):\s*(?:error|warning)\b"
+    # The ``[\w./\\-]+`` alternatives open with a lookbehind so a match can
+    # only start at the head of a run — without it every offset inside a long
+    # dotted run rescans the run (quadratic on crafted input).
+    r"(?<![\w./\\-])[\w./\\-]+\.\w{1,8}:\d+(?::\d+)?:\s*(?:fatal\s+)?(?:error|warning)\b"
+    r"|(?<![\w./\\-])[\w./\\-]+\.\w{1,8}\(\d+(?:,\d+)?\):\s*(?:error|warning)\b"
     r"|\berror\[E\d{4}\]"
     r"|\b(?:error|warning)\s+(?:TS|CS|MSB|NU)\d{3,5}\b"
     r"|^\s*[ew]:\s+(?:file://)?\S+:\d+:\d+\s"
@@ -243,7 +246,7 @@ DIAGNOSTIC_CODE_LINE_RE = re.compile(
     r"|^\s+at\s+[\w$.<>/\[\] ]+\([^()\n]*:\d+(?::\d+)?\)"
     r"|^#\d+\s+(?:0x[0-9a-f]+\s+in\s+)?\S+.*\bat\s+\S+:\d+"
     r"|^#\d+\s+\S+\.php\(\d+\):"
-    r"|[\w./\\-]+\.\w{1,8}:\d+:in\s+[`'(]"
+    r"|(?<![\w./\\-])[\w./\\-]+\.\w{1,8}:\d+:in\s+[`'(]"
     r"|\bmake(?:\[\d+\])?: \*\*\* .*\bError \d+"
     r"|: command not found$"
     r"|\bPermission denied\b"
@@ -2470,10 +2473,16 @@ def _classify_ping(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
 _PROGRESS_LINE_RE = re.compile(r"^\s*(?:\[[=#>\-.*\s]*\d{1,3}(?:\.\d+)?%[=#>\-.*\s]*\]|(?:Verification|Progress:?|Scanning|Processing)?\s*\d{1,3}(?:\.\d+)?%\s*(?:complete|completed|done)?\.?|(?:Downloading|Installing|Preparing|Extracting|Verifying|Uploading)\b[^%\n]{0,80}?:\s*\d{1,3}(?:\.\d+)?%)\s*$", re.IGNORECASE)
 
 
+def _progress_line(line: str) -> re.Match[str] | None:
+    # Trailing padding is stripped once: ``\s*$`` in the pattern would
+    # otherwise backtrack quadratically over a long run of spaces.
+    return _PROGRESS_LINE_RE.match(line.rstrip())
+
+
 def _detect_progress(text: str) -> bool:
     if "%" not in text:
         return False
-    return sum(1 for line in text.splitlines() if _PROGRESS_LINE_RE.match(line)) >= 8
+    return sum(1 for line in text.splitlines() if _progress_line(line)) >= 8
 
 
 def _classify_progress(lines: list[str]) -> tuple[list[bool], list[int], list[int]]:
@@ -2481,9 +2490,9 @@ def _classify_progress(lines: list[str]) -> tuple[list[bool], list[int], list[in
     i = 0
     n = len(lines)
     while i < n:
-        if _PROGRESS_LINE_RE.match(lines[i]):
+        if _progress_line(lines[i]):
             start = i
-            while i < n and (_PROGRESS_LINE_RE.match(lines[i]) or lines[i].strip() == ""):
+            while i < n and (_progress_line(lines[i]) or lines[i].strip() == ""):
                 i += 1
 
             last = i - 1
@@ -2491,7 +2500,7 @@ def _classify_progress(lines: list[str]) -> tuple[list[bool], list[int], list[in
                 last -= 1
 
             for j in range(start, i):
-                if _PROGRESS_LINE_RE.match(lines[j]) and j != last:
+                if _progress_line(lines[j]) and j != last:
                     keep[j] = False
         else:
             i += 1

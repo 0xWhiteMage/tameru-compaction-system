@@ -14,7 +14,7 @@ Fixes #
 
 - [ ] Bug fix: wrong output, a dropped fact, a crash (non-breaking)
 - [ ] New format, reducer or feature (non-breaking)
-- [ ] Security fix (an undisclosed vulnerability goes to [SECURITY.md](https://github.com/0xWhiteMage/tameru-compaction-system/blob/main/SECURITY.md) first, not a public PR)
+- [ ] Security fix (an undisclosed vulnerability goes to [SECURITY.md](https://github.com/0xWhiteMage/tameru-compaction-system/blob/v1.10.0/SECURITY.md) first, not a public PR)
 - [ ] Performance (with a measurement)
 - [ ] Documentation
 - [ ] Tests only
@@ -38,7 +38,7 @@ Fixes #
 
 ### Code
 
-- [ ] I read the [Contributing guide](https://github.com/0xWhiteMage/tameru-compaction-system/blob/main/CONTRIBUTING.md)
+- [ ] I read the [Contributing guide](https://github.com/0xWhiteMage/tameru-compaction-system/blob/v1.10.0/CONTRIBUTING.md)
 - [ ] My commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`fix(reducer): …`)
 - [ ] I searched open and closed issues and pull requests; this is not a duplicate
 - [ ] The PR is one logical change with no unrelated commits
@@ -47,7 +47,7 @@ Fixes #
 - [ ] If the output of any input can change: `python benchmarks/compare.py --verify-against benchmarks/comparison-v<version>.json` passes, or I explained the difference and regenerated the golden corpus on purpose
 - [ ] I tested on: <!-- e.g. Windows 11 / Python 3.12, Ubuntu 24.04 / Python 3.10 -->
 
-### Host restrictions ([docs/HOST-RESTRICTIONS.md](https://github.com/0xWhiteMage/tameru-compaction-system/blob/main/docs/HOST-RESTRICTIONS.md))
+### Host restrictions ([docs/HOST-RESTRICTIONS.md](https://github.com/0xWhiteMage/tameru-compaction-system/blob/v1.10.0/docs/HOST-RESTRICTIONS.md))
 
 <!-- The engine runs inside other people's harnesses, and harness maintainers review what it may do. -->
 

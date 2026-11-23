@@ -6,9 +6,9 @@ body:
     attributes:
       value: |
         Please search [open and closed issues](https://github.com/0xWhiteMage/tameru-compaction-system/issues?q=is%3Aissue) first, and read
-        [where a change belongs](https://github.com/0xWhiteMage/tameru-compaction-system/blob/main/docs/REPOSITORIES.md): things that
+        [where a change belongs](https://github.com/0xWhiteMage/tameru-compaction-system/blob/v1.10.0/docs/REPOSITORIES.md): things that
         only make sense in one harness go to that harness's plugin repository. Every feature must also fit the
-        [known host restrictions](https://github.com/0xWhiteMage/tameru-compaction-system/blob/main/docs/HOST-RESTRICTIONS.md).
+        [known host restrictions](https://github.com/0xWhiteMage/tameru-compaction-system/blob/v1.10.0/docs/HOST-RESTRICTIONS.md).
   - type: textarea
     id: problem
     attributes:
