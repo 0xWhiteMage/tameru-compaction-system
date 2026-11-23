@@ -4,7 +4,8 @@ The pre-1.11 memos were entry-count LRUs keyed by the full input string: a handf
 6-entry caches could still pin hundreds of MB in a long-lived host (a 1M-char text as a
 dict key is the whole text retained). ``ContentCache`` instead keys every record by a
 ``content_key`` digest — the text itself is never stored, neither as key nor in the record
-— and evicts by *weight* (pickled record size), default 64 MB per process.
+— and evicts by *weight* (``sys.getsizeof``-based live record weight, as computed
+by ``weight_of``), default 64 MB per process.
 
 Records are the compact analyses the engine already computed: bools, ints, fingerprint
 maps, fact tuples, line bundles. They aim at a few percent of the source text and never
@@ -22,6 +23,7 @@ from collections import OrderedDict
 from typing import Any
 
 _DEFAULT_MAX_BYTES = 64 << 20
+_MAX_ANALYSIS_COUNTS = 4096
 _MISS = object()
 
 
@@ -84,9 +86,9 @@ class ContentCache:
                 self.bytes -= old[1]
             self.analyses += 1
             self.analysis_counts[key] = self.analysis_counts.get(key, 0) + 1
+            if len(self.analysis_counts) > _MAX_ANALYSIS_COUNTS:
+                self.analysis_counts.pop(next(iter(self.analysis_counts)))
             if weight > self.max_bytes or self.max_bytes <= 0:
-                self._items[key] = (value, weight)  # tracked for stats, dropped below
-                self._items.popitem(last=False)
                 self.evictions += 1
                 return
             self._items[key] = (value, weight)
@@ -119,8 +121,9 @@ def content_key(version: str, name: str, text: str, extra: tuple = ()) -> str:
     """``sha256(engine version, analysis name, text, options)`` — the key leaks nothing."""
     digest = hashlib.sha256()
     for part in (version, name, *(str(e) for e in extra), text):
-        digest.update(part.encode("utf-8", errors="surrogatepass"))
-        digest.update(b"\x00")
+        encoded = part.encode("utf-8", errors="surrogatepass")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
     return digest.hexdigest()[:32]
 
 
@@ -134,7 +137,8 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
 
     Texts longer than ``max_chars`` bypass the cache (same bound the old memos had).
     ``version`` may be a string or a zero-arg callable (for lazy ``ENGINE_VERSION`` lookups
-    in modules ``compress_context`` itself imports)."""
+    in modules ``compress_context`` itself imports). The wrapper's ``cache_clear``
+    clears the whole shared ``CACHE``, not just this analysis."""
 
     def deco(fn):
         @functools.wraps(fn)
@@ -142,7 +146,7 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
             if type(text) is not str or (max_chars is not None and len(text) > max_chars):
                 return fn(text, *extra)
             v = version() if callable(version) else version
-            key = content_key(str(v), name, text, tuple(str(e) for e in extra))
+            key = content_key(str(v), name, text, extra)
             hit = CACHE.get(key)
             if hit is _MISS:
                 hit = fn(text, *extra)
@@ -155,6 +159,7 @@ def content_memo(name: str, *, max_chars: int | None = None, version: Any = ""):
     return deco
 
 
+@functools.lru_cache(maxsize=1)
 def _engine_version() -> str:
     from .compress_context import ENGINE_VERSION
 
