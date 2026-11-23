@@ -1570,21 +1570,67 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     output that never was an original line) are never eviction candidates; when nothing evictable
     remains the append stands and the cost gate decides, exactly as before."""
     kept = compressed.split("\n")
-    missing = [f for f in facts
-               if f[3] not in compressed and not _fact_superseded_in(f[3], kept)]
+    # A line already represented by a surviving exemplar of its template (a
+    # "[×N]"/"[last]" marker carries the exemplar text) is not missing — the
+    # floor's budget is for templates the extract left unrepresented, like the
+    # preprocess restore's own coverage rule. Without it a run of sibling
+    # instances each counts as missing and outranks the rare variant that has
+    # no exemplar at all. The exception is the instance the outcome scan
+    # designated: a line sitting beside a failure IS the evidence (the peer
+    # that went stale, the record the error was about) — a generic sibling
+    # exemplar does not cover that specific instance.
+    kept_fps: set[str] = set()
+    for _ln in kept:
+        _fp = _log_fingerprint(_COUNT_PREFIX_RE.sub("", _ln, count=1))
+        if _fp:
+            kept_fps.add(_fp)
+    # Error positions in the ORIGINAL line list the fact indices are read from,
+    # so an error the render kept still marks its neighbours as context — the
+    # last success before a failure is the evidence whether or not the failure
+    # itself was dropped.
+    orig_err: set[int] = set()
+    if original_text is not None:
+        orig_lines = original_text.split("\n")
+        orig_err = {
+            i for i, ln in enumerate(orig_lines)
+            if _OUTCOME_ERR_NEAR_RE.search(ln) or _OUTCOME_ANOMALY_RE.search(ln)
+        }
+
+    def _ctx(i: int) -> bool:
+        return i - 1 in orig_err or i + 1 in orig_err or i + 2 in orig_err
+
+    missing = [
+        f for f in facts
+        if f[3] not in compressed and not _fact_superseded_in(f[3], kept)
+        and (not _log_fingerprint(f[3]) or _log_fingerprint(f[3]) not in kept_fps or _ctx(f[0]))
+    ]
     if not missing:
         return compressed
     # The ratio budget can fit nothing on a near-empty extract — a floor that
     # protects nothing protects no one. The absolute minimum keeps the budget
-    # meaningful on a one-or-two-line extract without unbounding it.
+    # meaningful on a one-or-two-line extract without unbounding it. The base is
+    # the ALLOWED extract size, not the achieved one: sizing the floor off a
+    # render that under-filled its bound starves the protection exactly where
+    # the extract under-delivered.
+    floor_base = budget_chars
+    if floor_base is None and original_text is not None and min_savings_ratio:
+        floor_base = int(len(original_text) * (1.0 - float(min_savings_ratio)))
     cap = max(
-        int(_FACT_FLOOR_RATIO * (budget_chars or len(compressed))),
+        int(_FACT_FLOOR_RATIO * (floor_base or len(compressed))),
         _FLOOR_MIN_CHARS,
     )
     q = (query or "").casefold()
 
     mset = {f[0]: f for f in missing}
-
+    # A template with a single missing instance is the rare variant the stream
+    # exists to show (the one "{ getattr }" denial amid a hundred "{ write }");
+    # siblings of a flooded template inter-change with each other, so they rank
+    # behind it. Measured on the missing set, which is what the budget feeds.
+    miss_fp_count: dict[str, int] = {}
+    for f in missing:
+        _fp = _log_fingerprint(f[3])
+        if _fp:
+            miss_fp_count[_fp] = miss_fp_count.get(_fp, 0) + 1
     def _rank(f) -> tuple:
         i, key, value, ln = f
         # Error-shaped lines and the rows they annotate rank first — an error
@@ -1593,19 +1639,33 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         err = _OUTCOME_ERR_NEAR_RE.search(ln)
         # The context convention is the row BEFORE the failure — a row sitting
         # after an error is just the next stream entry, not its evidence.
-        adj_err = err is None and any(
-            j in mset and _OUTCOME_ERR_NEAR_RE.search(mset[j][3])
-            for j in (i + 1, i + 2)
+        adj_err = err is None and (
+            any(
+                j in mset and _OUTCOME_ERR_NEAR_RE.search(mset[j][3])
+                for j in (i + 1, i + 2)
+            )
+            or _ctx(i)
         )
-        return (key.casefold() in q or value.casefold() in q, bool(err), adj_err, i)
+        fp = _log_fingerprint(ln)
+        rare = bool(fp) and miss_fp_count.get(fp, 0) == 1
+        return (key.casefold() in q or value.casefold() in q, bool(err), adj_err, rare, i)
 
     chosen, used = [], 0
     for f in sorted(missing, key=_rank, reverse=True):
         ln = f[3]
+        # One restored exemplar stands for its template: once a sibling is
+        # chosen the rest are covered — same rule the preprocess restore uses,
+        # so the budget goes to templates that have no exemplar at all. A
+        # designated error-adjacent instance is never covered by a sibling.
+        fp = _log_fingerprint(ln)
+        if fp and fp in kept_fps and not _ctx(f[0]):
+            continue
         if chosen and (len(chosen) >= _FACT_FLOOR_MAX_LINES or used + len(ln) + 1 > cap):
             continue
         chosen.append(f)
         used += len(ln) + 1
+        if fp:
+            kept_fps.add(fp)
     if not chosen:
         return compressed
     appended = "\n".join(f[3] for f in sorted(chosen, key=lambda f: f[0]))
@@ -1847,7 +1907,8 @@ _OUTCOME_ERR_NEAR_RE = re.compile(
     r"(?i)(?:\(error\)|\bERROR\b|\berror[ s:]|fail(?:ed|ure)?"
     r"|\bwarn(?:ing)?[ s:]|\bnot[ _]found\b"
     r"|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt|"
-    r"critical|overrun\w*|exceed\w*)\b)"
+    r"critical|overrun\w*|exceed\w*|dropp\w*|destroy\w*|reject\w*|stale)\b"
+    r"|(?-i:\bALARM\b))"
 )
 _OUTCOME_LONE_KV_RE = re.compile(r"^\s*\S[^:=>]{1,40}\s*(?::|=|->)\s*\S{1,80}\s*$")
 # Credential material only when a keyword binds a value ("password=hunter2",
@@ -1874,7 +1935,8 @@ _OUTCOME_SECRET_LINE_RE = re.compile(
 )
 # "???" in a result row is an unresolved/failed record (an mtr hop that never
 # answered, a missing field) — failure evidence even without an error word.
-_OUTCOME_ANOMALY_RE = re.compile(r"\?\?\?")
+# "!<word>!" is the same unresolved-marker idiom ("!missing!").
+_OUTCOME_ANOMALY_RE = re.compile(r"\?\?\?|!\w[\w -]{1,30}!")
 # A decorated header ("=== warnings summary ===") or a docs pointer line
 # ("-- Docs: https://...") is furniture even when its text holds a warning
 # word — the failure vocabulary wants events, not framing.
@@ -1918,13 +1980,19 @@ _OUTCOME_EVIDROW_RE = re.compile(
     r"|\b(?:disk|part|lvm|rom)\b"
     r"|\b[ds]ports?:\d"
     r"|(?-i:\b(?:ACCEPT|DROP|REJECT|DNAT|SNAT|MASQUERADE)\b)"
+    r"|^\d+:\d{2}\.\d\s"
+    r"|\(\d+ rows?\)"
+    r"|-(?:pci|isa|acpi|virt)-\d"
     r"|\bidle\b",
     re.IGNORECASE,
 )
 # A pure box-drawing run adjacent to a total/summary line is a table border,
 # not a progress bar — the bar guard above only excluded it because pip bars
 # share the glyph set.
-_OUTCOME_BORDER_RE = re.compile(r"^\s*[─═━_]{8,}\s*$")
+_OUTCOME_BORDER_RE = re.compile(r"^\s*(?:[─═━_]{8,}|(?:\+-+)+\+?)\s*$")
+# A result-set row-count footer ("(2 rows)") — the terminal record of a table,
+# the same position a run-terminal datarow occupies.
+_OUTCOME_ROWSFOOT_RE = re.compile(r"^\s*\(\d+ rows?\)\s*$", re.IGNORECASE)
 _OUTCOME_TOTAL_RE = re.compile(r"(?:total|overall|合计|汇总|小计|总计)", re.IGNORECASE)
 _OUTCOME_TABLE_HEADS = frozenset(
     "state proto recv-q send-q local peer pid user %cpu %mem vsz rss tty stat start time "
@@ -2030,15 +2098,17 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
             state_kvs.append((i, ln))
             continue
         if (
-            len(ln.split()) >= 3 and not _OUTCOME_BAR_RE.match(ln)
+            (len(ln.split()) >= 3 or ln.count("|") >= 2 or _OUTCOME_ROWSFOOT_RE.match(ln))
+            and not _OUTCOME_BAR_RE.match(ln)
             and (
                 _OUTCOME_DATAROW_RE.search(ln)
+                or _OUTCOME_ROWSFOOT_RE.match(ln)
                 or (any(ch.isdigit() for ch in ln) and _OUTCOME_EVIDROW_RE.search(ln))
             )
         ):
             datarows.append((i, ln))
             continue
-        if len(borders) < 1 and _OUTCOME_BORDER_RE.match(ln):
+        if len(borders) < 3 and _OUTCOME_BORDER_RE.match(ln):
             prev = next((lines[j] for j in reversed(nb_i[:pos])), "")
             nxt = next((lines[j] for j in nb_i[pos + 1:pos + 2]), "")
             # A border earns protection beside a total/summary (the classic
@@ -2134,7 +2204,21 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
                 and fp_counts.get(_log_fingerprint(lines[j]) or lines[j], 0) * 2 <= len(nb_i)
             ):
                 errctx.append((j, lines[j]))
-            if len(errctx) >= 2:
+                # The failing step's record may be a stanza whose head sits
+                # above contiguous indented fields ("peer: HASH" over
+                # "  allowed ips:", "  transfer:"): the field row right before
+                # the failure is only the stanza's last line — walk back over
+                # the indent to the unindented opener, the record's landmark.
+                k = j
+                while k >= 0 and lines[k][:1].isspace() and lines[k].strip():
+                    k -= 1
+                if (
+                    k >= 0 and k != j and lines[k].strip() and not is_err[k]
+                    and _OUTCOME_LONE_KV_RE.match(lines[k])
+                    and fp_counts.get(_log_fingerprint(lines[k]) or lines[k], 0) * 2 <= len(nb_i)
+                ):
+                    errctx.append((k, lines[k]))
+            if len(errctx) >= 4:
                 break
     # A state-valued kv field ("State: DECOMMISSIONED") belongs to a stanza
     # whose head ("Name: 10.3.1.8:7868") is the record's landmark — walk back
@@ -2162,7 +2246,7 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         lt = lines[nb_i[-1]]
         fp = _log_fingerprint(lt) or lt
         if (
-            len(lt.split()) >= 3
+            (len(lt.split()) >= 3 or _OUTCOME_ROWSFOOT_RE.match(lt))
             and (not _is_progress_bar(lt) or _OUTCOME_EVIDROW_RE.search(lt))
             and not _OUTCOME_BAR_RE.match(lt)
             and sum(1 for i in nb_i if (_log_fingerprint(lines[i]) or lines[i]) == fp) * 2 <= len(nb_i)
@@ -2244,6 +2328,8 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
         | {ln for _i, ln in lone_kvs}
         | {ln for _i, ln in borders}
         | {ln for _i, ln in datarows}
+        | {ln for _i, ln in tail_row}
+        | {ln for _i, ln in errctx}
     )
     merged = (
         summary_list + prompt_list + ranked_sections + tables + kvs

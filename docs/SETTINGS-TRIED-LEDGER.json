@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "rules": "Cumulative settings-tried ledger for round 2 (docs/ANALYSIS-PLAN-ROUND2.md). One count across the engine and both plugins, starting at the 26 DeepSeek plugin settings tried in the 1.10.0 cycle. A replay or bench runner used for tuning refuses a setting that is not listed here; a new setting is appended (with date, host, split) before it runs, and settings_tried is raised by one per new setting. Re-running a listed setting is not a new setting. validation_queries counts adaptive pass/fail queries per target (budget 20 each). Engine decisions are made on the round-2 dev split only; the r2 validation split is queried only through benchmarks/engine_bench/thresholdout.py (noisy pass/fail gates), never read in full. Reads that predate this rule are recorded under validation_disclosures.",
-  "settings_tried": 47,
+  "settings_tried": 48,
   "validation_queries": {
     "engine": 15,
     "deepseek-plugin": 0,
@@ -434,6 +434,16 @@
       "split": "r4 dev (attempt-1 deal: 6 families)",
       "source": "r4 holdout registered; first dry-run 59/64 — misses: iptv REJECT row beside rate-limit comment, falco Critical/overruns events",
       "result": "r4 dev dry-run 64/64 PASS (was 59/64); r3 dev regression 66/66 PASS. S5 gold + gate9 cleared on iptv/falco; S6 ECE none|vague cleared."
+    },
+    {
+      "n": 48,
+      "date": "2026-11-26",
+      "target": "engine",
+      "id": "E16",
+      "setting": "E15 + post-look dev-only tuning on burned r4 families: outcome vocabulary (destroyed/table full/(N rows) footer/!missing!/ALARM/rejected_connections/stale-handshake), ASCII +-+- borders, errctx walk-back to stanza head (peer:), fact-floor budget keyed to allowed output size (budget_chars or original*(1-min_savings)), template-coverage dedup exempting error-adjacent designated instances, tail-row (N rows) exemption",
+      "split": "r4 dev (post-burn: 40 families)",
+      "source": "r4 sealed look failed 59/65; 34 sealed families burned to dev. Misses: fold-instance drops (auditavc/mqtt/wguard) + vocabulary gaps (lspci/pgstat/sensors/tfplan)",
+      "result": "r4 post-burn dev dry-run 65/65 PASS on all 40 families (was 59/65 on sealed); r3 dev regression 66/66 PASS; suite 2655 green. All 147 sealed-look retention misses resolved on dev; 66 golden cells changed (3 new extracts, 1 honest fail-open under min_savings=0.5)."
     }
   ],
   "noise_seed": 20261121,
