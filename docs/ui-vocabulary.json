@@ -292,6 +292,10 @@
       "en": "The engine did not answer.",
       "zh": "引擎没有响应。"
     },
+    "cancelled": {
+      "en": "The last turn was cancelled.",
+      "zh": "上一轮已取消。"
+    },
     "off": {
       "en": "Strength is Off.",
       "zh": "强度为关闭。"
