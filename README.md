@@ -125,7 +125,7 @@ python -m venv .venv
 python -m pip install "git+https://github.com/0xWhiteMage/tameru-compaction-system.git@66c2668bf5cf3153596774ea6cbc41f6da1c38f3"
 ```
 
-That commit declares version 1.10.0 on the `v1.10.0` **branch**. At this review, `main` still declares 1.9.0, no `v1.10.0` tag exists and the package is not available on PyPI. The commit pin above does not depend on a tag or a PyPI release.
+That commit declares version 1.10.0 on the `v1.10.0` **branch**, which is the repository's default branch. No `v1.10.0` tag exists yet and the package is not available on PyPI. The commit pin above does not depend on a tag or a PyPI release.
 
 To use Tameru inside a harness, install that harness's plugin from the [Integrations](#integrations) table instead; it brings its own copy of the engine, so updating the plugin
 updates the engine.

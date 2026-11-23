@@ -89,7 +89,7 @@ pip install -e ".[dev]"
 
 The optional `semantic` extra (`pip install -e ".[semantic]"`) is not needed for the engine or for the default tests.
 
-For a release-specific checkout, use the immutable 1.10.0 commit in the [install guide](README.md#install); cloning the default branch alone currently gives 1.9.0. Do not build or run the sealed engine split or the corpus holdout during routine development.
+For a release-specific checkout, use the immutable 1.10.0 commit in the [install guide](README.md#install); cloning the default branch gives the 1.10.0 development line. Do not build or run the sealed engine split or the corpus holdout during routine development.
 
 ### Run the checks
 
