@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from itertools import chain
 from typing import Any
 
 from .contract_gates import GENERIC_WORDS
@@ -56,6 +55,8 @@ _TEXT_PART_TYPES = frozenset({"text", "input_text", "output_text"})
 _QUERY_PART_CHARS = 600
 _QUERY_ARG_CHARS = 240
 _QUERY_MAX_DEPTH = 8
+_QUERY_MAX_NODES = 4096
+_QUERY_ARG_JSON_CHARS = 65536
 
 # ``data:<mime>[;param]*,<payload>`` -- the payload charset is base64 plus
 # percent-encoding, so text that follows the URI is not swallowed. Every part is
@@ -94,7 +95,11 @@ def text_of(content: Any) -> str:
         for part in content:
             if isinstance(part, str):
                 parts.append(part)
-            elif isinstance(part, dict) and part.get("type") in _TEXT_PART_TYPES:
+            elif (
+                isinstance(part, dict)
+                and isinstance(part.get("type"), str)
+                and part["type"] in _TEXT_PART_TYPES
+            ):
                 text = part.get("text")
                 if isinstance(text, str):
                     parts.append(text)
@@ -104,7 +109,7 @@ def text_of(content: Any) -> str:
 
 def last_user_text(messages: list[dict[str, Any]]) -> str:
     for msg in reversed(messages or []):
-        if msg.get("role") == "user":
+        if isinstance(msg, dict) and msg.get("role") == "user":
             return text_of(msg.get("content"))
     return ""
 
@@ -139,18 +144,25 @@ def _clean_query_text(text: str, limit: int | None = None) -> str:
 
 
 def _string_leaves(value: Any, depth: int = 0) -> list[str]:
-    """String leaf values of a JSON-like structure, in document order."""
-    if isinstance(value, str):
-        return [value]
-    if depth >= _QUERY_MAX_DEPTH:
-        return []
+    """Bounded prefix of string leaves of a JSON-like structure, in document order."""
     out: list[str] = []
-    if isinstance(value, dict):
-        for child in value.values():
-            out.extend(_string_leaves(child, depth + 1))
-    elif isinstance(value, (list, tuple)):
-        for child in value:
-            out.extend(_string_leaves(child, depth + 1))
+    stack = [(iter((value,)), depth)]
+    visited = 0
+    while stack and visited < _QUERY_MAX_NODES:
+        children, level = stack[-1]
+        try:
+            child = next(children)
+        except StopIteration:
+            stack.pop()
+            continue
+        visited += 1
+        if isinstance(child, str):
+            out.append(child)
+        elif level < _QUERY_MAX_DEPTH:
+            if isinstance(child, dict):
+                stack.append((iter(child.values()), level + 1))
+            elif isinstance(child, (list, tuple)):
+                stack.append((iter(child), level + 1))
     return out
 
 
@@ -166,9 +178,16 @@ def _call_name_and_args(call: Any) -> tuple[str, Any]:
     return (name if isinstance(name, str) else ""), args
 
 
+def _tool_calls(message: dict[str, Any]) -> list[Any] | tuple[Any, ...]:
+    calls = message.get("tool_calls")
+    return calls if isinstance(calls, (list, tuple)) else ()
+
+
 def _arg_leaves(args: Any) -> list[str]:
     """String leaves of tool-call arguments given as a JSON string or a dict."""
     if isinstance(args, str):
+        if len(args) > _QUERY_ARG_JSON_CHARS:
+            return []
         try:
             parsed = json.loads(args)
         except (ValueError, RecursionError):
@@ -202,17 +221,19 @@ def _call_id_variants(call: Any) -> frozenset[str]:
     return _id_variants(call.get("id"), call.get("call_id"), call.get("response_item_id"))
 
 
-def _find_tool_call(messages: list[dict[str, Any]], idx: int, call_id: str) -> Any:
+def _find_tool_call(
+    messages: list[dict[str, Any]], idx: int, call_id: str,
+    *, is_scaffold: Callable[[dict[str, Any]], bool] | None = None,
+) -> Any:
     """The assistant tool_call that ``call_id`` answers, nearest before ``idx`` first."""
     wanted = _id_variants(call_id)
-    order = chain(
-        range(min(idx, len(messages)) - 1, -1, -1), range(max(idx, 0), len(messages))
-    )
-    for i in order:
+    for i in range(min(idx, len(messages)) - 1, -1, -1):
         msg = messages[i]
         if not isinstance(msg, dict) or msg.get("role") != "assistant":
             continue
-        for call in msg.get("tool_calls") or []:
+        if is_scaffold is not None and is_scaffold(msg):
+            continue
+        for call in _tool_calls(msg):
             if wanted & _call_id_variants(call):
                 return call
     return None
@@ -271,7 +292,7 @@ def task_query(
             return
         text = _clean_query_text(raw, cap)[:cap]
         if normalise and text:
-            text = _split_cjk_edges(_nfkc(text))
+            text = _split_cjk_edges(_nfkc(text))[:cap]
         if not text:
             return
         room = max_chars - used - (1 if parts else 0)
@@ -290,20 +311,29 @@ def task_query(
         seen.add(key)
         parts.append(text)
         used += len(text) + (1 if len(parts) > 1 else 0)
+        full = full or used >= max_chars
 
     if isinstance(focus, str):
         add(focus)
     elif focus:
         add(text_of(focus))
 
+    if full:
+        return parts
     msg = messages[idx] if isinstance(idx, int) and 0 <= idx < len(messages) else None
     call_id = str((msg or {}).get("tool_call_id") or "") if isinstance(msg, dict) else ""
     if include_call and call_id:
-        name, args = _call_name_and_args(_find_tool_call(messages, idx, call_id))
+        name, args = _call_name_and_args(
+            _find_tool_call(messages, idx, call_id, is_scaffold=is_scaffold)
+        )
         add(name, _QUERY_ARG_CHARS)
-        for leaf in _arg_leaves(args):
+        for leaf in (() if full else _arg_leaves(args)):
             add(leaf, _QUERY_ARG_CHARS)
+            if full:
+                break
 
+    if full:
+        return parts
     if isinstance(idx, int):
         for i in range(max(idx + 1, 0), len(messages)):
             follow = messages[i]
@@ -311,10 +341,17 @@ def task_query(
                 is_scaffold is not None and is_scaffold(follow)
             ):
                 add(text_of(follow.get("content")))
-                for call in follow.get("tool_calls") or []:
+                for call in _tool_calls(follow):
+                    if full:
+                        break
                     for leaf in _arg_leaves(_call_name_and_args(call)[1]):
                         add(leaf, _QUERY_ARG_CHARS)
+                        if full:
+                            break
                 break
+
+    if full:
+        return parts
 
     def real_user_text(m: Any) -> str:
         """Text of a user message that counts (non-blank, not skipped), else ``""``."""
@@ -331,6 +368,8 @@ def task_query(
     # accepted, not once per user message on every call.
     last_user = next((t for t in map(real_user_text, reversed(messages)) if t), "")
     add(last_user)
+    if full:
+        return parts
     add(next((t for t in map(real_user_text, messages) if t), ""))
     return parts
 
@@ -486,14 +525,20 @@ def _boolean_requirement_satisfied(field: str, expected: bool, post: str) -> boo
         return False
     field_pattern = r"[\s_-]+".join(re.escape(word) for word in words)
     field_ref = rf"(?<![a-z0-9_]){field_pattern}(?![a-z0-9_])"
-    explicit = re.search(
-        rf"{field_ref}\s*(?:(?:is|equals?)\s+|[=:]\s*)?"
-        r"(true|yes|on|false|no|off)\b",
+    explicit = re.finditer(
+        rf"{field_ref}[\"']?\s*(?:(?:is|equals?)\s+|[=:]\s*)?"
+        r"(not\s+)?(true|yes|on|false|no|off)\b",
         post,
         re.IGNORECASE,
     )
-    if explicit:
-        return (explicit.group(1).casefold() in {"true", "yes", "on"}) is expected
+    explicit_values: set[bool] = set()
+    for match in explicit:
+        value = match.group(2).casefold() in {"true", "yes", "on"}
+        if match.group(1):
+            value = not value
+        explicit_values.add(value)
+    if explicit_values:
+        return explicit_values == {expected}
 
     negated = bool(
         re.search(
@@ -544,7 +589,7 @@ def _pending_tool_calls(messages: list[dict[str, Any]]) -> set[str]:
         return set()
     calls = [
         call
-        for call in messages[last].get("tool_calls") or []
+        for call in _tool_calls(messages[last])
         if _call_id_variants(call)
     ]
     if not calls:
@@ -563,12 +608,10 @@ def _pending_tool_calls(messages: list[dict[str, Any]]) -> set[str]:
 def _call_signature(msg: dict[str, Any]) -> list[tuple[str, str]]:
     """Deterministic (name, canonical-args) pairs for an assistant message."""
     sigs: list[tuple[str, str]] = []
-    for call in msg.get("tool_calls") or []:
+    for call in _tool_calls(msg):
         if not isinstance(call, dict):
             continue
-        fn = call.get("function") or {}
-        name = str(fn.get("name") or call.get("name") or "")
-        args = fn.get("arguments", call.get("arguments"))
+        name, args = _call_name_and_args(call)
         try:
             canonical = (
                 args
@@ -598,8 +641,28 @@ def trajectory_gate(
     Returns ``(allowed, reason)``. The gate only ever suppresses — the
     fail-safe direction — so it is safe to leave enabled by default.
     """
+    if type(stuck_run) is not int or stuck_run < 2:
+        return False, "invalid-stuck-run"
     if not messages:
         return True, "ok"
+    if any(
+        not isinstance(m, dict)
+        or (
+            m.get("role") == "assistant"
+            and m.get("tool_calls") is not None
+            and not isinstance(m["tool_calls"], (list, tuple))
+        )
+        for m in messages
+    ):
+        return False, "malformed-transcript"
+    trailing_assistant = next(
+        (m for m in reversed(messages) if m.get("role") == "assistant"), None
+    )
+    if trailing_assistant and any(
+        not _call_id_variants(call)
+        for call in trailing_assistant.get("tool_calls") or []
+    ):
+        return False, "unidentifiable-tool-calls"
     if _pending_tool_calls(messages):
         return False, "pending-tool-calls"
     assistant = [m for m in messages if m.get("role") == "assistant"]
@@ -626,11 +689,20 @@ def apply_extractive_tool_prune(
     """
     if not messages:
         return messages, 0
+    if (
+        type(min_chars) is not int or min_chars < 0
+        or type(protect_last_tool) is not int or protect_last_tool < 0
+        or (query is not None and not isinstance(query, str))
+        or any(not isinstance(m, dict) for m in messages)
+    ):
+        return messages, 0
     if timing_gate:
         allowed, _reason = trajectory_gate(messages)
         if not allowed:
             return messages, 0
     q = query if query is not None else last_user_text(messages)
+    if _requests_full_preservation(q):
+        return messages, 0
     tool_idxs = [i for i, m in enumerate(messages) if m.get("role") == "tool"]
     skip = set(tool_idxs[-protect_last_tool:]) if protect_last_tool else set()
     out: list[dict[str, Any]] | None = None
@@ -644,12 +716,15 @@ def apply_extractive_tool_prune(
         # Live tool payloads can contain credentials or other secrets. This
         # adapter has no retrieval path, so persisting originals in CCR only
         # adds exposure, unbounded disk retention, and a semantic marker.
-        result = compress_context(content, q, ccr=False, citations=False)
-        new = result.compressed_text
-        if result.fail_open or new == content or len(new) >= len(content):
+        try:
+            result = compress_context(content, q, ccr=False, citations=False)
+            new = result.compressed_text
+            if result.fail_open or not isinstance(new, str) or len(new) >= len(content):
+                continue
+        except Exception:  # Fail-open boundary: retain the original payload.
             continue
         if out is None:
-            out = [dict(m) for m in messages]
+            out = list(messages)
         out[i] = {**msg, "content": new}
         changed += 1
     return (out if out is not None else messages), changed
