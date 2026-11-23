@@ -5,6 +5,7 @@ import bisect
 import csv
 import io
 import json
+import math
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
@@ -224,7 +225,7 @@ def _line_separator(text: str) -> str:
 _RECORD_SPECIAL_RE = re.compile('["\r\n]')
 
 
-def _split_delimited_records(text: str) -> list[str] | None:
+def _split_delimited_records(text: str, delimiter: str | None = None) -> list[str] | None:
     # Perf (v1.5.0): jump from one quote / line break to the next instead of
     # stepping through every character; the records are identical.
     records: list[str] = []
@@ -243,7 +244,8 @@ def _split_delimited_records(text: str) -> list[str] | None:
             if in_quotes and index + 1 < length and text[index + 1] == '"':
                 index += 2
                 continue
-            in_quotes = not in_quotes
+            if in_quotes or delimiter is None or index == start or text[index - 1] == delimiter:
+                in_quotes = not in_quotes
             index += 1
             continue
         if not in_quotes:
@@ -276,13 +278,22 @@ def _parse_delimited_record(record: str, delimiter: str, limits: FormatLimits) -
 
 
 def _detect_delimiter(text: str) -> str | None:
-    records = _split_delimited_records(text)
-    if not records or len(records) < 2:
-        return None
-    n = len(records)
-    idx = sorted(set(list(range(min(8, n))) + list(range(max(0, n - 8), n)) + [i * n // 17 for i in range(1, 17)]))
-    sample = [records[i] for i in idx]
+    has_quotes = '"' in text
+    shared_records = None
     for delimiter in ("\t", ","):
+        if delimiter not in text:
+            continue
+        if has_quotes:
+            records = _split_delimited_records(text, delimiter)
+        else:
+            if shared_records is None:
+                shared_records = _split_delimited_records(text)
+            records = shared_records
+        if not records or len(records) < 2:
+            continue
+        n = len(records)
+        idx = sorted(set(range(min(8, n))) | set(range(max(0, n - 8), n)) | {i * n // 17 for i in range(1, 17)})
+        sample = [records[i] for i in idx]
         parsed = [_parse_delimited_record(record, delimiter, FormatLimits()) for record in sample]
         if any(row is None for row in parsed):
             continue
@@ -310,6 +321,8 @@ def _looks_vertical(text: str) -> bool:
 # would delete rows it cannot parse.
 _TAB_NOT_YAML_RE = re.compile(r"(?m)^[ ]*\t[ \t]*(?![-?][ \t])(?![^\s:#][^:\n]{0,120}:(?:[ \t]|$))\S")
 
+_XML_DECLARATION_RE = re.compile(r"<!DOCTYPE|<!ENTITY", re.IGNORECASE | re.ASCII)
+
 
 def detect_format(text: str) -> str:
     value = str(text or "")
@@ -317,6 +330,8 @@ def detect_format(text: str) -> str:
     if re.search(r"<!doctype\s+html|<html\b", stripped[:512], re.IGNORECASE):
         return "html"
     if stripped.startswith("<") and stripped.rstrip().endswith(">"):
+        if _XML_DECLARATION_RE.search(stripped):
+            return "xml"
         try:
             ET.fromstring(stripped)
         except (ET.ParseError, RecursionError, UnicodeError):
@@ -456,7 +471,7 @@ def _adapt_delimited(
     format_name: str,
     gap_marker: Callable[[int, int], str] | None = None,
 ) -> FormatResult:
-    records = _split_delimited_records(text)
+    records = _split_delimited_records(text, delimiter)
     if records is None:
         return _decline(text, format_name, "unmatched quote", structurally_valid=False)
     if len(records) - 1 > limits.max_records:
@@ -502,7 +517,7 @@ def _adapt_delimited_outliers(
     format_name: str,
     gap_marker: Callable[[int, int], str] | None = None,
 ) -> FormatResult:
-    records = _split_delimited_records(text)
+    records = _split_delimited_records(text, delimiter)
     if records is None:
         return _decline(text, format_name, "unmatched quote", structurally_valid=False)
     if len(records) - 1 > limits.max_records:
@@ -514,12 +529,48 @@ def _adapt_delimited_outliers(
     if width < 2 or any(len(row or []) != width for row in parsed[1:]):
         return _decline(text, format_name, "inconsistent field count", structurally_valid=False)
 
-    data_rows = parsed[1:]
-    total = max(0, len(data_rows))
+    data_rows = [row for row in parsed[1:] if row is not None]
+    total = len(data_rows)
+    kept_indices, reason = _select_table_outliers(text, query, delimiter, data_rows)
+    if not kept_indices:
+        return _decline(text, format_name, reason, total_records=total)
+
+    if gap_marker is None:
+        kept_records = [records[1 + index] for index in kept_indices]
+        omitted = total - len(kept_indices)
+        result_records = [
+            records[0],
+            *kept_records,
+            f"... {omitted} of {total} rows omitted",
+        ]
+    else:
+        keep_flags = [False] * total
+        for index in kept_indices:
+            keep_flags[index] = True
+        result_records = [
+            records[0],
+            *_with_gaps(records[1:], keep_flags, "\n", gap_marker, len(text)),
+        ]
+
+    return FormatResult(
+        format=format_name,
+        applied=True,
+        text=_line_separator(text).join(result_records),
+        total_records=total,
+        kept_records=len(kept_indices),
+        reason="header plus outlier and matching records",
+    )
+
+
+def _select_table_outliers(
+    text: str, query: str, delimiter: str, data_rows: list[list[str]],
+) -> tuple[list[int], str]:
+    total = len(data_rows)
     if total < 20:
-        return _decline(text, format_name, "too few records for outliers", total_records=total)
+        return [], "too few records for outliers"
 
     outlier_flags = [False] * total
+    width = len(data_rows[0])
 
     for col in range(width):
         values = [row[col] if row and col < len(row) else "" for row in data_rows]
@@ -540,9 +591,12 @@ def _adapt_delimited_outliers(
             if _OUTLIER_NUMBER_RE.fullmatch(value):
                 number_text = value[:-1] if value.endswith("%") else value
                 try:
-                    parsed_values.append((row_index, value, float(number_text)))
+                    number = float(number_text)
                 except ValueError:
                     continue
+                if not math.isfinite(number):
+                    return [], "numeric field exceeds finite range"
+                parsed_values.append((row_index, value, number))
         if len(parsed_values) * 10 < total * 9:
             continue
         numbers = sorted(number for _, _, number in parsed_values)
@@ -587,7 +641,7 @@ def _adapt_delimited_outliers(
 
     lower_text = text.lower()
     if guard_words and not any(word in lower_text for word in guard_words):
-        return _decline(text, format_name, "query unrelated to table", total_records=total)
+        return [], "query unrelated to table"
 
     query_flags = [False] * total
     if query_words:
@@ -602,36 +656,10 @@ def _adapt_delimited_outliers(
         index for index in range(total) if outlier_flags[index] or query_flags[index]
     ]
     if not kept_indices:
-        return _decline(text, format_name, "no outliers", total_records=total)
+        return [], "no outliers"
     if len(kept_indices) * 5 > total:
-        return _decline(text, format_name, "too many outliers", total_records=total)
-
-    keep_flags = [False] * total
-    for index in kept_indices:
-        keep_flags[index] = True
-
-    if gap_marker is None:
-        kept_records = [records[1 + index] for index in kept_indices]
-        omitted = total - len(kept_indices)
-        result_records = [
-            records[0],
-            *kept_records,
-            f"... {omitted} of {total} rows omitted",
-        ]
-    else:
-        result_records = [
-            records[0],
-            *_with_gaps(records[1:], keep_flags, "\n", gap_marker, len(text)),
-        ]
-
-    return FormatResult(
-        format=format_name,
-        applied=True,
-        text=_line_separator(text).join(result_records),
-        total_records=total,
-        kept_records=len(kept_indices),
-        reason="header plus outlier and matching records",
-    )
+        return [], "too many outliers"
+    return kept_indices, ""
 
 
 def _selector_is_distinctive(selector: str) -> bool:
@@ -727,6 +755,18 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
 
+_YAML_DOCUMENT_START_RE = re.compile(r"^---(?:[ \t]|$)")
+_YAML_EMPTY_START_RE = re.compile(r"^---(?:[ \t]+(?:#.*)?)?$")
+_YAML_BLOCK_SCALAR_RE = re.compile(
+    r"(?m)(?:^[ \t]*|[:?\-][ \t]+)[|>](?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#[^\n]*)?[ \t\r]*$"
+)
+_YAML_MAPPING_COMMENT_RE = re.compile(r"""^[ ]*(?:-[ \t]+)?[^ \t#:'"\[\]{}][^:#'"\[\]{}]*:[ \t]+#""")
+
+
+def _ends_yaml_mapping_key(line: str) -> bool:
+    return line.rstrip().endswith(":") or bool(_YAML_MAPPING_COMMENT_RE.match(line))
+
+
 def _adapt_yaml_documents(
     text: str, selectors: tuple[str, ...], limits: FormatLimits,
     gap_marker: Callable[[int, int], str] | None = None,
@@ -735,11 +775,11 @@ def _adapt_yaml_documents(
     if any(line.startswith("%") for line in lines):
         return _decline(text, "yaml", "document directives require the original stream")
     starts = [0]
-    starts.extend(i for i, line in enumerate(lines) if i and line.rstrip() == "---")
+    starts.extend(i for i, line in enumerate(lines) if i and _YAML_DOCUMENT_START_RE.match(line))
     bounds = [(start, starts[i + 1] if i + 1 < len(starts) else len(lines))
               for i, start in enumerate(starts)]
     bounds = [(start, end) for start, end in bounds
-              if any(line.strip() and line.rstrip() != "---" for line in lines[start:end])]
+              if any(line.strip() and not _YAML_EMPTY_START_RE.fullmatch(line) for line in lines[start:end])]
     if len(bounds) > limits.max_records:
         return _decline(text, "yaml", "document count exceeds format limit", total_records=len(bounds))
     documents = ["\n".join(lines[start:end]) for start, end in bounds]
@@ -778,6 +818,8 @@ def _adapt_yaml(
     over two minutes). The same selection is now computed from monotone stacks and a next-line table, in
     O(lines + matches log lines); ``tests/test_perf_regressions.py`` pins it against the previous
     implementation on randomised documents."""
+    if _YAML_BLOCK_SCALAR_RE.search(text):
+        return _decline(text, "yaml", "block scalars require whole-document selection")
     lines = text.splitlines()
     n = len(lines)
     nonblank = [index for index, line in enumerate(lines) if line.strip()]
@@ -790,8 +832,9 @@ def _adapt_yaml(
     # content lines (what the backward scans look at): non-blank and not a comment
     content = [index for index in nonblank if not lines[index].lstrip().startswith("#")]
     is_list = {index: re.match(r"^\s*-\s+", lines[index]) is not None for index in content}
-    is_colon = {index: lines[index].rstrip().endswith(":") for index in content}
-    colon_nonblank = [index for index in nonblank if lines[index].rstrip().endswith(":")]
+    is_colon = {index: _ends_yaml_mapping_key(lines[index]) for index in content}
+    colon_nonblank = [index for index in nonblank
+                     if is_colon.get(index) or (index not in is_colon and lines[index].rstrip().endswith(":"))]
     separators = [index for index, line in enumerate(lines) if line.rstrip() == "---"] if has_document_separator else []
     # next nonblank line (strictly after i) whose indent is <= indents[i]; n when none
     next_le = [n] * n
@@ -857,11 +900,16 @@ def _adapt_yaml(
         if prefix_anchor.get(anchor_indent, -1) < anchor:
             prefix_anchor[anchor_indent] = anchor
         spans.append((anchor, max(anchor + 1, next_le[anchor])))
-    for anchor_indent, anchor in prefix_anchor.items():
+    if prefix_anchor:
+        anchor_indents = sorted(prefix_anchor)
+        latest = [prefix_anchor[depth] for depth in anchor_indents]
+        for position in range(len(latest) - 2, -1, -1):
+            latest[position] = max(latest[position], latest[position + 1])
         for index in colon_nonblank:
-            if index >= anchor:
+            if index >= latest[0]:
                 break
-            if indents[index] < anchor_indent:
+            deeper = bisect.bisect_right(anchor_indents, indents[index])
+            if deeper < len(latest) and index < latest[deeper]:
                 selected.add(index)
     spans.sort()
     merged_end = -1
@@ -888,10 +936,14 @@ def _adapt_yaml(
 
 
 def _adapt_yaml_documents_outliers(text, gap_marker, limits: FormatLimits) -> FormatResult:
+    if _YAML_BLOCK_SCALAR_RE.search(text):
+        return _decline(text, "yaml", "block scalars cannot be compared line by line")
     lines = text.splitlines()
+    if any(line.startswith("%") for line in lines):
+        return _decline(text, "yaml", "document directives require the original stream")
     starts = [0]
     for idx, line in enumerate(lines):
-        if line.rstrip() == "---" and starts[-1] != idx:
+        if _YAML_DOCUMENT_START_RE.match(line) and starts[-1] != idx:
             starts.append(idx)
 
     docs = []
@@ -900,7 +952,7 @@ def _adapt_yaml_documents_outliers(text, gap_marker, limits: FormatLimits) -> Fo
         nonblank = [
             line
             for line in lines[start:end]
-            if line.strip() and line.rstrip() != "---"
+            if line.strip() and not _YAML_EMPTY_START_RE.fullmatch(line)
         ]
         if nonblank:
             docs.append({"start": start, "end": end, "nonblank": nonblank})
@@ -941,7 +993,7 @@ def _adapt_yaml_documents_outliers(text, gap_marker, limits: FormatLimits) -> Fo
                 values.append(rest.strip())
             else:
                 template.append((indent, "<item>"))
-                values.append("")
+                values.append(line.lstrip())
         return tuple(template), values
 
     for doc in docs:
@@ -1032,8 +1084,7 @@ def _adapt_yaml_documents_outliers(text, gap_marker, limits: FormatLimits) -> Fo
 def _adapt_xml(
     text: str, selectors: tuple[str, ...], limits: FormatLimits, gap_marker: Callable[[int, int], str] | None = None
 ) -> FormatResult:
-    upper = text.upper()
-    if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+    if _XML_DECLARATION_RE.search(text):
         return _decline(text, "xml", "DTD/entity declarations are not processed", structurally_valid=False)
     lines = [line for line in text.splitlines() if line.strip()]
     if len(lines) < 3:
@@ -1072,12 +1123,18 @@ def _adapt_xml(
     )
 
 
+_SQL_DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
+_SQL_CLIENT_LINE_RE = re.compile(
+    r"(?:go(?:[ \t]+[1-9][0-9]*)?[ \t]*(?:--[^\r\n]*)?|delimiter[ \t]+[^ \t\r\n]+[^\r\n]*)(?=[\r\n]|$)",
+    re.IGNORECASE,
+)
+
+
 def _split_sql_statements(text: str) -> list[str] | None:
     statements: list[str] = []
     start = 0
     index = 0
     quote = ""
-    dollar_tag = ""
     line_comment = False
     block_comment = False
     while index < len(text):
@@ -1087,16 +1144,11 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 1
             continue
         if block_comment:
+            if text.startswith("/*", index):
+                return None  # SQL dialects disagree on nested block comments.
             if text.startswith("*/", index):
                 block_comment = False
                 index += 2
-            else:
-                index += 1
-            continue
-        if dollar_tag:
-            if text.startswith(dollar_tag, index):
-                index += len(dollar_tag)
-                dollar_tag = ""
             else:
                 index += 1
             continue
@@ -1107,7 +1159,7 @@ def _split_sql_statements(text: str) -> list[str] | None:
                     index += 2
                     continue
                 quote = ""
-            elif char == "\\" and index + 1 < len(text):
+            elif char == "\\" and quote != "]" and index + 1 < len(text):
                 index += 2
                 continue
             index += 1
@@ -1117,19 +1169,32 @@ def _split_sql_statements(text: str) -> list[str] | None:
             index += 2
             continue
         if text.startswith("/*", index):
+            if text.startswith(("/*!", "/*M!"), index):
+                return None  # MySQL and MariaDB executable comments are not trivia.
             block_comment = True
             index += 2
             continue
         char = text[index]
-        if char in {"'", '"', "`"}:
-            quote = char
+        if char in "gGdD" and _SQL_CLIENT_LINE_RE.match(text, index):
+            before = index
+            while before and text[before - 1] in " \t":
+                before -= 1
+            if not before or text[before - 1] in "\r\n":
+                return None  # Client-side boundaries are not SQL statements.
+        if char == "\\":
+            return None  # An unquoted backslash may start a client metacommand.
+        if char in {"'", '"', "`", "["}:
+            quote = "]" if char == "[" else char
             index += 1
             continue
         if char == "$":
-            match = re.match(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$", text[index:])
+            match = _SQL_DOLLAR_TAG_RE.match(text, index)
             if match:
-                dollar_tag = match.group(0)
-                index += len(dollar_tag)
+                tag = match.group(0)
+                close = text.find(tag, match.end())
+                if close < 0:
+                    return None
+                index = close + len(tag)
                 continue
         if char == ";":
             statement = text[start : index + 1].strip()
@@ -1137,7 +1202,7 @@ def _split_sql_statements(text: str) -> list[str] | None:
                 statements.append(statement)
             start = index + 1
         index += 1
-    if quote or dollar_tag or block_comment:
+    if quote or block_comment:
         return None
     tail = text[start:].strip()
     if tail:
@@ -1150,7 +1215,7 @@ def _adapt_sql(
 ) -> FormatResult:
     statements = _split_sql_statements(text)
     if statements is None:
-        return _decline(text, "sql", "unterminated SQL quote or comment", structurally_valid=False)
+        return _decline(text, "sql", "unsafe SQL statement boundaries", structurally_valid=False)
     if len(statements) > limits.max_records:
         return _decline(text, "sql", "record limit exceeded", total_records=len(statements))
     if any(len(statement) > limits.max_record_chars for statement in statements):
@@ -1305,22 +1370,38 @@ _ADAPTERS: dict[str, Callable[..., FormatResult]] = {
 
 
 _PIPE_SEPARATOR_RE = re.compile(r"^\|(?:\s*:?-{3,}:?\s*\|)+$")
+_PIPE_TOKEN_RE = re.compile(r"\\\\|\\\||\|")
+
+
+def _split_pipe_row(line: str) -> list[str] | None:
+    if not line.startswith("|") or not line.endswith("|") or len(line) < 2:
+        return None
+    if "\\" not in line:
+        return line[1:-1].split("|")
+    cells = []
+    start = 1
+    for token in _PIPE_TOKEN_RE.finditer(line, start):
+        if token.group() == "|":
+            cells.append(line[start:token.start()])
+            start = token.end()
+    return cells if start == len(line) else None
 
 
 def _looks_pipe_table(text: str) -> bool:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return _valid_pipe_table_lines([line.strip() for line in text.splitlines() if line.strip()])
+
+
+def _valid_pipe_table_lines(lines: list[str]) -> bool:
     if len(lines) < 4:
-        return False
-    if not all(line.startswith("|") and line.endswith("|") for line in lines):
         return False
     if not _PIPE_SEPARATOR_RE.match(lines[1]):
         return False
-    header_cells = lines[0][1:-1].split("|")
-    if any("\t" in cell for cell in header_cells):
+    header_cells = _split_pipe_row(lines[0])
+    if not header_cells or any("\t" in cell for cell in header_cells):
         return False
     for line in lines[1:]:
-        cells = line[1:-1].split("|")
-        if len(cells) != len(header_cells):
+        cells = _split_pipe_row(line)
+        if cells is None or len(cells) != len(header_cells):
             return False
         if any("\t" in cell for cell in cells):
             return False
@@ -1329,52 +1410,33 @@ def _looks_pipe_table(text: str) -> bool:
 
 def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
     lines = [line for line in text.splitlines() if line.strip()]
+    if not _valid_pipe_table_lines([line.strip() for line in lines]):
+        return _decline(text, "markdown_table", "invalid pipe table", structurally_valid=False)
     header = lines[0]
     separator = lines[1]
     data = lines[2:]
 
-    tsv_lines = []
-    for line in [header] + data:
-        cells = line.strip()[1:-1].split("|")
-        tsv_lines.append("\t".join(cell.strip() for cell in cells))
-    tsv = "\n".join(tsv_lines)
-
-    result = _adapt_delimited_outliers(tsv, query, limits, "\t", "markdown_table", None)
-    if not result.applied:
-        return _decline(text, "markdown_table", result.reason, total_records=len(data))
-
-    result_lines = result.text.splitlines()
-    if len(result_lines) >= 2 and (
-        result_lines[-1].startswith("...") or "omitted" in result_lines[-1]
+    total = len(data)
+    if total > limits.max_records:
+        return _decline(text, "markdown_table", "record limit exceeded", total_records=total)
+    rows = [[cell.strip() for cell in (_split_pipe_row(line.strip()) or [])] for line in [header, *data]]
+    width = len(rows[0])
+    if width < 2 or width > limits.max_fields or any(
+        sum(map(len, row)) + width - 1 > limits.max_record_chars for row in rows
     ):
-        kept_tsv_lines = result_lines[1:-1]
-        omitted_line = result_lines[-1]
-    else:
-        kept_tsv_lines = result_lines[1:]
-        omitted_line = None
-
-    kept_counts = {}
-    for line in kept_tsv_lines:
-        kept_counts[line] = kept_counts.get(line, 0) + 1
-
-    kept_original = []
-    keep_flags = []
-    for line in data:
-        cells = line.strip()[1:-1].split("|")
-        tsv_row = "\t".join(cell.strip() for cell in cells)
-        count = kept_counts.get(tsv_row, 0)
-        if count > 0:
-            kept_counts[tsv_row] = count - 1
-            kept_original.append(line)
-            keep_flags.append(True)
-        else:
-            keep_flags.append(False)
+        return _decline(text, "markdown_table", "invalid delimited record", total_records=total)
+    search_text = "\n".join("\t".join(row) for row in rows) if query else ""
+    kept_indices, reason = _select_table_outliers(search_text, query, "\t", rows[1:])
+    if not kept_indices:
+        return _decline(text, "markdown_table", reason, total_records=total)
 
     if gap_marker is None:
-        out = [header, separator] + kept_original
-        if omitted_line:
-            out.append(omitted_line)
+        out = [header, separator, *(data[index] for index in kept_indices)]
+        out.append(f"... {total - len(kept_indices)} of {total} rows omitted")
     else:
+        keep_flags = [False] * total
+        for index in kept_indices:
+            keep_flags[index] = True
         out = [header, separator]
         out.extend(_with_gaps(data, keep_flags, "\n", gap_marker, len(text)))
 
@@ -1382,8 +1444,8 @@ def _adapt_pipe_table_outliers(text, query, limits, gap_marker):
         format="markdown_table",
         applied=True,
         text="\n".join(out),
-        total_records=len(data),
-        kept_records=len(kept_original),
+        total_records=total,
+        kept_records=len(kept_indices),
         reason="header plus outlier and matching records",
     )
 
@@ -1491,7 +1553,9 @@ def adapt_format(
     if resolved_format == 'yaml' and yaml_requires_original(value):
         return _decline(value, 'yaml', 'YAML anchors and aliases require the original document',
                         structurally_valid=False)
-    if resolved_format == "yaml" and any(line.rstrip() == "---" for line in value.splitlines()):
+    if resolved_format == "yaml" and "---" in value and any(
+        _YAML_DOCUMENT_START_RE.match(line) for line in value.splitlines()
+    ):
         if not selectors:
             return _adapt_yaml_documents_outliers(value, gap_marker, limits or FormatLimits())
         return _adapt_yaml_documents(value, selectors, limits or FormatLimits(), gap_marker)
