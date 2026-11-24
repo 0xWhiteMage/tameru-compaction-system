@@ -521,3 +521,16 @@ def test_single_token_guillemet_tag_is_a_diagnostic():
     text = ("INFO a\n" * 60 + "⟪ERROR: database shutdown⟫\n" + "INFO b\n" * 40)
     r = compress_context(text, "database shutdown", ccr=False, citations=False)
     assert "⟪ERROR: database shutdown⟫" in r.compressed_text
+
+
+def test_triple_quote_in_comment_does_not_disable_veto():
+    """A ``\"\"\"`` inside a comment is prose, not a string opener: the mask
+    must not swallow the settings after it and silence the stale-line veto."""
+    text = ("# config history\nconnect_timeout_ms = 30000  # original\n"
+        + '# prefer """ triple quotes\n'
+        + "\n".join(f"# note {i}: tune pool size to {i}" for i in range(100))
+        + "\nconnect_timeout_ms = 5000  # current after INC-42\n")
+    r = compress_context(text, "what is the current connect_timeout_ms",
+                         ccr=False, citations=False)
+    assert "connect_timeout_ms = 30000" not in r.compressed_text
+    assert "connect_timeout_ms = 5000" in r.compressed_text

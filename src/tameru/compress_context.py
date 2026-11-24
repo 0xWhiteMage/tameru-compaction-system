@@ -2037,8 +2037,11 @@ def _triple_quoted_lines(text: str) -> set[str]:
             if inside in ln:
                 inside = None
             continue
+        # A ``"""`` inside a comment (``# use """ for multiline``) is prose,
+        # not a delimiter — count quotes only in the code part of the line.
+        code = re.split(r"[#;]", ln, maxsplit=1)[0]
         for q in ('"""', "'''"):
-            if ln.count(q) % 2 == 1:
+            if code.count(q) % 2 == 1:
                 masked.add(ln)
                 inside = q
                 break
