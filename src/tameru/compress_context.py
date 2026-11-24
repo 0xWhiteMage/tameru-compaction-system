@@ -6467,6 +6467,8 @@ def _window_oversized_line(
         later_pref[i] = later_pref[i + 1] + (spans[i][1] - spans[i][0] if pref[i] else 0)
         later_q2[i] = later_q2[i + 1] + (spans[i][1] - spans[i][0] if q2[i] else 0)
 
+    _hq: dict[tuple[int, int, int], int] = {}
+
     def _clip_anchor(pos: int, b: int, room: int, hits: list[list[int]],
                      qual: dict[int, int], covered: dict[int, int]) -> int:
         """Where a clipped window begins: at the earliest hit for a
@@ -6484,13 +6486,30 @@ def _window_oversized_line(
             # Quality is per HIT, not per window: an accent-folded variant
             # ('café' for 'cafe') must not inherit the exact occurrence's
             # rank, else clipping shows the variant and cuts the match.
-            term = _qual_terms[h[2]] if h[2] < len(_qual_terms) else ""
-            seg = line[h[0]:h[1]]
-            if term and term in seg:
-                return 3
-            if term and term.lower() in seg.lower():
-                return 2
-            return 0
+            # Memoized: thousands of hits re-scan for every clip position.
+            key = (h[0], h[1], h[2])
+            q = _hq.get(key)
+            if q is None:
+                term = _qual_terms[h[2]] if h[2] < len(_qual_terms) else ""
+                seg = line[h[0]:h[1]]
+                if term and term in seg:
+                    q = 3
+                elif term and term.lower() in seg.lower():
+                    q = 2
+                else:
+                    q = 0
+                _hq[key] = q
+            return q
+
+        def _best(hs: list[list[int]]) -> int:
+            """Earliest position among ``hs``'s top-quality hits, one pass."""
+            bq = -1
+            pos = 0
+            for h in hs:
+                q = _hit_quality(h)
+                if q > bq or (q == bq and (bq < 0 or h[0] < pos)):
+                    bq, pos = q, h[0]
+            return pos
 
         if fresh:
             # Every still-missing term must stay reachable: per term the
@@ -6501,13 +6520,9 @@ def _window_oversized_line(
             per_term: dict[int, list[list[int]]] = {}
             for h in fresh:
                 per_term.setdefault(h[2], []).append(h)
-            anchor = min(
-                min(h[0] for h in hs if _hit_quality(h) == max(_hit_quality(x) for x in hs))
-                for hs in per_term.values()
-            )
+            anchor = min(_best(hs) for hs in per_term.values())
         elif pool:
-            best = max(_hit_quality(h) for h in pool)
-            anchor = min(h[0] for h in pool if _hit_quality(h) == best)
+            anchor = _best(pool)
         else:
             anchor = b - room
         return max(pos, min(b - room, anchor))
