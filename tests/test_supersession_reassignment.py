@@ -353,7 +353,6 @@ def test_unmatched_leading_quote_does_not_collide_sections():
     scopes = _line_scopes("['90s]\nx = 1\n[90]\ny = 2\n")
     assert scopes["x = 1"] == "'90s"
     assert scopes["y = 2"] == "90"
-||||||| parent of 9c692d0 (fix(render): supersession header, strict fence closer, head coverage)
 
 
 
@@ -390,7 +389,6 @@ def test_orphaned_header_reaches_rendered_output():
     assert out.rindex("[database]") < out.rindex("Another unrelated")
     assert "connect_timeout_ms = 30000" not in out
 
-||||||| parent of 205e356 (fix(render): queue orphaned headers on emit_prefix, rank coverage by hit quality)
 
 
 
@@ -431,3 +429,44 @@ def test_header_reemitted_when_decision_cache_dropped_the_stale_block():
     ]
     kept = apply_supersession(scored, {0, 2, 3})
     assert scored[2]["emit_prefix"] == ["[database]"]
+
+
+def test_header_reemitted_when_cache_leaves_a_single_survivor():
+    # A replayed cache may keep ONLY the updated setting — every other
+    # block frozen-dropped. The <2-block early return used to skip the
+    # whole analysis, so the lone survivor lost its section header.
+    scored = [
+        {
+            "id": 0,
+            "text": "[database]\nconnect_timeout_ms = 30000",
+            "start": 0,
+            "end": 1,
+            "freeze_decision": "drop",
+        },
+        {"id": 1, "text": "connect_timeout_ms = 5000", "start": 2, "end": 2},
+    ]
+    kept = apply_supersession(scored, {1})
+    assert scored[1]["emit_prefix"] == ["[database]"]
+
+
+def test_inlined_short_gap_does_not_duplicate_the_restored_header():
+    # InliningGapMarker emits a short dropped span verbatim — including
+    # the stale block's own [database] line. emit_prefix must not repeat
+    # it: a second [[array]]-style header would mint a new TOML record.
+    from tameru import compress_context as cc
+
+    lines = [
+        "intro",
+        "[database]",
+        "connect_timeout_ms = 30000",
+        "connect_timeout_ms = 5000",
+    ]
+    scored = [
+        {"id": 0, "text": "intro", "start": 0, "end": 0},
+        {"id": 1, "text": "[database]\nconnect_timeout_ms = 30000", "start": 1, "end": 2},
+        {"id": 2, "text": "connect_timeout_ms = 5000", "start": 3, "end": 3},
+    ]
+    kept = apply_supersession(scored, {0, 1, 2})
+    marker = cc.InliningGapMarker(lambda omitted, total: "x" * (omitted + 10))
+    out = cc._render(lines, scored, kept, gap_marker=marker)
+    assert out.count("[database]") == 1

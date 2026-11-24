@@ -576,14 +576,14 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     near-linear in total tokens rather than O(k²) pair enumeration.
     """
     kept_ids = sorted(i for i in kept if isinstance(i, int) and 0 <= i < len(scored))
-    if len(kept_ids) < 2:
-        return kept
 
     # Blocks the decision cache drops BEFORE this analysis still need their
     # orphaned headers handled — a replayed 'drop' removes the stale block
     # before it can be seen here. They join the analysis as supersede-ees
     # only: a dropped block may not kill a kept one, but a kept block may
-    # still mark it stale so its headers re-emit on the replay too.
+    # still mark it stale so its headers re-emit on the replay too. The
+    # pair must run even when the cache left a single kept block — a lone
+    # survivor still needs the section its frozen-dropped parent held.
     kept_set = set(kept_ids)
     frozen_dropped = {
         b["id"] for b in scored
@@ -591,6 +591,8 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
         and b.get("freeze_decision") == "drop"
         and b["id"] not in kept_set
     }
+    if len(kept_set | frozen_dropped) < 2:
+        return kept
     analysis_ids = sorted(kept_set | frozen_dropped)
 
     texts = {i: scored[i].get("text", "") for i in analysis_ids}

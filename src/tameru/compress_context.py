@@ -7057,7 +7057,14 @@ def _render(
             ln, _MAX_KEPT_LINE_CHARS, hit_terms, marker_fn, total, raw_hit_terms
         )
 
+    # Lines the most recent _gap inlined verbatim: an emit_prefix on the
+    # next kept block must not repeat them — a duplicated `[[array]]`
+    # header would mint a second TOML entry.
+    inlined_gap: list[str] = []
+
     def _gap(lo: int, hi: int) -> list[str] | None:
+        nonlocal inlined_gap
+        inlined_gap = []
         if marker_fn is None:
             return None
         if not any(ln.strip() for ln in probe_lines[lo:hi]):
@@ -7071,7 +7078,8 @@ def _render(
         # 1.4.1 opt-in: only InliningGapMarker emits the dropped lines
         # verbatim when the rendered marker is not shorter than the span.
         if inline_short and span_text is not None and len(marker) >= len(span_text):
-            return lines[lo:hi]
+            inlined_gap = lines[lo:hi]
+            return inlined_gap
         return [marker]
 
     parts: list[str] = []
@@ -7079,6 +7087,7 @@ def _render(
     for b in order:
         if chronological and b["end"] <= prev_end:
             continue
+        inlined_gap = []
         if marker_fn is not None:
             if prev_end < 0 and chronological and b["start"] > 0:
                 lead = _gap(0, b["start"])
@@ -7192,7 +7201,12 @@ def _render(
         # A superseded block's orphaned section header rides on the first
         # dependent as emit_prefix — rendered beside the lines that need
         # it, since a mutation of this block's text never reaches output.
+        # A short gap already inlined holds the same header line — emit it
+        # once: a repeated `[[array]]` header mints a second TOML entry.
         prefix_lines = b.get("emit_prefix") or ()
+        if inlined_gap:
+            inlined = set(inlined_gap)
+            prefix_lines = [ln for ln in prefix_lines if ln not in inlined]
         if b.get("pinned"):
             parts.extend(prefix_lines)
             parts.extend(lines[start : end + 1])
