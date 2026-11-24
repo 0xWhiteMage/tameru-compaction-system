@@ -50,6 +50,9 @@ EQUIVALENCE = [
     ("30", "the job ran at 12:30", False),
     ("11", "2026-10-21t04:00:11.000000z note", False),
     ("8080", "listening on localhost:8080", True),
+    # A dotted-quad segment before the colon is an address, not a clock time.
+    ("8080", "error at 127.0.0.1:8080 refused", True),
+    ("80", "upstream 10.0.0.1:80 timeout", True),
     ("11", "exit status 11", True),
     ("err", "last_err recorded", True),
     ("err", "a_terr_b", False),

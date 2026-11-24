@@ -4239,7 +4239,14 @@ def _term_test(term: str) -> Callable[[str], bool]:
             return term in lower
     else:
         if term.isdigit():
-            search = _compiled_term_pattern(rf"(?<!\d:)\b{re.escape(term)}\b(?!:\d)").search
+            # Clock-shaped digit:colondigit is not a hit, but a dotted-quad
+            # segment before the colon is ("127.0.0.1:8080" names the port).
+            # re lookbehind must be fixed-width, so the dotted exception is
+            # three alternatives: a 1-3 digit octet after the dot.
+            search = _compiled_term_pattern(
+                rf"(?:(?<!\d:)|(?<=\.\d:)|(?<=\.\d\d:)|(?<=\.\d\d\d:))"
+                rf"\b{re.escape(term)}\b(?!:\d)"
+            ).search
         elif term.isalpha():
             # Treat underscore as a boundary for short alphabetic terms
             # literal first so the regex engine can use its fast prefix scan
@@ -4281,7 +4288,11 @@ def _term_in_text(term: str, lower: str) -> bool:
         base = term in lower
     else:
         if term.isdigit():
-            base = re.search(rf"(?<!\d:)\b{re.escape(term)}\b(?!:\d)", lower) is not None
+            base = re.search(
+                rf"(?:(?<!\d:)|(?<=\.\d:)|(?<=\.\d\d:)|(?<=\.\d\d\d:))"
+                rf"\b{re.escape(term)}\b(?!:\d)",
+                lower,
+            ) is not None
         elif term.isalpha():
             # Treat underscore as a boundary for short alphabetic terms
             base = re.search(rf"{re.escape(term)}(?<![^\W_]{re.escape(term)})(?![^\W_])", lower) is not None
