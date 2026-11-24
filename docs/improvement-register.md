@@ -59,3 +59,5 @@ R-0018 | verified | blue | engine | `gap_marker` callback fires once per compres
 - R-0053 | grep adapter arg type | detect/adapt_grep_lines non-str → AttributeError; now TypeError. [PR #37]
 - R-0054 | cache max_bytes domain | ContentCache(max_bytes) junk stored silently → first-set TypeError / always-evict; now ValueError at init. [PR #38]
 - R-0055 | api-validation | diff adapters (detect/adapt/apply) tolerated None or crashed deep on non-str text → TypeError naming expected type | PR #41
+- R-0056 | supersession | kept-line veto missing — head-of-doc stale assignment shadowed later reassignment | PR #43
+- R-0057 | markers | guillemet-wrapped ALL-CAPS foreign banners survived as kept lines | PR #43
