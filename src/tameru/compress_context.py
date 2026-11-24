@@ -6602,8 +6602,12 @@ def _window_oversized_line(
                     segs.append(line[clip_a:clip_b])
                     emitted += clip_b - clip_a
                     pos = clip_b
-                    for ti, q in span_qual[idx].items():
-                        covered[ti] = max(covered.get(ti, 0), q)
+                    # Only hits the clip actually emitted count as covered —
+                    # marking every term the merged window touched would hide a
+                    # still-missing term the clip never reached.
+                    for ha, hb, ti in span_hits[idx]:
+                        if ha >= clip_a and hb <= clip_b:
+                            covered[ti] = max(covered.get(ti, 0), span_qual[idx].get(ti, 0))
                 continue
         if emitted + seg_len > cap:
             # A window that only repeats already-covered terms never eats

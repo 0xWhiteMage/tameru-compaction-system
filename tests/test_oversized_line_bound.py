@@ -218,3 +218,19 @@ def test_clip_anchor_keeps_another_terms_only_hit():
     )
     assert "onlyB" in out
     assert "cafe" in out
+
+
+def test_reserved_clip_marks_only_emitted_hits_covered():
+    # Window 1 ('café' variant + 'onlyb') clips to its first hit to reserve
+    # budget for the later verbatim window; window 2 holds 'onlyb''s second
+    # occurrence. Marking the clipped-out hit covered would let window 2's
+    # clip anchor past it — 'onlyb' would vanish entirely.
+    line = (
+        "m" * 100 + "café" + "x" * 176 + "onlyb" + "y" * 400
+        + "onlyb" + "z" * 206 + "nice" + "t" * 500
+    )
+    out = _window_oversized_line(
+        line, 400, ("cafe", "onlyb", "nice"), None, len(line),
+        raw_terms=("cafe", "onlyb", "nice"),
+    )
+    assert "onlyb" in out
