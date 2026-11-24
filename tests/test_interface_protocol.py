@@ -58,6 +58,16 @@ def test_v2_fields_and_closed_enums():
     assert validate_request({"text": "t", "protocol": 1})["mode"] == "adaptive"
 
 
+def test_min_savings_ratio_range_is_exclusive_at_one():
+    # the engine requires [0, 1): a wire value of 1 must fail validation, not reach the engine as a ValueError
+    assert code({"text": "t", "min_savings_ratio": 1}) == "bad_min_savings_ratio"
+    assert code({"text": "t", "min_savings_ratio": 1.0}) == "bad_min_savings_ratio"
+    assert code({"text": "t", "min_savings_ratio": -0.1}) == "bad_min_savings_ratio"
+    import math
+    just_under = math.nextafter(1.0, 0.0)
+    assert validate_request({"text": "t", "min_savings_ratio": just_under})["min_savings_ratio"] == just_under
+
+
 def test_explicit_field_beats_preset():
     got = validate_request({"text": "t", "preset": "tool-result@1", "min_savings_ratio": 0.4})
     assert got["min_savings_ratio"] == 0.4 and got["inline_short_gaps"] is True
