@@ -55,7 +55,8 @@ _ASSIGN_RE = re.compile(
 # ``cache:`` at the same indent are DIFFERENT settings — scoping by indent
 # alone dropped the earlier section's live value.
 _PARENT_RE = re.compile(
-    r"^\s*(?:\[(?P<ini>[^\]]+)\]|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:)\s*$"
+    r"^\s*(?:\[\s*(?P<ini>[^\]]+?)\s*\]\s*(?:[;#].*)?"
+    r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:\s*(?:#.*)?)$"
 )
 _TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
 _MIN_KEY_LENGTH = 5
