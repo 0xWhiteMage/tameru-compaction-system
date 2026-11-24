@@ -218,9 +218,16 @@ _ARTIFACT_NOISE_TAIL = r"[ \t]*\r?$"
 _ARTIFACT_NOISE_RES = (
     re.compile(_ARTIFACT_NOISE_LEAD + r"\[…(?: [0-9]{1,12} [^\]\r\n]{1,120} omitted …)?\]" + _ARTIFACT_NOISE_TAIL),
     re.compile(_ARTIFACT_NOISE_LEAD + r"\[tameru:[^\]\r\n]{1,200}\]" + _ARTIFACT_NOISE_TAIL),
+    # A banner-shaped foreign marker is noise by SHAPE, not by host: a whole
+    # line of guillemets wrapping an ALL-CAPS tag (``⟪SOME-TOOL-BANNER: …⟫``)
+    # is compressor structure no matter which harness emitted it — real log
+    # content doesn't form paired ⟪⟫ ALL-CAPS banners. The tag must carry at
+    # least one hyphenated word: a single token like ``⟪ERROR: database
+    # shutdown⟫`` is a diagnostic anyone could write, not compressor chrome.
+    re.compile(_ARTIFACT_NOISE_LEAD + r"⟪[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)+[^⟫\r\n]{0,200}⟫" + _ARTIFACT_NOISE_TAIL),
 )
 
-_ARTIFACT_NOISE_TOKENS = ("…", "[tameru:")
+_ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
 
 
 def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[str]:
@@ -2017,6 +2024,39 @@ def _restore_fact_lines(before: str, after: str) -> str:
     )
 
 
+def _triple_quoted_lines(text: str) -> set[str]:
+    """Lines that open, close or sit inside a ``\"\"\"``/``'''`` run — TOML
+    multiline strings, Python docstrings and the like. A ``k = v`` inside
+    one is example text, never a live setting, so it can neither be vetoed
+    as stale nor veto a real assignment."""
+    masked: set[str] = set()
+    inside: str | None = None
+    for ln in (text or "").split("\n"):
+        if inside is not None:
+            masked.add(ln)
+            if inside in ln:
+                inside = None
+            continue
+        # A ``"""`` inside a comment (``# use """ for multiline``) is prose,
+        # not a delimiter — count quotes only in the code part of the line.
+        code = re.split(r"[#;]", ln, maxsplit=1)[0]
+        for q in ('"""', "'''"):
+            if code.count(q) % 2 == 1:
+                masked.add(ln)
+                inside = q
+                break
+    return masked
+
+
+def _eq_assignment_line(ln: str) -> bool:
+    """Bare ``k = v`` shape only: the ``=`` must precede any ``:`` so a
+    colon record whose value happens to contain ``=`` (``LOG_LEVEL: info
+    target=api``) is not mistaken for an assignment."""
+    eq = ln.find("=")
+    colon = ln.find(":")
+    return eq >= 0 and (colon < 0 or eq < colon)
+
+
 def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int | None,
                       scored=None, kept_ids=None, min_savings_ratio=None,
                       original_text=None, adapter_info=None) -> str:
@@ -2086,6 +2126,48 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     hit_terms = tuple(t.casefold() for t in raw_terms)
     scope_of = _document_scopes(original_text) if original_text is not None else None
     marked = _marked_lines(kept)
+    # A stale assignment kept outright — the head of a document is kept without
+    # scoring, so a ``k = v1`` at line 2 could sit beside the later ``k = v2``
+    # that redefines it — gets the same veto a restore would: only original
+    # lines are candidates (renderer markers are never in ``orig_index``), and
+    # a supersession deletion is deliberate, so the stale line leaves the
+    # output rather than shadowing its replacement.
+    if orig_index is not None:
+        # Only bare ``k = v`` lines: colon-shaped pairs (``LOG_LEVEL: debug``,
+        # ``VERBOSE: …``) and colon records whose value carries an ``=`` are
+        # records that legitimately repeat the same key across documents and
+        # log rows — dropping them on a later same-key line reads a record
+        # stream as a redefinition history. Lines inside ``"""``/``'''``
+        # runs are documentation, never settings: they can neither go stale
+        # nor veto. A repeated line is dropped only when it is the ORIGINAL's
+        # single occurrence — ``orig_index`` keeps a duplicate's last index,
+        # so a twin under another section would erase the still-live copy —
+        # and never when the caller pinned it (a pinned drop cancels the
+        # compaction via pin-loss fail-open).
+        masked = _triple_quoted_lines(original_text or "")
+        eligible = [ln for ln in marked if ln not in masked]
+        pinned_lines = _PINNED_LINES.get()
+        orig_counts = collections.Counter(original_text.split("\n")) if original_text else {}
+        # A line can only be superseded by a same-key peer: precount the
+        # assignment keys once so candidates without one skip the scan.
+        eq_counts: dict[str, int] = {}
+        for ln in eligible:
+            if _eq_assignment_line(ln):
+                key = ln.split("=", 1)[0].strip().casefold()
+                eq_counts[key] = eq_counts.get(key, 0) + 1
+        stale = {
+            ln for ln in eligible
+            if _eq_assignment_line(ln)
+            and eq_counts.get(ln.split("=", 1)[0].strip().casefold(), 0) > 1
+            and ln in orig_index
+            and orig_counts.get(ln, 0) == 1
+            and ln not in pinned_lines
+            and _fact_superseded_in(ln, eligible, orig_index, scopes, bounded, scope_of)
+        }
+        if stale:
+            kept = [ln for ln in kept if ln not in stale]
+            compressed = "\n".join(kept)
+            marked = [o for o in marked if o not in stale]
     missing = [
         f for f in facts
         if f[3] not in compressed and not _fact_superseded_in(f[3], marked, orig_index, scopes, bounded, scope_of)
