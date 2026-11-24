@@ -128,3 +128,41 @@ def test_fully_superseded_block_still_drops():
     )
     kept = apply_supersession(scored, {0, 1})
     assert kept == {1}
+
+
+def test_literal_slash_key_no_collision():
+    # "a/b = 1" is one setting, not key b under parent a.
+    older = "a:\n  b_longkey = 1"
+    newer = "a/b_longkey = 2"
+    assert not _supersedes(newer, older)
+
+
+def test_block_split_at_blank_line_still_supersedes():
+    # The section header lives in the earlier block; the later block's
+    # unscoped namesake still counts as the same setting.
+    scored = _scored("[database]\nconnect_timeout_ms = 30000", "connect_timeout_ms = 5000")
+    kept = apply_supersession(scored, {0, 1})
+    assert kept == {1}
+
+
+def test_ambiguous_section_namesake_kept():
+    # host under two different sections plus an unscoped host: the unscoped
+    # one can't be told apart, so nothing is dropped.
+    scored = _scored(
+        "[database]\nhost_setting = a",
+        "[cache]\nhost_setting = b",
+        "host_setting = c",
+    )
+    kept = apply_supersession(scored, {0, 1, 2})
+    assert kept == {0, 1, 2}
+
+
+def test_commented_and_padded_headers_normalize():
+    older = "[ database ]\nconnect_timeout_ms = 30000"
+    newer = "[database] ; prod\nconnect_timeout_ms = 5000"
+    assert _supersedes(newer, older)
+
+
+def test_yaml_parent_with_comment():
+    kv = _assignments("database: # prod\n  connect_timeout_ms: 5000")
+    assert "database§connect_timeout_ms|  " in kv

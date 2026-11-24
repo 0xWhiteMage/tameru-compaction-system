@@ -111,9 +111,39 @@ def _assignments(text: str) -> dict[str, str]:
         m = _ASSIGN_RE.match(line)
         if m and _distinctive_key(m["key"], m["op"]):
             parent = section or ("/".join(p for _i, p in parents) if parents else "")
-            scoped = (parent + "/" if parent else "") + m["key"].casefold() + "|" + m["indent"]
+            # '§' can never appear inside a key (the charset excludes it), so
+            # a literal key like ``a/b`` can't collide with parent ``a`` +
+            # key ``b`` the way a "/" separator allowed.
+            scoped = (parent + "§" if parent else "") + m["key"].casefold() + "|" + m["indent"]
             out[scoped] = _norm_assign_value(m["val"])
     return out
+
+
+def _key_parts(scoped: str) -> tuple[str, str]:
+    """``(parent, basename|indent)`` of a scoped assignment key."""
+    parent, sep, base = scoped.rpartition("§")
+    return (parent if sep else "", base)
+
+
+def _scope_sets(kv_maps) -> dict[str, set[str]]:
+    """``basename|indent → non-empty parents it appears under`` across the
+    given assignment maps. A name scoped to at most ONE section may match
+    an unscoped namesake (a split block lost its header); a name used in
+    two or more sections is ambiguous and only matches its exact scope."""
+    scopes: dict[str, set[str]] = {}
+    for kv in kv_maps:
+        for k in kv:
+            parent, base = _key_parts(k)
+            if parent:
+                scopes.setdefault(base, set()).add(parent)
+    return scopes
+
+
+def _same_setting(k1: str, k2: str, scopes: dict[str, set[str]]) -> bool:
+    if k1 == k2:
+        return True
+    b1 = _key_parts(k1)[1]
+    return b1 == _key_parts(k2)[1] and len(scopes.get(b1, ())) <= 1
 
 
 def _reassigns(newer: str, older: str) -> bool:
@@ -123,8 +153,11 @@ def _reassigns(newer: str, older: str) -> bool:
     new_kv = _assignments(newer)
     if not new_kv:
         return False
-    return any(k in new_kv and new_kv[k] != v
-               for k, v in _assignments(older).items())
+    old_kv = _assignments(older)
+    scopes = _scope_sets((new_kv, old_kv))
+    return any(_same_setting(k_new, k, scopes) and new_kv[k_new] != v
+               for k, v in old_kv.items()
+               for k_new in new_kv)
 
 
 def _content_terms(text: str) -> set[str]:
@@ -261,19 +294,36 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     # when EVERY assignment it carries was superseded: supersession deletes
     # whole blocks, so a partially updated block keeps its line rather than
     # silently losing the unrelated settings beside the changed one.
-    block_kv: dict[int, dict[str, str]] = {}
+    block_kv: dict[int, dict[str, str]] = {
+        i: _assignments(texts[i])
+        for i in kept_ids
+        if len(terms_by_id[i]) <= _MAX_SUPERSESSION_TOKENS
+    }
+    basename_index: dict[str, set[str]] = {}
+    for kv in block_kv.values():
+        for k in kv:
+            basename_index.setdefault(_key_parts(k)[1], set()).add(k)
+    scopes = _scope_sets(block_kv.values())
+
     superseded_keys: dict[int, set[str]] = {}
-    seen: dict[str, list[tuple[int, str]]] = {}
+    seen: dict[str, list[tuple[int, str, str]]] = {}
     for i in kept_ids:
-        if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
+        kv = block_kv.get(i)
+        if kv is None:
             continue
-        kv = _assignments(texts[i])
-        block_kv[i] = kv
         for k, v in kv.items():
-            for prev_id, prev_val in seen.get(k, ()):
+            for prev_id, prev_val, prev_key in seen.get(k, ()):
                 if prev_val != v:
-                    superseded_keys.setdefault(prev_id, set()).add(k)
-            seen.setdefault(k, []).append((i, v))
+                    superseded_keys.setdefault(prev_id, set()).add(prev_key)
+            base = _key_parts(k)[1]
+            if len(scopes.get(base, ())) <= 1:
+                for other in basename_index.get(base, ()):
+                    if other == k:
+                        continue
+                    for prev_id, prev_val, prev_key in seen.get(other, ()):
+                        if prev_val != v:
+                            superseded_keys.setdefault(prev_id, set()).add(prev_key)
+            seen.setdefault(k, []).append((i, v, k))
     for bid, keys in superseded_keys.items():
         if keys and set(block_kv[bid]) <= keys:
             stale.add(bid)
