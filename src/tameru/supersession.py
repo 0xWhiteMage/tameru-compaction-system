@@ -40,6 +40,63 @@ _SUPERSESSION_MARKERS = (
     " current value",
 )
 
+# Assignment supersession: a whole line of the form ``key = value`` or
+# ``key: value`` is a definition. A later block that assigns the same
+# *distinctive* key a different value is an explicit override — config
+# semantics where the last definition wins (``timeout_ms = 30000`` then
+# ``timeout_ms = 5000``). No prose marker is required because the
+# reassignment itself is the marker.
+_ASSIGN_RE = re.compile(
+    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
+)
+_TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
+_MIN_KEY_LENGTH = 5
+
+
+def _distinctive_key(key: str, op: str) -> bool:
+    """A key specific enough that two different values for it cannot both
+    be current. Short and generic words (``note``, ``result``, ``value``)
+    and — for the ``key: value`` form only — plain prose labels are out:
+    ``effects: none`` is a sentence, ``connect_timeout_ms: 5000`` is a
+    definition."""
+    k = key.casefold()
+    if len(k) < _MIN_KEY_LENGTH or k in _STOP or k in _OVERLAP_STOP:
+        return False
+    if op == ":" and "_" not in k and "." not in k and "-" not in k \
+            and not key.isupper():
+        return False
+    return True
+
+
+def _norm_assign_value(val: str) -> str:
+    v = _TRAILING_COMMENT_RE.sub("", val).strip().strip("'\"")
+    return " ".join(v.casefold().split())
+
+
+def _assignments(text: str) -> dict[str, str]:
+    """``key|indent → value`` for each distinctive assignment line in
+    ``text`` (the last assignment within the text wins). Indent is part of
+    the key so a nested YAML/INI setting never collides with a same-named
+    one at another level (``email.on_failure`` vs ``irc.on_failure``)."""
+    out: dict[str, str] = {}
+    for line in (text or "").split("\n"):
+        m = _ASSIGN_RE.match(line)
+        if m and _distinctive_key(m["key"], m["op"]):
+            scoped = m["key"].casefold() + "|" + m["indent"]
+            out[scoped] = _norm_assign_value(m["val"])
+    return out
+
+
+def _reassigns(newer: str, older: str) -> bool:
+    """True when both texts assign the same distinctive key and ``newer``
+    gives it a different value — a later definition superseding an earlier
+    one (``connect_timeout_ms = 30000`` then ``connect_timeout_ms = 5000``)."""
+    new_kv = _assignments(newer)
+    if not new_kv:
+        return False
+    return any(k in new_kv and new_kv[k] != v
+               for k, v in _assignments(older).items())
+
 
 def _content_terms(text: str) -> set[str]:
     return {
@@ -91,7 +148,9 @@ def _supersedes(newer: str, older: str) -> bool:
     """
     n_low = newer.casefold()
     if not any(m in n_low for m in _SUPERSESSION_MARKERS):
-        return False
+        # Reassignment of a distinctive key to a different value is its own
+        # explicit override — no prose marker needed.
+        return _reassigns(newer, older)
 
     # Content overlap: at least two *distinctive* (non-filler) terms shared.
     return _meaningful_overlap(_content_terms(newer), _content_terms(older))
@@ -128,40 +187,54 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
         lowered = texts[i].casefold()
         if any(m in lowered for m in _SUPERSESSION_MARKERS):
             marker_ids.append(i)
-    if not marker_ids:
-        return kept
 
-    # Inverted index over kept blocks (newer candidates included).
-    postings: dict[str, list[int]] = {}
+    stale: set[int] = set()
+
+    if marker_ids:
+        # Inverted index over kept blocks (newer candidates included).
+        postings: dict[str, list[int]] = {}
+        for i in kept_ids:
+            if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
+                continue
+            for t in terms_by_id[i]:
+                if t in _OVERLAP_STOP:
+                    continue
+                postings.setdefault(t, []).append(i)
+
+        for new_id in marker_ids:
+            # Size guard: only compact blocks may act as supersessors or be
+            # superseded — see _MAX_SUPERSESSION_TOKENS note above.
+            if len(terms_by_id[new_id]) > _MAX_SUPERSESSION_TOKENS:
+                continue
+            n_terms = terms_by_id[new_id]
+            if not n_terms:
+                continue
+            # Candidate older blocks: those sharing >=2 terms with new_id,
+            # found by counting postings across this block's terms.
+            counts: dict[int, int] = {}
+            for t in n_terms:
+                for other in postings.get(t, ()):
+                    if other < new_id:
+                        counts[other] = counts.get(other, 0) + 1
+            for old_id, shared_n in counts.items():
+                if old_id in stale:
+                    continue
+                if shared_n >= 2:
+                    stale.add(old_id)
+
+    # Reassignment supersession: a later compact block that assigns a
+    # distinctive key a different value supersedes the earlier block that
+    # defined it — the last definition wins. Compactness is applied to both
+    # sides exactly as for marker supersession.
+    seen: dict[str, list[tuple[int, str]]] = {}
     for i in kept_ids:
         if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
             continue
-        for t in terms_by_id[i]:
-            if t in _OVERLAP_STOP:
-                continue
-            postings.setdefault(t, []).append(i)
-
-    stale: set[int] = set()
-    for new_id in marker_ids:
-        # Size guard: only compact blocks may act as supersessors or be
-        # superseded — see _MAX_SUPERSESSION_TOKENS note above.
-        if len(terms_by_id[new_id]) > _MAX_SUPERSESSION_TOKENS:
-            continue
-        n_terms = terms_by_id[new_id]
-        if not n_terms:
-            continue
-        # Candidate older blocks: those sharing >=2 terms with new_id,
-        # found by counting postings across this block's terms.
-        counts: dict[int, int] = {}
-        for t in n_terms:
-            for other in postings.get(t, ()):
-                if other < new_id:
-                    counts[other] = counts.get(other, 0) + 1
-        for old_id, shared_n in counts.items():
-            if old_id in stale:
-                continue
-            if shared_n >= 2:
-                stale.add(old_id)
+        for k, v in _assignments(texts[i]).items():
+            for prev_id, prev_val in seen.get(k, ()):
+                if prev_val != v:
+                    stale.add(prev_id)
+            seen.setdefault(k, []).append((i, v))
 
     if stale:
         kept -= stale
