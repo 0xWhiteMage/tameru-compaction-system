@@ -3315,10 +3315,20 @@ def _marker_in_tool_payload(text: str, markers: tuple[str, ...]) -> bool:
     # marker, so unwrap without the usual 200-char field floor: a host that
     # re-wraps a SHORT compacted output would otherwise lose the marker and
     # compress it a second time.
-    inner = unwrap_tool_payload(text, min_field_chars=0).inner
-    if inner is text:
+    if not unwrap_tool_payload(text, min_field_chars=0).wrapped:
         return False
-    return any(line.lstrip().startswith(markers) for line in inner.splitlines())
+    # The unwrap picks ONE field ("content" first); the guard must judge every
+    # payload field, otherwise a short `content` shadows a marked `output`
+    # (and a marked `content` is still evidence even when `output` is the
+    # payload).
+    parsed = loads_for_rewrite(text.strip())
+    for key in ("content", "output"):
+        val = parsed.get(key) if isinstance(parsed, dict) else None
+        if isinstance(val, str) and any(
+            line.lstrip().startswith(markers) for line in val.splitlines()
+        ):
+            return True
+    return False
 
 
 def preprocess(

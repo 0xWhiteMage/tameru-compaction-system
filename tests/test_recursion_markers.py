@@ -209,3 +209,16 @@ def test_marker_in_a_short_wrapped_payload_still_counts():
         text, QUERY, ccr=False, citations=False, recursion_markers=[HERMES]
     )
     _assert_guard_noop(text, result)
+
+
+def test_a_short_sibling_field_does_not_shadow_the_marked_one():
+    """The unwrap picks `content` before `output`; the guard must judge every
+    payload field, or a short `content` hides a marked `output`."""
+    import json
+
+    payload = f"{HERMES} 3 of 9 chars omitted by Hermes's compressor.⟫\nend"
+    text = json.dumps({"content": "ok", "output": payload, "exit_code": 0})
+    result = compress_context(
+        text, QUERY, ccr=False, citations=False, recursion_markers=[HERMES]
+    )
+    _assert_guard_noop(text, result)
