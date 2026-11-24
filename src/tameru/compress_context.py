@@ -12009,6 +12009,17 @@ def compress_context(
     _ccr_defer: bool = False,
     _internal_sample: bool = False,
 ) -> CompressResult:
+    if mode is not None and not isinstance(mode, str):
+        raise TypeError(f"mode must be str, got {type(mode).__name__}")
+    if summary_timeout is not None and (
+        not isinstance(summary_timeout, (int, float))
+        or isinstance(summary_timeout, bool)
+        or not math.isfinite(summary_timeout)
+        or summary_timeout <= 0
+    ):
+        raise ValueError(
+            f"summary_timeout must be a positive number of seconds, got {summary_timeout!r}"
+        )
     full_text = str(context or "")
     if not isinstance(query, str):
         # A scalar query (a lone int, a datetime, 0/False) is coerced, not

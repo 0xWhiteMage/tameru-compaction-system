@@ -190,3 +190,7 @@ def test_industrial_preprocess_limits_types():
         industrial_preprocess(DOC, "build", limits="x")
     with pytest.raises(TypeError, match="IndustrialLimits"):
         profile_input(DOC, "x")
+    text = "a\nb" * 20
+    for bad in ("x", -3, 0, True, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="summary_timeout must be a positive"):
+            compress_context(text, "a", summary_timeout=bad, ccr=False)
