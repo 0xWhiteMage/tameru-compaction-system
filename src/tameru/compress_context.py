@@ -10247,14 +10247,19 @@ def _compress_context_impl(
     if not isinstance(query, str):
         # PAACE-style plan awareness: a sequence of upcoming-task strings is
         # scored as a union — a term from any planned step counts. A scalar
-        # (a lone int, a datetime) is coerced rather than iterated: the
-        # generator form would exhaust on the second join downstream.
+        # (a lone int, a datetime, 0/False) is coerced rather than iterated:
+        # the generator form would exhaust on the second join downstream.
+        # The iter() probe separates non-iterables from a broken iterator —
+        # whose mid-iteration TypeError must reach the caller, not silently
+        # produce a compaction for the iterator's repr. Steps join with a
+        # space so a one-word step ('build') never starts a line and reads
+        # as a tool-call command downstream.
         try:
-            query = [part for part in (query or [])]
+            _q_it = iter(query) if query is not None else iter(())
         except TypeError:
             query = str(query)
         else:
-            query = " ".join(str(part) for part in query if part)
+            query = " ".join(str(part) for part in _q_it if part)
     if limits is not None and not isinstance(limits, IndustrialLimits):
         raise TypeError(
             f"limits must be an IndustrialLimits instance, got {type(limits).__name__}"
@@ -10840,15 +10845,18 @@ def compress_context(
 ) -> CompressResult:
     full_text = str(context or "")
     if not isinstance(query, str):
-        # A scalar query (a lone int, a datetime) is coerced, not iterated —
-        # and a generator is materialised once so the joins below and the
-        # impl's union-scoring both see the same terms.
+        # A scalar query (a lone int, a datetime, 0/False) is coerced, not
+        # iterated — a broken iterator's mid-iteration TypeError propagates
+        # instead of yielding a compaction for the iterator's repr. The
+        # generator form is materialised once so the joins below and the
+        # impl's union-scoring both see the same terms. Space join keeps a
+        # one-word step off line-start (tool-call misdetection).
         try:
-            query = [part for part in (query or [])]
+            _q_it = iter(query) if query is not None else iter(())
         except TypeError:
             query = str(query)
         else:
-            query = "\n".join(str(part) for part in query if part)
+            query = " ".join(str(part) for part in _q_it if part)
     if compile_pin_patterns(pin_patterns) is None:
         tokens = estimate_tokens(full_text)
         return _with_schema_fields(CompressResult(

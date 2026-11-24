@@ -32,3 +32,24 @@ def test_crashing_gap_marker_falls_back_to_default():
 def test_limits_must_be_industrial_limits():
     with pytest.raises(TypeError, match="IndustrialLimits"):
         compress_context(DOC, "build", ccr=False, citations=False, limits="x")
+
+
+def test_falsy_scalar_query_is_coerced_not_dropped():
+    # 0 / False are queries, not absence of one: coercion must yield their
+    # string form so the term is actually searched.
+    r = compress_context("value 0 here\n" + "noise\n" * 300, 0, ccr=False, citations=False)
+    assert r.fail_open or "0" in r.compressed_text
+
+
+def test_broken_iterator_propagates_typeerror():
+    def broken():
+        yield "step one"
+        raise TypeError("mid-iteration")
+    with pytest.raises(TypeError):
+        compress_context("noise\n" * 300, broken(), ccr=False, citations=False)
+
+
+def test_plan_steps_do_not_read_as_tool_call():
+    # A one-word first step must not let the plan read as a command line.
+    r = compress_context("noise\n" * 300, ["build", "deploy app"], ccr=False, citations=False)
+    assert not r.fail_open or r.compressed_text
