@@ -218,9 +218,14 @@ _ARTIFACT_NOISE_TAIL = r"[ \t]*\r?$"
 _ARTIFACT_NOISE_RES = (
     re.compile(_ARTIFACT_NOISE_LEAD + r"\[…(?: [0-9]{1,12} [^\]\r\n]{1,120} omitted …)?\]" + _ARTIFACT_NOISE_TAIL),
     re.compile(_ARTIFACT_NOISE_LEAD + r"\[tameru:[^\]\r\n]{1,200}\]" + _ARTIFACT_NOISE_TAIL),
+    # A banner-shaped foreign marker is noise by SHAPE, not by host: a whole
+    # line of guillemets wrapping an ALL-CAPS tag (``⟪SOME-TOOL-BANNER: …⟫``)
+    # is compressor structure no matter which harness emitted it — real log
+    # content doesn't form paired ⟪⟫ ALL-CAPS banners.
+    re.compile(_ARTIFACT_NOISE_LEAD + r"⟪[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)*[^⟫\r\n]{0,200}⟫" + _ARTIFACT_NOISE_TAIL),
 )
 
-_ARTIFACT_NOISE_TOKENS = ("…", "[tameru:")
+_ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
 
 
 def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[str]:
@@ -2086,6 +2091,26 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     hit_terms = tuple(t.casefold() for t in raw_terms)
     scope_of = _document_scopes(original_text) if original_text is not None else None
     marked = _marked_lines(kept)
+    # A stale assignment kept outright — the head of a document is kept without
+    # scoring, so a ``k = v1`` at line 2 could sit beside the later ``k = v2``
+    # that redefines it — gets the same veto a restore would: only original
+    # lines are candidates (renderer markers are never in ``orig_index``), and
+    # a supersession deletion is deliberate, so the stale line leaves the
+    # output rather than shadowing its replacement.
+    if orig_index is not None:
+        # Only ``k = v`` lines: colon-shaped pairs (``LOG_LEVEL: debug``,
+        # ``VERBOSE: …``) are records that legitimately repeat the same key
+        # across documents and log rows — dropping them on a later same-key
+        # line reads a record stream as a redefinition history.
+        stale = {
+            ln for ln in marked
+            if "=" in ln and ln in orig_index
+            and _fact_superseded_in(ln, marked, orig_index, scopes, bounded, scope_of)
+        }
+        if stale:
+            kept = [ln for ln in kept if ln not in stale]
+            compressed = "\n".join(kept)
+            marked = [o for o in marked if o not in stale]
     missing = [
         f for f in facts
         if f[3] not in compressed and not _fact_superseded_in(f[3], marked, orig_index, scopes, bounded, scope_of)

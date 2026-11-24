@@ -466,3 +466,28 @@ def test_real_engine_marker_inside_cleaned_envelope_still_noops():
     text = "[\u2026 2 lines omitted \u2026]\n" + env
     r = compress_context(text, "INFO", ccr=False, citations=False)
     assert r.fail_open
+
+
+def test_foreign_banner_marker_is_noise_by_shape():
+    """A ``⟪ALL-CAPS-BANNER: …⟫`` line is compressor structure whatever harness
+    emitted it — it must not survive as a kept line, and a sparse one must not
+    disable compaction."""
+    text = ("INFO a\n" * 50
+        + "⟪HERMES-CONTEXT-COMPRESSION: 1 of 2 chars omitted here by Hermes's context compressor.⟫\n"
+        + "INFO b\n" * 50 + "ERROR real failure: out of disk quota\n")
+    r = compress_context(text, "out of disk quota", ccr=False, citations=False)
+    assert not r.fail_open
+    assert "HERMES-CONTEXT-COMPRESSION" not in r.compressed_text
+    assert "out of disk quota" in r.compressed_text
+
+
+def test_kept_stale_assignment_dropped_by_later_reassignment():
+    """The supersession veto applies to KEPT lines too — a ``k = v1`` in the
+    always-kept document head must not shadow the later ``k = v2``."""
+    text = ("# config history\nconnect_timeout_ms = 30000  # original\n"
+        + "\n".join(f"# note {i}: tune pool size to {i}" for i in range(100))
+        + "\nconnect_timeout_ms = 5000  # current after INC-42\n")
+    r = compress_context(text, "what is the current connect_timeout_ms",
+                         ccr=False, citations=False)
+    assert "connect_timeout_ms = 30000" not in r.compressed_text
+    assert "connect_timeout_ms = 5000" in r.compressed_text
