@@ -353,3 +353,120 @@ def test_unmatched_leading_quote_does_not_collide_sections():
     scopes = _line_scopes("['90s]\nx = 1\n[90]\ny = 2\n")
     assert scopes["x = 1"] == "'90s"
     assert scopes["y = 2"] == "90"
+
+
+
+def test_orphaned_header_reaches_rendered_output():
+    # The prepend to the dependent's text feeds scoring only — _render
+    # emits lines[start:end+1], so the header must ride on the dependent's
+    # emit_prefix to reach the output, right beside the lines needing it.
+    from tameru import compress_context as cc
+
+    lines = [
+        "Intro note about the system setup here.",
+        "",
+        "[database]",
+        "connect_timeout_ms = 30000",
+        "",
+        "Another unrelated note about the system.",
+        "",
+        "connect_timeout_ms = 5000",
+    ]
+    scored = [
+        {"id": 0, "text": lines[0], "start": 0, "end": 0},
+        {"id": 1, "text": "[database]\nconnect_timeout_ms = 30000", "start": 2, "end": 3},
+        {"id": 2, "text": lines[5], "start": 5, "end": 5},
+        {"id": 3, "text": lines[7], "start": 7, "end": 7},
+    ]
+    kept = apply_supersession(scored, {0, 1, 2, 3})
+    assert 1 not in kept
+    # The first kept block still scoped by the dropped header carries it.
+    assert scored[2]["emit_prefix"] == ["[database]"]
+    out = cc._render(lines, scored, kept)
+    assert "[database]" in out
+    # It renders beside that dependent — before its line, inside the
+    # section's own flow, not at the dead block's line index.
+    assert out.rindex("[database]") < out.rindex("Another unrelated")
+    assert "connect_timeout_ms = 30000" not in out
+
+
+
+
+def test_orphaned_subtable_drags_its_array_element():
+    # '[servers.tls]' minted after '[[servers]]' in the same stale block:
+    # restoring only the subtable header would attach the surviving value
+    # to whatever array element the extract last showed.
+    scored = [
+        {"id": 0, "text": "intro", "start": 0, "end": 0},
+        {
+            "id": 1,
+            "text": "[[servers]]\n[servers.tls]\nconnect_timeout_ms = 30000",
+            "start": 2,
+            "end": 4,
+        },
+        {"id": 2, "text": "connect_timeout_ms = 5000", "start": 6, "end": 6},
+    ]
+    kept = apply_supersession(scored, {0, 1, 2})
+    assert 1 not in kept
+    assert scored[2]["emit_prefix"] == ["[[servers]]", "[servers.tls]"]
+
+
+def test_header_reemitted_when_decision_cache_dropped_the_stale_block():
+    # A replayed frozen 'drop' removes the stale block before supersession
+    # runs — without it in the analysis, the dependent loses its section
+    # on every cached call. Frozen-dropped blocks join as supersede-ees.
+    scored = [
+        {"id": 0, "text": "Intro note about the system setup here.", "start": 0, "end": 0},
+        {
+            "id": 1,
+            "text": "[database]\nconnect_timeout_ms = 30000",
+            "start": 2,
+            "end": 3,
+            "freeze_decision": "drop",
+        },
+        {"id": 2, "text": "Another unrelated note about the system.", "start": 5, "end": 5},
+        {"id": 3, "text": "connect_timeout_ms = 5000", "start": 7, "end": 7},
+    ]
+    kept = apply_supersession(scored, {0, 2, 3})
+    assert scored[2]["emit_prefix"] == ["[database]"]
+
+
+def test_header_reemitted_when_cache_leaves_a_single_survivor():
+    # A replayed cache may keep ONLY the updated setting — every other
+    # block frozen-dropped. The <2-block early return used to skip the
+    # whole analysis, so the lone survivor lost its section header.
+    scored = [
+        {
+            "id": 0,
+            "text": "[database]\nconnect_timeout_ms = 30000",
+            "start": 0,
+            "end": 1,
+            "freeze_decision": "drop",
+        },
+        {"id": 1, "text": "connect_timeout_ms = 5000", "start": 2, "end": 2},
+    ]
+    kept = apply_supersession(scored, {1})
+    assert scored[1]["emit_prefix"] == ["[database]"]
+
+
+def test_inlined_short_gap_does_not_duplicate_the_restored_header():
+    # InliningGapMarker emits a short dropped span verbatim — including
+    # the stale block's own [database] line. emit_prefix must not repeat
+    # it: a second [[array]]-style header would mint a new TOML record.
+    from tameru import compress_context as cc
+
+    lines = [
+        "intro",
+        "[database]",
+        "connect_timeout_ms = 30000",
+        "connect_timeout_ms = 5000",
+    ]
+    scored = [
+        {"id": 0, "text": "intro", "start": 0, "end": 0},
+        {"id": 1, "text": "[database]\nconnect_timeout_ms = 30000", "start": 1, "end": 2},
+        {"id": 2, "text": "connect_timeout_ms = 5000", "start": 3, "end": 3},
+    ]
+    kept = apply_supersession(scored, {0, 1, 2})
+    marker = cc.InliningGapMarker(lambda omitted, total: "x" * (omitted + 10))
+    out = cc._render(lines, scored, kept, gap_marker=marker)
+    assert out.count("[database]") == 1

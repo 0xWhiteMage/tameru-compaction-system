@@ -562,22 +562,42 @@ def _pure_assignments(text: str) -> bool:
 def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]:
     """Drop kept blocks that a later kept block explicitly supersedes.
 
-    Mutates and returns the caller's ``kept`` set. Only prunes; never adds.
-    Runs after selection so it cannot rescue a
+    Mutates and returns the caller's ``kept`` set. Runs after selection so
+    it cannot rescue a
     distractor — it can only remove stale facts the selector already liked
-    when a newer authoritative line survives too.
+    when a newer authoritative line survives too. A section header orphaned
+    by a pruned block is queued on the first dependent block's
+    ``emit_prefix`` — it renders beside the lines that need it rather than
+    at the dead block's old position (which would mislabel intervening
+    settings as belonging to the restored section).
 
     Performance: terms are tokenised once per block and an inverted
     term→id index proposes candidate pairs (shared vocabulary), so cost is
     near-linear in total tokens rather than O(k²) pair enumeration.
     """
     kept_ids = sorted(i for i in kept if isinstance(i, int) and 0 <= i < len(scored))
-    if len(kept_ids) < 2:
-        return kept
 
-    texts = {i: scored[i].get("text", "") for i in kept_ids}
+    # Blocks the decision cache drops BEFORE this analysis still need their
+    # orphaned headers handled — a replayed 'drop' removes the stale block
+    # before it can be seen here. They join the analysis as supersede-ees
+    # only: a dropped block may not kill a kept one, but a kept block may
+    # still mark it stale so its headers re-emit on the replay too. The
+    # pair must run even when the cache left a single kept block — a lone
+    # survivor still needs the section its frozen-dropped parent held.
+    kept_set = set(kept_ids)
+    frozen_dropped = {
+        b["id"] for b in scored
+        if isinstance(b.get("id"), int)
+        and b.get("freeze_decision") == "drop"
+        and b["id"] not in kept_set
+    }
+    if len(kept_set | frozen_dropped) < 2:
+        return kept
+    analysis_ids = sorted(kept_set | frozen_dropped)
+
+    texts = {i: scored[i].get("text", "") for i in analysis_ids}
     texts = {i: text if isinstance(text, str) else "" for i, text in texts.items()}
-    terms_by_id = {i: _content_terms(texts[i]) for i in kept_ids}
+    terms_by_id = {i: _content_terms(texts[i]) for i in analysis_ids}
     marker_ids = []
     for i in kept_ids:
         lowered = texts[i].casefold()
@@ -589,7 +609,7 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     if marker_ids:
         # Inverted index over kept blocks (newer candidates included).
         postings: dict[str, list[int]] = {}
-        for i in kept_ids:
+        for i in analysis_ids:
             if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
                 continue
             for t in terms_by_id[i]:
@@ -639,8 +659,9 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
         enters[i] = (scope_state[0], tuple(p for _i, p in scope_state[1]))
         kv = _assignments_tracked(text if isinstance(text, str) else "", scope_state, minted)
         defines[i] = minted
-        if i in kept and len(terms_by_id.get(i, ())) <= _MAX_SUPERSESSION_TOKENS:
-            block_kv[i] = kv
+        if i in kept_set or i in frozen_dropped:
+            if len(terms_by_id.get(i, ())) <= _MAX_SUPERSESSION_TOKENS:
+                block_kv[i] = kv
     basename_index: dict[str, set[str]] = {}
     for kv in block_kv.values():
         for k in kv:
@@ -649,22 +670,23 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
 
     superseded_keys: dict[int, set[str]] = {}
     seen: dict[str, list[tuple[int, str, str]]] = {}
-    for i in kept_ids:
+    for i in analysis_ids:
         kv = block_kv.get(i)
         if kv is None:
             continue
         for k, v in kv.items():
-            for prev_id, prev_val, prev_key in seen.get(k, ()):
-                if prev_val != v:
-                    superseded_keys.setdefault(prev_id, set()).add(prev_key)
-            base = _key_parts(k)[1]
-            if len(scopes.get(base, ())) <= 1:
-                for other in basename_index.get(base, ()):
-                    if other == k:
-                        continue
-                    for prev_id, prev_val, prev_key in seen.get(other, ()):
-                        if prev_val != v:
-                            superseded_keys.setdefault(prev_id, set()).add(prev_key)
+            if i in kept_set:
+                for prev_id, prev_val, prev_key in seen.get(k, ()):
+                    if prev_val != v:
+                        superseded_keys.setdefault(prev_id, set()).add(prev_key)
+                base = _key_parts(k)[1]
+                if len(scopes.get(base, ())) <= 1:
+                    for other in basename_index.get(base, ()):
+                        if other == k:
+                            continue
+                        for prev_id, prev_val, prev_key in seen.get(other, ()):
+                            if prev_val != v:
+                                superseded_keys.setdefault(prev_id, set()).add(prev_key)
             seen.setdefault(k, []).append((i, v, k))
     for bid, keys in superseded_keys.items():
         if keys and set(block_kv[bid]) <= keys and _pure_assignments(texts[bid]):
@@ -696,6 +718,35 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
                 element[2] + "\n" + scored[first_dependent].get("text", "")
             )
             defines.setdefault(first_dependent, []).append(element)
+            # The prepend feeds downstream scoring only — ``_render`` emits
+            # ``lines[start:end+1]``. The header rides on the dependent's
+            # ``emit_prefix`` so it renders beside the lines that need it.
+            # A nested scope ('[servers.tls]' minted after '[[servers]]'
+            # in the same stale block) drags its ancestor headers too —
+            # a bare subtable header would attach to the wrong array
+            # element — while a header another surviving block already
+            # mints is skipped like the element itself.
+            prefix_lines = scored[first_dependent].setdefault("emit_prefix", [])
+            for anc in defines.get(bid, ()):
+                if anc is element:
+                    break
+                if anc[0] != element[0]:
+                    continue
+                if element[0] == "sec" and not (
+                    element[1].startswith(anc[1] + "\x1f")
+                    or element[1].startswith(anc[1] + ".")
+                ):
+                    continue
+                if element[0] == "par" and anc[1] not in enters[first_dependent][1]:
+                    continue
+                if any(j in kept_ids and j not in stale and j != bid
+                       and j < first_dependent
+                       and anc in defines.get(j, ()) for j in kept_ids):
+                    continue
+                if anc[2] not in prefix_lines:
+                    prefix_lines.append(anc[2])
+            if element[2] not in prefix_lines:
+                prefix_lines.append(element[2])
 
     if stale:
         kept -= stale

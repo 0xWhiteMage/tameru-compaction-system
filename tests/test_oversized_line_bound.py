@@ -234,3 +234,46 @@ def test_reserved_clip_marks_only_emitted_hits_covered():
         raw_terms=("cafe", "onlyb", "nice"),
     )
     assert "onlyb" in out
+
+
+def test_head_hits_are_covered_before_clipping():
+    # Every 'alpha' hit merges into one oversized window; the first is
+    # already visible in the emitted head. Without head coverage the clip
+    # anchors at the earliest 'still-missing' hit — an alpha repeat — and
+    # 'delta's only match falls just past the clip end.
+    line = ("x" * 60 + "alpha" + "y" * 60) * 3 + ("z" * 60 + "delta" + "w" * 60)
+    out = _window_oversized_line(
+        line, 330, ("alpha", "delta"), None, len(line),
+        raw_terms=("alpha", "delta"),
+    )
+    assert "delta" in out
+
+
+def test_variant_in_head_does_not_displace_later_exact_hit():
+    # 'café' inside the emitted head is only a folded match for 'cafe' —
+    # marking it covered at the hit's own (low) quality keeps the line's
+    # only verbatim 'cafe' anchoring the clip instead of losing it.
+    line = (
+        "café" + "x" * 300 + "other" + "y" * 200 + "cafe" + "z" * 300
+    )
+    out = _window_oversized_line(
+        line, 330, ("cafe", "other"), None, len(line),
+        raw_terms=("cafe", "other"),
+    )
+    assert "cafe" in out
+
+
+def test_folded_only_hit_for_unseen_term_is_fresh():
+    # A term whose ONLY occurrence is a folded variant ('café' for
+    # 'cafe') is unseen — quality 0 — yet its window must still count as
+    # fresh evidence: reserving 'other''s window cannot leave it out.
+    line = (
+        "n" * 100 + "café" + "x" * 200 + "café" + "y" * 300
+        + "other" + "z" * 300
+    )
+    out = _window_oversized_line(
+        line, 330, ("cafe", "other"), None, len(line),
+        raw_terms=("cafe", "other"),
+    )
+    assert "café" in out
+    assert "other" in out

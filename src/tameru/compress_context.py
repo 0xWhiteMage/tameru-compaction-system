@@ -6784,6 +6784,25 @@ def _window_oversized_line(
 
     _hq: dict[tuple[int, int, int], int] = {}
 
+    def _hit_quality(h: list[int]) -> int:
+        # Quality is per HIT, not per window: an accent-folded variant
+        # ('café' for 'cafe') must not inherit the exact occurrence's
+        # rank, else clipping shows the variant and cuts the match.
+        # Memoized: thousands of hits re-scan for every clip position.
+        key = (h[0], h[1], h[2])
+        q = _hq.get(key)
+        if q is None:
+            term = _qual_terms[h[2]] if h[2] < len(_qual_terms) else ""
+            seg = line[h[0]:h[1]]
+            if term and term in seg:
+                q = 3
+            elif term and term.lower() in seg.lower():
+                q = 2
+            else:
+                q = 0
+            _hq[key] = q
+        return q
+
     def _clip_anchor(pos: int, b: int, room: int, hits: list[list[int]],
                      qual: dict[int, int], covered: dict[int, int]) -> int:
         """Where a clipped window begins: at the earliest hit for a
@@ -6794,27 +6813,11 @@ def _window_oversized_line(
         ties among repeats of already-covered terms: a verbatim hit
         outranks an earlier case variant."""
         pending = [h for h in hits if h[0] >= pos]
-        fresh = [h for h in pending if covered.get(h[2], 0) == 0]
+        # Fresh = a hit STRICTLY better than what was already emitted for
+        # its term: a verbatim hit counts fresh after a folded-variant
+        # emission, but a repeat at the same or weaker tier does not.
+        fresh = [h for h in pending if _hit_quality(h) > covered.get(h[2], -1)]
         pool = fresh or pending or [h for h in hits if h[1] > pos]
-
-        def _hit_quality(h: list[int]) -> int:
-            # Quality is per HIT, not per window: an accent-folded variant
-            # ('café' for 'cafe') must not inherit the exact occurrence's
-            # rank, else clipping shows the variant and cuts the match.
-            # Memoized: thousands of hits re-scan for every clip position.
-            key = (h[0], h[1], h[2])
-            q = _hq.get(key)
-            if q is None:
-                term = _qual_terms[h[2]] if h[2] < len(_qual_terms) else ""
-                seg = line[h[0]:h[1]]
-                if term and term in seg:
-                    q = 3
-                elif term and term.lower() in seg.lower():
-                    q = 2
-                else:
-                    q = 0
-                _hq[key] = q
-            return q
 
         def _best(hs: list[list[int]]) -> int:
             """Earliest position among ``hs``'s top-quality hits, one pass."""
@@ -6868,10 +6871,22 @@ def _window_oversized_line(
     emitted = head
     pos = head
     covered: dict[int, int] = {}
+    # Hits already emitted inside the head ARE covered — a term visible in
+    # the prefix must not still count as missing, or its repeats anchor the
+    # clip budget ahead of a term the line only shows once. Coverage is the
+    # hit's own quality: a folded variant ('café' for 'cafe') shown early
+    # must not displace the term's only verbatim match later.
+    for idx, (_a, _b) in enumerate(spans):
+        if _a >= pos:
+            break
+        for ha, hb, ti in span_hits[idx]:
+            if hb <= pos:
+                covered[ti] = max(covered.get(ti, 0), _hit_quality([ha, hb, ti]))
     for idx, (a, b) in enumerate(spans):
         if b <= pos:
-            for ti, q in span_qual[idx].items():
-                covered[ti] = max(covered.get(ti, 0), q)
+            for ha, hb, ti in span_hits[idx]:
+                if hb <= pos:
+                    covered[ti] = max(covered.get(ti, 0), _hit_quality([ha, hb, ti]))
             continue
         a = max(a, pos)
         seg_len = b - a
@@ -6880,7 +6895,7 @@ def _window_oversized_line(
             # already-covered term's match quality ('STRASSE' after 'Straße')
             # is emitted when room allows — but ranks with the duplicates
             # whenever a still-missing term needs the same budget.
-            fresh = any(covered.get(ti, 0) == 0 for ti in span_qual[idx])
+            fresh = any(_hit_quality(h) > covered.get(h[2], -1) for h in span_hits[idx])
             if not fresh:
                 # A window that only repeats terms already emitted must not
                 # fill the remaining budget ahead of a stronger-tier window
@@ -6895,7 +6910,7 @@ def _window_oversized_line(
                     if not pref[j]
                     and (q2[idx] or not q2[j])
                     and any(
-                        covered.get(ti, 0) == 0 for ti in span_qual[j]
+                        _hit_quality(h) > covered.get(h[2], -1) for h in span_hits[j]
                     )
                 )
                 if later_need and emitted + seg_len + later_need > cap:
@@ -6922,15 +6937,15 @@ def _window_oversized_line(
                     # still-missing term the clip never reached.
                     for ha, hb, ti in span_hits[idx]:
                         if ha >= clip_a and hb <= clip_b:
-                            covered[ti] = max(covered.get(ti, 0), span_qual[idx].get(ti, 0))
+                            covered[ti] = max(covered.get(ti, 0), _hit_quality([ha, hb, ti]))
                 continue
         if emitted + seg_len > cap:
             # A window that only repeats already-covered terms never eats
             # the tail of the budget while a later window still holds a
             # still-missing term's only match — skip it whole rather than
             # clipping it and breaking before that match is reached.
-            if not any(covered.get(ti, 0) == 0 for ti in span_qual[idx]) and any(
-                any(covered.get(ti, 0) == 0 for ti in span_qual[j])
+            if not any(_hit_quality(h) > covered.get(h[2], -1) for h in span_hits[idx]) and any(
+                any(_hit_quality(h) > covered.get(h[2], -1) for h in span_hits[j])
                 for j in range(idx + 1, len(spans))
                 if spans[j][1] > pos
             ):
@@ -6956,7 +6971,7 @@ def _window_oversized_line(
                 # still-missing term the clip never reached.
                 for ha, hb, ti in span_hits[idx]:
                     if ha >= clip_a and hb <= clip_b:
-                        covered[ti] = max(covered.get(ti, 0), span_qual[idx].get(ti, 0))
+                        covered[ti] = max(covered.get(ti, 0), _hit_quality([ha, hb, ti]))
             break
         # A window overlapping the kept prefix starts mid-match: nothing
         # was omitted between ``pos`` and ``a``, so no boundary marker —
@@ -6966,8 +6981,8 @@ def _window_oversized_line(
         segs.append(line[a:b])
         emitted += seg_len
         pos = b
-        for ti, q in span_qual[idx].items():
-            covered[ti] = max(covered.get(ti, 0), q)
+        for ha, hb, ti in span_hits[idx]:
+            covered[ti] = max(covered.get(ti, 0), _hit_quality([ha, hb, ti]))
     tail_a = max(pos, n - span)
     if emitted + (n - tail_a) <= cap and tail_a > pos:
         segs.append(mark(tail_a - pos))
@@ -7042,7 +7057,14 @@ def _render(
             ln, _MAX_KEPT_LINE_CHARS, hit_terms, marker_fn, total, raw_hit_terms
         )
 
+    # Lines the most recent _gap inlined verbatim: an emit_prefix on the
+    # next kept block must not repeat them — a duplicated `[[array]]`
+    # header would mint a second TOML entry.
+    inlined_gap: list[str] = []
+
     def _gap(lo: int, hi: int) -> list[str] | None:
+        nonlocal inlined_gap
+        inlined_gap = []
         if marker_fn is None:
             return None
         if not any(ln.strip() for ln in probe_lines[lo:hi]):
@@ -7056,7 +7078,8 @@ def _render(
         # 1.4.1 opt-in: only InliningGapMarker emits the dropped lines
         # verbatim when the rendered marker is not shorter than the span.
         if inline_short and span_text is not None and len(marker) >= len(span_text):
-            return lines[lo:hi]
+            inlined_gap = lines[lo:hi]
+            return inlined_gap
         return [marker]
 
     parts: list[str] = []
@@ -7064,6 +7087,7 @@ def _render(
     for b in order:
         if chronological and b["end"] <= prev_end:
             continue
+        inlined_gap = []
         if marker_fn is not None:
             if prev_end < 0 and chronological and b["start"] > 0:
                 lead = _gap(0, b["start"])
@@ -7144,6 +7168,14 @@ def _render(
             m = re.match(r"(`{3,}|~{3,})", probe)
             return m.group(0) if m else None
 
+        def _fence_closer(ln: str) -> str | None:
+            # Only a line of nothing but the marker closes a fence — a
+            # "```python" inside a ``` block is content with an info
+            # string, not a closer (closing fences take no info string).
+            probe = _GUTTER_RE.sub("", ln, count=1).strip()
+            m = re.fullmatch(r"(`{3,}|~{3,})", probe)
+            return m.group(0) if m else None
+
         def _closes(marker: str, m: str | None) -> bool:
             return m is not None and m[0] == marker[0] and len(m) >= len(marker)
 
@@ -7153,12 +7185,12 @@ def _render(
             m = _fence_marker(ln)
             if open_marker is None:
                 open_marker = m
-            elif _closes(open_marker, m):
+            elif _closes(open_marker, _fence_closer(ln)):
                 open_marker = None
         if open_marker is not None:
             j = end + 1
             while j < len(lines):
-                if _closes(open_marker, _fence_marker(lines[j])):
+                if _closes(open_marker, _fence_closer(lines[j])):
                     end = j
                     break
                 j += 1
@@ -7166,14 +7198,25 @@ def _render(
         # block must come back byte-for-byte (the pin gate compares exact
         # source), and rewriting text inside an intact fence presents altered
         # code as unaltered.
+        # A superseded block's orphaned section header rides on the first
+        # dependent as emit_prefix — rendered beside the lines that need
+        # it, since a mutation of this block's text never reaches output.
+        # A short gap already inlined holds the same header line — emit it
+        # once: a repeated `[[array]]` header mints a second TOML entry.
+        prefix_lines = b.get("emit_prefix") or ()
+        if inlined_gap:
+            inlined = set(inlined_gap)
+            prefix_lines = [ln for ln in prefix_lines if ln not in inlined]
         if b.get("pinned"):
+            parts.extend(prefix_lines)
             parts.extend(lines[start : end + 1])
         else:
+            parts.extend(prefix_lines)
             in_fence: str | None = None
             for ln in lines[start : end + 1]:
                 m = _fence_marker(ln)
                 if in_fence is not None:
-                    if _closes(in_fence, m):
+                    if _closes(in_fence, _fence_closer(ln)):
                         in_fence = None
                     parts.append(ln)
                 elif m is not None:
