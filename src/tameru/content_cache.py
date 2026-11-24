@@ -125,6 +125,9 @@ class ContentCache:
 
 def content_key(version: str, name: str, text: str, extra: tuple = ()) -> str:
     """``sha256(engine version, analysis name, text, options)`` — the key leaks nothing."""
+    for arg_name, arg in (("version", version), ("name", name), ("text", text)):
+        if not isinstance(arg, str):
+            raise TypeError(f"{arg_name} must be str, got {type(arg).__name__}")
     digest = hashlib.sha256()
     for part in (version, name, *(str(e) for e in extra), text):
         encoded = part.encode("utf-8", errors="surrogatepass")
