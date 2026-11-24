@@ -402,6 +402,8 @@ _DIFF_STATS_RE = re.compile(r"^# \S.*: \+\d+ -\d+ in \d+ hunks?$")
 def detect_unified_diff(text: str) -> bool:
     """A unified diff: at least one ``@@ -a,b +c,d @@`` hunk header and file
     headers (``diff --git`` or a ``---``/``+++`` pair)."""
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
     if not text or "@@ -" not in text:
         return False
     if not _HUNK_ANY_RE.search(text):
@@ -660,6 +662,8 @@ def adapt_unified_diff(
     reduced to its ``diff --git`` line plus one marker. When nothing is
     dropped the text is returned unchanged.
     """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
     if not detect_unified_diff(text):
         return None
     lines = text.split("\n")
@@ -4596,6 +4600,8 @@ def apply_agent_adapters(
     at least one match that hits, as before. A distinctive query that hits
     nothing still licenses no cut.
     """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
     if hint not in (None, "diff", "grep"):
         return text, None
     result: AdapterResult | None = None
