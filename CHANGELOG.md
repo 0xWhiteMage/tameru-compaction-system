@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [1.10.0] - Unreleased
 
 - Fix: the worker protocol's `min_savings_ratio` range is exclusive at 1.0 — a wire value of `1` fails validation as `bad_min_savings_ratio` instead of reaching the engine as a `ValueError`.
-- Performance: merge same-answer per-line probes into single compiled alternations — the five "log" patterns and two "chat" patterns in `classify_line`, and the failure-context and furniture guards in `_outcome_lines_scan`, which now computes each line's error flag once. Unique-symbol-heavy input (~14K distinct identifiers) runs ~2.7x faster with byte-identical output. (#14)
+- Performance: merge same-answer per-line probes into single compiled alternations — the five "log" patterns and two "chat" patterns in `classify_line`, and the failure-context and furniture guards in `_outcome_lines_scan`, which now computes each line's error flag once. Output is byte-identical. (#14)
 - Security: bound configured pin regex structure and aggregate search cost before searching tool output. Unsafe or invalid pin patterns preserve the full original input; bounded safe patterns retain their matching behavior.
 - Fix: cache segmentation as compact spans and rebuild block text from the caller's input; scored records omit source text and normalized full-text views are not retained. Reject oversized records without displacing unrelated entries, and account for nested records with shared-reference-safe live weight.
 - Documentation: clarify that the core imports the lightweight semantic resolver, model dependencies load only during tier construction, and unavailable dependencies raise `SemanticUnavailable` for direct construction.

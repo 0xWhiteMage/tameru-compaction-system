@@ -1959,16 +1959,11 @@ _OUTCOME_ANOMALY_RE = re.compile(r"\?\?\?|!\w[\w -]{1,30}!")
 _OUTCOME_FRAME_RE = re.compile(r"^\s*[-=*_+#~]{3,}.*[-=*_+#~]{3,}\s*$")
 _OUTCOME_DOC_LINK_RE = re.compile(r"(?i)^\s*-{0,3}\s*(?:docs?|see also|ref(?:erence)?|link)\s*:")
 # Perf: the failure-vocabulary probes merge into one scan — ERR_NEAR's
-# alternatives verbatim, ANOMALY's appended (its `\w`/`[\w -]` classes match
-# either case already, so sharing the IGNORECASE flag changes nothing).
+# pattern verbatim, ANOMALY's appended (its `\w`/`[\w -]` classes match
+# either case already, so ERR_NEAR's leading `(?i)` changes nothing for it).
+# Composed from the source patterns so a vocabulary edit lands in both places.
 _OUTCOME_ERR_ANY_RE = re.compile(
-    r"(?:\(error\)|\bERROR\b|\berror[ s:]|fail(?:ed|ure)?"
-    r"|\bwarn(?:ing)?[ s:]|\bnot[ _]found\b"
-    r"|\b(?:panic|fatal|bug|denied|refused|unreachable|flooding|lockup|corrupt|"
-    r"critical|overrun\w*|exceed\w*|dropp\w*|destroy\w*|reject\w*|stale)\b"
-    r"|(?-i:\bALARM\b))"
-    r"|\?\?\?|!\w[\w -]{1,30}!",
-    re.IGNORECASE,
+    _OUTCOME_ERR_NEAR_RE.pattern + "|" + _OUTCOME_ANOMALY_RE.pattern
 )
 # FRAME and DOC_LINK both "match" guards on the same lines — one alternation.
 _OUTCOME_NOT_ERR_RE = re.compile(
