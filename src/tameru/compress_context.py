@@ -3404,12 +3404,12 @@ class ToolPayload:
     order: tuple[str, ...] = field(default=(), compare=False, repr=False)
 
 
-def unwrap_tool_payload(text: str) -> ToolPayload:
+def unwrap_tool_payload(text: str, min_field_chars: int = 200) -> ToolPayload:
     """Split a Hermes tool result into payload and envelope.
 
     Detection mirrors :func:`unwrap_hermes_tool`: a JSON object with a string
-    ``content`` or ``output`` longer than 200 chars (``content`` first).
-    Anything else comes back as ``ToolPayload(text, None, {}, False)``.
+    ``content`` or ``output`` longer than ``min_field_chars`` (``content``
+    first). Anything else comes back as ``ToolPayload(text, None, {}, False)``.
     A recognized report document (SARIF, notebook, GraphQL) is NOT a tool
     envelope even when it carries a long ``content``/``output`` property.
     """
@@ -3427,7 +3427,7 @@ def unwrap_tool_payload(text: str) -> ToolPayload:
         return unwrapped
     for key in ("content", "output"):
         val = parsed.get(key)
-        if isinstance(val, str) and len(val) > 200:
+        if isinstance(val, str) and len(val) > min_field_chars:
             meta = {
                 k: v
                 for k, v in parsed.items()
@@ -3526,10 +3526,24 @@ def _marker_in_tool_payload(text: str, markers: tuple[str, ...]) -> bool:
     escaped = [json.dumps(m, ensure_ascii=a)[1:-1] for m in markers for a in (False, True)]
     if not any(e in text for e in escaped):
         return False
-    inner = unwrap_tool_payload(text).inner
-    if inner is text:
+    # The escaped-marker precheck above already proves the JSON carries a
+    # marker, so unwrap without the usual 200-char field floor: a host that
+    # re-wraps a SHORT compacted output would otherwise lose the marker and
+    # compress it a second time.
+    if not unwrap_tool_payload(text, min_field_chars=0).wrapped:
         return False
-    return any(line.lstrip().startswith(markers) for line in inner.splitlines())
+    # The unwrap picks ONE field ("content" first); the guard must judge every
+    # payload field, otherwise a short `content` shadows a marked `output`
+    # (and a marked `content` is still evidence even when `output` is the
+    # payload).
+    parsed = loads_for_rewrite(text.strip())
+    for key in ("content", "output"):
+        val = parsed.get(key) if isinstance(parsed, dict) else None
+        if isinstance(val, str) and any(
+            line.lstrip().startswith(markers) for line in val.splitlines()
+        ):
+            return True
+    return False
 
 
 def preprocess(

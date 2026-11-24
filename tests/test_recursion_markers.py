@@ -195,3 +195,30 @@ def test_marker_mentioned_mid_line_of_a_wrapped_payload_is_still_not_a_match():
         text, QUERY, ccr=False, citations=False, recursion_markers=[HERMES]
     )
     assert result.policy_name != "local-noop-recursion"
+
+
+def test_marker_in_a_short_wrapped_payload_still_counts():
+    """The public unwrap floor of 200 chars must not hide the guard: a host
+    that re-wraps a SHORT compacted output would otherwise compress it again."""
+    import json
+
+    payload = f"{HERMES} 3 of 9 chars omitted by Hermes's compressor.⟫\nend"
+    assert len(payload) <= 200
+    text = json.dumps({"output": payload, "exit_code": 0})
+    result = compress_context(
+        text, QUERY, ccr=False, citations=False, recursion_markers=[HERMES]
+    )
+    _assert_guard_noop(text, result)
+
+
+def test_a_short_sibling_field_does_not_shadow_the_marked_one():
+    """The unwrap picks `content` before `output`; the guard must judge every
+    payload field, or a short `content` hides a marked `output`."""
+    import json
+
+    payload = f"{HERMES} 3 of 9 chars omitted by Hermes's compressor.⟫\nend"
+    text = json.dumps({"content": "ok", "output": payload, "exit_code": 0})
+    result = compress_context(
+        text, QUERY, ccr=False, citations=False, recursion_markers=[HERMES]
+    )
+    _assert_guard_noop(text, result)
