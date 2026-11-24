@@ -3492,7 +3492,14 @@ def _marker_tuple(markers: Iterable[str] | str | None) -> tuple[str, ...]:
         return ()
     if isinstance(markers, str):
         markers = (markers,)
-    return tuple(m for m in markers if isinstance(m, str) and m)
+    try:
+        return tuple(m for m in markers if isinstance(m, str) and m)
+    except TypeError:
+        # A scalar (``recursion_markers=42``) is not an iterable — name the
+        # option in the error instead of bubbling a bare TypeError up.
+        raise TypeError(
+            f"recursion_markers must be an iterable of str, got {type(markers).__name__}"
+        ) from None
 
 
 def _has_anchored_marker(text: str, markers: tuple[str, ...]) -> bool:
@@ -11516,16 +11523,67 @@ def compress_context(
         # generator form is materialised once so the joins below and the
         # impl's union-scoring both see the same terms. Space join keeps a
         # one-word step off line-start (tool-call misdetection).
+        # bytes/bytearray are iterables of ints: iterated they would score
+        # digit terms ("97 98 99") that match nothing useful, so they are
+        # rejected rather than coerced.
+        if isinstance(query, (bytes, bytearray)):
+            raise TypeError(
+                f"query must be str or an iterable of str, got {type(query).__name__}"
+            )
         try:
             _q_it = iter(query) if query is not None else iter(())
         except TypeError:
             query = str(query)
         else:
             query = " ".join(str(part) for part in _q_it if part)
-    if limits is not None and not isinstance(limits, IndustrialLimits):
+    if isinstance(limits, dict):
+        # A kwargs dict spells the same limits object — the dataclass
+        # constructor rejects unknown fields and __post_init__ the values.
+        limits = IndustrialLimits(**limits)
+    elif limits is not None and not isinstance(limits, IndustrialLimits):
         raise TypeError(
-            f"limits must be an IndustrialLimits instance, got {type(limits).__name__}"
+            f"limits must be an IndustrialLimits instance or dict, got {type(limits).__name__}"
         )
+    if mode is not None and not isinstance(mode, str):
+        # A non-str mode fell through to ``.strip()`` with AttributeError.
+        raise TypeError(f"mode must be a str, got {type(mode).__name__}")
+    if strategy is not None and not isinstance(strategy, str):
+        # Same crash family: ``(strategy or "extract").strip()`` raised
+        # AttributeError on a non-str; a falsy non-str silently became
+        # 'extract'.
+        raise TypeError(f"strategy must be a str, got {type(strategy).__name__}")
+    if budget_ratio is not None:
+        if not isinstance(budget_ratio, (int, float)) or isinstance(budget_ratio, bool):
+            # Fixed mode's ``float(budget_ratio)`` rejects late; adaptive recorded
+            # the raw value in the receipt. Reject non-numbers up front.
+            raise TypeError(
+                f"budget_ratio must be a number, got {type(budget_ratio).__name__}"
+            )
+        try:
+            ratio = float(budget_ratio)
+        except OverflowError:
+            # An int too big for float is out of range — the domain check's
+            # own ValueError, not a bare OverflowError callers won't catch.
+            ratio = float("inf")
+        if not 0 < ratio <= 1:
+            # Out-of-range ratios meant different things per mode: fixed
+            # raised mid-pipeline, adaptive silently kept everything (≥1) or
+            # nothing (≤0). The documented domain is (0, 1] on every path.
+            raise ValueError(
+                f"budget_ratio must be in (0, 1], got {budget_ratio!r}"
+            )
+    if selector_query is not None and not isinstance(selector_query, str):
+        raise TypeError(
+            f"selector_query must be a str, got {type(selector_query).__name__}"
+        )
+    if isinstance(pin_patterns, str):
+        # A bare string is ONE pattern (same convention as recursion_markers),
+        # not a sequence of characters to compile.
+        pin_patterns = [pin_patterns]
+    if not isinstance(pin_recent, int) or isinstance(pin_recent, bool) or pin_recent < 0:
+        # A negative count sliced ``scored[-n:]`` and silently pinned the whole
+        # document; a non-int raises TypeError deep inside _apply_pins.
+        raise ValueError(f"pin_recent must be a non-negative int, got {pin_recent!r}")
     if compile_pin_patterns(pin_patterns) is None:
         tokens = estimate_tokens(full_text)
         return _with_schema_fields(CompressResult(

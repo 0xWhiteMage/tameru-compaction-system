@@ -45,6 +45,19 @@ class IndustrialLimits:
 _DEFAULT_INDUSTRIAL_LIMITS = IndustrialLimits()
 
 
+def _resolve_limits(limits: IndustrialLimits | dict | None) -> IndustrialLimits | None:
+    """Coerce a kwargs dict to ``IndustrialLimits`` (constructor rejects
+    unknown fields, __post_init__ the values) and reject anything else:
+    a wrong-typed limits used to crash on attribute access mid-pipeline."""
+    if isinstance(limits, dict):
+        return IndustrialLimits(**limits)
+    if limits is not None and not isinstance(limits, IndustrialLimits):
+        raise TypeError(
+            f"limits must be an IndustrialLimits instance or dict, got {type(limits).__name__}"
+        )
+    return limits
+
+
 @dataclass(frozen=True)
 class InputProfile:
     characters: int
@@ -123,9 +136,10 @@ def _profile_input_cached(value: str, resolved: IndustrialLimits) -> InputProfil
 def profile_input(text: str, limits: IndustrialLimits | None = None) -> InputProfile:
     # Perf (v1.5.0): the profile (an immutable record) of a large text is
     # computed once per (text, limits); a retry of the same output reuses it.
+    resolved = _resolve_limits(limits) or _DEFAULT_INDUSTRIAL_LIMITS
     if type(text) is str and _PROFILE_MEMO_MIN_CHARS <= len(text) <= _PROFILE_MEMO_MAX_CHARS:
-        return _profile_input_cached(text, limits or _DEFAULT_INDUSTRIAL_LIMITS)
-    return _profile_input(text, limits)
+        return _profile_input_cached(text, resolved)
+    return _profile_input(text, resolved)
 
 
 def _profile_input(text: str, limits: IndustrialLimits | None = None) -> InputProfile:
@@ -189,7 +203,7 @@ def industrial_preprocess(
     reports_only: bool = False,
 ) -> IndustrialResult:
     value = str(text or "")
-    resolved = limits or IndustrialLimits()
+    resolved = _resolve_limits(limits) or IndustrialLimits()
     profile = profile_input(value, resolved)
 
     def fail_open(reason: str, format_result: FormatResult | None = None) -> IndustrialResult:

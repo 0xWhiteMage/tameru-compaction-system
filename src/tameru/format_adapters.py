@@ -37,6 +37,13 @@ class FormatLimits:
     max_record_chars: int = 1_000_000
     max_fields: int = 4_096
 
+    def __post_init__(self) -> None:
+        # Same domain as IndustrialLimits: a bool or non-int would either
+        # crash a comparison mid-parse or silently lift a bound.
+        for name, value in asdict(self).items():
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer, got {value!r}")
+
 
 @dataclass(frozen=True)
 class FormatResult:
@@ -1458,6 +1465,12 @@ def adapt_report(text: str, query: str, limits: FormatLimits | None = None,
     if not stripped.startswith(("{", "<", "\ufeff", "TN:", "SF:")):
         return None
     selectors = _query_selectors(query)
+    if isinstance(limits, dict):
+        limits = FormatLimits(**limits)
+    elif limits is not None and not isinstance(limits, FormatLimits):
+        raise TypeError(
+            f"limits must be a FormatLimits instance or dict, got {type(limits).__name__}"
+        )
     resolved = limits or FormatLimits()
     if stripped.startswith("{"):
         report = select_report(
@@ -1509,6 +1522,15 @@ def adapt_format(
     so the retained records remain structurally intact.
     """
     value = str(text or "")
+    if isinstance(limits, dict):
+        # A kwargs dict spells the same limits object — the dataclass
+        # constructor rejects unknown fields and __post_init__ the values.
+        limits = FormatLimits(**limits)
+    elif limits is not None and not isinstance(limits, FormatLimits):
+        # A wrong-typed limits crashed on '.max_records' mid-adapter.
+        raise TypeError(
+            f"limits must be a FormatLimits instance or dict, got {type(limits).__name__}"
+        )
     resolved_format = format_name or detect_format(value)
 
     if allow_reports:
