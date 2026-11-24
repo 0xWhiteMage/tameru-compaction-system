@@ -10860,6 +10860,13 @@ def compress_context(
         # generator form is materialised once so the joins below and the
         # impl's union-scoring both see the same terms. Space join keeps a
         # one-word step off line-start (tool-call misdetection).
+        # bytes/bytearray are iterables of ints: iterated they would score
+        # digit terms ("97 98 99") that match nothing useful, so they are
+        # rejected rather than coerced.
+        if isinstance(query, (bytes, bytearray)):
+            raise TypeError(
+                f"query must be str or an iterable of str, got {type(query).__name__}"
+            )
         try:
             _q_it = iter(query) if query is not None else iter(())
         except TypeError:
@@ -10870,6 +10877,23 @@ def compress_context(
         raise TypeError(
             f"limits must be an IndustrialLimits instance, got {type(limits).__name__}"
         )
+    if mode is not None and not isinstance(mode, str):
+        # A non-str mode fell through to ``.strip()`` with AttributeError.
+        raise TypeError(f"mode must be a str, got {type(mode).__name__}")
+    if budget_ratio is not None and not isinstance(budget_ratio, (int, float)):
+        # Fixed mode's ``float(budget_ratio)`` rejects late; adaptive recorded
+        # the raw value in the receipt. Reject non-numbers up front.
+        raise TypeError(
+            f"budget_ratio must be a number, got {type(budget_ratio).__name__}"
+        )
+    if isinstance(pin_patterns, str):
+        # A bare string is ONE pattern (same convention as recursion_markers),
+        # not a sequence of characters to compile.
+        pin_patterns = [pin_patterns]
+    if not isinstance(pin_recent, int) or isinstance(pin_recent, bool) or pin_recent < 0:
+        # A negative count sliced ``scored[-n:]`` and silently pinned the whole
+        # document; a non-int raises TypeError deep inside _apply_pins.
+        raise ValueError(f"pin_recent must be a non-negative int, got {pin_recent!r}")
     if compile_pin_patterns(pin_patterns) is None:
         tokens = estimate_tokens(full_text)
         return _with_schema_fields(CompressResult(
