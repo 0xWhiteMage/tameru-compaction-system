@@ -3365,6 +3365,10 @@ def _summarize_ndjson(stripped: str, query: str) -> str | None:
 def preprocess_json(text: str, query: str) -> str:
     """Crush whole-document JSON. 1.10.0 (S5): protected fact lines inside the text are restored
     verbatim — the crush may shorten them but may not delete them."""
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
+    if not isinstance(query, str):
+        raise TypeError(f"query must be str, got {type(query).__name__}")
     return _restore_fact_lines(text, _crush_json_text(text, query))
 
 

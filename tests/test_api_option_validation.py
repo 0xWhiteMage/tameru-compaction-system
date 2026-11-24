@@ -194,3 +194,25 @@ def test_industrial_preprocess_limits_types():
     for bad in ("x", -3, 0, True, float("nan"), float("inf")):
         with pytest.raises(ValueError, match="summary_timeout must be a positive"):
             compress_context(text, "a", summary_timeout=bad, ccr=False)
+
+
+def test_preprocess_json_rejects_non_str_args():
+    from tameru.compress_context import preprocess_json
+
+    with pytest.raises(TypeError):
+        preprocess_json(42, "q")
+    with pytest.raises(TypeError):
+        preprocess_json(None, "q")
+    with pytest.raises(TypeError):
+        preprocess_json("{}", 42)
+
+
+def test_content_key_rejects_non_str_parts():
+    from tameru.content_cache import content_key
+
+    with pytest.raises(TypeError):
+        content_key("v", "n", 42)
+    with pytest.raises(TypeError):
+        content_key("v", None, "t")
+    with pytest.raises(TypeError):
+        content_key(1, "n", "t")
