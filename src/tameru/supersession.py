@@ -260,6 +260,9 @@ def _document_headers(text: str) -> dict[tuple, str]:
         if not line.strip():
             continue
         kind = _advance(state, line)
+        if kind == "fence" and state[3] is not None:
+            out.setdefault((_FENCED_SCOPE, ()), line)
+            continue
         if kind in ("ini", "yaml"):
             out[(state[0], tuple(p for _i, p in state[1]))] = line
     return out
@@ -275,22 +278,36 @@ def _end_scope(text: str) -> tuple:
     return (state[0], tuple(p for _i, p in state[1]))
 
 
-def _append_scoped(after: str, lines: list[str], scope_of, headers) -> str:
+def _append_scoped(after: str, lines: list[str], scope_of, headers, emit=None) -> str:
     """``after`` + restored ``lines``, re-emitting a line's section header
     first when its recorded scope differs from the running scope — a
     restored ``[database]`` setting must not read as a second value under
-    the ``[cache]`` mapping the extract ends in."""
+    the ``[cache]`` mapping the extract ends in.
+    A fenced line goes back inside its own fence pair — a bare example
+    reads as a live setting. A line scoped to a ``[[array]]`` element is
+    NOT restored at all: re-emitting ``[[x]]`` mints a NEW entry, so the
+    field would describe a phantom record. ``emit`` transforms each
+    restored line before output (the floor's bounded render)."""
     if not lines:
         return after
     cur = _end_scope(after)
     out_lines: list[str] = []
     for line in lines:
         scope = scope_of.get(line) if scope_of else None
-        if scope and scope != cur and scope[0] != _FENCED_SCOPE and headers.get(scope):
+        if scope and scope[0] == _FENCED_SCOPE:
+            fence = headers.get(scope) or "```"
+            out_lines.extend([fence, emit(line) if emit else line, fence[:3]])
+            cur = scope
+            continue
+        if scope and "\xa7" in scope[0]:
+            continue
+        if scope and scope != cur and headers.get(scope):
             out_lines.append(headers[scope])
         if scope:
             cur = scope
-        out_lines.append(line)
+        out_lines.append(emit(line) if emit else line)
+    if not out_lines:
+        return after
     return after + "\n" + "\n".join(out_lines)
 
 

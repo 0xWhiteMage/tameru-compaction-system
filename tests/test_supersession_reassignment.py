@@ -313,3 +313,30 @@ def test_restore_reemits_section_header():
         ),
     )
     assert out == "[cache]\nttl_seconds = 60\n[database]\nconnect_timeout_ms = 30000"
+
+
+def test_restored_fenced_line_goes_back_in_a_fence():
+    from tameru import compress_context as cc
+    doc = "```\nsetting_key = 2\n```\n\n[cache]\nttl_seconds = 60"
+    scope_of = supersession._document_scopes(doc)
+    out = cc._append_scoped(
+        "[cache]\nttl_seconds = 60",
+        ["setting_key = 2"],
+        scope_of,
+        supersession._document_headers(doc),
+    )
+    assert out.endswith("\n```\nsetting_key = 2\n```")
+
+
+def test_restored_array_field_is_not_restored():
+    from tameru import compress_context as cc
+    doc = "[[backends]]\nname = \"one\"\nverify = false\n[[backends]]\nname = \"two\""
+    scope_of = supersession._document_scopes(doc)
+    out = cc._append_scoped(
+        "name = \"two\"",
+        ["verify = false"],
+        scope_of,
+        supersession._document_headers(doc),
+    )
+    # Re-emitting [[backends]] would mint a phantom entry — skip instead.
+    assert out == "name = \"two\""

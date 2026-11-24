@@ -63,7 +63,6 @@ from .supersession import (
     _append_scoped,
     _document_headers,
     _document_scopes,
-    _end_scope,
     _supersedes,
 )
 from .unicode_profile import (
@@ -1635,13 +1634,19 @@ def _bound_fact_line(
     ln: str,
     hit_terms: tuple[str, ...] = (),
     raw_terms: tuple[str, ...] = (),
+    must: tuple[str, ...] = (),
 ) -> str:
     """Bound an oversized protected line the same way the render bounds kept
-    lines — a floor restores protection, not the unbounded payload."""
+    lines — a floor restores protection, not the unbounded payload. ``must``
+    spans (the fact's key and value) lead the hit list so the emitted
+    windows always carry the pair the floor exists to protect."""
     if len(ln) <= _MAX_KEPT_LINE_CHARS:
         return ln
+    must = tuple(s for s in must if s)
     return _window_oversized_line(
-        ln, _MAX_KEPT_LINE_CHARS, hit_terms, None, len(ln), raw_terms
+        ln, _MAX_KEPT_LINE_CHARS,
+        tuple(m.casefold() for m in must) + tuple(hit_terms),
+        None, len(ln), tuple(must) + tuple(raw_terms),
     )
 
 
@@ -1666,7 +1671,7 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
     orig_index = {ln: i for i, ln in enumerate(before.split("\n"))} if before is not None else None
     bounded = _bounded_orig_index(kept, orig_index)
     scope_of = _document_scopes(before) if before is not None else None
-    missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
+    missing = [(i, -1, _bound_fact_line(ln, must=(_k, _v))) for i, _k, _v, ln in protected
                if ln != after and ln not in after
                and not _fact_superseded_in(ln, kept, orig_index, bounded, scope_of)
                and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
@@ -1700,7 +1705,7 @@ def _restore_fact_lines(before: str, after: str) -> str:
     index = {ln: i for i, ln in enumerate(before.split("\n"))}
     bounded = _bounded_orig_index(kept, index)
     scope_of = _document_scopes(before)
-    missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
+    missing = [(i, -1, _bound_fact_line(ln, must=(_k, _v))) for i, _k, _v, ln in protected
                if ln != before and ln not in after
                and not _fact_superseded_in(ln, kept, index, bounded, scope_of)
                and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
@@ -1746,10 +1751,25 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     # that went stale, the record the error was about) — a generic sibling
     # exemplar does not cover that specific instance.
     kept_fps: set[str] = set()
+    kept_by_fp: dict[str, list[str]] = {}
     for _ln in kept:
         _fp = _log_fingerprint(_COUNT_PREFIX_RE.sub("", _ln, count=1))
         if _fp:
             kept_fps.add(_fp)
+            kept_by_fp.setdefault(_fp, []).append(_ln)
+
+    def _pair_kept(f) -> bool:
+        """A kept line with the fact's fingerprint only covers it when the
+        fact's own key=value survived — a bounded variant keeps the
+        fingerprint while eliding the pair it exists to show."""
+        fp = _log_fingerprint(f[3])
+        if not fp or fp not in kept_fps or _ctx(f[0]):
+            return False
+        want = tuple(unicodedata.normalize("NFKC", s) for s in (f[1], f[2]) if s)
+        return any(
+            all(s in unicodedata.normalize("NFKC", ln) for s in want)
+            for ln in kept_by_fp[fp]
+        )
     # Error positions in the ORIGINAL line list the fact indices are read from,
     # so an error the render kept still marks its neighbours as context — the
     # last success before a failure is the evidence whether or not the failure
@@ -1772,7 +1792,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         f for f in facts
         if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index, bounded, scope_of)
         and not _fact_variant_present(f[3], kept, tuple(s for s in (f[1], f[2]) if s))
-        and (not _log_fingerprint(f[3]) or _log_fingerprint(f[3]) not in kept_fps or _ctx(f[0]))
+        and not _pair_kept(f)
     ]
     if not missing:
         return compressed
@@ -1833,7 +1853,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         # Charge the BOUNDED render — the form actually appended — not the
         # original's length: an oversized fact that fits after windowing must
         # not be skipped by a cap it would never have broken.
-        bound = _bound_fact_line(ln, hit_terms, raw_terms)
+        bound = _bound_fact_line(ln, hit_terms, raw_terms, must=(f[1], f[2]))
         if chosen and (len(chosen) >= _FACT_FLOOR_MAX_LINES or used + len(bound) + 1 > cap):
             continue
         chosen.append(f)
@@ -1846,17 +1866,19 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     # extract ends in a different scope — a dropped [database] setting must
     # not read as a second value under the [cache] mapping it lands after.
     headers = _document_headers(original_text) if original_text is not None else {}
-    cur_scope = _end_scope(compressed)
-    emitted: list[str] = []
-    for f in sorted(chosen, key=lambda f: f[0]):
-        scope = scope_of.get(f[3]) if scope_of else None
-        if scope and scope != cur_scope and headers.get(scope):
-            emitted.append(headers[scope])
-        if scope:
-            cur_scope = scope
-        emitted.append(_bound_fact_line(f[3], hit_terms, raw_terms))
-    appended = "\n".join(emitted)
-    out = compressed + "\n" + appended
+    chosen_by_line = {f[3]: (f[1], f[2]) for f in chosen}
+    out = _append_scoped(
+        compressed,
+        [f[3] for f in sorted(chosen, key=lambda f: f[0])],
+        scope_of,
+        headers,
+        emit=lambda ln: _bound_fact_line(
+            ln, hit_terms, raw_terms, must=(chosen_by_line.get(ln) or ())
+        ),
+    )
+    appended = out[len(compressed):].lstrip("\n")
+    if not appended:
+        return compressed
     if scored is None or kept_ids is None or min_savings_ratio is None or original_text is None:
         return out
     head_tok = estimate_tokens(original_text) * (1.0 - float(min_savings_ratio))
@@ -1907,7 +1929,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         need_chr -= len(ln) + 1
     if drop:
         compressed = "\n".join(ln for i, ln in enumerate(rendered) if i not in drop)
-        out = compressed + "\n" + appended
+        out = compressed + ("\n" + appended if appended else "")
     return out
 
 
@@ -6265,12 +6287,19 @@ def _window_oversized_line(
     # ('ß' → 'ss'), so folded offsets are mapped back to source — but only
     # when the fold actually grew. For ASCII (the megabyte-line case)
     # offsets are identity and no per-character map is built at all.
-    low = line.casefold()
-    if not low.isascii():
-        low = "".join(c for c in low if not unicodedata.combining(c))
+    # NFKC first: a full-width 'ＴＥＲＭ' or a roman numeral matches the
+    # plain spelling scoring already recognises.
+    low = "".join(
+        c for ch in line
+        for c in unicodedata.normalize("NFKC", ch.casefold())
+        if not unicodedata.combining(c)
+    )
 
     def _fold_len(ch: str) -> int:
-        return sum(1 for c in ch.casefold() if not unicodedata.combining(c))
+        return sum(
+            1 for c in unicodedata.normalize("NFKC", ch.casefold())
+            if not unicodedata.combining(c)
+        )
 
     # Offsets are identity only when EVERY char folds to exactly one output
     # char — len(low) == n alone is not enough: an expansion ('ß' → 'ss')
@@ -6293,9 +6322,10 @@ def _window_oversized_line(
 
     intervals: list[list[int]] = []
     for ti, term in enumerate(hit_terms):
-        t = term.casefold() if term else term
-        if t:
-            t = "".join(c for c in t if not unicodedata.combining(c))
+        t = "".join(
+            c for c in unicodedata.normalize("NFKC", term.casefold())
+            if not unicodedata.combining(c)
+        ) if term else ""
         if not t:
             continue
         pos = 0
@@ -6528,6 +6558,16 @@ def _window_oversized_line(
                         covered[ti] = max(covered.get(ti, 0), q)
                 continue
         if emitted + seg_len > cap:
+            # A window that only repeats already-covered terms never eats
+            # the tail of the budget while a later window still holds a
+            # still-missing term's only match — skip it whole rather than
+            # clipping it and breaking before that match is reached.
+            if not any(covered.get(ti, 0) == 0 for ti in span_qual[idx]) and any(
+                any(covered.get(ti, 0) == 0 for ti in span_qual[j])
+                for j in range(idx + 1, len(spans))
+                if spans[j][1] > pos
+            ):
+                continue
             # A window that does not fit whole is not dropped: it fills the
             # remaining budget anchored at the earliest still-missing hit,
             # so a late query term — or an early hit inside a merged window
@@ -6544,6 +6584,12 @@ def _window_oversized_line(
                 segs.append(line[clip_a:clip_b])
                 emitted += clip_b - clip_a
                 pos = clip_b
+                # Only hits the clip actually emitted count as covered —
+                # marking every term the merged window touched would hide a
+                # still-missing term the clip never reached.
+                for ha, hb, ti in span_hits[idx]:
+                    if ha >= clip_a and hb <= clip_b:
+                        covered[ti] = max(covered.get(ti, 0), span_qual[idx].get(ti, 0))
             break
         # A window overlapping the kept prefix starts mid-match: nothing
         # was omitted between ``pos`` and ``a``, so no boundary marker —
@@ -6614,7 +6660,11 @@ def _render(
     if query:
         raw_hit_terms = tuple(
             t for t in (_extract_entities(query) + _extract_terms(query))
-            if len(t) >= 3
+            # A two-char CJK/Han term carries at least as much information
+            # as a three-char Latin one — the length gate must count
+            # wide characters double or those terms are ignored here even
+            # though scoring matched them.
+            if len(t) >= 3 or (len(t) >= 2 and any(ord(c) > 0x2E7F for c in t))
         )
         hit_terms = tuple(t.casefold() for t in raw_hit_terms)
 
@@ -6718,12 +6768,18 @@ def _render(
         # Structural verbatim invariant (leanctx-inspired): a kept fenced
         # code block must survive whole — extend the keep range to the
         # closing fence if it lands just outside, so agents see exact tokens.
+        # A tilde fence and a numbered-code gutter ('75|```') count too —
+        # either hides a real fence from a plain startswith probe.
+        def _is_fence(ln: str) -> bool:
+            probe = _GUTTER_RE.sub("", ln, count=1).strip()
+            return probe.startswith("```") or probe.startswith("~~~")
+
         kept_text = lines[start : end + 1]
-        fences = sum(1 for ln in kept_text if ln.strip().startswith("```"))
+        fences = sum(1 for ln in kept_text if _is_fence(ln))
         if fences % 2 == 1:
             j = end + 1
             while j < len(lines):
-                if lines[j].strip().startswith("```"):
+                if _is_fence(lines[j]):
                     end = j
                     break
                 j += 1
@@ -6736,7 +6792,7 @@ def _render(
         else:
             in_fence = False
             for ln in lines[start : end + 1]:
-                if ln.strip().startswith("```"):
+                if _is_fence(ln):
                     in_fence = not in_fence
                     parts.append(ln)
                 else:
