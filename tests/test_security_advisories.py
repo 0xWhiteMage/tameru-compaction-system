@@ -193,6 +193,8 @@ def test_audit_log_refuses_a_symlinked_target(tmp_path):
     victim = tmp_path / "victim.conf"
     victim.write_text("key = value\n")
     os.chmod(victim, 0o644)
+    # Windows can't apply POSIX modes; assert the write path left the file as chmod left it.
+    mode_before = stat.S_IMODE(victim.stat().st_mode)
     logdir = tmp_path / "logs"
     logdir.mkdir()
     try:
@@ -202,7 +204,7 @@ def test_audit_log_refuses_a_symlinked_target(tmp_path):
     compress_context(_log_lines(), "Why did the linker fail for parse_config?",
                      ccr=False, citations=False, log_dir=logdir)
     assert victim.read_text() == "key = value\n"
-    assert stat.S_IMODE(victim.stat().st_mode) == 0o644
+    assert stat.S_IMODE(victim.stat().st_mode) == mode_before
 
 
 def test_audit_log_refuses_a_symlinked_log_dir(tmp_path):
