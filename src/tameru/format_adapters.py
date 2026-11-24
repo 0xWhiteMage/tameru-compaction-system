@@ -9,7 +9,7 @@ import math
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
-from typing import Callable
+from typing import Callable, Mapping
 
 from .agent_formats import (
     code_vetoes_yaml,
@@ -43,6 +43,17 @@ class FormatLimits:
         for name, value in asdict(self).items():
             if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
                 raise ValueError(f"{name} must be a positive integer, got {value!r}")
+
+
+def _coerce_limits(limits: "FormatLimits | Mapping | None") -> "FormatLimits | None":
+    """A kwargs dict spells the same limits object; any other type is a caller bug."""
+    if isinstance(limits, Mapping):
+        return FormatLimits(**limits)
+    if limits is not None and not isinstance(limits, FormatLimits):
+        raise TypeError(
+            f"limits must be a FormatLimits instance or dict, got {type(limits).__name__}"
+        )
+    return limits
 
 
 @dataclass(frozen=True)
@@ -1465,13 +1476,7 @@ def adapt_report(text: str, query: str, limits: FormatLimits | None = None,
     if not stripped.startswith(("{", "<", "\ufeff", "TN:", "SF:")):
         return None
     selectors = _query_selectors(query)
-    if isinstance(limits, dict):
-        limits = FormatLimits(**limits)
-    elif limits is not None and not isinstance(limits, FormatLimits):
-        raise TypeError(
-            f"limits must be a FormatLimits instance or dict, got {type(limits).__name__}"
-        )
-    resolved = limits or FormatLimits()
+    resolved = _coerce_limits(limits) or FormatLimits()
     if stripped.startswith("{"):
         report = select_report(
             value, lambda record: _contains_selector(record, selectors),
@@ -1521,6 +1526,11 @@ def adapt_format(
     runs. Whole-report selectors place an aggregate marker before the document
     so the retained records remain structurally intact.
     """
+    if format_name is not None and not isinstance(format_name, str):
+        raise TypeError(
+            f"format_name must be str or None, got {type(format_name).__name__}"
+        )
+    limits = _coerce_limits(limits)
     value = str(text or "")
     if isinstance(limits, dict):
         # A kwargs dict spells the same limits object — the dataclass
