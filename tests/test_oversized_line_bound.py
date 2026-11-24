@@ -247,3 +247,17 @@ def test_head_hits_are_covered_before_clipping():
         raw_terms=("alpha", "delta"),
     )
     assert "delta" in out
+
+
+def test_variant_in_head_does_not_displace_later_exact_hit():
+    # 'café' inside the emitted head is only a folded match for 'cafe' —
+    # marking it covered at the hit's own (low) quality keeps the line's
+    # only verbatim 'cafe' anchoring the clip instead of losing it.
+    line = (
+        "café" + "x" * 300 + "other" + "y" * 200 + "cafe" + "z" * 300
+    )
+    out = _window_oversized_line(
+        line, 330, ("cafe", "other"), None, len(line),
+        raw_terms=("cafe", "other"),
+    )
+    assert "cafe" in out

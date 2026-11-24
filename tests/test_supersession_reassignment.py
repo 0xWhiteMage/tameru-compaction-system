@@ -359,8 +359,8 @@ def test_unmatched_leading_quote_does_not_collide_sections():
 
 def test_orphaned_header_reaches_rendered_output():
     # The prepend to the dependent's text feeds scoring only — _render
-    # emits lines[start:end+1], so the header must be a kept block of its
-    # own to reach the output.
+    # emits lines[start:end+1], so the header must ride on the dependent's
+    # emit_prefix to reach the output, right beside the lines needing it.
     from tameru import compress_context as cc
 
     lines = [
@@ -381,9 +381,53 @@ def test_orphaned_header_reaches_rendered_output():
     ]
     kept = apply_supersession(scored, {0, 1, 2, 3})
     assert 1 not in kept
-    header_blocks = [b for b in scored if b["id"] in kept and b["start"] == b["end"] == 2]
-    assert header_blocks and header_blocks[0]["text"] == "[database]"
+    # The first kept block still scoped by the dropped header carries it.
+    assert scored[2]["emit_prefix"] == ["[database]"]
     out = cc._render(lines, scored, kept)
     assert "[database]" in out
+    # It renders beside that dependent — before its line, inside the
+    # section's own flow, not at the dead block's line index.
+    assert out.rindex("[database]") < out.rindex("Another unrelated")
     assert "connect_timeout_ms = 30000" not in out
 
+||||||| parent of 205e356 (fix(render): queue orphaned headers on emit_prefix, rank coverage by hit quality)
+
+
+
+def test_orphaned_subtable_drags_its_array_element():
+    # '[servers.tls]' minted after '[[servers]]' in the same stale block:
+    # restoring only the subtable header would attach the surviving value
+    # to whatever array element the extract last showed.
+    scored = [
+        {"id": 0, "text": "intro", "start": 0, "end": 0},
+        {
+            "id": 1,
+            "text": "[[servers]]\n[servers.tls]\nconnect_timeout_ms = 30000",
+            "start": 2,
+            "end": 4,
+        },
+        {"id": 2, "text": "connect_timeout_ms = 5000", "start": 6, "end": 6},
+    ]
+    kept = apply_supersession(scored, {0, 1, 2})
+    assert 1 not in kept
+    assert scored[2]["emit_prefix"] == ["[[servers]]", "[servers.tls]"]
+
+
+def test_header_reemitted_when_decision_cache_dropped_the_stale_block():
+    # A replayed frozen 'drop' removes the stale block before supersession
+    # runs — without it in the analysis, the dependent loses its section
+    # on every cached call. Frozen-dropped blocks join as supersede-ees.
+    scored = [
+        {"id": 0, "text": "Intro note about the system setup here.", "start": 0, "end": 0},
+        {
+            "id": 1,
+            "text": "[database]\nconnect_timeout_ms = 30000",
+            "start": 2,
+            "end": 3,
+            "freeze_decision": "drop",
+        },
+        {"id": 2, "text": "Another unrelated note about the system.", "start": 5, "end": 5},
+        {"id": 3, "text": "connect_timeout_ms = 5000", "start": 7, "end": 7},
+    ]
+    kept = apply_supersession(scored, {0, 2, 3})
+    assert scored[2]["emit_prefix"] == ["[database]"]
