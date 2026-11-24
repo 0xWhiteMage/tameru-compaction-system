@@ -388,6 +388,13 @@ _TERM_TOKEN_RE = re.compile(
 # Long punctuation runs (progress dots, rulers) cost real tokens: ~1 per 4
 # chars. Only runs of 16+ so ordinary code/prose estimates do not move.
 _ASCII_SYMBOL_RUN_RE = re.compile(r"[!-/:-@\[-`{-~]{16,}")
+# A long unbroken word (base64 blobs, minified code, padding runs) is NOT one
+# token — real tokenizers split it at a few chars per token, the same way the
+# symbol-run term above treats punctuation runs. Counting it as a single
+# _TOKEN_RE match undercounts a 1 MB line to ~4 tokens, which broke every
+# savings gate downstream (the compressed render looked "longer" than an
+# input that was estimated at 4 tokens, forcing a false fail-open).
+_ASCII_WORD_RUN_RE = re.compile(r"[A-Za-z0-9_]{32,}")
 _CAMEL_RE = re.compile(r"\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b")
 # Slash is required between segments. `(?:/?[\w.-]+){2,}` is catastrophic
 # on long hyphenated ids (acmecorp-genesis-v14-focused-node22-raw).
@@ -565,6 +572,11 @@ def _estimate_tokens(text: str) -> int:
     # S7: count matches instead of materializing them — the 8M ``too_large`` estimate's findall
     # lists were ~73 MiB. The ``translate`` copy runs only once the text is known non-ASCII.
     runs = sum((m.end() - m.start()) // 4 for m in _ASCII_SYMBOL_RUN_RE.finditer(text)) if len(text) >= 16 else 0
+    if len(text) >= 32:
+        runs += sum(
+            (m.end() - m.start()) // 4 - 1  # the run already counted one _TOKEN_RE word
+            for m in _ASCII_WORD_RUN_RE.finditer(text)
+        )
     if text.isascii() or text.translate(_FAST_ACCOUNTING_DELETE).isascii():
         return max(1, _count_re_matches(_TOKEN_RE, text) + runs)
     return max(1, count_token_units(text) + runs)
@@ -1507,10 +1519,44 @@ def _protected_facts(text: str) -> tuple[tuple[int, str, str, str], ...]:
     return _fact_summary(text)[0]
 
 
+def _bounded_orig_index(
+    kept_lines: list[str], orig_index: dict[str, int] | None
+) -> dict[str, int]:
+    """Map kept bounded/windowed variants back to their original line's
+    index: the render emits ``line[:head] + omission markers`` for oversized
+    lines (``_fact_variant_present`` matching), so a variant is absent from
+    ``orig_index`` yet still IS that original line for ordering. Without
+    this a kept bounded stale value counts as later than every candidate
+    and vetoes restoring its own replacement."""
+    out: dict[str, int] = {}
+    if not orig_index:
+        return out
+    head = max(64, _MAX_KEPT_LINE_CHARS // 4)
+    oversized = [
+        (ln, i) for ln, i in orig_index.items() if len(ln) > _MAX_KEPT_LINE_CHARS
+    ]
+    if not oversized:
+        return out
+    for o in kept_lines:
+        if o in orig_index:
+            continue
+        match = None
+        for ln, i in oversized:
+            if o != ln and o.startswith(ln[:head]):
+                if match is not None and match != i:
+                    match = None
+                    break  # shared-prefix originals: no position beats a wrong one
+                match = i
+        if match is not None:
+            out.setdefault(o, match)
+    return out
+
+
 def _fact_superseded_in(
     line: str,
     kept_lines: list[str],
     orig_index: dict[str, int] | None = None,
+    bounded_index: dict[str, int] | None = None,
 ) -> bool:
     """``True`` when a line surviving in the output explicitly marks ``line`` stale
     (``supersession._supersedes``: an is-now/obsolete/override marker plus shared distinctive
@@ -1519,9 +1565,10 @@ def _fact_superseded_in(
     Reassignment supersession is directionless on its own (``k = v1`` vs ``k = v2`` are
     symmetric), so ``orig_index`` — each line's position in the original text — gates it:
     only a surviving line that stands LATER in the input may veto the candidate, otherwise
-    a kept stale value would refuse to let the current one back in. Kept lines absent from
-    ``orig_index`` (render markers) count as later, matching the pre-gate behavior; a
-    candidate with no known position keeps the permissive default too."""
+    a kept stale value would refuse to let the current one back in. A kept bounded variant
+    resolves through ``bounded_index`` to its original line's position; other kept lines
+    absent from ``orig_index`` (render markers) count as later, matching the pre-gate
+    behavior; a candidate with no known position keeps the permissive default too."""
     lp = orig_index.get(line) if orig_index is not None else None
     return any(
         o != line
@@ -1531,10 +1578,61 @@ def _fact_superseded_in(
             newer_is_later=(
                 True
                 if lp is None or orig_index is None
-                else orig_index.get(o, 1 << 62) > lp
+                else (
+                    orig_index[o]
+                    if o in orig_index
+                    else (bounded_index or {}).get(o, 1 << 62)
+                )
+                > lp
             ),
         )
         for o in kept_lines
+    )
+
+
+def _fact_variant_present(
+    ln: str, kept_lines: list[str], must: tuple[str, ...] = ()
+) -> bool:
+    """``True`` when a bounded/windowed variant of an oversized original line
+    already survived — the render emits ``line[:head] + omission markers`` for
+    lines over ``_MAX_KEPT_LINE_CHARS``, so the surviving copy still starts
+    with a long prefix of the original. Two tests keep diagnostic lines with
+    shared preambles from passing for each other: the kept line must start
+    with the full window head (a real variant's prefix is at least
+    ``_MAX_KEPT_LINE_CHARS // 4`` chars, not the old 64), and every ``must``
+    span the floor exists to protect has to survive inside it. Without this
+    check the floors re-append the whole oversized line on top of its bounded
+    form; a too-weak check drops the fact entirely."""
+    if len(ln) <= _MAX_KEPT_LINE_CHARS:
+        return False
+    head = max(64, _MAX_KEPT_LINE_CHARS // 4)
+    want = tuple(unicodedata.normalize("NFKC", s) for s in must)
+    for k in kept_lines:
+        if k == ln or not k.startswith(ln[:head]):
+            continue
+        # ``must`` spans are compared normalized both ways: protected values
+        # are stored normalized (full-width → ASCII), so a verbatim search
+        # would miss the value inside the raw kept text and re-append the
+        # fact. Case is NOT folded: a kept line whose value differs only by
+        # case holds a different value — counting it would mask the newer
+        # fact.
+        folded = unicodedata.normalize("NFKC", k) if want else k
+        if all(s in folded for s in want):
+            return True
+    return False
+
+
+def _bound_fact_line(
+    ln: str,
+    hit_terms: tuple[str, ...] = (),
+    raw_terms: tuple[str, ...] = (),
+) -> str:
+    """Bound an oversized protected line the same way the render bounds kept
+    lines — a floor restores protection, not the unbounded payload."""
+    if len(ln) <= _MAX_KEPT_LINE_CHARS:
+        return ln
+    return _window_oversized_line(
+        ln, _MAX_KEPT_LINE_CHARS, hit_terms, None, len(ln), raw_terms
     )
 
 
@@ -1557,14 +1655,19 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
         return after
     kept = after.split("\n")
     orig_index = {ln: i for i, ln in enumerate(before.split("\n"))} if before is not None else None
-    missing = [(i, -1, ln) for i, _k, _v, ln in protected
-               if ln != after and ln not in after and not _fact_superseded_in(ln, kept, orig_index)]
+    bounded = _bounded_orig_index(kept, orig_index)
+    missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
+               if ln != after and ln not in after
+               and not _fact_superseded_in(ln, kept, orig_index, bounded)
+               and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
     extra = list(err) + sorted(out.difference(err))
     if extra:
         index = orig_index or {}
         for pos, ln in enumerate(extra):
-            if ln != after and ln not in after and not _fact_superseded_in(ln, kept, orig_index):
-                missing.append((index.get(ln, float("inf")), pos, ln))
+            if (ln != after and ln not in after
+                    and not _fact_superseded_in(ln, kept, orig_index, bounded)
+                    and not _fact_variant_present(ln, kept)):
+                missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
 
 
@@ -1582,14 +1685,19 @@ def _restore_fact_lines(before: str, after: str) -> str:
     kept = after.split("\n")
     extra = list(err) + sorted(out.difference(err))
     index = {ln: i for i, ln in enumerate(before.split("\n"))}
-    missing = [(i, -1, ln) for i, _k, _v, ln in protected
-               if ln != before and ln not in after and not _fact_superseded_in(ln, kept, index)]
+    bounded = _bounded_orig_index(kept, index)
+    missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
+               if ln != before and ln not in after
+               and not _fact_superseded_in(ln, kept, index, bounded)
+               and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
     # E6: an error exemplar the stage saw in ``before`` and lost goes back too —
     # independent of fact density, same supersession guard, same original order.
     # E12: protected outcome lines get the same treatment.
     for pos, ln in enumerate(extra):
-        if ln in before and ln not in after and not _fact_superseded_in(ln, kept, index):
-            missing.append((index.get(ln, float("inf")), pos, ln))
+        if (ln in before and ln not in after
+                and not _fact_superseded_in(ln, kept, index, bounded)
+                and not _fact_variant_present(ln, kept)):
+            missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
 
 
@@ -1611,6 +1719,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     remains the append stands and the cost gate decides, exactly as before."""
     kept = compressed.split("\n")
     orig_index = {ln: i for i, ln in enumerate(original_text.split("\n"))} if original_text else None
+    bounded = _bounded_orig_index(kept, orig_index)
     # A line already represented by a surviving exemplar of its template (a
     # "[×N]"/"[last]" marker carries the exemplar text) is not missing — the
     # floor's budget is for templates the extract left unrepresented, like the
@@ -1640,9 +1749,12 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     def _ctx(i: int) -> bool:
         return i - 1 in orig_err or i + 1 in orig_err or i + 2 in orig_err
 
+    raw_terms = tuple(t for t in _extract_terms(query or "") if len(t) >= 3)
+    hit_terms = tuple(t.casefold() for t in raw_terms)
     missing = [
         f for f in facts
-        if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index)
+        if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index, bounded)
+        and not _fact_variant_present(f[3], kept, tuple(s for s in (f[1], f[2]) if s))
         and (not _log_fingerprint(f[3]) or _log_fingerprint(f[3]) not in kept_fps or _ctx(f[0]))
     ]
     if not missing:
@@ -1701,15 +1813,19 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         fp = _log_fingerprint(ln)
         if fp and fp in kept_fps and not _ctx(f[0]):
             continue
-        if chosen and (len(chosen) >= _FACT_FLOOR_MAX_LINES or used + len(ln) + 1 > cap):
+        # Charge the BOUNDED render — the form actually appended — not the
+        # original's length: an oversized fact that fits after windowing must
+        # not be skipped by a cap it would never have broken.
+        bound = _bound_fact_line(ln, hit_terms, raw_terms)
+        if chosen and (len(chosen) >= _FACT_FLOOR_MAX_LINES or used + len(bound) + 1 > cap):
             continue
         chosen.append(f)
-        used += len(ln) + 1
+        used += len(bound) + 1
         if fp:
             kept_fps.add(fp)
     if not chosen:
         return compressed
-    appended = "\n".join(f[3] for f in sorted(chosen, key=lambda f: f[0]))
+    appended = "\n".join(_bound_fact_line(f[3], hit_terms, raw_terms) for f in sorted(chosen, key=lambda f: f[0]))
     out = compressed + "\n" + appended
     if scored is None or kept_ids is None or min_savings_ratio is None or original_text is None:
         return out
@@ -6092,6 +6208,333 @@ def _span_kind(span: list[str]) -> str:
     return "lines"
 
 
+_MAX_KEPT_LINE_CHARS = 8192
+
+
+def _window_oversized_line(
+    line: str,
+    cap: int,
+    hit_terms: tuple[str, ...],
+    marker_fn,
+    total_chars: int,
+    raw_terms: tuple[str, ...] = (),
+) -> str:
+    """Bound a single oversized kept line to about ``cap`` chars: keep the
+    head, the tail and windows around query hits, joining the elided spans
+    with the chars-omitted marker. The emitted text always STARTS with a
+    prefix of the original line, so a checker reads it as a truncated input
+    line, never invented text."""
+    span = max(64, cap // 4)
+    n = len(line)
+
+    # Hit windows are located on the casefolded text — matching _render's
+    # folded terms against 'Straße' needs 'strasse' to hit. Two folds need
+    # care: 'İ'.casefold() yields 'i' + a combining dot, which would break a
+    # plain 'istanbul' term, so combining marks are dropped from the folded
+    # text AND every term; and non-ASCII folding can change length
+    # ('ß' → 'ss'), so folded offsets are mapped back to source — but only
+    # when the fold actually grew. For ASCII (the megabyte-line case)
+    # offsets are identity and no per-character map is built at all.
+    low = line.casefold()
+    if not low.isascii():
+        low = "".join(c for c in low if not unicodedata.combining(c))
+
+    def _fold_len(ch: str) -> int:
+        return sum(1 for c in ch.casefold() if not unicodedata.combining(c))
+
+    # Offsets are identity only when EVERY char folds to exactly one output
+    # char — len(low) == n alone is not enough: an expansion ('ß' → 'ss')
+    # and a removed combining mark can cancel in total length while offsets
+    # in between still drift. ASCII folds are always length-1, so the
+    # megabyte-line case keeps the fast path with no per-char map.
+    need_map = len(low) != n or (
+        not low.isascii() and any(_fold_len(ch) != 1 for ch in line)
+    )
+    if not need_map:
+        def _src(folded_pos: int) -> int:
+            return min(folded_pos, n - 1)
+    else:
+        fold_map = [0]
+        for ch in line:
+            fold_map.append(fold_map[-1] + _fold_len(ch))
+        def _src(folded_pos: int) -> int:
+            """First source index whose fold covers ``folded_pos``."""
+            return bisect.bisect_right(fold_map, folded_pos) - 1
+
+    intervals: list[list[int]] = []
+    for ti, term in enumerate(hit_terms):
+        t = term.casefold() if term else term
+        if t:
+            t = "".join(c for c in t if not unicodedata.combining(c))
+        if not t:
+            continue
+        pos = 0
+        while True:
+            i = low.find(t, pos)
+            if i < 0:
+                break
+            sa = _src(i)
+            sb = _src(i + len(t) - 1) + 1
+            intervals.append([max(0, sa - span), min(n, sb + span), ti, sa, sb])
+            pos = i + len(t)
+            if len(intervals) >= 8192:
+                break
+        if len(intervals) >= 8192:
+            break
+    # Merge in source order: merging per-term first and sorting after would
+    # drop the earlier hit whenever the query lists a later term first, and
+    # the merged-span cap must not preferentially keep one term's matches.
+    intervals.sort()
+    spans: list[list[int]] = []
+    span_terms: list[set[int]] = []
+    # The hit bounds inside each merged window: a window too big to emit is
+    # clipped to an ANCHOR at its earliest still-missing hit rather than its
+    # tail — trailing context must never crowd the match itself out.
+    span_hits: list[list[list[int]]] = []
+    for a, b, ti, ha, hb in intervals:
+        if spans and a <= spans[-1][1]:
+            spans[-1][1] = max(spans[-1][1], b)
+            span_terms[-1].add(ti)
+            span_hits[-1].append([ha, hb, ti])
+        else:
+            spans.append([a, b])
+            span_terms.append({ti})
+            span_hits.append([[ha, hb, ti]])
+
+    # An earlier folded-only match (an accent-stripped or 'ß'→'ss' variant)
+    # must not spend the emit budget ahead of a later VERBATIM hit: spans
+    # holding an exact occurrence of a raw (unfolded, original-case) term
+    # are preferred — kept first when the merged-span cap trims, and a
+    # non-preferred span is skipped only when it would crowd a preferred
+    # one out of the remaining budget.
+    verbatim = tuple(t for t in (raw_terms or hit_terms) if t)
+    pref = [any(t in line[a:b] for t in verbatim) for a, b in spans]
+    # Case comparison slices each span BEFORE lowering: lower() can expand
+    # a character ('İ' → 'i̇'), so slicing a lowered copy of the whole line
+    # at source coordinates reads the wrong window.
+    _seg_lows = [line[a:b].lower() for a, b in spans]
+    # Match-quality tiers mirror the emit ranking: a verbatim window ('strasse'
+    # for a 'strasse' query) outranks a case-only window ('STRASSE'), which
+    # outranks a spelling variant ('Straße'). ``q2`` marks the top two tiers;
+    # a weaker window is skipped whenever a stronger later one needs the
+    # budget, and the span cap below keeps the tiers in the same order.
+    q2 = [
+        p or any(t.lower() in _seg_lows[i] for t in verbatim)
+        for i, p in enumerate(pref)
+    ]
+    if len(spans) > 32:
+        # Tiered trim with term coverage: within each tier, a span holding a
+        # term no kept span covers yet is taken first — otherwise 32 repeats
+        # of one term's windows could erase another term's only match.
+        keep_set: set[int] = set()
+        covered_terms: set[int] = set()
+
+        def _want(i: int) -> bool:
+            return any(ti not in covered_terms for ti in span_terms[i])
+
+        def _take(i: int) -> None:
+            keep_set.add(i)
+            covered_terms.update(span_terms[i])
+
+        for tier in (pref, q2):
+            for i, ok in enumerate(tier):
+                if len(keep_set) >= 32:
+                    break
+                if ok and i not in keep_set and _want(i):
+                    _take(i)
+        for i in range(len(spans)):
+            if len(keep_set) >= 32:
+                break
+            if i not in keep_set and _want(i):
+                _take(i)
+        # Spare slots fill by tier too — a weaker repeat earlier in the
+        # line must not take a stronger later window's slot.
+        for tier in (pref, q2):
+            for i, ok in enumerate(tier):
+                if len(keep_set) >= 32:
+                    break
+                if ok and i not in keep_set:
+                    _take(i)
+        for i in range(len(spans)):
+            if len(keep_set) >= 32:
+                break
+            if i not in keep_set:
+                _take(i)
+        keep = sorted(keep_set)
+        spans = [spans[i] for i in keep]
+        span_terms = [span_terms[i] for i in keep]
+        span_hits = [span_hits[i] for i in keep]
+        pref = [pref[i] for i in keep]
+        q2 = [q2[i] for i in keep]
+        _seg_lows = [_seg_lows[i] for i in keep]
+    # Match quality per span: a window whose hit only surfaces through the
+    # deep fold ('Straße' for 'strasse') is weaker evidence than a window
+    # holding the term with just its case different ('STRASSE'). A deep-fold
+    # window emitted first must not mark a term covered for a case-exact
+    # window later — covered tracks the best emitted quality per term.
+    # hit_terms arrive casefolded ('ß' → 'ss'): compare quality against the
+    # RAW terms so 'MAẞSTRAẞE' (case-only difference) outranks 'MASSSTRASSE'
+    # (spelling difference) for a 'Maßstraße' query.
+    _qual_terms = raw_terms or hit_terms
+    span_qual = [
+        {
+            ti: (2 if ti < len(_qual_terms) and _qual_terms[ti].lower() in _seg_lows[i] else 1)
+            for ti in ts
+        }
+        for i, ts in enumerate(span_terms)
+    ]
+    later_pref = [0] * (len(spans) + 1)
+    later_q2 = [0] * (len(spans) + 1)
+    for i in range(len(spans) - 1, -1, -1):
+        later_pref[i] = later_pref[i + 1] + (spans[i][1] - spans[i][0] if pref[i] else 0)
+        later_q2[i] = later_q2[i + 1] + (spans[i][1] - spans[i][0] if q2[i] else 0)
+
+    def _clip_anchor(pos: int, b: int, room: int, hits: list[list[int]],
+                     qual: dict[int, int], covered: dict[int, int]) -> int:
+        """Where a clipped window begins: at the earliest hit for a
+        still-missing term — covering another query term outranks match
+        quality, and anchoring early keeps later hits inside the clip.
+        Only hits wholly past ``pos`` count — a hit whose head the prefix
+        already emitted is no fresh evidence. Match quality only breaks
+        ties among repeats of already-covered terms: a verbatim hit
+        outranks an earlier case variant."""
+        pending = [h for h in hits if h[0] >= pos]
+        fresh = [h for h in pending if covered.get(h[2], 0) == 0]
+        pool = fresh or pending or [h for h in hits if h[1] > pos]
+        if fresh:
+            # The earliest still-missing TERM wins the anchor — a later
+            # verbatim hit for another term cannot crowd out an earlier
+            # term's only match. Within that term the best-quality hit
+            # anchors: its verbatim occurrence beats an earlier case
+            # variant of the same term.
+            first = min(h[0] for h in fresh)
+            term = next(h[2] for h in fresh if h[0] == first)
+            same = [h for h in fresh if h[2] == term]
+            best = max(qual.get(h[2], 0) for h in same)
+            anchor = min(h[0] for h in same if qual.get(h[2], 0) == best)
+        elif pool:
+            best = max(qual.get(h[2], 0) for h in pool)
+            anchor = min(h[0] for h in pool if qual.get(h[2], 0) == best)
+        else:
+            anchor = b - room
+        return max(pos, min(b - room, anchor))
+
+    def mark(omitted: int) -> str:
+        if marker_fn is not None:
+            made = call_gap_marker(marker_fn, omitted, total_chars, "other")
+            return str(made) if made else ""
+        return f"[… {omitted} chars omitted …]"
+
+    segs: list[str] = []
+    pos = 0
+    emitted = 0
+    # The head always survives: an oversized line kept for structural
+    # reasons still shows how it begins, and a marker may never open a line.
+    # A hit window overlapping the head may extend it — but only within the
+    # same ``cap`` every other segment obeys.
+    head = min(span, n)
+    for idx, (a, b) in enumerate(spans):
+        # Only a strong-tier window may extend the head — a weaker match
+        # overlapping it is emitted through the budgeted path like any
+        # other — and only when the whole window fits inside ``cap``: a
+        # wider window extending the head to ``cap`` would drop a hit
+        # sitting past the boundary.
+        if a <= head and (pref[idx] or q2[idx]) and b <= cap:
+            head = min(cap, max(head, b))
+    segs.append(line[:head])
+    emitted = head
+    pos = head
+    covered: dict[int, int] = {}
+    for idx, (a, b) in enumerate(spans):
+        if b <= pos:
+            for ti, q in span_qual[idx].items():
+                covered[ti] = max(covered.get(ti, 0), q)
+            continue
+        a = max(a, pos)
+        seg_len = b - a
+        if not pref[idx]:
+            # 'Fresh' means an UNCOVERED term: a window that only upgrades an
+            # already-covered term's match quality ('STRASSE' after 'Straße')
+            # is emitted when room allows — but ranks with the duplicates
+            # whenever a still-missing term needs the same budget.
+            fresh = any(covered.get(ti, 0) == 0 for ti in span_qual[idx])
+            if not fresh:
+                # A window that only repeats terms already emitted must not
+                # fill the remaining budget ahead of a stronger-tier window
+                # or a window holding the ONLY match for a still-missing
+                # term — it is skipped, not clipped, whenever later evidence
+                # needs the room. A case-only duplicate reserves only for a
+                # later verbatim window; a spelling-variant duplicate
+                # reserves for either.
+                later_need = (later_pref if q2[idx] else later_q2)[idx + 1] + sum(
+                    spans[j][1] - spans[j][0]
+                    for j in range(idx + 1, len(spans))
+                    if not pref[j]
+                    and (q2[idx] or not q2[j])
+                    and any(
+                        covered.get(ti, 0) == 0 for ti in span_qual[j]
+                    )
+                )
+                if later_need and emitted + seg_len + later_need > cap:
+                    continue
+            elif later_pref[idx + 1] and emitted + seg_len + later_pref[idx + 1] > cap:
+                # Reserve the remaining budget for a later verbatim-hit
+                # window — but keep this fresh hit too when trimming the
+                # window's context fits it next to the reservation. The clip
+                # is anchored at the earliest still-missing hit, not the
+                # window tail: ``room`` smaller than the trailing context
+                # would otherwise keep only context and drop the match.
+                room = cap - emitted - later_pref[idx + 1]
+                if room > 0:
+                    clip_a = _clip_anchor(pos, b, room, span_hits[idx],
+                                          span_qual[idx], covered)
+                    if clip_a > pos:
+                        segs.append(mark(clip_a - pos))
+                    clip_b = clip_a + room
+                    segs.append(line[clip_a:clip_b])
+                    emitted += clip_b - clip_a
+                    pos = clip_b
+                    for ti, q in span_qual[idx].items():
+                        covered[ti] = max(covered.get(ti, 0), q)
+                continue
+        if emitted + seg_len > cap:
+            # A window that does not fit whole is not dropped: it fills the
+            # remaining budget anchored at the earliest still-missing hit,
+            # so a late query term — or an early hit inside a merged window
+            # that sits before the tail — is never silently lost. ``pos``
+            # lands at the clip's end so a later marker counts what the
+            # clip actually omitted, not the whole window width.
+            remain = cap - emitted
+            if remain > 0:
+                clip_a = _clip_anchor(pos, b, remain, span_hits[idx],
+                                      span_qual[idx], covered)
+                if clip_a > pos:
+                    segs.append(mark(clip_a - pos))
+                clip_b = clip_a + remain
+                segs.append(line[clip_a:clip_b])
+                emitted += clip_b - clip_a
+                pos = clip_b
+            break
+        # A window overlapping the kept prefix starts mid-match: nothing
+        # was omitted between ``pos`` and ``a``, so no boundary marker —
+        # inserting one would split the match visually.
+        if a > pos:
+            segs.append(mark(a - pos))
+        segs.append(line[a:b])
+        emitted += seg_len
+        pos = b
+        for ti, q in span_qual[idx].items():
+            covered[ti] = max(covered.get(ti, 0), q)
+    tail_a = max(pos, n - span)
+    if emitted + (n - tail_a) <= cap and tail_a > pos:
+        segs.append(mark(tail_a - pos))
+        segs.append(line[tail_a:])
+        pos = n
+    if pos < n:
+        segs.append(mark(n - pos))
+    return "".join(segs)
+
+
 def _render(
     lines: list[str],
     blocks: list[dict[str, Any]],
@@ -6101,6 +6544,7 @@ def _render(
     gap_marker: Callable[[int, int], str] | None = None,
     total_chars: int | None = None,
     content_lines: list[str] | None = None,
+    query: str | None = None,
 ) -> str:
     chronological_blocks: list[dict[str, Any]] | None = None
     block_starts: list[int] = []
@@ -6131,6 +6575,25 @@ def _render(
     probe_lines = content_lines if content_lines is not None else lines
     inline_short = _inlines_short(marker_fn) if marker_fn is not None else False
     wants_kind = marker_fn is not None and gap_accepts_kind(getattr(marker_fn, "fn", marker_fn))
+
+    # A kept line may not be unbounded: a hostile 1MB single line used to
+    # pass through byte for byte and saved nothing. Bound it to
+    # _MAX_KEPT_LINE_CHARS, keeping head, tail and windows around query hits.
+    hit_terms: tuple[str, ...] = ()
+    raw_hit_terms: tuple[str, ...] = ()
+    if query:
+        raw_hit_terms = tuple(
+            t for t in (_extract_entities(query) + _extract_terms(query))
+            if len(t) >= 3
+        )
+        hit_terms = tuple(t.casefold() for t in raw_hit_terms)
+
+    def _bound(ln: str) -> str:
+        if len(ln) <= _MAX_KEPT_LINE_CHARS:
+            return ln
+        return _window_oversized_line(
+            ln, _MAX_KEPT_LINE_CHARS, hit_terms, marker_fn, total, raw_hit_terms
+        )
 
     def _gap(lo: int, hi: int) -> list[str] | None:
         if marker_fn is None:
@@ -6234,7 +6697,20 @@ def _render(
                     end = j
                     break
                 j += 1
-        parts.extend(lines[start : end + 1])
+        # Verbatim regions are exempt from the oversized-line window: a pinned
+        # block must come back byte-for-byte (the pin gate compares exact
+        # source), and rewriting text inside an intact fence presents altered
+        # code as unaltered.
+        if b.get("pinned"):
+            parts.extend(lines[start : end + 1])
+        else:
+            in_fence = False
+            for ln in lines[start : end + 1]:
+                if ln.strip().startswith("```"):
+                    in_fence = not in_fence
+                    parts.append(ln)
+                else:
+                    parts.append(ln if in_fence else _bound(ln))
         prev_end = end
     if marker_fn is not None and chronological and parts and prev_end < len(lines) - 1:
         trail = _gap(prev_end + 1, len(lines))
@@ -9211,7 +9687,7 @@ def _render_and_check_recall(
             compressed = _render(
                 lines, scored, kept, citations=citations, reorder_best=_reorder,
                 gap_marker=gap_marker, total_chars=len(caller_text),
-                content_lines=score_lines,
+                content_lines=score_lines, query=query,
             )
             fail_open = False
             risk = "high"
@@ -9237,7 +9713,7 @@ def _render_and_check_recall(
         compressed = _render(
             lines, scored, kept, citations=citations, reorder_best=_reorder,
             gap_marker=gap_marker, total_chars=len(caller_text),
-            content_lines=score_lines,
+            content_lines=score_lines, query=query,
         )
 
     if (adapter_info is not None and not fail_open
@@ -9259,7 +9735,7 @@ def _render_and_check_recall(
         compressed = _render(
             lines, scored, kept, citations=citations, reorder_best=_reorder,
             gap_marker=gap_marker, total_chars=len(caller_text),
-            content_lines=score_lines,
+            content_lines=score_lines, query=query,
         )
         recall = _entity_recall(recall_base, compressed, query or "")
         trust_risks = {
@@ -9278,7 +9754,7 @@ def _render_and_check_recall(
             compressed = _render(
                 lines, scored, kept, citations=citations, reorder_best=_reorder,
                 gap_marker=gap_marker, total_chars=len(caller_text),
-                content_lines=score_lines,
+                content_lines=score_lines, query=query,
             )
             risk = "high"
         elif recall < 0.5:
