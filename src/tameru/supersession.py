@@ -49,6 +49,14 @@ _SUPERSESSION_MARKERS = (
 _ASSIGN_RE = re.compile(
     r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
 )
+# A "parent" line scopes the assignments nested under it: an INI/TOML
+# section header (``[database]``) or a YAML mapping key on its own line
+# (``database:``). ``host: a`` under ``database:`` and ``host: b`` under
+# ``cache:`` at the same indent are DIFFERENT settings — scoping by indent
+# alone dropped the earlier section's live value.
+_PARENT_RE = re.compile(
+    r"^\s*(?:\[(?P<ini>[^\]]+)\]|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:)\s*$"
+)
 _TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
 _MIN_KEY_LENGTH = 5
 
@@ -79,10 +87,30 @@ def _assignments(text: str) -> dict[str, str]:
     the key so a nested YAML/INI setting never collides with a same-named
     one at another level (``email.on_failure`` vs ``irc.on_failure``)."""
     out: dict[str, str] = {}
+    # INI/TOML sections hold their body at the same indent as the header,
+    # so a section name cannot live in the indent stack — track it
+    # separately. YAML mapping parents are indent-scoped and stack normally.
+    section = ""
+    parents: list[tuple[int, str]] = []
     for line in (text or "").split("\n"):
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        pm = _PARENT_RE.match(line)
+        if pm and pm["ini"] is not None:
+            section = pm["ini"].casefold()
+            parents.clear()
+            continue
+        while parents and parents[-1][0] >= indent:
+            parents.pop()
+        if pm:
+            section = ""
+            parents.append((indent, pm["yaml"].casefold()))
+            continue
         m = _ASSIGN_RE.match(line)
         if m and _distinctive_key(m["key"], m["op"]):
-            scoped = m["key"].casefold() + "|" + m["indent"]
+            parent = section or ("/".join(p for _i, p in parents) if parents else "")
+            scoped = (parent + "/" if parent else "") + m["key"].casefold() + "|" + m["indent"]
             out[scoped] = _norm_assign_value(m["val"])
     return out
 
