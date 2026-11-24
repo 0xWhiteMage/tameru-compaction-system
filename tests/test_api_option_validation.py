@@ -361,3 +361,17 @@ def test_resolve_preset_rejects_non_mapping_overrides():
     with pytest.raises(ValueError, match="not allowed"):
         resolve_preset(name, {"bogus_opt": 1})
     assert resolve_preset(name, {"ccr": True})["ccr"] is True
+
+
+def test_content_cache_rejects_incoherent_max_bytes():
+    """ContentCache stored a bogus ``max_bytes`` silently — a str crashed the
+    first ``set`` on a ``>`` comparison, and a float/negative bound degraded
+    to always-evict instead of failing at construction."""
+    from tameru.content_cache import ContentCache
+    for bad in ("x", -5, 1.5, True):
+        with pytest.raises(ValueError, match="max_bytes"):
+            ContentCache(max_bytes=bad)
+    c = ContentCache(max_bytes=64)
+    c.set("k", "v")
+    assert c.get("k") == "v"
+    assert ContentCache(max_bytes=0).get("k") is not None  # always-evict, by design

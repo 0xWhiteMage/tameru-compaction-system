@@ -63,6 +63,10 @@ class ContentCache:
     """Thread-safe LRU evicting by accumulated record weight."""
 
     def __init__(self, max_bytes: int | None = None) -> None:
+        if max_bytes is not None and (
+            not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes < 0
+        ):
+            raise ValueError(f"max_bytes must be a non-negative integer, got {max_bytes!r}")
         self.max_bytes = _env_max_bytes() if max_bytes is None else max_bytes
         self._lock = threading.Lock()
         self._items: OrderedDict[str, tuple[Any, int]] = OrderedDict()
