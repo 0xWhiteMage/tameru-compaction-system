@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Iterable
+from pathlib import Path
 
 
 def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
@@ -50,6 +51,8 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
                    help="On empty/generic query, infer a conservative objective from the document's recurring rare terms instead of failing open")
     p.add_argument("--stats", action="store_true")
     args = p.parse_args(list(argv) if argv is not None else None)
+    if args.context_file != "-" and not Path(args.context_file).is_file():
+        p.error(f"argument context_file: cannot read '{args.context_file}'")
 
     from .industrial import IndustrialLimits
 
