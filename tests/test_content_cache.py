@@ -237,8 +237,7 @@ def test_huge_sample_decline_returns_original():
     assert "huge_sampled" in res.reasons
 
 
-@pytest.mark.parametrize("seed", ["0", "1"])
-def test_determinism_under_hash_seed(seed):
+def _determinism_under_hash_seed(seed):
     code = (
         "import sys; sys.path.insert(0, 'src');"
         "from tameru.compress_context import compress_context;"
@@ -256,7 +255,7 @@ def test_determinism_under_hash_seed(seed):
 
 
 def test_determinism_both_seeds_equal():
-    outs = [test_determinism_under_hash_seed(s) for s in ("0", "1")]
+    outs = [_determinism_under_hash_seed(s) for s in ("0", "1")]
     assert outs[0] == outs[1]
 
 
