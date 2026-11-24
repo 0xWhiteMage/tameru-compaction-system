@@ -133,3 +133,10 @@ def test_out_of_range_budget_ratio_is_rejected(bad):
 def test_non_str_selector_query_is_rejected():
     with pytest.raises(TypeError, match="selector_query"):
         compress_context(DOC, "build", selector_query=42, ccr=False, citations=False)
+
+
+def test_huge_int_budget_ratio_is_rejected_as_value_error():
+    # float(10**400) raises OverflowError — the domain check surfaces its own
+    # ValueError so callers catching ValueError see the rejection.
+    with pytest.raises(ValueError, match="budget_ratio"):
+        compress_context(DOC, "build", budget_ratio=10**400, ccr=False, citations=False)

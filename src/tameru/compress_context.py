@@ -10891,7 +10891,13 @@ def compress_context(
             raise TypeError(
                 f"budget_ratio must be a number, got {type(budget_ratio).__name__}"
             )
-        if not 0 < float(budget_ratio) <= 1:
+        try:
+            ratio = float(budget_ratio)
+        except OverflowError:
+            # An int too big for float is out of range — the domain check's
+            # own ValueError, not a bare OverflowError callers won't catch.
+            ratio = float("inf")
+        if not 0 < ratio <= 1:
             # Out-of-range ratios meant different things per mode: fixed
             # raised mid-pipeline, adaptive silently kept everything (≥1) or
             # nothing (≤0). The documented domain is (0, 1] on every path.
