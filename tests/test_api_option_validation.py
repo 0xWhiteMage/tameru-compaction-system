@@ -147,3 +147,14 @@ def test_non_str_strategy_is_rejected():
     # a falsy non-str silently became 'extract'.
     with pytest.raises(TypeError, match="strategy"):
         compress_context(DOC, "build", strategy=42, ccr=False, citations=False)
+
+
+def test_scalar_recursion_markers_is_rejected():
+    # iter(42) raised a bare TypeError with no option name.
+    with pytest.raises(TypeError, match="recursion_markers"):
+        compress_context(DOC, "build", recursion_markers=42, ccr=False, citations=False)
+
+
+def test_recursion_markers_drops_non_str_entries():
+    r = compress_context(DOC, "build", recursion_markers=[42, "", "marker"], ccr=False, citations=False)
+    assert r.compressed_text

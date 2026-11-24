@@ -3284,7 +3284,14 @@ def _marker_tuple(markers: Iterable[str] | str | None) -> tuple[str, ...]:
         return ()
     if isinstance(markers, str):
         markers = (markers,)
-    return tuple(m for m in markers if isinstance(m, str) and m)
+    try:
+        return tuple(m for m in markers if isinstance(m, str) and m)
+    except TypeError:
+        # A scalar (``recursion_markers=42``) is not an iterable — name the
+        # option in the error instead of bubbling a bare TypeError up.
+        raise TypeError(
+            f"recursion_markers must be an iterable of str, got {type(markers).__name__}"
+        ) from None
 
 
 def _has_anchored_marker(text: str, markers: tuple[str, ...]) -> bool:
