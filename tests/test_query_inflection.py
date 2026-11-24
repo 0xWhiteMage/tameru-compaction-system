@@ -42,6 +42,36 @@ def test_syllabic_rule_unchanged():
     assert _term_test("エラー")("サーバーエラー発生") is True
 
 
+# Cases where _term_in_text used to disagree with the compiled _term_test:
+# a numeric term inside a clock time or port pair is not a hit, an underscore
+# is a boundary for a short alpha term, and a short syllabic term matches as
+# a substring.
+EQUIVALENCE = [
+    ("30", "the job ran at 12:30", False),
+    ("11", "2026-10-21t04:00:11.000000z note", False),
+    ("8080", "listening on localhost:8080", True),
+    # A dotted-quad segment before the colon is an address, not a clock time.
+    ("8080", "error at 127.0.0.1:8080 refused", True),
+    ("80", "upstream 10.0.0.1:80 timeout", True),
+    ("11", "exit status 11", True),
+    ("err", "last_err recorded", True),
+    ("err", "a_terr_b", False),
+    ("err", "xerr and errx", False),
+    ("エラー", "サーバーエラー発生", True),
+    ("エラー", "サーバー正常稼働", False),
+    ("x1", "the x1 node", True),
+    ("x1", "the x10 node", False),
+]
+
+
+def test_term_test_matches_term_in_text_short_terms():
+    for term, text, expected in EQUIVALENCE:
+        assert _term_test(term)(text) == _term_in_text(term, text) == expected, (
+            term,
+            text,
+        )
+
+
 def test_inflection_stem():
     assert _inflection_stem("failing") == "fail"
     assert _inflection_stem("failed") == "fail"
