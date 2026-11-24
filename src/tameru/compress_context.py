@@ -4268,18 +4268,25 @@ def _any_test(tests: list[Callable[[str], bool]], lower: str) -> bool:
 
 
 def _term_in_text(term: str, lower: str) -> bool:
-    """Substring for long / syllabic terms; word-boundary for short Latin."""
+    """Substring for long / syllabic terms; word-boundary for short Latin.
+
+    Branches mirror ``_term_test`` exactly: the two are documented and tested
+    as equivalent, and the clock-time and underscore-boundary exceptions the
+    compiled version learned apply here too.
+    """
     if not term:
         return False
     syllabic = _is_syllabic_ord(ord(term[0]))
-    if syllabic:
-        if len(term) > 5:
-            return term in lower
-        return re.search(rf"\b{re.escape(term)}\b", lower) is not None
-    if len(term) > 5:
+    if syllabic or len(term) > 5:
         base = term in lower
     else:
-        base = re.search(rf"\b{re.escape(term)}\b", lower) is not None
+        if term.isdigit():
+            base = re.search(rf"(?<!\d:)\b{re.escape(term)}\b(?!:\d)", lower) is not None
+        elif term.isalpha():
+            # Treat underscore as a boundary for short alphabetic terms
+            base = re.search(rf"{re.escape(term)}(?<![^\W_]{re.escape(term)})(?![^\W_])", lower) is not None
+        else:
+            base = re.search(rf"\b{re.escape(term)}\b", lower) is not None
     if not base:
         stem = _inflection_stem(term)
         if stem is not None and stem in lower and re.search(rf"\b{re.escape(stem)}{_INFLECT_RE_TAIL}\b", lower):
