@@ -6816,7 +6816,7 @@ def _window_oversized_line(
         # Fresh = a hit STRICTLY better than what was already emitted for
         # its term: a verbatim hit counts fresh after a folded-variant
         # emission, but a repeat at the same or weaker tier does not.
-        fresh = [h for h in pending if _hit_quality(h) > covered.get(h[2], 0)]
+        fresh = [h for h in pending if _hit_quality(h) > covered.get(h[2], -1)]
         pool = fresh or pending or [h for h in hits if h[1] > pos]
 
         def _best(hs: list[list[int]]) -> int:
@@ -6895,7 +6895,7 @@ def _window_oversized_line(
             # already-covered term's match quality ('STRASSE' after 'Straße')
             # is emitted when room allows — but ranks with the duplicates
             # whenever a still-missing term needs the same budget.
-            fresh = any(_hit_quality(h) > covered.get(h[2], 0) for h in span_hits[idx])
+            fresh = any(_hit_quality(h) > covered.get(h[2], -1) for h in span_hits[idx])
             if not fresh:
                 # A window that only repeats terms already emitted must not
                 # fill the remaining budget ahead of a stronger-tier window
@@ -6910,7 +6910,7 @@ def _window_oversized_line(
                     if not pref[j]
                     and (q2[idx] or not q2[j])
                     and any(
-                        _hit_quality(h) > covered.get(h[2], 0) for h in span_hits[j]
+                        _hit_quality(h) > covered.get(h[2], -1) for h in span_hits[j]
                     )
                 )
                 if later_need and emitted + seg_len + later_need > cap:
@@ -6944,8 +6944,8 @@ def _window_oversized_line(
             # the tail of the budget while a later window still holds a
             # still-missing term's only match — skip it whole rather than
             # clipping it and breaking before that match is reached.
-            if not any(_hit_quality(h) > covered.get(h[2], 0) for h in span_hits[idx]) and any(
-                any(_hit_quality(h) > covered.get(h[2], 0) for h in span_hits[j])
+            if not any(_hit_quality(h) > covered.get(h[2], -1) for h in span_hits[idx]) and any(
+                any(_hit_quality(h) > covered.get(h[2], -1) for h in span_hits[j])
                 for j in range(idx + 1, len(spans))
                 if spans[j][1] > pos
             ):

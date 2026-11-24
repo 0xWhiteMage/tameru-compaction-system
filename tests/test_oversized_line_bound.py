@@ -261,3 +261,19 @@ def test_variant_in_head_does_not_displace_later_exact_hit():
         raw_terms=("cafe", "other"),
     )
     assert "cafe" in out
+
+
+def test_folded_only_hit_for_unseen_term_is_fresh():
+    # A term whose ONLY occurrence is a folded variant ('café' for
+    # 'cafe') is unseen — quality 0 — yet its window must still count as
+    # fresh evidence: reserving 'other''s window cannot leave it out.
+    line = (
+        "n" * 100 + "café" + "x" * 200 + "café" + "y" * 300
+        + "other" + "z" * 300
+    )
+    out = _window_oversized_line(
+        line, 330, ("cafe", "other"), None, len(line),
+        raw_terms=("cafe", "other"),
+    )
+    assert "café" in out
+    assert "other" in out
