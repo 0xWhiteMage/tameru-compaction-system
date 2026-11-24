@@ -27,7 +27,13 @@ def gap_accepts_kind(fn) -> bool:
 
 
 def call_gap_marker(fn, omitted: int, total: int, kind: str = "lines"):
-    """Call a caller's gap marker, passing ``kind`` only when it declares one."""
-    if gap_accepts_kind(fn):
-        return fn(omitted, total, kind=kind)
-    return fn(omitted, total)
+    """Call a caller's gap marker, passing ``kind`` only when it declares one.
+
+    A buggy callback must not crash compaction: any exception falls back to
+    the engine's default marker so the gap is still marked honestly."""
+    try:
+        if gap_accepts_kind(fn):
+            return fn(omitted, total, kind=kind)
+        return fn(omitted, total)
+    except Exception:
+        return f"[\u2026 {omitted} chars omitted \u2026]"
