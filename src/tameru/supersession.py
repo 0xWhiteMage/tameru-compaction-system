@@ -55,7 +55,7 @@ _ASSIGN_RE = re.compile(
 # ``cache:`` at the same indent are DIFFERENT settings — scoping by indent
 # alone dropped the earlier section's live value.
 _PARENT_RE = re.compile(
-    r"^\s*(?:\[\[?\s*(?P<ini>[^\[\]\s][^\[\]]*?)\s*\]?\]\s*(?:[;#].*)?"
+    r"^\s*(?:\[\[?\s*(?P<ini>(?:\"[^\"]*\"|'[^']*'|[^\[\]\s][^\[\]]*?))\s*\]?\]\s*(?:[;#].*)?"
     r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:\s*(?:#.*)?)$"
 )
 # A line past this length is never a section header or a bare mapping
@@ -108,7 +108,10 @@ def _assignments(text: str) -> dict[str, str]:
         if not line.strip():
             continue
         indent = len(line) - len(line.lstrip())
-        pm = _PARENT_RE.match(line) if len(line) <= _MAX_HEADER_LINE else None
+        # Match a bounded prefix rather than skipping long lines: a header
+        # with a long trailing comment is still a header (the pattern's tail
+        # accepts any comment text), and the bound keeps per-line regex cost.
+        pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
         if pm and pm["ini"] is not None:
             section = pm["ini"].casefold()
             parents.clear()
@@ -122,9 +125,12 @@ def _assignments(text: str) -> dict[str, str]:
         m = _ASSIGN_RE.match(line)
         # A comment-only value (``key = ; note``) is not an assignment —
         # two such lines differ only in their comment text and must never
-        # read as a value being redefined.
-        if m and not m["val"].lstrip().startswith(("#", ";")) \
-                and _distinctive_key(m["key"], m["op"]):
+        # read as a value being redefined. ``;`` only opens a comment after
+        # ``=`` (INI): YAML has no ``;`` comment, so ``key: ;`` assigns the
+        # scalar ``;``.
+        val = m["val"].lstrip() if m else ""
+        comment_val = val.startswith("#") or (val.startswith(";") and m["op"] == "=")
+        if m and not comment_val and _distinctive_key(m["key"], m["op"]):
             parent = section or ("/".join(p for _i, p in parents) if parents else "")
             # '§' can never appear inside a key (the charset excludes it), so
             # a literal key like ``a/b`` can't collide with parent ``a`` +
