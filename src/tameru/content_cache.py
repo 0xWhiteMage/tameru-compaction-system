@@ -79,6 +79,8 @@ class ContentCache:
 
     def get(self, key: str) -> Any:
         """The stored record or ``_MISS``; never returns ``None`` so ``None`` may be stored."""
+        if not isinstance(key, str):
+            raise TypeError(f"key must be str, got {type(key).__name__}")
         with self._lock:
             item = self._items.get(key)
             if item is None:
@@ -89,6 +91,8 @@ class ContentCache:
             return item[0]
 
     def set(self, key: str, value: Any) -> None:
+        if not isinstance(key, str):
+            raise TypeError(f"key must be str, got {type(key).__name__}")
         weight = weight_of(value)
         with self._lock:
             old = self._items.pop(key, None)
