@@ -6348,17 +6348,28 @@ def _window_oversized_line(
 
     def _clip_anchor(pos: int, b: int, room: int, hits: list[list[int]],
                      qual: dict[int, int], covered: dict[int, int]) -> int:
-        """Where a clipped window begins: at the earliest still-missing hit
-        when one sits left of the tail clip, else the tail as before. Only
-        hits wholly past ``pos`` count — a hit whose head the prefix already
-        emitted is no fresh evidence; a hit for a covered term yields to one
-        for a still-missing term; and among candidates the best match
-        quality wins — a verbatim hit outranks an earlier case variant."""
+        """Where a clipped window begins: at the earliest hit for a
+        still-missing term — covering another query term outranks match
+        quality, and anchoring early keeps later hits inside the clip.
+        Only hits wholly past ``pos`` count — a hit whose head the prefix
+        already emitted is no fresh evidence. Match quality only breaks
+        ties among repeats of already-covered terms: a verbatim hit
+        outranks an earlier case variant."""
         pending = [h for h in hits if h[0] >= pos]
-        pool = [h for h in pending if covered.get(h[2], 0) == 0] or pending
-        if not pool:
-            pool = [h for h in hits if h[1] > pos]
-        if pool:
+        fresh = [h for h in pending if covered.get(h[2], 0) == 0]
+        pool = fresh or pending or [h for h in hits if h[1] > pos]
+        if fresh:
+            # The earliest still-missing TERM wins the anchor — a later
+            # verbatim hit for another term cannot crowd out an earlier
+            # term's only match. Within that term the best-quality hit
+            # anchors: its verbatim occurrence beats an earlier case
+            # variant of the same term.
+            first = min(h[0] for h in fresh)
+            term = next(h[2] for h in fresh if h[0] == first)
+            same = [h for h in fresh if h[2] == term]
+            best = max(qual.get(h[2], 0) for h in same)
+            anchor = min(h[0] for h in same if qual.get(h[2], 0) == best)
+        elif pool:
             best = max(qual.get(h[2], 0) for h in pool)
             anchor = min(h[0] for h in pool if qual.get(h[2], 0) == best)
         else:
