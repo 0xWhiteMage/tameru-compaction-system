@@ -118,7 +118,8 @@ def _assignments(text: str) -> dict[str, str]:
             # whitespace before non-comment junk would fabricate a header
             # the full line never contained.
             tail = line[_MAX_HEADER_LINE:].lstrip(" \t\r")
-            if tail and tail[0] not in "#;":
+            body = line[pm.end("ini" if pm["ini"] is not None else "yaml"):_MAX_HEADER_LINE]
+            if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
                 pm = None
         if pm and pm["ini"] is not None:
             ini = pm["ini"]
