@@ -1,5 +1,6 @@
 """Reassignment supersession: a later block assigning a distinctive key a
 different value supersedes the earlier block — last definition wins."""
+from tameru import supersession
 from tameru.supersession import _assignments, _supersedes, apply_supersession
 
 
@@ -246,3 +247,69 @@ def test_oversized_bracket_line_is_not_a_header():
     line = "[" + "x" * 5000  # no closing bracket
     kv = _assignments(line + "\ntimeout_ms = 5000\n")
     assert kv.get("timeout_ms|") == "5000"
+
+
+def test_toml_array_subtable_scoped_per_element():
+    # ``[backends.tls]`` after ``[[backends]]`` attaches to that element —
+    # a second entry's same-named subtable is its own table, not a
+    # redefinition of the first's.
+    older = "[[backends]]\nname = \"one\"\n[backends.tls]\nverify = false"
+    newer = "[[backends]]\nname = \"two\"\n[backends.tls]\nverify = false"
+    scope_of = supersession._document_scopes(older + "\n" + newer)
+    assert not supersession._reassigns(
+        newer, older,
+        scopes=(scope_of[newer.split("\n")[-1]], scope_of[older.split("\n")[-1]]),
+    )
+    kv = supersession._assignments(older + "\n" + newer)
+    assert "backends§1§tls§verify|" in kv
+    assert "backends§2§tls§verify|" in kv
+
+
+def test_fenced_config_example_not_supersession():
+    # A ``` block's ``k = v`` is documentation: it never redefines the live
+    # ``k = v`` and is never superseded by one.
+    doc = "setting_key = 1\n```\nsetting_key = 2\n```"
+    scope_of = supersession._document_scopes(doc)
+    assert supersession._assignments_tracked(
+        "setting_key = 2",
+        supersession._scope_state(scope_of["setting_key = 2"]),
+    ) == {}
+    assert not supersession._reassigns(
+        "setting_key = 2", "setting_key = 1",
+        scopes=(scope_of["setting_key = 2"], scope_of["setting_key = 1"]),
+    )
+
+
+def test_dropped_header_reemitted_on_surviving_block():
+    # The whole '[database]\nctm = 30000' block is stale once 'ctm = 5000'
+    # supersedes it — it still drops, but the '[database]' header the kept
+    # line depends on is re-emitted at the top of its block.
+    scored = _scored(
+        "Intro note about the system setup here.",
+        "[database]\nconnect_timeout_ms = 30000",
+        "Another unrelated note about the system.",
+        "connect_timeout_ms = 5000",
+    )
+    kept = apply_supersession(scored, {0, 1, 2, 3})
+    assert kept == {0, 2, 3}
+    # The header re-emits on the first kept block that needed it — scope
+    # flows forward from there, so the surviving value stays identified.
+    assert scored[2]["text"].startswith("[database]\n")
+
+
+def test_restore_reemits_section_header():
+    from tameru import compress_context as cc
+    scope_of = supersession._document_scopes(
+        "[database]\nconnect_timeout_ms = 30000\n"
+        "[cache]\nttl_seconds = 60"
+    )
+    after = "[cache]\nttl_seconds = 60"
+    out = cc._append_scoped(
+        after,
+        ["connect_timeout_ms = 30000"],
+        scope_of,
+        supersession._document_headers(
+            "[database]\nconnect_timeout_ms = 30000\n[cache]\nttl_seconds = 60"
+        ),
+    )
+    assert out == "[cache]\nttl_seconds = 60\n[database]\nconnect_timeout_ms = 30000"

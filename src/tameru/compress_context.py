@@ -58,7 +58,14 @@ from .gap_kind import call_gap_marker, gap_accepts_kind
 from .markers import REDACTED_MARKER, marker_name as _marker_name
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
-from .supersession import apply_supersession, _document_scopes, _supersedes
+from .supersession import (
+    apply_supersession,
+    _append_scoped,
+    _document_headers,
+    _document_scopes,
+    _end_scope,
+    _supersedes,
+)
 from .unicode_profile import (
     count_token_units,
     script_of,
@@ -1671,7 +1678,10 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
                     and not _fact_superseded_in(ln, kept, orig_index, bounded, scope_of)
                     and not _fact_variant_present(ln, kept)):
                 missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
-    return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
+    if not missing:
+        return after
+    headers = _document_headers(before) if before is not None else None
+    return _append_scoped(after, _missing_in_original_order(missing), scope_of, headers)
 
 
 def _restore_fact_lines(before: str, after: str) -> str:
@@ -1702,7 +1712,9 @@ def _restore_fact_lines(before: str, after: str) -> str:
                 and not _fact_superseded_in(ln, kept, index, bounded, scope_of)
                 and not _fact_variant_present(ln, kept)):
             missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
-    return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
+    if not missing:
+        return after
+    return _append_scoped(after, _missing_in_original_order(missing), scope_of, _document_headers(before))
 
 
 def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int | None,
@@ -1830,7 +1842,20 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
             kept_fps.add(fp)
     if not chosen:
         return compressed
-    appended = "\n".join(_bound_fact_line(f[3], hit_terms, raw_terms) for f in sorted(chosen, key=lambda f: f[0]))
+    # Each restored line's own section header goes back with it when the
+    # extract ends in a different scope — a dropped [database] setting must
+    # not read as a second value under the [cache] mapping it lands after.
+    headers = _document_headers(original_text) if original_text is not None else {}
+    cur_scope = _end_scope(compressed)
+    emitted: list[str] = []
+    for f in sorted(chosen, key=lambda f: f[0]):
+        scope = scope_of.get(f[3]) if scope_of else None
+        if scope and scope != cur_scope and headers.get(scope):
+            emitted.append(headers[scope])
+        if scope:
+            cur_scope = scope
+        emitted.append(_bound_fact_line(f[3], hit_terms, raw_terms))
+    appended = "\n".join(emitted)
     out = compressed + "\n" + appended
     if scored is None or kept_ids is None or min_savings_ratio is None or original_text is None:
         return out

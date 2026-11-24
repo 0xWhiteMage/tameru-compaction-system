@@ -61,6 +61,9 @@ _PARENT_RE = re.compile(
 # A line past this length is never a section header or a bare mapping
 # parent — and per-line regex work on it is bounded.
 _MAX_HEADER_LINE = 512
+# Sentinel section for lines inside a fenced code block: a config
+# example's assignments are documentation, never live settings.
+_FENCED_SCOPE = "\xa7fence"
 _TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
 _MIN_KEY_LENGTH = 5
 # Names too generic to be a distinctive ``=`` assignment key: cross-suite
@@ -94,15 +97,33 @@ def _norm_assign_value(val: str) -> str:
 
 
 def _advance(state: list, line: str) -> str | None:
-    """Fold one non-blank line into ``state`` = ``[section, parents, arrays]``.
+    """Fold one non-blank line into ``state`` = ``[section, parents, arrays, fence]``.
 
-    Returns ``"ini"``/``"yaml"`` when the line was a header, else ``None``.
+    Returns ``"ini"``/``"yaml"``/``"fence"`` when the line was a header or
+    sits inside a fenced code block, else ``None``.
     INI/TOML sections hold their body at the same indent as the header, so
     a section name cannot live in the indent stack — it is tracked
     separately. YAML mapping parents are indent-scoped and stack normally.
     A ``[[name]]`` TOML array header opens a fresh ``name§k`` scope per
     occurrence: two array entries are siblings, not one table redefined,
-    so a later entry must never supersede an earlier one's fields."""
+    so a later entry must never supersede an earlier one's fields. A
+    ``[name.sub]`` header under an array element scopes to that element —
+    TOML attaches it to the LAST ``[[name]]`` — so each entry's subtable is
+    its own table too.
+    Lines inside a ```/~~~ fenced block are documentation, not settings:
+    a config example's ``k = v`` never redefines the live ``k = v``."""
+    lstripped = line.lstrip()
+    fence = state[3] if len(state) > 3 else None
+    if fence is not None:
+        if lstripped.startswith(fence):
+            state[3] = None
+        return "fence"
+    if lstripped.startswith("```") or lstripped.startswith("~~~"):
+        if len(state) > 3:
+            state[3] = lstripped[:3]
+        else:
+            state.append(lstripped[:3])
+        return "fence"
     indent = len(line) - len(line.lstrip())
     # Match a bounded prefix rather than skipping long lines: a header
     # with a long trailing comment is still a header (the pattern's tail
@@ -140,6 +161,11 @@ def _advance(state: list, line: str) -> str | None:
         if line.lstrip().startswith("[["):
             state[2][name] = state[2].get(name, 0) + 1
             state[0] = f"{name}§{state[2][name]}"
+        elif "§" in state[0] and name.startswith(state[0].split("§", 1)[0] + "."):
+            # ``[backends.tls]`` under a ``[[backends]]`` element attaches
+            # to that element, not the table path — each entry's subtable
+            # is its own table.
+            state[0] = state[0] + "§" + name.split(".", 1)[1]
         else:
             state[0] = name
         state[1].clear()
@@ -153,15 +179,22 @@ def _advance(state: list, line: str) -> str | None:
     return None
 
 
-def _assignments_tracked(text: str, state: list) -> dict[str, str]:
+def _assignments_tracked(text: str, state: list, minted: list | None = None) -> dict[str, str]:
     """Like ``_assignments`` but the scope walk lives in the caller's
-    ``state`` = ``[section, parents, arrays]``, so a header in an earlier
-    block scopes this block's settings the way it does in the document."""
+    ``state`` = ``[section, parents, arrays, fence]``, so a header in an
+    earlier block scopes this block's settings the way it does in the
+    document. ``minted``, when given, collects each scope element the
+    text's own headers define: ``('sec', name)`` or ``('par', name)``."""
     out: dict[str, str] = {}
     for line in (text or "").split("\n"):
         if not line.strip():
             continue
-        if _advance(state, line):
+        kind = _advance(state, line)
+        if kind:
+            if minted is not None and kind == "ini":
+                minted.append(("sec", state[0], line))
+            elif minted is not None and kind == "yaml":
+                minted.append(("par", state[1][-1][1], line))
             continue
         m = _ASSIGN_RE.match(line)
         # A comment-only value (``key = ; note``) is not an assignment —
@@ -172,6 +205,8 @@ def _assignments_tracked(text: str, state: list) -> dict[str, str]:
         val = m["val"].lstrip() if m else ""
         comment_val = val.startswith("#") or (val.startswith(";") and m["op"] == "=")
         if m and not comment_val and _distinctive_key(m["key"], m["op"]):
+            if state[0] == _FENCED_SCOPE:
+                continue
             parent = state[0] or ("/".join(p for _i, p in state[1]) if state[1] else "")
             # '§' can never appear inside a key (the charset excludes it), so
             # a literal key like ``a/b`` can't collide with parent ``a`` +
@@ -205,10 +240,58 @@ def _document_scopes(text: str) -> dict[str, tuple]:
     for line in (text or "").split("\n"):
         if not line.strip():
             continue
-        if _advance(state, line):
+        kind = _advance(state, line)
+        if kind == "fence":
+            out[line] = (_FENCED_SCOPE, ())
+            continue
+        if kind:
             continue
         out[line] = (state[0], tuple(state[1]))
     return out
+
+
+def _document_headers(text: str) -> dict[tuple, str]:
+    """``(section, parents) scope → the literal header line that minted
+    it`` — used to re-emit a section before a restored line that would
+    otherwise land under whatever scope the extract happens to end in."""
+    state: list = ["", [], {}]
+    out: dict[tuple, str] = {}
+    for line in (text or "").split("\n"):
+        if not line.strip():
+            continue
+        kind = _advance(state, line)
+        if kind in ("ini", "yaml"):
+            out[(state[0], tuple(p for _i, p in state[1]))] = line
+    return out
+
+
+def _end_scope(text: str) -> tuple:
+    """The ``(section, parents)`` scope a line appended to ``text`` would
+    stand under."""
+    state: list = ["", [], {}]
+    for line in (text or "").split("\n"):
+        if line.strip():
+            _advance(state, line)
+    return (state[0], tuple(p for _i, p in state[1]))
+
+
+def _append_scoped(after: str, lines: list[str], scope_of, headers) -> str:
+    """``after`` + restored ``lines``, re-emitting a line's section header
+    first when its recorded scope differs from the running scope — a
+    restored ``[database]`` setting must not read as a second value under
+    the ``[cache]`` mapping the extract ends in."""
+    if not lines:
+        return after
+    cur = _end_scope(after)
+    out_lines: list[str] = []
+    for line in lines:
+        scope = scope_of.get(line) if scope_of else None
+        if scope and scope != cur and scope[0] != _FENCED_SCOPE and headers.get(scope):
+            out_lines.append(headers[scope])
+        if scope:
+            cur = scope
+        out_lines.append(line)
+    return after + "\n" + "\n".join(out_lines)
 
 
 def _key_parts(scoped: str) -> tuple[str, str]:
@@ -420,9 +503,14 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     # still scopes the settings that follow it. Every scored block is
     # walked in order, kept or not — a dropped header scopes just the same.
     scope_state: list = ["", [], {}]
+    defines: dict[int, list[tuple[str, str]]] = {}
+    enters: dict[int, tuple] = {}
     for i in range(len(scored)):
         text = scored[i].get("text", "")
-        kv = _assignments_tracked(text if isinstance(text, str) else "", scope_state)
+        minted: list[tuple[str, str]] = []
+        enters[i] = (scope_state[0], tuple(p for _i, p in scope_state[1]))
+        kv = _assignments_tracked(text if isinstance(text, str) else "", scope_state, minted)
+        defines[i] = minted
         if i in kept and len(terms_by_id.get(i, ())) <= _MAX_SUPERSESSION_TOKENS:
             block_kv[i] = kv
     basename_index: dict[str, set[str]] = {}
@@ -453,6 +541,33 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     for bid, keys in superseded_keys.items():
         if keys and set(block_kv[bid]) <= keys and _pure_assignments(texts[bid]):
             stale.add(bid)
+
+    # A stale block still drops — but the scope elements it mints must not
+    # go with it: '[database]\nctm = 30000' superseded by a later bare
+    # 'ctm = 5000' leaves that line identified only by the dropped header.
+    # Re-emit each orphaned element's header line at the top of the first
+    # kept block that needed it, so the surviving value keeps its section.
+    for bid in sorted(stale):
+        for element in defines.get(bid, ()):
+            first_dependent = next(
+                (i for i in kept_ids
+                 if i not in stale
+                 and i > bid
+                 and ((element[0] == "sec" and element[1] == enters[i][0])
+                      or (element[0] == "par" and element[1] in enters[i][1]))
+                 and element not in defines.get(i, ())),
+                None,
+            )
+            if first_dependent is None:
+                continue
+            if any(j in kept_ids and j not in stale and j != bid
+                   and j < first_dependent
+                   and element in defines.get(j, ()) for j in kept_ids):
+                continue
+            scored[first_dependent]["text"] = (
+                element[2] + "\n" + scored[first_dependent].get("text", "")
+            )
+            defines.setdefault(first_dependent, []).append(element)
 
     if stale:
         kept -= stale
