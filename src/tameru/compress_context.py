@@ -606,6 +606,9 @@ _CL_LIST_RE = re.compile(r"^[-*+]\s+|\d+\.\s+")
 _CL_TABLE_RE = re.compile(r"^\|.*\|$")
 _CL_CHAT_RE = re.compile(r"^(User|Assistant|System|Tool|Developer):")
 _CL_CHAT_TAG_RE = re.compile(r"^\[(user|assistant|system|tool|developer)\]", re.IGNORECASE)
+# Perf: the two chat probes merge into one scan; the tag alternative keeps
+# its own (?i:) scope so the name alternative stays case-sensitive.
+_CL_CHAT_ANY_RE = re.compile("(?:" + _CL_CHAT_RE.pattern + ")|(?i:" + _CL_CHAT_TAG_RE.pattern + ")")
 _CL_JSON_KEY_RE = re.compile(r'^"[A-Za-z0-9_]+"\s*:')
 _CL_COMMENT_RE = re.compile(r"^(\/\/|#|\/\*|\*)")
 
@@ -630,6 +633,15 @@ _ACCESS_LOG_LINE_RE = re.compile(
     r'^\S+ \S+ \S+ \[\d{1,2}/[A-Z][a-z]{2}/\d{4}:\d\d:\d\d:\d\d [+-]\d{4}\] "([A-Z]+) \S+ HTTP/[\d.]+" (\d)\d\d '
 )
 _REDIS_LINE_RE = re.compile(r"^\d+:[XCSM] \d{1,2} [A-Z][a-z]{2}(?: \d{4})? \d\d:\d\d:\d\d\.\d{3} ([.*#-]) ")
+# Perf: the five log-line probes all mean "log" — one compiled alternation
+# runs them in a single pass. Boolean use only; the capture groups of
+# _REDIS_LINE_RE / _ACCESS_LOG_LINE_RE are read through their own patterns.
+_CL_LOG_ANY_RE = re.compile(
+    "(?:" + ")|(?:".join(
+        p.pattern
+        for p in (_CL_LOG_RE, _SYSLOG_PREFIX_RE, _REDIS_LINE_RE, _KLOG_LINE_RE, _ACCESS_LOG_LINE_RE)
+    ) + ")"
+)
 
 
 def classify_line(line: str) -> str:
@@ -642,15 +654,7 @@ def classify_line(line: str) -> str:
         return "fence"
     if _CL_TRACE_RE.match(t):
         return "trace"
-    if _CL_LOG_RE.match(t):
-        return "log"
-    if _SYSLOG_PREFIX_RE.match(t):
-        return "log"
-    if _REDIS_LINE_RE.match(t):
-        return "log"
-    if _KLOG_LINE_RE.match(t):
-        return "log"
-    if _ACCESS_LOG_LINE_RE.match(t):
+    if _CL_LOG_ANY_RE.match(t):
         return "log"
     if _CL_LOGFMT_RE.match(t) and _cl_logfmt_pairs(t) >= 3:
         return "log"
@@ -662,7 +666,7 @@ def classify_line(line: str) -> str:
         return "list"
     if _CL_TABLE_RE.match(t):
         return "table"
-    if _CL_CHAT_RE.match(t) or _CL_CHAT_TAG_RE.match(t):
+    if _CL_CHAT_ANY_RE.match(t):
         return "chat"
     if t[:1] in "{[" or _CL_JSON_KEY_RE.match(t):
         return "json"
@@ -1954,6 +1958,18 @@ _OUTCOME_ANOMALY_RE = re.compile(r"\?\?\?|!\w[\w -]{1,30}!")
 # word — the failure vocabulary wants events, not framing.
 _OUTCOME_FRAME_RE = re.compile(r"^\s*[-=*_+#~]{3,}.*[-=*_+#~]{3,}\s*$")
 _OUTCOME_DOC_LINK_RE = re.compile(r"(?i)^\s*-{0,3}\s*(?:docs?|see also|ref(?:erence)?|link)\s*:")
+# Perf: the failure-vocabulary probes merge into one scan — ERR_NEAR's
+# pattern verbatim, ANOMALY's appended (its `\w`/`[\w -]` classes match
+# either case already, so ERR_NEAR's leading `(?i)` changes nothing for it).
+# Composed from the source patterns so a vocabulary edit lands in both places.
+_OUTCOME_ERR_ANY_RE = re.compile(
+    _OUTCOME_ERR_NEAR_RE.pattern + "|" + _OUTCOME_ANOMALY_RE.pattern
+)
+# FRAME and DOC_LINK both "match" guards on the same lines — one alternation.
+_OUTCOME_NOT_ERR_RE = re.compile(
+    _OUTCOME_FRAME_RE.pattern + "|" + _OUTCOME_DOC_LINK_RE.pattern.replace("(?i)", "", 1),
+    re.IGNORECASE,
+)
 # A run of 8+ box/block-drawing glyphs at line start is a download/progress
 # bar ("   ━━━━ 119.0/119.0 kB"), never failure context — _is_progress_bar
 # misses shapes that carry no % or /.
@@ -2040,13 +2056,17 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
     nb_i = [i for i, ln in enumerate(lines) if ln.strip()]
     if len(nb_i) < 10:
         return ()
+    # Perf: the failure-context probe runs once per line — err_near needs the
+    # whole map before the main loop, which then reuses is_err instead of
+    # re-running the same four patterns on every line.
+    is_err = [False] * len(lines)
+    for i in nb_i:
+        is_err[i] = bool(
+            _OUTCOME_ERR_ANY_RE.search(lines[i]) and not _OUTCOME_NOT_ERR_RE.match(lines[i])
+        )
     err_near = [False] * len(lines)
     for i in nb_i:
-        if (
-            (_OUTCOME_ERR_NEAR_RE.search(lines[i]) or _OUTCOME_ANOMALY_RE.search(lines[i]))
-            and not _OUTCOME_FRAME_RE.match(lines[i])
-            and not _OUTCOME_DOC_LINK_RE.match(lines[i])
-        ):
+        if is_err[i]:
             for j in range(max(0, i - 2), min(len(lines), i + 3)):
                 err_near[j] = True
     summaries: dict[str, tuple[int, str]] = {}
@@ -2061,15 +2081,9 @@ def _outcome_lines_scan(lines: list[str]) -> tuple[tuple[int, str, str, str], ..
     state_kvs: list[tuple[int, str]] = []
     datarows: list[tuple[int, str]] = []
     borders: list[tuple[int, str]] = []
-    is_err = [False] * len(lines)
     for pos, i in enumerate(nb_i):
         ln = lines[i]
-        if (
-            (_OUTCOME_ERR_NEAR_RE.search(ln) or _OUTCOME_ANOMALY_RE.search(ln))
-            and not _OUTCOME_FRAME_RE.match(ln)
-            and not _OUTCOME_DOC_LINK_RE.match(ln)
-        ):
-            is_err[i] = True
+        if is_err[i]:
             fp = _log_fingerprint(ln) or ln
             fail_lines.append((i, ln, fp))
             continue
