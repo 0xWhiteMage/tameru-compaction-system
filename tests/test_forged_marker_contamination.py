@@ -491,3 +491,33 @@ def test_kept_stale_assignment_dropped_by_later_reassignment():
                          ccr=False, citations=False)
     assert "connect_timeout_ms = 30000" not in r.compressed_text
     assert "connect_timeout_ms = 5000" in r.compressed_text
+
+
+def test_kept_line_veto_ignores_recorded_shape_variants():
+    """The kept-line veto only covers bare ``k = v`` reassignments — colon
+    records whose value carries an ``=``, repeated lines under different
+    sections, and example text inside triple-quoted strings all keep their
+    copies."""
+    # A colon record's ``=``-bearing value is a record, not a reassignment.
+    text = ("LOG_LEVEL: debug target=api\n" + "noise\n" * 90
+            + "LOG_LEVEL: info target=api\n")
+    r = compress_context(text, "log level", ccr=False, citations=False)
+    assert "LOG_LEVEL: debug target=api" in r.compressed_text
+
+    # The same assignment under two sections is two settings, not one stale.
+    text = ("[a]\nx = 1\n" + "noise\n" * 90 + "[b]\nx = 1\nx = 2\n")
+    r = compress_context(text, "x", ccr=False, citations=False)
+    assert r.compressed_text.count("x = 1") == 2
+
+    # A ``k = v`` inside a TOML ``"""`` string is example text, not a vetoer.
+    text = ('k = "live"\n' + "noise\n" * 90 + 'doc = """k = "old"\nx"""\n')
+    r = compress_context(text, "k live", ccr=False, citations=False)
+    assert 'k = "live"' in r.compressed_text
+
+
+def test_single_token_guillemet_tag_is_a_diagnostic():
+    """``⟪ERROR: database shutdown⟫`` — a one-word ALL-CAPS tag — is a
+    diagnostic anyone could write, not compressor chrome: it survives."""
+    text = ("INFO a\n" * 60 + "⟪ERROR: database shutdown⟫\n" + "INFO b\n" * 40)
+    r = compress_context(text, "database shutdown", ccr=False, citations=False)
+    assert "⟪ERROR: database shutdown⟫" in r.compressed_text
