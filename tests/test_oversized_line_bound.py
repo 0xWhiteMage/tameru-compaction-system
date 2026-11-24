@@ -234,3 +234,16 @@ def test_reserved_clip_marks_only_emitted_hits_covered():
         raw_terms=("cafe", "onlyb", "nice"),
     )
     assert "onlyb" in out
+
+
+def test_head_hits_are_covered_before_clipping():
+    # Every 'alpha' hit merges into one oversized window; the first is
+    # already visible in the emitted head. Without head coverage the clip
+    # anchors at the earliest 'still-missing' hit — an alpha repeat — and
+    # 'delta's only match falls just past the clip end.
+    line = ("x" * 60 + "alpha" + "y" * 60) * 3 + ("z" * 60 + "delta" + "w" * 60)
+    out = _window_oversized_line(
+        line, 330, ("alpha", "delta"), None, len(line),
+        raw_terms=("alpha", "delta"),
+    )
+    assert "delta" in out

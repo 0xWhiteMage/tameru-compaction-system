@@ -6868,6 +6868,15 @@ def _window_oversized_line(
     emitted = head
     pos = head
     covered: dict[int, int] = {}
+    # Hits already emitted inside the head ARE covered — a term visible in
+    # the prefix must not still count as missing, or its repeats anchor the
+    # clip budget ahead of a term the line only shows once.
+    for idx, (_a, _b) in enumerate(spans):
+        if _a >= pos:
+            break
+        for ha, hb, ti in span_hits[idx]:
+            if hb <= pos:
+                covered[ti] = max(covered.get(ti, 0), span_qual[idx].get(ti, 0))
     for idx, (a, b) in enumerate(spans):
         if b <= pos:
             for ti, q in span_qual[idx].items():
@@ -7144,6 +7153,14 @@ def _render(
             m = re.match(r"(`{3,}|~{3,})", probe)
             return m.group(0) if m else None
 
+        def _fence_closer(ln: str) -> str | None:
+            # Only a line of nothing but the marker closes a fence — a
+            # "```python" inside a ``` block is content with an info
+            # string, not a closer (closing fences take no info string).
+            probe = _GUTTER_RE.sub("", ln, count=1).strip()
+            m = re.fullmatch(r"(`{3,}|~{3,})", probe)
+            return m.group(0) if m else None
+
         def _closes(marker: str, m: str | None) -> bool:
             return m is not None and m[0] == marker[0] and len(m) >= len(marker)
 
@@ -7153,12 +7170,12 @@ def _render(
             m = _fence_marker(ln)
             if open_marker is None:
                 open_marker = m
-            elif _closes(open_marker, m):
+            elif _closes(open_marker, _fence_closer(ln)):
                 open_marker = None
         if open_marker is not None:
             j = end + 1
             while j < len(lines):
-                if _closes(open_marker, _fence_marker(lines[j])):
+                if _closes(open_marker, _fence_closer(lines[j])):
                     end = j
                     break
                 j += 1
@@ -7173,7 +7190,7 @@ def _render(
             for ln in lines[start : end + 1]:
                 m = _fence_marker(ln)
                 if in_fence is not None:
-                    if _closes(in_fence, m):
+                    if _closes(in_fence, _fence_closer(ln)):
                         in_fence = None
                     parts.append(ln)
                 elif m is not None:

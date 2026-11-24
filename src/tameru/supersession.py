@@ -562,10 +562,14 @@ def _pure_assignments(text: str) -> bool:
 def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]:
     """Drop kept blocks that a later kept block explicitly supersedes.
 
-    Mutates and returns the caller's ``kept`` set. Only prunes; never adds.
-    Runs after selection so it cannot rescue a
+    Mutates and returns the caller's ``kept`` set. Runs after selection so
+    it cannot rescue a
     distractor — it can only remove stale facts the selector already liked
-    when a newer authoritative line survives too.
+    when a newer authoritative line survives too. The one exception: a
+    section header orphaned by a pruned block is re-added as a single-line
+    kept block at its original index, because ``_render`` emits
+    ``lines[start:end+1]`` — mutating another block's ``text`` never reaches
+    the output.
 
     Performance: terms are tokenised once per block and an inverted
     term→id index proposes candidate pairs (shared vocabulary), so cost is
@@ -696,6 +700,29 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
                 element[2] + "\n" + scored[first_dependent].get("text", "")
             )
             defines.setdefault(first_dependent, []).append(element)
+            # The prepend feeds downstream scoring only — ``_render`` emits
+            # ``lines[start:end+1]``, so the header must exist as a kept
+            # block to reach the output. Carve its own line out of the
+            # stale block's span; the rest of the block still elides.
+            try:
+                header_idx = scored[bid]["start"] + texts[bid].split("\n").index(element[2])
+            except (KeyError, ValueError):
+                header_idx = None
+            if header_idx is not None:
+                new_id = len(scored)
+                scored.append(
+                    {
+                        "id": new_id,
+                        "start": header_idx,
+                        "end": header_idx,
+                        "text": element[2],
+                        "tokens": max(1, len(element[2]) // 4),
+                        "type": "heading",
+                        "reason": "context",
+                        "score": 0.0,
+                    }
+                )
+                kept.add(new_id)
 
     if stale:
         kept -= stale

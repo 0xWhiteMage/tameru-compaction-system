@@ -353,3 +353,37 @@ def test_unmatched_leading_quote_does_not_collide_sections():
     scopes = _line_scopes("['90s]\nx = 1\n[90]\ny = 2\n")
     assert scopes["x = 1"] == "'90s"
     assert scopes["y = 2"] == "90"
+||||||| parent of 9c692d0 (fix(render): supersession header, strict fence closer, head coverage)
+
+
+
+def test_orphaned_header_reaches_rendered_output():
+    # The prepend to the dependent's text feeds scoring only — _render
+    # emits lines[start:end+1], so the header must be a kept block of its
+    # own to reach the output.
+    from tameru import compress_context as cc
+
+    lines = [
+        "Intro note about the system setup here.",
+        "",
+        "[database]",
+        "connect_timeout_ms = 30000",
+        "",
+        "Another unrelated note about the system.",
+        "",
+        "connect_timeout_ms = 5000",
+    ]
+    scored = [
+        {"id": 0, "text": lines[0], "start": 0, "end": 0},
+        {"id": 1, "text": "[database]\nconnect_timeout_ms = 30000", "start": 2, "end": 3},
+        {"id": 2, "text": lines[5], "start": 5, "end": 5},
+        {"id": 3, "text": lines[7], "start": 7, "end": 7},
+    ]
+    kept = apply_supersession(scored, {0, 1, 2, 3})
+    assert 1 not in kept
+    header_blocks = [b for b in scored if b["id"] in kept and b["start"] == b["end"] == 2]
+    assert header_blocks and header_blocks[0]["text"] == "[database]"
+    out = cc._render(lines, scored, kept)
+    assert "[database]" in out
+    assert "connect_timeout_ms = 30000" not in out
+
