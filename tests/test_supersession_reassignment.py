@@ -340,3 +340,16 @@ def test_restored_array_field_is_not_restored():
     )
     # Re-emitting [[backends]] would mint a phantom entry — skip instead.
     assert out == "name = \"two\""
+
+
+def test_unmatched_leading_quote_does_not_collide_sections():
+    """``['90s]`` is a name starting with an apostrophe — stripping the quote
+    AND the last char scoped it as ``90``, so ``[90]`` could supersede its
+    independent settings."""
+    from tameru.supersession import _assignments, _line_scopes
+    kv = _assignments("['90s]\ntimeout_ms = 1\n[90]\ntimeout_ms = 2\n")
+    assert kv.get("'90s\x1ftimeout_ms|") == "1"
+    assert kv.get("90\x1ftimeout_ms|") == "2"
+    scopes = _line_scopes("['90s]\nx = 1\n[90]\ny = 2\n")
+    assert scopes["x = 1"] == "'90s"
+    assert scopes["y = 2"] == "90"

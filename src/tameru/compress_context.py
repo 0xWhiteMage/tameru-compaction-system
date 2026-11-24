@@ -56,14 +56,22 @@ from .folding import fold_lossless, json_brief, mask_template
 from .format_adapters import FILLER_WORDS
 from .gap_kind import call_gap_marker, gap_accepts_kind
 from .markers import REDACTED_MARKER, marker_name as _marker_name
-from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
+from .industrial import (
+    IndustrialLimits,
+    IndustrialResult,
+    industrial_preprocess,
+    profile_input,
+)
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
 from .supersession import (
     apply_supersession,
     _append_scoped,
+    _assignments,
     _document_headers,
     _document_scopes,
+    _line_scopes,
     _supersedes,
+    _SUPERSESSION_MARKERS,
 )
 from .unicode_profile import (
     count_token_units,
@@ -191,6 +199,49 @@ _CCR_POINTER_RE = re.compile(r"\[CC-Retrieve: (?P<hash>[0-9a-f]{24})\]")
 # of being reprocessed. This does NOT prove the marker was authored by Tameru;
 # inline mentions inside normal lines deliberately do not match.
 _DEFAULT_ELISION_LINE = re.compile(r'^[ \t]*\[…(?: [0-9]{1,12} [^\]\r\n]{1,120} omitted …)?\][ \t]*\r?$', re.MULTILINE)
+
+# Spans that only make sense inside engine output: a line carrying one of them
+# in an otherwise ordinary document is a forged marker (or copied engine
+# internals), i.e. noise — not content. Kept deliberately narrow so prose that
+# merely *mentions* bracketed text never matches.
+# Marker spans only count when the line is *just* the marker (plus an
+# optional task-list checkbox or whitespace): an inline ``[…]`` inside an
+# error message or a ``[tameru:…]`` reference inside a JSON record is
+# content, not a gap marker — dropping the whole line would erase the
+# diagnostic or the payload it carried.
+_ARTIFACT_NOISE_LEAD = r"^[ \t]*(?:\[[ xX]\][ \t]*)?"
+_ARTIFACT_NOISE_TAIL = r"[ \t]*\r?$"
+# The engine screens only ITS OWN artifact spans — a foreign banner is just
+# text until the caller declares it via ``artifact_markers`` (harness-agnostic:
+# no host's banner is named here). Index 0 is the elision marker, which
+# ``_huge_sample`` itself inserts and internal samples must not screen.
+_ARTIFACT_NOISE_RES = (
+    re.compile(_ARTIFACT_NOISE_LEAD + r"\[…(?: [0-9]{1,12} [^\]\r\n]{1,120} omitted …)?\]" + _ARTIFACT_NOISE_TAIL),
+    re.compile(_ARTIFACT_NOISE_LEAD + r"\[tameru:[^\]\r\n]{1,200}\]" + _ARTIFACT_NOISE_TAIL),
+)
+
+_ARTIFACT_NOISE_TOKENS = ("…", "[tameru:")
+
+
+def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[str]:
+    """Lines of ``text`` that carry an engine-artifact span. Callers gate this
+    behind ``_ARTIFACT_NOISE_TOKENS`` so ordinary text pays one substring scan.
+    Matching runs on the ANSI-stripped line: a colorized marker is still a
+    marker."""
+    return [
+        ln for ln in text.split("\n")
+        if any(rx.search(strip_ansi(ln)) for rx in res)
+    ]
+
+
+def _strip_artifact_noise(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> str:
+    """Drop every line carrying an engine-artifact span. Whole-line removal —
+    excising the span mid-line would emit text that is not an input prefix,
+    which the extractive contract forbids."""
+    return "\n".join(
+        ln for ln in text.split("\n")
+        if not any(rx.search(strip_ansi(ln)) for rx in res)
+    )
 
 
 # Perf (v1.5.0): the pure text-level analyses below are memoized for texts of
@@ -1563,43 +1614,69 @@ def _bounded_orig_index(
     return out
 
 
+
+def _marked_lines(kept_lines: list[str]) -> list[str]:
+    """Kept lines that CAN supersede — carrying a prose marker or parsing
+    as a distinctive assignment — the same two gates ``_supersedes``
+    applies first. Computed once per restore call: filtering kept lines
+    turns a missing-lines × kept-lines pair scan near-linear, and hoisting
+    it keeps a supersession found early from rescanning the whole output
+    per missing fact. A bare ``k = v2`` carries no prose marker, but a
+    later reassignment is its own explicit override — dropping such lines
+    here would let the floor restore the stale ``k = v1`` beside it."""
+    return [
+        o for o in kept_lines
+        if any(m in o.casefold() for m in _SUPERSESSION_MARKERS) or _assignments(o)
+    ]
+
+
 def _fact_superseded_in(
     line: str,
-    kept_lines: list[str],
+    marked: list[str],
     orig_index: dict[str, int] | None = None,
+    line_scopes: dict[str, str] | None = None,
     bounded_index: dict[str, int] | None = None,
     scope_of: dict | None = None,
 ) -> bool:
     """``True`` when a line surviving in the output explicitly marks ``line`` stale
     (``supersession._supersedes``: an is-now/obsolete/override marker plus shared distinctive
-    terms). A supersession deletion is deliberate — the floor and stage restores never put
+    terms). ``marked`` is ``_marked_lines(kept)``, hoisted by the caller. A supersession
+    deletion is deliberate — the floor and stage restores never put
     the stale line back, the same way they never put back a safety deletion.
     Reassignment supersession is directionless on its own (``k = v1`` vs ``k = v2`` are
     symmetric), so ``orig_index`` — each line's position in the original text — gates it:
-    only a surviving line that stands LATER in the input may veto the candidate, otherwise
-    a kept stale value would refuse to let the current one back in. A kept bounded variant
-    resolves through ``bounded_index`` to its original line's position; other kept lines
-    absent from ``orig_index`` (render markers) count as later, matching the pre-gate
-    behavior; a candidate with no known position keeps the permissive default too."""
+    only a surviving line with a KNOWN-later position may veto the candidate, otherwise
+    a kept stale value would refuse to let the current one back in. A line inside a JSON
+    envelope has no position in ``orig_index``, so its order is unknown — unknown order
+    still permits prose-marker vetoes (render markers count as later, matching the
+    pre-gate behavior) but never a bare reassignment. A kept bounded variant resolves
+    through ``bounded_index`` to its original line's position, so windowing a line does
+    not make its order unknowable. ``line_scopes`` is each original
+    line's config section: same-named keys in different sections are different settings,
+    so a later ``[b] k = v2`` must not veto restoring ``[a] k = v1``."""
     lp = orig_index.get(line) if orig_index is not None else None
+    ls = line_scopes or {}
+    old_scope = ls.get(line)
+
+    def _later(o: str) -> bool | None:
+        if lp is None or orig_index is None:
+            return None
+        pos = orig_index.get(o)
+        if pos is None and bounded_index is not None:
+            pos = bounded_index.get(o)
+        return None if pos is None else pos > lp
+
     return any(
         o != line
         and _supersedes(
             o,
             line,
-            newer_is_later=(
-                True
-                if lp is None or orig_index is None
-                else (
-                    orig_index[o]
-                    if o in orig_index
-                    else (bounded_index or {}).get(o, 1 << 62)
-                )
-                > lp
-            ),
+            newer_is_later=_later(o),
+            newer_scope=ls.get(o),
+            older_scope=old_scope,
             scopes=(scope_of.get(o), scope_of.get(line)) if scope_of is not None else None,
         )
-        for o in kept_lines
+        for o in marked
     )
 
 
@@ -1676,6 +1753,178 @@ def _missing_in_original_order(missing: list[tuple[int, int, str]]) -> list[str]
     return [ln for _i, _p, ln in sorted(missing, key=lambda m: (m[0], m[1], m[2]))]
 
 
+_SECTION_HEAD_RE = re.compile(r"^\s*\[")
+
+_UNESCAPED_TRIPLE_DQ = re.compile(r'(?<!\\)"""')
+_UNESCAPED_TRIPLE_SQ = re.compile(r"(?<!\\)'''")
+_TRIPLE_QUOTED_SAME_LINE_RE = re.compile(
+    r'"""(?:[^"]|"(?!""))*"""|\'\'\'(?:[^\']|\'(?!\'\'))*\'\'\'')
+_SINGLE_QUOTED_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'[^\']*\'')
+
+
+def _toml_code_part(line: str) -> str:
+    """The line before any ``#`` comment, for TOML structure scanning.
+
+    A ``#`` inside a single-line string is content, so closed quoted spans
+    are blanked before looking for the comment — triple-quoted first, so a
+    same-line triple-quoted value holding ``#`` does not split into
+    single-quoted pairs and hide the closing delimiter from the mask in
+    ``_restored_block``. An unclosed triple quote is never blanked: it
+    legitimately opens a multiline string. Not a full TOML lex, just
+    enough to keep comment quotes from desyncing."""
+    blank = lambda m: " " * len(m.group(0))
+    scrubbed = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, line)
+    scrubbed = _SINGLE_QUOTED_RE.sub(blank, scrubbed)
+    cut = scrubbed.find("#")
+    return line if cut < 0 else line[:cut]
+
+
+def _restored_block(
+    after: str,
+    lines: list[str],
+    line_headers: dict[str, str] | None,
+    orig_index: dict[str, int] | None,
+) -> str:
+    """``after`` with ``lines`` restored into their surviving sections.
+
+    A scoped assignment appended bare at the end of the extract lands inside
+    the LAST kept section — where it reads as that section's setting and can
+    contradict its real value. When its own section survived the line is
+    inserted at the section's end instead: re-emitting the header would
+    define the table twice, which TOML and strict INI parsers reject, and a
+    re-emitted ``[[table]]`` would start a NEW array entry. When the section
+    itself was dropped, its header goes back once with the line — a fresh
+    table, so the re-open is valid. A surviving ``[[table]]`` array keeps
+    entry order: the line is restored as its own entry before the next
+    surviving one (repeated headers resolve to the last occurrence's index,
+    so middle entries approximate)."""
+    if not lines:
+        return after
+    after_lines = after.split("\n")
+    oi = orig_index or {}
+    header_of = line_headers or {}
+    # Lines that were real section heads in the original. A bracket-led line
+    # inside a retained multiline TOML string is NOT a boundary: the header
+    # set alone cannot tell, since _line_scopes parses such a line as a
+    # header too — mask out lines that sit inside a """ or ''' string.
+    header_texts = set(header_of.values())
+    in_string = [False] * len(after_lines)
+    inside_basic = inside_literal = False
+    for i, l in enumerate(after_lines):
+        in_string[i] = inside_basic or inside_literal
+        # Only the code part of the line opens or closes a TOML string —
+        # quotes inside a trailing # comment are text, and \"-escaped
+        # quotes inside a basic string don't end it.
+        code = l if (inside_basic or inside_literal) else _toml_code_part(l)
+        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
+            inside_basic = not inside_basic
+        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
+            inside_literal = not inside_literal
+    insert_after: dict[int, list[str]] = {}
+    insert_before: dict[int, list[str]] = {}
+    appended: list[str] = []
+    opened: set[str] = set()
+
+    def _resolve(ln: str) -> str:
+        """The original line a possibly window-bounded ``ln`` came from.
+
+        ``_bound_fact_line`` emits text that STARTS with a verbatim prefix of
+        the original, so the first ``[…`` marks where the real content ends —
+        match that prefix back to the original to recover its header and
+        position. A line that is already original (or unmatchable) resolves
+        to itself."""
+        if ln in header_of or ln in oi:
+            return ln
+        prefix = ln.split("[…", 1)[0]
+        if not prefix or prefix == ln:
+            return ln
+        hits = [ol for ol in oi if ol.startswith(prefix)] or [
+            ol for ol in header_of if ol.startswith(prefix)
+        ]
+        if len(hits) > 1:
+            # Shared head prefixes across tables: the bounded line also ends
+            # with a verbatim tail of its original — narrow on that suffix.
+            tail = ln[-32:]
+            narrowed = [ol for ol in hits if ol.endswith(tail)]
+            if narrowed:
+                hits = narrowed
+        if len(hits) > 1:
+            # Still ambiguous: when prefix and tail can't tell the candidates
+            # apart and they live under DIFFERENT tables, restoring under
+            # hits[0] could put the setting under the wrong table — bare
+            # restore is safer than a confident guess. Same-table hits resolve
+            # identically either way.
+            if len({header_of.get(h) for h in hits}) > 1:
+                return ln
+        return hits[0] if hits else ln
+
+    for ln in lines:
+        orig = _resolve(ln)
+        h = header_of.get(orig)
+        if h == orig:
+            # A section head maps to itself only to mark it as a boundary;
+            # it still restores bare — re-opening under itself would nest
+            # the table inside its own body.
+            h = None
+        cand = [i for i, l in enumerate(after_lines) if l == h] if h else []
+        if not h:
+            appended.append(ln)
+            continue
+        if not cand:
+            # The section itself was dropped: re-emit its header with the
+            # line — a fresh table there, so the re-open is valid.
+            if h not in opened:
+                appended.append(h)
+                opened.add(h)
+            appended.append(ln)
+            continue
+        target = oi.get(orig)
+        if h.lstrip().startswith("[["):
+            # Array-of-tables: re-emitting the header would start a NEW entry,
+            # and a bare insert lands in whatever entry happens to be last —
+            # duplicating a key that entry already holds. The line's own entry
+            # is gone, so restore it AS an entry before the next surviving
+            # entry (or at the end when it was the last).
+            nxt = (
+                [c for c in cand if oi.get(after_lines[c], 1 << 62) > target]
+                if target is not None
+                else []
+            )
+            if not nxt:
+                if h not in opened:
+                    appended.append(h)
+                    opened.add(h)
+                appended.append(ln)
+            else:
+                insert_before.setdefault(nxt[0], []).extend((h, ln))
+            continue
+        # A plain table: the surviving section owns the setting — insert at
+        # the section's end, before the next header line.
+        if target is None:
+            anchor = cand[-1]
+        else:
+            prevs = [c for c in cand if oi.get(after_lines[c], -1) <= target]
+            anchor = prevs[-1] if prevs else cand[0]
+        j = anchor + 1
+        while (
+            j < len(after_lines)
+            and (after_lines[j] not in header_texts or in_string[j])
+        ):
+            j += 1
+        insert_after.setdefault(j - 1, []).append(ln)
+    if insert_after or insert_before:
+        merged: list[str] = []
+        for i, l in enumerate(after_lines):
+            merged.extend(insert_before.get(i, ()))
+            merged.append(l)
+            merged.extend(insert_after.get(i, ()))
+        after = "\n".join(merged)
+    return after + ("\n" + "\n".join(appended) if appended else "")
+
+
+_RECORD_BOUNDARY_RE = re.compile(r"^\s*(?:TN:|SF:|end_of_record\b)")
+
+
 def _restore_facts(protected, after: str, before: str | None = None) -> str:
     """Append whole protected fact lines a stage deleted from ``after`` (the same mechanism
     ``_restore_fact_lines`` uses, taking the pre-computed protected set of the original text
@@ -1691,22 +1940,45 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
     orig_index = {ln: i for i, ln in enumerate(before.split("\n"))} if before is not None else None
     bounded = _bounded_orig_index(kept, orig_index)
     scope_of = _document_scopes(before) if before is not None else None
+    line_headers: dict[str, str] = {}
+    scopes = _line_scopes(before, line_headers) if before is not None else None
+    marked = _marked_lines(kept)
+    # A record-boundary line (LCOV's TN:/SF:/end_of_record) is never restored
+    # on its own in a record document: without its record body it opens a
+    # corrupt record — the record adapters own keep/drop for those. The gate
+    # only applies when the source actually carries LCOV records (detected by
+    # its end_of_record terminator, not the diagnostic-shaped prefixes): a
+    # test log line that merely starts "SF:" is an ordinary protected fact.
+    # The terminator may sit behind a real carriage return — or behind the
+    # JSON-escaped '\r' a tool payload only decodes after this check. The
+    # escape leader only counts when ``before`` is a JSON-ish payload: a
+    # pytest log printing the literal text '\rend_of_record' is not a
+    # record document, and treating it as one would suppress the protected
+    # 'SF:' facts the record gate exists to skip.
+    _leader = (r"(?:[^\S\n]|\\[rnt])*" if (before or "").lstrip()[:1] in "[{\""
+               else r"[^\S\n]*")
+    record_doc = bool(
+        before
+        and "end_of_record" in before
+        and re.search(r"(?m)^" + _leader + r"end_of_record\b", before)
+    )
     missing = [(i, -1, _bound_fact_line(ln, must=(_k, _v))) for i, _k, _v, ln in protected
                if ln != after and ln not in after
-               and not _fact_superseded_in(ln, kept, orig_index, bounded, scope_of)
-               and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
+               and not _fact_superseded_in(ln, marked, orig_index, scopes, bounded, scope_of)
+               and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))
+               and not (record_doc and _RECORD_BOUNDARY_RE.match(ln))]
     extra = list(err) + sorted(out.difference(err))
     if extra:
         index = orig_index or {}
         for pos, ln in enumerate(extra):
             if (ln != after and ln not in after
-                    and not _fact_superseded_in(ln, kept, orig_index, bounded, scope_of)
-                    and not _fact_variant_present(ln, kept)):
+                    and not _fact_superseded_in(ln, marked, orig_index, scopes, bounded, scope_of)
+                    and not _fact_variant_present(ln, kept)
+                    and not (record_doc and _RECORD_BOUNDARY_RE.match(ln))):
                 missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
-    if not missing:
-        return after
-    headers = _document_headers(before) if before is not None else None
-    return _append_scoped(after, _missing_in_original_order(missing), scope_of, headers)
+    return _restored_block(
+        after, _missing_in_original_order(missing), line_headers, orig_index
+    )
 
 
 def _restore_fact_lines(before: str, after: str) -> str:
@@ -1721,25 +1993,28 @@ def _restore_fact_lines(before: str, after: str) -> str:
     if not protected and not err and not out:
         return after
     kept = after.split("\n")
+    marked = _marked_lines(kept)
     extra = list(err) + sorted(out.difference(err))
     index = {ln: i for i, ln in enumerate(before.split("\n"))}
     bounded = _bounded_orig_index(kept, index)
     scope_of = _document_scopes(before)
+    line_headers: dict[str, str] = {}
+    scopes = _line_scopes(before, line_headers)
     missing = [(i, -1, _bound_fact_line(ln, must=(_k, _v))) for i, _k, _v, ln in protected
                if ln != before and ln not in after
-               and not _fact_superseded_in(ln, kept, index, bounded, scope_of)
+               and not _fact_superseded_in(ln, marked, index, scopes, bounded, scope_of)
                and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
     # E6: an error exemplar the stage saw in ``before`` and lost goes back too —
     # independent of fact density, same supersession guard, same original order.
     # E12: protected outcome lines get the same treatment.
     for pos, ln in enumerate(extra):
         if (ln in before and ln not in after
-                and not _fact_superseded_in(ln, kept, index, bounded, scope_of)
+                and not _fact_superseded_in(ln, marked, index, scopes, bounded, scope_of)
                 and not _fact_variant_present(ln, kept)):
             missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
-    if not missing:
-        return after
-    return _append_scoped(after, _missing_in_original_order(missing), scope_of, _document_headers(before))
+    return _restored_block(
+        after, _missing_in_original_order(missing), line_headers, index
+    )
 
 
 def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int | None,
@@ -1761,6 +2036,8 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     kept = compressed.split("\n")
     orig_index = {ln: i for i, ln in enumerate(original_text.split("\n"))} if original_text else None
     bounded = _bounded_orig_index(kept, orig_index)
+    line_headers: dict[str, str] = {}
+    scopes = _line_scopes(original_text, line_headers) if original_text else None
     # A line already represented by a surviving exemplar of its template (a
     # "[×N]"/"[last]" marker carries the exemplar text) is not missing — the
     # floor's budget is for templates the extract left unrepresented, like the
@@ -1808,9 +2085,10 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     raw_terms = tuple(t for t in _extract_terms(query or "") if len(t) >= 3)
     hit_terms = tuple(t.casefold() for t in raw_terms)
     scope_of = _document_scopes(original_text) if original_text is not None else None
+    marked = _marked_lines(kept)
     missing = [
         f for f in facts
-        if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index, bounded, scope_of)
+        if f[3] not in compressed and not _fact_superseded_in(f[3], marked, orig_index, scopes, bounded, scope_of)
         and not _fact_variant_present(f[3], kept, tuple(s for s in (f[1], f[2]) if s))
         and not _pair_kept(f)
     ]
@@ -1882,22 +2160,15 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
             kept_fps.add(fp)
     if not chosen:
         return compressed
-    # Each restored line's own section header goes back with it when the
-    # extract ends in a different scope — a dropped [database] setting must
-    # not read as a second value under the [cache] mapping it lands after.
-    headers = _document_headers(original_text) if original_text is not None else {}
-    chosen_by_line = {f[3]: (f[1], f[2]) for f in chosen}
-    out = _append_scoped(
-        compressed,
-        [f[3] for f in sorted(chosen, key=lambda f: f[0])],
-        scope_of,
-        headers,
-        emit=lambda ln: _bound_fact_line(
-            ln, hit_terms, raw_terms, must=(chosen_by_line.get(ln) or ())
-        ),
-    )
-    appended = out[len(compressed):].lstrip("\n")
-    if not appended:
+    # Each restored setting goes back inside its own section — mid-document
+    # when the section survived, under a re-emitted header when it did not —
+    # never bare at the end where it would read as the last section's value.
+    bound_lines = [
+        _bound_fact_line(f[3], hit_terms, raw_terms, must=(f[1], f[2]))
+        for f in sorted(chosen, key=lambda f: f[0])
+    ]
+    out = _restored_block(compressed, bound_lines, line_headers, orig_index)
+    if out == compressed:
         return compressed
     if scored is None or kept_ids is None or min_savings_ratio is None or original_text is None:
         return out
@@ -1909,7 +2180,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     # occupy the existing budget rather than inflating the extract. An extract
     # that already missed the bound still misses it when the candidates run
     # out: the verdict is unchanged.
-    evict_budget = estimate_tokens(appended) + len(chosen)
+    evict_budget = estimate_tokens(out) - estimate_tokens(compressed) + len(chosen)
     line_score: dict[str, float] = {}
     for b in scored:
         # Only lines from pure-score keeps are eviction candidates. A block
@@ -1949,7 +2220,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         need_chr -= len(ln) + 1
     if drop:
         compressed = "\n".join(ln for i, ln in enumerate(rendered) if i not in drop)
-        out = compressed + ("\n" + appended if appended else "")
+        out = _restored_block(compressed, bound_lines, line_headers, orig_index)
     return out
 
 
@@ -9086,6 +9357,7 @@ def _resolve_objective(
     prose_brief,
     query,
     recursion_markers,
+    artifact_markers,
     reorder_best,
     semantic_tier,
     strategy,
@@ -9193,7 +9465,8 @@ def _resolve_objective(
                         pin_recent=pin_recent, min_savings_ratio=min_savings_ratio,
                         degraded_view=degraded_view, summary_endpoint=None, limits=limits,
                         derive_query=False, anchor_errors=False, gap_marker=gap_marker,
-                        recursion_markers=recursion_markers, content_hint=content_hint,
+                        recursion_markers=recursion_markers, artifact_markers=artifact_markers,
+                        content_hint=content_hint,
                         inline_short_gaps=inline_short_gaps, prose_brief=prose_brief,
                         _ccr_defer=True,
                     )
@@ -10524,6 +10797,7 @@ def _compress_auto_ladder(
     pin_recent,
     query_as_given,
     recursion_markers,
+    artifact_markers,
     reorder_best,
     requested_mode,
     semantic_tier,
@@ -10560,6 +10834,7 @@ def _compress_auto_ladder(
         anchor_errors=anchor_errors,
         gap_marker=gap_marker,
         recursion_markers=recursion_markers,
+        artifact_markers=artifact_markers,
         content_hint=content_hint,
         prose_brief=prose_brief,
         inline_short_gaps=inline_short_gaps,
@@ -10639,6 +10914,7 @@ def _preflight_fail_open_result(
 def _industrial_preflight(
     *,
     adapter_gap,
+    analysis_text=None,
     caller_text,
     degraded,
     degraded_view,
@@ -10647,11 +10923,42 @@ def _industrial_preflight(
     no_table,
     query,
 ):
-    """Run the industrial preflight (size and safety limits, format adapters), degrading to a bounded scoring view when allowed, and preflight any wrapped tool payload. Returns ``(industrial, degraded, payload_industrial)``."""
+    """Run the industrial preflight (size and safety limits, format adapters), degrading to a bounded scoring view when allowed, and preflight any wrapped tool payload. Returns ``(industrial, degraded, payload_industrial)``. ``analysis_text`` is the noise-free copy used for format detection when sparse artifact markers were stripped; hard limits still judge ``caller_text``."""
     industrial = industrial_preprocess(
-        caller_text, industrial_query, limits, gap_marker=adapter_gap,
+        analysis_text if analysis_text is not None else caller_text,
+        industrial_query, limits, gap_marker=adapter_gap,
         allow_reports=not no_table,
     )
+    if (
+        analysis_text is not None
+        and analysis_text is not caller_text
+        and not industrial.hard_fail_open
+    ):
+        # Hard limits judge the TRUE input: stripping marker lines can never
+        # smuggle an oversized document past the character/line caps. Only
+        # injected when the cleaned text passed on its own — a structural
+        # refusal (YAML anchors, malformed records) must not be overwritten
+        # by a size failure that a degraded view could then clear.
+        true_profile = profile_input(caller_text, industrial.limits)
+        if true_profile.limit_reason:
+            industrial = replace(
+                industrial, hard_fail_open=True,
+                reason=true_profile.limit_reason,
+                profile=true_profile, applied=False, text=caller_text,
+            )
+    degraded_profile = industrial.profile
+    if (
+        industrial.hard_fail_open
+        and analysis_text is not None
+        and analysis_text is not caller_text
+        and industrial.profile.limit_reason.startswith(
+            ("character limit", "line limit")
+        )
+    ):
+        # The profile may describe the CLEANED text: a marker-stripped copy
+        # is smaller, so the degraded ceiling must be judged on the true
+        # input or oversized documents would compress after all.
+        degraded_profile = profile_input(caller_text, industrial.limits)
     if (
         industrial.hard_fail_open
         and degraded_view
@@ -10660,7 +10967,7 @@ def _industrial_preflight(
         )
         and len(caller_text)
         <= industrial.limits.max_input_chars * _DEGRADED_OVERSIZE_FACTOR
-        and industrial.profile.lines
+        and degraded_profile.lines
         <= industrial.limits.max_lines * _DEGRADED_OVERSIZE_FACTOR
         and len(query or "") <= industrial.limits.max_query_chars
     ):
@@ -10683,7 +10990,12 @@ def _industrial_preflight(
             degraded = True
     payload_industrial = None
     if not industrial.hard_fail_open:
-        candidate_payload = unwrap_tool_payload(caller_text)
+        # The payload check unwraps the CLEANED text too: a standalone
+        # marker line before a JSON envelope must not hide the envelope —
+        # and the payload's own refusals (e.g. anchored YAML) still apply.
+        candidate_payload = unwrap_tool_payload(
+            analysis_text if analysis_text is not None else caller_text
+        )
         if candidate_payload.wrapped:
             payload_industrial = industrial_preprocess(
                 candidate_payload.inner, industrial_query, industrial.limits,
@@ -10906,6 +11218,7 @@ def _compress_context_impl(
     prose_brief: bool = False,
     gap_marker: Callable[[int, int], str] | None = None,
     recursion_markers: Iterable[str] = (),
+    artifact_markers: Iterable[str] = (),
     content_hint: str | None = None,
     inline_short_gaps: bool = False,
     selector_query: str | None = None,
@@ -10935,6 +11248,14 @@ def _compress_context_impl(
         ``policy_name="local-noop-recursion"``. Matching is explicit and
         anchored; nothing is guessed (a host's own marker text only counts if
         the caller passes it).
+    ``artifact_markers``
+        Strings naming the caller's own compression artifacts (e.g. a host's
+        banner prefix). Lines that are just such a marker are screened like
+        the engine's own artifact spans: sparse occurrences are stripped
+        before analysis, input dominated by marker lines no-ops. Unlike
+        ``recursion_markers`` a single forged occurrence cannot disable
+        compression, so this is the safe channel for attacker-influenceable
+        tool output.
     ``content_hint``
         One of ``None, "code", "numbered_code", "log", "json", "text",
         "diff", "grep", "test"`` (anything else raises ``ValueError``).
@@ -10987,6 +11308,7 @@ def _compress_context_impl(
     code_hint = content_hint in _CODE_HINTS
     no_table = content_hint in _NO_TABLE_HINTS
     recursion_markers = _marker_tuple(recursion_markers)  # a generator is read once
+    artifact_markers = _marker_tuple(artifact_markers)
     query, query_as_given, derived_terms, anchor_lines, chosen_probe = _resolve_objective(
         ambiguity_fail_open=ambiguity_fail_open, anchor_errors=anchor_errors,
         budget_ratio=budget_ratio, caller_text=caller_text, ccr=ccr, ccr_dir=ccr_dir,
@@ -10994,7 +11316,8 @@ def _compress_context_impl(
         derive_query=derive_query, gap_marker=gap_marker, inline_short_gaps=inline_short_gaps,
         limits=limits, min_savings_ratio=min_savings_ratio, mode=mode, pin_patterns=pin_patterns,
         pin_recent=pin_recent, prose_brief=prose_brief, query=query,
-        recursion_markers=recursion_markers, reorder_best=reorder_best, semantic_tier=semantic_tier,
+        recursion_markers=recursion_markers, artifact_markers=artifact_markers,
+        reorder_best=reorder_best, semantic_tier=semantic_tier,
         strategy=strategy,
     )
     # 1.10.0: the caller's own words, as the confidence basis reads them (before anchors or derived terms), and the
@@ -11064,13 +11387,67 @@ def _compress_context_impl(
     if (
         _engine_output(caller_text)
         or (unwrapped_payload != caller_text and _engine_output(unwrapped_payload))
-        or (_DEFAULT_ELISION_LINE.search(caller_text) is not None and not _internal_sample)
         or (_has_anchored_marker(caller_text, recursion_markers))
     ):
         return _recursion_noop_result(
             caller_text=caller_text,
             requested_mode=requested_mode,
         )
+    # Weak artifact markers (elision lines, ``[tameru:…]`` spans and any
+    # caller-declared ``artifact_markers``) are contamination-aware: an input that is *mostly* marker lines is
+    # a compressed artifact and no-ops, but a single forged marker line must
+    # not disable compression of a whole document (savings-DoS) — and must not
+    # sail through the extract looking like engine structure. Sparse noise is
+    # stripped line-wise and the remainder compresses normally. Both the
+    # dominance check and the strip run on the PAYLOAD lines: inside a JSON
+    # tool envelope the whole wrapper is one line, so a single inner marker
+    # would otherwise no-op the envelope (and a ``\\u2026``-escaped marker
+    # would dodge the scan entirely). ``caller_text`` itself keeps the true
+    # original — fail-open paths must return it byte-for-byte and CCR must
+    # archive it — so the strip is applied to the working text below, not
+    # rebound here.
+    artifact_contaminated = False
+    # Caller-declared artifact markers (a host's own compression banners) join
+    # the noise screen with the same sparse-strip / dominant-no-op treatment as
+    # the engine's spans. An internal sample screens every marker EXCEPT the
+    # ``[…]`` separators ``_huge_sample`` itself inserts — only those are exempt.
+    declared_markers = tuple(
+        m2 for m2 in (strip_ansi(m) for m in artifact_markers) if m2
+    )  # ANSI-stripped like the lines they must match: a colorized banner is
+    # still a banner.
+    declared_res = tuple(
+        re.compile(
+            _ARTIFACT_NOISE_LEAD + re.escape(m)
+            + r"(?:[ \t]{0,40}[^A-Za-z_\s][^\r\n]{0,300})?" + _ARTIFACT_NOISE_TAIL
+        )
+        for m in declared_markers
+    )
+    noise_res = (_ARTIFACT_NOISE_RES[1:] if _internal_sample else _ARTIFACT_NOISE_RES) + declared_res
+    noise_tokens = (
+        _ARTIFACT_NOISE_TOKENS[1:] if _internal_sample else _ARTIFACT_NOISE_TOKENS
+    ) + declared_markers
+    # The token gate judges the ANSI-stripped text too when escapes are present:
+    # a color change inside the marker would otherwise hide it from the scan
+    # that itself strips ANSI per line.
+    gate_text = strip_ansi(unwrapped_payload) if "\x1b" in unwrapped_payload else unwrapped_payload
+    if noise_res and any(tok in gate_text for tok in noise_tokens):
+        noise = _artifact_noise_lines(unwrapped_payload, noise_res)
+        if noise:
+            non_empty = sum(1 for ln in unwrapped_payload.split("\n") if ln.strip())
+            if len(noise) * 10 >= non_empty * 3:
+                return _recursion_noop_result(
+                    caller_text=caller_text,
+                    requested_mode=requested_mode,
+                )
+            artifact_contaminated = True
+    # Sparse noise is stripped from the ANALYSIS copy once, so format
+    # detection, pin-recent and the protection pool all see marker-free text
+    # while ``caller_text`` stays byte-for-byte for fail-open and CCR. The
+    # strip only reaches lines at this level — a marker inside a JSON
+    # envelope is still hidden here and gets stripped post-unwrap below.
+    analysis_text = (
+        _strip_artifact_noise(caller_text, noise_res) if artifact_contaminated else caller_text
+    )
     secret_in_input = _contains_secret(caller_text) or (
         unwrapped_payload != caller_text and _contains_secret(unwrapped_payload)
     )
@@ -11104,7 +11481,22 @@ def _compress_context_impl(
     # format adapters below may delete a line, so protection knows every fact before any stage can
     # drop one. Density (sparsity rule B) is decided once here; ``_FACT_OFF`` keeps the machinery
     # off through every later stage on a dense original.
-    protected_source = unwrap_tool_payload(original_text).inner
+    protected_payload = unwrap_tool_payload(original_text)
+    if (
+        not protected_payload.wrapped
+        and artifact_contaminated
+        and analysis_text is not caller_text
+    ):
+        # The same leading-marker case as the working text: the protected
+        # view is the envelope's decoded body, not the serialized wrapper —
+        # otherwise _restore_facts could splice raw JSON back into a log.
+        protected_payload = unwrap_tool_payload(analysis_text)
+    protected_source = protected_payload.inner
+    if artifact_contaminated:
+        # Marker lines are noise: they must not be analysable as protected
+        # facts, error exemplars or outcome lines, or the floors would restore
+        # them right back into the extract.
+        protected_source = _strip_artifact_noise(protected_source, noise_res)
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -11133,7 +11525,8 @@ def _compress_context_impl(
     # consult ``_outcome_protected_set`` and keep a protected line verbatim.
     _OUTCOME_PROTECTED.set(frozenset(f[3] for f in outcome_lines))
     industrial, degraded, payload_industrial = _industrial_preflight(
-        adapter_gap=adapter_gap, caller_text=caller_text, degraded=degraded,
+        adapter_gap=adapter_gap, analysis_text=analysis_text,
+        caller_text=caller_text, degraded=degraded,
         degraded_view=degraded_view, industrial_query=industrial_query, limits=limits,
         no_table=no_table, query=query,
     )
@@ -11143,7 +11536,7 @@ def _compress_context_impl(
             content_hint=content_hint, industrial=industrial, query_as_given=query_as_given,
             requested_mode=requested_mode, strategy=strategy,
         )
-    source_pin_texts = _source_pin_texts(caller_text, pin_patterns, pin_recent)
+    source_pin_texts = _source_pin_texts(analysis_text, pin_patterns, pin_recent)
     _PINNED_LINES.set(frozenset(
         form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
         for form in (ln, strip_ansi(ln))
@@ -11153,9 +11546,37 @@ def _compress_context_impl(
     # v1.4.0 (G9): keep the wrapper's scalar metadata (exit_code, error,
     # total_lines, ...) so it can be re-emitted ahead of the compressed body.
     tool_payload = unwrap_tool_payload(text)
+    if (
+        not tool_payload.wrapped
+        and artifact_contaminated
+        and analysis_text is not caller_text
+    ):
+        # A marker line ahead of a JSON envelope hides it in the original —
+        # the cleaned view still parses, so the wrapper's scalar metadata
+        # (exit_code, error, total_lines) is recovered, not dropped. Only a
+        # successful unwrap may rebind ``tool_payload``: an unwrapped result's
+        # ``inner`` is the cleaned text itself, which would silently discard
+        # an industrial transform already applied to ``text``.
+        cleaned_payload = unwrap_tool_payload(analysis_text)
+        if cleaned_payload.wrapped:
+            # The recovered body gets the same recursion screen the outer
+            # guard ran on the original's unwrap: an inner made only of
+            # engine markers no-ops instead of degrading to empty output.
+            if any(m in cleaned_payload.inner for m in _RECURSION_MARKERS):
+                return _recursion_noop_result(
+                    caller_text=caller_text,
+                    requested_mode=requested_mode,
+                )
+            tool_payload = cleaned_payload
     text = tool_payload.inner
     if payload_industrial is not None and payload_industrial.applied:
         text = payload_industrial.text
+    if artifact_contaminated:
+        # The working text — not ``caller_text`` — loses the noise lines, so
+        # extraction, pin checks and the render never see them while the
+        # original stays intact for fail-open and CCR. Stripping the unwrapped
+        # payload covers JSON envelopes too.
+        text = _strip_artifact_noise(text, noise_res)
     tool_meta_line = ""
     if tool_payload.wrapped and tool_payload.meta:
         tool_meta_line = _compact_json(tool_payload.meta) + "\n"
@@ -11172,8 +11593,12 @@ def _compress_context_impl(
         code_hint = True
         no_table = True
     # 1.10.0 (S5, E5): the industrial and payload adapters above ran before detection could see
-    # the original — any protected fact line they deleted goes back now, verbatim.
-    text = _restore_facts(fact_lines, text, before=protected_source)
+    # the original — any protected fact line they deleted goes back now, verbatim. Record-
+    # structured reports (LCOV's TN:/SF: … end_of_record) are exempt: a lone SF:/TN: line
+    # without its coverage data would open an incomplete record — the record adapter owns
+    # keep/drop for those, not the line-level floor.
+    if not protected_source.lstrip().startswith(("TN:", "SF:")):
+        text = _restore_facts(fact_lines, text, before=protected_source)
     # v1.4.0 (E5): diff and grep/rg output get their own adapters (whole hunks,
     # grouped matches) ahead of generic segmentation. The adapter's output is
     # the selection: scoring below must not undo it (see `adapter_info`).
@@ -11228,6 +11653,7 @@ def _compress_context_impl(
             min_savings_ratio=min_savings_ratio, pin_patterns=pin_patterns, pin_recent=pin_recent,
             prose_brief=prose_brief, inline_short_gaps=inline_short_gaps,
             query_as_given=query_as_given, recursion_markers=recursion_markers,
+            artifact_markers=artifact_markers,
             reorder_best=reorder_best, requested_mode=requested_mode, semantic_tier=semantic_tier,
             summary_allow_remote=summary_allow_remote, summary_endpoint=summary_endpoint,
             summary_models=summary_models, summary_timeout=summary_timeout,
@@ -11572,6 +11998,7 @@ def compress_context(
     prose_brief: bool = False,
     gap_marker: Callable[..., str] | None = None,
     recursion_markers: Iterable[str] = (),
+    artifact_markers: Iterable[str] = (),
     content_hint: str | None = None,
     inline_short_gaps: bool = False,
     redact_secrets: bool = False,
@@ -11680,7 +12107,8 @@ def compress_context(
             summary_allow_remote=summary_allow_remote, limits=limits,
             derive_query=derive_query, anchor_errors=anchor_errors,
             prose_brief=prose_brief, gap_marker=gap_marker,
-            recursion_markers=recursion_markers, content_hint=content_hint,
+            recursion_markers=recursion_markers, artifact_markers=artifact_markers,
+            content_hint=content_hint,
             inline_short_gaps=inline_short_gaps, redact_secrets=redact_secrets,
             selector_query=selector_query, _ccr_defer=_ccr_defer,
             _internal_sample=True,
@@ -11718,6 +12146,7 @@ def compress_context(
         summary_timeout=summary_timeout, summary_allow_remote=summary_allow_remote,
         limits=limits, derive_query=derive_query, anchor_errors=anchor_errors,
         prose_brief=prose_brief, gap_marker=gap_marker, recursion_markers=recursion_markers,
+        artifact_markers=artifact_markers,
         content_hint=content_hint, inline_short_gaps=inline_short_gaps,
         selector_query=selector_query, _ccr_defer=_ccr_defer,
         _internal_sample=_internal_sample,

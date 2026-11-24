@@ -55,7 +55,7 @@ _ASSIGN_RE = re.compile(
 # ``cache:`` at the same indent are DIFFERENT settings — scoping by indent
 # alone dropped the earlier section's live value.
 _PARENT_RE = re.compile(
-    r"^\s*(?:\[\[?\s*(?P<ini>(?:\"[^\"]*\"|'[^']*'|[^\[\]\s][^\[\]]*?))\s*\]?\]\s*(?:[;#].*)?"
+    r"^\s*(?:\[\[?\s*(?P<ini>(?:\"[^\"]*\"|'[^']*'|[^\[\]\"']|\"(?![^\"]*\")|'(?![^']*'))+)\s*\]?\]\s*(?:[;#].*)?"
     r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:\s*(?:#.*)?)$"
 )
 # A line past this length is never a section header or a bare mapping
@@ -156,15 +156,18 @@ def _advance(state: list, line: str) -> str | None:
         if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
             pm = None
     if pm and pm["ini"] is not None:
-        ini = pm["ini"]
+        ini = pm["ini"].strip()
         # A quoted TOML name with no dot is the same table as its bare
         # spelling ('["database"]' == '[database]' — TOML treats a quoted
         # key as the literal key), so it folds identically. A quoted
         # name WITH a dot ('"db.primary"') is one literal key, not the
         # nested '[db.primary]', and keeps its quotes to stay distinct;
         # '[""]' is a name too — the empty name is not the top level.
-        # Bare names fold, matching INI convention.
-        if ini[:1] in "\"'" and ini[1:-1] and "." not in ini[1:-1]:
+        # Bare names fold, matching INI convention. The strip only fires
+        # on a MATCHED pair — an unmatched leading quote ('['90s]') is a
+        # name starting with an apostrophe, not a quoted name missing a
+        # char.
+        if ini[:1] in "\"'" and ini[-1:] == ini[:1] and ini[1:-1] and "." not in ini[1:-1]:
             name = ini[1:-1].casefold()
         else:
             name = ini if ini[:1] in "\"'" else ini.casefold()
@@ -419,7 +422,77 @@ def _meaningful_overlap(newer_terms: set[str], older_terms: set[str]) -> bool:
     return len(distinctive) >= 2
 
 
-def _supersedes(newer: str, older: str, *, newer_is_later: bool = True, scopes=None) -> bool:
+def _line_scopes(
+    text: str,
+    line_headers: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Each line's containing config section (``""`` at top level): the
+    INI/TOML section name or the YAML parent path — the same walk
+    ``_assignments`` performs. Lines checked in isolation lose their
+    section, so ``[a] k = v1`` and ``[b] k = v2`` must never read as one
+    setting being reassigned.
+
+    A repeated line keeps the LAST occurrence's scope, the same
+    convention ``orig_index`` uses for positions — first and last
+    occurrences disagreeing would attribute a line to the wrong section.
+    ``line_headers`` optionally receives ``line → header line`` — the
+    exact header text that opened THIS line's INI/TOML section, so
+    case-distinct tables (``[Foo]`` vs ``[foo]``) never borrow each
+    other's name."""
+    scopes: dict[str, str] = {}
+    section = ""
+    cur_header = ""
+    parents: list[tuple[int, str]] = []
+    for line in (text or "").split("\n"):
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
+        if pm and len(line) > _MAX_HEADER_LINE:
+            tail = line[_MAX_HEADER_LINE:]
+            if line[_MAX_HEADER_LINE - 1] == "]":
+                tail = tail.lstrip("]")
+            tail = tail.lstrip(" \t\r")
+            body = line[pm.end("ini" if pm["ini"] is not None else "yaml"):_MAX_HEADER_LINE]
+            if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
+                pm = None
+        if pm and pm["ini"] is not None:
+            ini = pm["ini"].strip()
+            if ini[:1] in "\"'" and ini[-1:] == ini[:1] and ini[1:-1] and "." not in ini[1:-1]:
+                section = ini[1:-1].casefold()
+            else:
+                section = ini if ini[:1] in "\"'" else ini.casefold()
+            parents.clear()
+            cur_header = line
+            scopes[line] = ""
+            if line_headers is not None:
+                # A header maps to itself so empty sections still count as
+                # section heads — and so a restored header re-owns its place.
+                line_headers[line] = line
+            continue
+        while parents and parents[-1][0] >= indent:
+            parents.pop()
+        if pm:
+            section = ""
+            cur_header = ""
+            parents.append((indent, pm["yaml"].casefold()))
+            scopes[line] = ""
+            continue
+        scopes[line] = section or "/".join(p for _i, p in parents)
+        if line_headers is not None and section:
+            line_headers[line] = cur_header
+    return scopes
+
+
+def _supersedes(
+    newer: str,
+    older: str,
+    *,
+    newer_is_later: bool | None = True,
+    scopes=None,
+    newer_scope: str | None = None,
+    older_scope: str | None = None,
+) -> bool:
     """True when `newer` explicitly marks `older` stale.
 
     Conservative by design: requires an explicit staleness/override marker
@@ -432,7 +505,13 @@ def _supersedes(newer: str, older: str, *, newer_is_later: bool = True, scopes=N
     # Source order gates BOTH paths: a block standing earlier in the input
     # can never mark a later one stale — otherwise a kept stale line that
     # mentions "override" would veto restoring the current one.
-    if not newer_is_later:
+    # ``newer_is_later`` is tri-state: ``False`` (known earlier) vetoes every
+    # path; ``None`` (position unknown — e.g. a line inside a JSON envelope)
+    # still permits the prose-marker path but not a bare reassignment, which
+    # is directionless without known order. ``newer_scope``/``older_scope``
+    # carry each line's config section when known: same-named keys under
+    # different sections are different settings and never reassign.
+    if newer_is_later is False:
         return False
     n_low = newer.casefold()
     if not any(m in n_low for m in _SUPERSESSION_MARKERS):
@@ -441,7 +520,15 @@ def _supersedes(newer: str, older: str, *, newer_is_later: bool = True, scopes=N
         # reassignment carries no direction of its own: ``k = v1`` and
         # ``k = v2`` are symmetric. Only a KNOWN-later block may supersede —
         # a surviving stale value must not veto restoring the current one.
-        return newer_is_later and _reassigns(newer, older, scopes=scopes)
+        if newer_is_later is not True:
+            return False
+        if (
+            newer_scope is not None
+            and older_scope is not None
+            and newer_scope != older_scope
+        ):
+            return False
+        return _reassigns(newer, older, scopes=scopes)
 
     # Content overlap: at least two *distinctive* (non-filler) terms shared.
     return _meaningful_overlap(_content_terms(newer), _content_terms(older))

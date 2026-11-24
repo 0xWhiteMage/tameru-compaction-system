@@ -156,13 +156,13 @@ def test_bounded_variant_resolves_to_its_original_index():
     bidx = cc._bounded_orig_index(kept, orig_index)
     assert bidx[kept[0]] == 0
     assert not cc._fact_superseded_in(
-        "config_key = 9", kept, orig_index, bidx
+        "config_key = 9", kept, orig_index, bounded_index=bidx
     )
     # ordering still works: a bounded stale line that stands later vetoes
     idx2 = {"config_key = 9": 0, "filler": 1, stale: 2}
     kept2 = [cc._bound_fact_line(stale)]
     assert cc._fact_superseded_in(
-        "config_key = 9", kept2, idx2, cc._bounded_orig_index(kept2, idx2)
+        "config_key = 9", kept2, idx2, bounded_index=cc._bounded_orig_index(kept2, idx2)
     )
 
 
