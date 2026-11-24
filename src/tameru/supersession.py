@@ -117,17 +117,30 @@ def _assignments(text: str) -> dict[str, str]:
             # is whitespace or comment text — a cut landing inside trailing
             # whitespace before non-comment junk would fabricate a header
             # the full line never contained.
-            tail = line[_MAX_HEADER_LINE:].lstrip("]").lstrip(" \t\r")
+            # A ']'-prefixed tail is a closer only when the cut landed
+            # inside it ('[[name]]' split at ']'): a ']' after the match
+            # otherwise is stray junk — '[x] ]#note' is no header, and
+            # accepting it scopes later settings under a fabricated table.
+            tail = line[_MAX_HEADER_LINE:]
+            if line[_MAX_HEADER_LINE - 1] == "]":
+                tail = tail.lstrip("]")
+            tail = tail.lstrip(" \t\r")
             body = line[pm.end("ini" if pm["ini"] is not None else "yaml"):_MAX_HEADER_LINE]
             if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
                 pm = None
         if pm and pm["ini"] is not None:
             ini = pm["ini"]
-            # Quoted TOML names keep their quotes: '"db.primary"' and the
-            # nested '[db.primary]' are different tables, '"Worker"' and
-            # '"worker"' differ by case, and '[""]' is a name too. Bare
-            # names fold, matching INI convention.
-            section = ini if ini[:1] in "\"'" else ini.casefold()
+            # A quoted TOML name with no dot is the same table as its bare
+            # spelling ('["database"]' == '[database]' — TOML treats a quoted
+            # key as the literal key), so it folds identically. A quoted
+            # name WITH a dot ('"db.primary"') is one literal key, not the
+            # nested '[db.primary]', and keeps its quotes to stay distinct;
+            # '[""]' is a name too — the empty name is not the top level.
+            # Bare names fold, matching INI convention.
+            if ini[:1] in "\"'" and ini[1:-1] and "." not in ini[1:-1]:
+                section = ini[1:-1].casefold()
+            else:
+                section = ini if ini[:1] in "\"'" else ini.casefold()
             parents.clear()
             continue
         while parents and parents[-1][0] >= indent:
