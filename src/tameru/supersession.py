@@ -256,16 +256,26 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     # Reassignment supersession: a later compact block that assigns a
     # distinctive key a different value supersedes the earlier block that
     # defined it — the last definition wins. Compactness is applied to both
-    # sides exactly as for marker supersession.
+    # sides exactly as for marker supersession. An earlier block falls only
+    # when EVERY assignment it carries was superseded: supersession deletes
+    # whole blocks, so a partially updated block keeps its line rather than
+    # silently losing the unrelated settings beside the changed one.
+    block_kv: dict[int, dict[str, str]] = {}
+    superseded_keys: dict[int, set[str]] = {}
     seen: dict[str, list[tuple[int, str]]] = {}
     for i in kept_ids:
         if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
             continue
-        for k, v in _assignments(texts[i]).items():
+        kv = _assignments(texts[i])
+        block_kv[i] = kv
+        for k, v in kv.items():
             for prev_id, prev_val in seen.get(k, ()):
                 if prev_val != v:
-                    stale.add(prev_id)
+                    superseded_keys.setdefault(prev_id, set()).add(k)
             seen.setdefault(k, []).append((i, v))
+    for bid, keys in superseded_keys.items():
+        if keys and set(block_kv[bid]) <= keys:
+            stale.add(bid)
 
     if stale:
         kept -= stale

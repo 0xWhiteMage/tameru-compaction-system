@@ -89,3 +89,42 @@ def test_apply_supersession_large_block_untouched():
     scored = _scored(big_old, big_new)
     kept = apply_supersession(scored, {0, 1})
     assert kept == {0, 1}
+
+
+def test_different_sections_same_key_not_superseded():
+    # host: under [database] and host: under [cache] are different settings.
+    older = "[database]\nhost = internal.db"
+    newer = "[cache]\nhost = local.cache"
+    assert not _supersedes(newer, older)
+
+
+def test_different_yaml_parents_same_key_not_superseded():
+    older = "database:\n  host: internal.db"
+    newer = "cache:\n  host: local.cache"
+    assert not _supersedes(newer, older)
+
+
+def test_same_section_reassignment_still_supersedes():
+    older = "[database]\nconnect_timeout_ms = 30000"
+    newer = "[database]\nconnect_timeout_ms = 5000"
+    assert _supersedes(newer, older)
+
+
+def test_partial_update_keeps_earlier_block():
+    # Only one of the earlier block's keys was reassigned: dropping the whole
+    # block would lose unrelated settings.
+    scored = _scored(
+        "connect_timeout_ms = 30000\nretry_limit = 3",
+        "connect_timeout_ms = 5000",
+    )
+    kept = apply_supersession(scored, {0, 1})
+    assert 0 in kept and 1 in kept
+
+
+def test_fully_superseded_block_still_drops():
+    scored = _scored(
+        "connect_timeout_ms = 30000",
+        "connect_timeout_ms = 5000",
+    )
+    kept = apply_supersession(scored, {0, 1})
+    assert kept == {1}
