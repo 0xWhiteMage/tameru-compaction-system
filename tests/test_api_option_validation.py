@@ -158,3 +158,35 @@ def test_scalar_recursion_markers_is_rejected():
 def test_recursion_markers_drops_non_str_entries():
     r = compress_context(DOC, "build", recursion_markers=[42, "", "marker"], ccr=False, citations=False)
     assert r.compressed_text
+
+
+def test_format_limits_validate_fields():
+    from tameru.format_adapters import FormatLimits
+    with pytest.raises(ValueError, match="max_records"):
+        FormatLimits(max_records=-1)
+    with pytest.raises(ValueError, match="max_records"):
+        FormatLimits(max_records=True)
+
+
+def test_adapt_format_limits_types():
+    from tameru.format_adapters import adapt_format
+    r = adapt_format(DOC, "build", limits={"max_records": 50})
+    assert r.text
+    with pytest.raises(TypeError, match="FormatLimits"):
+        adapt_format(DOC, "build", limits="x")
+
+
+def test_adapt_report_limits_types():
+    from tameru.format_adapters import adapt_report
+    with pytest.raises(TypeError, match="FormatLimits"):
+        adapt_report('{"r": [1]}', "build", limits="x")
+
+
+def test_industrial_preprocess_limits_types():
+    from tameru.industrial import industrial_preprocess, profile_input
+    r = industrial_preprocess(DOC, "build", limits={"max_lines": 50})
+    assert r.text
+    with pytest.raises(TypeError, match="IndustrialLimits"):
+        industrial_preprocess(DOC, "build", limits="x")
+    with pytest.raises(TypeError, match="IndustrialLimits"):
+        profile_input(DOC, "x")
