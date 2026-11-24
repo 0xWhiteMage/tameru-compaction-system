@@ -11562,7 +11562,10 @@ def _compress_context_impl(
             # The recovered body gets the same recursion screen the outer
             # guard ran on the original's unwrap: an inner made only of
             # engine markers no-ops instead of degrading to empty output.
-            if any(m in cleaned_payload.inner for m in _RECURSION_MARKERS):
+            # ``_engine_output`` — not a raw marker scan — so a forged or
+            # stale ``[CC-Retrieve: …]`` inside the envelope stays plain text
+            # instead of blocking compaction of the whole payload.
+            if _engine_output(cleaned_payload.inner):
                 return _recursion_noop_result(
                     caller_text=caller_text,
                     requested_mode=requested_mode,
