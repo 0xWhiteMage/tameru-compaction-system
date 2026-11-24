@@ -65,4 +65,4 @@ def test_the_four_strengths_and_status_phrases_the_spec_names_are_all_there() ->
     for key in ("notConnected", "notRunning", "notRunningRetrying", "problem", "waitingStep", "off", "shortened", "keptOnly", "idleUntil", "idle"):
         assert key in data["status"], key
     assert data["brand"]["kana"]["en"] == "(ためる)", "ASCII parentheses around the kana"
-    assert set(data["emptyReasons"]) == {"belowStart", "noCandidates", "notConfident", "tooSmall", "engineSilent", "off"}
+    assert set(data["emptyReasons"]) == {"belowStart", "noCandidates", "notConfident", "tooSmall", "engineSilent", "off", "cancelled"}

@@ -65,7 +65,7 @@ def test_fallback_is_not_published_as_a_model_measurement(monkeypatch):
         monkeypatch.setitem(sys.modules, name, package)
     monkeypatch.setitem(sys.modules, "lcc.relevance.compactor", fake)
     monkeypatch.setenv("TYPESAFE_API_KEY", "test-only")
-    runner = compare.make_runner("lcc-jev", SimpleNamespace(include_jev=True))
+    runner = compare.make_runner("lcc-jev", SimpleNamespace(include_jev=True, laya_device="cpu"))
     with pytest.raises(RuntimeError, match="Requested jev"):
         runner({"ctx": "answer", "q": "answer"})
 
@@ -94,7 +94,7 @@ def test_fully_protected_noop_is_not_mistaken_for_model_fallback(monkeypatch):
         monkeypatch.setitem(sys.modules, name, package)
     monkeypatch.setitem(sys.modules, "lcc.relevance.compactor", fake)
     monkeypatch.setenv("TYPESAFE_API_KEY", "test-only")
-    runner = compare.make_runner("lcc-jev", SimpleNamespace(include_jev=True))
+    runner = compare.make_runner("lcc-jev", SimpleNamespace(include_jev=True, laya_device="cpu"))
     text, receipt = runner({"ctx": "answer", "q": "answer"})
     assert text == "answer"
     assert receipt["protected_noop"] is True
