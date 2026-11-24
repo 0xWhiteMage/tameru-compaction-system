@@ -40,6 +40,173 @@ _SUPERSESSION_MARKERS = (
     " current value",
 )
 
+# Assignment supersession: a whole line of the form ``key = value`` or
+# ``key: value`` is a definition. A later block that assigns the same
+# *distinctive* key a different value is an explicit override — config
+# semantics where the last definition wins (``timeout_ms = 30000`` then
+# ``timeout_ms = 5000``). No prose marker is required because the
+# reassignment itself is the marker.
+_ASSIGN_RE = re.compile(
+    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
+)
+# A "parent" line scopes the assignments nested under it: an INI/TOML
+# section header (``[database]``) or a YAML mapping key on its own line
+# (``database:``). ``host: a`` under ``database:`` and ``host: b`` under
+# ``cache:`` at the same indent are DIFFERENT settings — scoping by indent
+# alone dropped the earlier section's live value.
+_PARENT_RE = re.compile(
+    r"^\s*(?:\[\[?\s*(?P<ini>(?:\"[^\"]*\"|'[^']*'|[^\[\]\s][^\[\]]*?))\s*\]?\]\s*(?:[;#].*)?"
+    r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:\s*(?:#.*)?)$"
+)
+# A line past this length is never a section header or a bare mapping
+# parent — and per-line regex work on it is bounded.
+_MAX_HEADER_LINE = 512
+_TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
+_MIN_KEY_LENGTH = 5
+# Names too generic to be a distinctive ``=`` assignment key: cross-suite
+# ``result = PASS`` / ``result = FAIL`` lines are not one setting being
+# redefined — they are independent reports that must never supersede.
+_GENERIC_EQ_KEYS = frozenset(
+    "result status state value name type data output count total code ok".split()
+)
+
+
+def _distinctive_key(key: str, op: str) -> bool:
+    """A key specific enough that two different values for it cannot both
+    be current. Short and generic words (``note``, ``result``, ``value``)
+    and — for the ``key: value`` form only — plain prose labels are out:
+    ``effects: none`` is a sentence, ``connect_timeout_ms: 5000`` is a
+    definition."""
+    k = key.casefold()
+    if len(k) < _MIN_KEY_LENGTH or k in _STOP or k in _OVERLAP_STOP:
+        return False
+    if op == "=" and k in _GENERIC_EQ_KEYS:
+        return False
+    if op == ":" and "_" not in k and "." not in k and "-" not in k \
+            and not key.isupper():
+        return False
+    return True
+
+
+def _norm_assign_value(val: str) -> str:
+    v = _TRAILING_COMMENT_RE.sub("", val).strip().strip("'\"")
+    return " ".join(v.casefold().split())
+
+
+def _assignments(text: str) -> dict[str, str]:
+    """``key|indent → value`` for each distinctive assignment line in
+    ``text`` (the last assignment within the text wins). Indent is part of
+    the key so a nested YAML/INI setting never collides with a same-named
+    one at another level (``email.on_failure`` vs ``irc.on_failure``)."""
+    out: dict[str, str] = {}
+    # INI/TOML sections hold their body at the same indent as the header,
+    # so a section name cannot live in the indent stack — track it
+    # separately. YAML mapping parents are indent-scoped and stack normally.
+    section = ""
+    parents: list[tuple[int, str]] = []
+    for line in (text or "").split("\n"):
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        # Match a bounded prefix rather than skipping long lines: a header
+        # with a long trailing comment is still a header (the pattern's tail
+        # accepts any comment text), and the bound keeps per-line regex cost.
+        pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
+        if pm and len(line) > _MAX_HEADER_LINE:
+            # A truncated match is only honest when whatever follows the cut
+            # is whitespace or comment text — a cut landing inside trailing
+            # whitespace before non-comment junk would fabricate a header
+            # the full line never contained.
+            # A ']'-prefixed tail is a closer only when the cut landed
+            # inside it ('[[name]]' split at ']'): a ']' after the match
+            # otherwise is stray junk — '[x] ]#note' is no header, and
+            # accepting it scopes later settings under a fabricated table.
+            tail = line[_MAX_HEADER_LINE:]
+            if line[_MAX_HEADER_LINE - 1] == "]":
+                tail = tail.lstrip("]")
+            tail = tail.lstrip(" \t\r")
+            body = line[pm.end("ini" if pm["ini"] is not None else "yaml"):_MAX_HEADER_LINE]
+            if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
+                pm = None
+        if pm and pm["ini"] is not None:
+            ini = pm["ini"]
+            # A quoted TOML name with no dot is the same table as its bare
+            # spelling ('["database"]' == '[database]' — TOML treats a quoted
+            # key as the literal key), so it folds identically. A quoted
+            # name WITH a dot ('"db.primary"') is one literal key, not the
+            # nested '[db.primary]', and keeps its quotes to stay distinct;
+            # '[""]' is a name too — the empty name is not the top level.
+            # Bare names fold, matching INI convention.
+            if ini[:1] in "\"'" and ini[1:-1] and "." not in ini[1:-1]:
+                section = ini[1:-1].casefold()
+            else:
+                section = ini if ini[:1] in "\"'" else ini.casefold()
+            parents.clear()
+            continue
+        while parents and parents[-1][0] >= indent:
+            parents.pop()
+        if pm:
+            section = ""
+            parents.append((indent, pm["yaml"].casefold()))
+            continue
+        m = _ASSIGN_RE.match(line)
+        # A comment-only value (``key = ; note``) is not an assignment —
+        # two such lines differ only in their comment text and must never
+        # read as a value being redefined. ``;`` only opens a comment after
+        # ``=`` (INI): YAML has no ``;`` comment, so ``key: ;`` assigns the
+        # scalar ``;``.
+        val = m["val"].lstrip() if m else ""
+        comment_val = val.startswith("#") or (val.startswith(";") and m["op"] == "=")
+        if m and not comment_val and _distinctive_key(m["key"], m["op"]):
+            parent = section or ("/".join(p for _i, p in parents) if parents else "")
+            # '§' can never appear inside a key (the charset excludes it), so
+            # a literal key like ``a/b`` can't collide with parent ``a`` +
+            # key ``b`` the way a "/" separator allowed.
+            scoped = (parent + "§" if parent else "") + m["key"].casefold() + "|" + m["indent"]
+            out[scoped] = _norm_assign_value(m["val"])
+    return out
+
+
+def _key_parts(scoped: str) -> tuple[str, str]:
+    """``(parent, basename|indent)`` of a scoped assignment key."""
+    parent, sep, base = scoped.rpartition("§")
+    return (parent if sep else "", base)
+
+
+def _scope_sets(kv_maps) -> dict[str, set[str]]:
+    """``basename|indent → non-empty parents it appears under`` across the
+    given assignment maps. A name scoped to at most ONE section may match
+    an unscoped namesake (a split block lost its header); a name used in
+    two or more sections is ambiguous and only matches its exact scope."""
+    scopes: dict[str, set[str]] = {}
+    for kv in kv_maps:
+        for k in kv:
+            parent, base = _key_parts(k)
+            if parent:
+                scopes.setdefault(base, set()).add(parent)
+    return scopes
+
+
+def _same_setting(k1: str, k2: str, scopes: dict[str, set[str]]) -> bool:
+    if k1 == k2:
+        return True
+    b1 = _key_parts(k1)[1]
+    return b1 == _key_parts(k2)[1] and len(scopes.get(b1, ())) <= 1
+
+
+def _reassigns(newer: str, older: str) -> bool:
+    """True when both texts assign the same distinctive key and ``newer``
+    gives it a different value — a later definition superseding an earlier
+    one (``connect_timeout_ms = 30000`` then ``connect_timeout_ms = 5000``)."""
+    new_kv = _assignments(newer)
+    if not new_kv:
+        return False
+    old_kv = _assignments(older)
+    scopes = _scope_sets((new_kv, old_kv))
+    return any(_same_setting(k_new, k, scopes) and new_kv[k_new] != v
+               for k, v in old_kv.items()
+               for k_new in new_kv)
+
 
 def _content_terms(text: str) -> set[str]:
     return {
@@ -79,7 +246,7 @@ def _meaningful_overlap(newer_terms: set[str], older_terms: set[str]) -> bool:
     return len(distinctive) >= 2
 
 
-def _supersedes(newer: str, older: str) -> bool:
+def _supersedes(newer: str, older: str, *, newer_is_later: bool = True) -> bool:
     """True when `newer` explicitly marks `older` stale.
 
     Conservative by design: requires an explicit staleness/override marker
@@ -89,9 +256,19 @@ def _supersedes(newer: str, older: str) -> bool:
     Either way it also requires shared content vocabulary between the two
     blocks, so unrelated lines never evict each other.
     """
+    # Source order gates BOTH paths: a block standing earlier in the input
+    # can never mark a later one stale — otherwise a kept stale line that
+    # mentions "override" would veto restoring the current one.
+    if not newer_is_later:
+        return False
     n_low = newer.casefold()
     if not any(m in n_low for m in _SUPERSESSION_MARKERS):
-        return False
+        # Reassignment of a distinctive key to a different value is its own
+        # explicit override — no prose marker needed. Unlike a prose marker,
+        # reassignment carries no direction of its own: ``k = v1`` and
+        # ``k = v2`` are symmetric. Only a KNOWN-later block may supersede —
+        # a surviving stale value must not veto restoring the current one.
+        return newer_is_later and _reassigns(newer, older)
 
     # Content overlap: at least two *distinctive* (non-filler) terms shared.
     return _meaningful_overlap(_content_terms(newer), _content_terms(older))
@@ -102,6 +279,24 @@ def _supersedes(newer: str, older: str) -> bool:
 # signal is meaningless above this size — never prune a big block because
 # another big block says "override" somewhere (v0.6.0 holdout regression).
 _MAX_SUPERSESSION_TOKENS = 120
+
+
+def _pure_assignments(text: str) -> bool:
+    """Every non-blank line is a section header or a recognised assignment —
+    a block mixing stale settings with notes/comments is NOT pure, so
+    supersession keeps it rather than deleting content it never analysed."""
+    for line in (text or "").split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        if len(line) <= _MAX_HEADER_LINE and _PARENT_RE.match(line):
+            continue
+        m = _ASSIGN_RE.match(line)
+        if m and not m["val"].lstrip().startswith(("#", ";")) \
+                and _distinctive_key(m["key"], m["op"]):
+            continue
+        return False
+    return True
 
 
 def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]:
@@ -128,40 +323,81 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
         lowered = texts[i].casefold()
         if any(m in lowered for m in _SUPERSESSION_MARKERS):
             marker_ids.append(i)
-    if not marker_ids:
-        return kept
-
-    # Inverted index over kept blocks (newer candidates included).
-    postings: dict[str, list[int]] = {}
-    for i in kept_ids:
-        if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
-            continue
-        for t in terms_by_id[i]:
-            if t in _OVERLAP_STOP:
-                continue
-            postings.setdefault(t, []).append(i)
 
     stale: set[int] = set()
-    for new_id in marker_ids:
-        # Size guard: only compact blocks may act as supersessors or be
-        # superseded — see _MAX_SUPERSESSION_TOKENS note above.
-        if len(terms_by_id[new_id]) > _MAX_SUPERSESSION_TOKENS:
-            continue
-        n_terms = terms_by_id[new_id]
-        if not n_terms:
-            continue
-        # Candidate older blocks: those sharing >=2 terms with new_id,
-        # found by counting postings across this block's terms.
-        counts: dict[int, int] = {}
-        for t in n_terms:
-            for other in postings.get(t, ()):
-                if other < new_id:
-                    counts[other] = counts.get(other, 0) + 1
-        for old_id, shared_n in counts.items():
-            if old_id in stale:
+
+    if marker_ids:
+        # Inverted index over kept blocks (newer candidates included).
+        postings: dict[str, list[int]] = {}
+        for i in kept_ids:
+            if len(terms_by_id[i]) > _MAX_SUPERSESSION_TOKENS:
                 continue
-            if shared_n >= 2:
-                stale.add(old_id)
+            for t in terms_by_id[i]:
+                if t in _OVERLAP_STOP:
+                    continue
+                postings.setdefault(t, []).append(i)
+
+        for new_id in marker_ids:
+            # Size guard: only compact blocks may act as supersessors or be
+            # superseded — see _MAX_SUPERSESSION_TOKENS note above.
+            if len(terms_by_id[new_id]) > _MAX_SUPERSESSION_TOKENS:
+                continue
+            n_terms = terms_by_id[new_id]
+            if not n_terms:
+                continue
+            # Candidate older blocks: those sharing >=2 terms with new_id,
+            # found by counting postings across this block's terms.
+            counts: dict[int, int] = {}
+            for t in n_terms:
+                for other in postings.get(t, ()):
+                    if other < new_id:
+                        counts[other] = counts.get(other, 0) + 1
+            for old_id, shared_n in counts.items():
+                if old_id in stale:
+                    continue
+                if shared_n >= 2:
+                    stale.add(old_id)
+
+    # Reassignment supersession: a later compact block that assigns a
+    # distinctive key a different value supersedes the earlier block that
+    # defined it — the last definition wins. Compactness is applied to both
+    # sides exactly as for marker supersession. An earlier block falls only
+    # when EVERY assignment it carries was superseded: supersession deletes
+    # whole blocks, so a partially updated block keeps its line rather than
+    # silently losing the unrelated settings beside the changed one.
+    block_kv: dict[int, dict[str, str]] = {
+        i: _assignments(texts[i])
+        for i in kept_ids
+        if len(terms_by_id[i]) <= _MAX_SUPERSESSION_TOKENS
+    }
+    basename_index: dict[str, set[str]] = {}
+    for kv in block_kv.values():
+        for k in kv:
+            basename_index.setdefault(_key_parts(k)[1], set()).add(k)
+    scopes = _scope_sets(block_kv.values())
+
+    superseded_keys: dict[int, set[str]] = {}
+    seen: dict[str, list[tuple[int, str, str]]] = {}
+    for i in kept_ids:
+        kv = block_kv.get(i)
+        if kv is None:
+            continue
+        for k, v in kv.items():
+            for prev_id, prev_val, prev_key in seen.get(k, ()):
+                if prev_val != v:
+                    superseded_keys.setdefault(prev_id, set()).add(prev_key)
+            base = _key_parts(k)[1]
+            if len(scopes.get(base, ())) <= 1:
+                for other in basename_index.get(base, ()):
+                    if other == k:
+                        continue
+                    for prev_id, prev_val, prev_key in seen.get(other, ()):
+                        if prev_val != v:
+                            superseded_keys.setdefault(prev_id, set()).add(prev_key)
+            seen.setdefault(k, []).append((i, v, k))
+    for bid, keys in superseded_keys.items():
+        if keys and set(block_kv[bid]) <= keys and _pure_assignments(texts[bid]):
+            stale.add(bid)
 
     if stale:
         kept -= stale
