@@ -58,7 +58,7 @@ from .gap_kind import call_gap_marker, gap_accepts_kind
 from .markers import REDACTED_MARKER, marker_name as _marker_name
 from .industrial import IndustrialLimits, IndustrialResult, industrial_preprocess
 from .structured_reports import REPORT_FORMATS, loads_for_rewrite, report_format
-from .supersession import apply_supersession, _supersedes
+from .supersession import apply_supersession, _document_scopes, _supersedes
 from .unicode_profile import (
     count_token_units,
     script_of,
@@ -1557,6 +1557,7 @@ def _fact_superseded_in(
     kept_lines: list[str],
     orig_index: dict[str, int] | None = None,
     bounded_index: dict[str, int] | None = None,
+    scope_of: dict | None = None,
 ) -> bool:
     """``True`` when a line surviving in the output explicitly marks ``line`` stale
     (``supersession._supersedes``: an is-now/obsolete/override marker plus shared distinctive
@@ -1585,6 +1586,7 @@ def _fact_superseded_in(
                 )
                 > lp
             ),
+            scopes=(scope_of.get(o), scope_of.get(line)) if scope_of is not None else None,
         )
         for o in kept_lines
     )
@@ -1656,16 +1658,17 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
     kept = after.split("\n")
     orig_index = {ln: i for i, ln in enumerate(before.split("\n"))} if before is not None else None
     bounded = _bounded_orig_index(kept, orig_index)
+    scope_of = _document_scopes(before) if before is not None else None
     missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
                if ln != after and ln not in after
-               and not _fact_superseded_in(ln, kept, orig_index, bounded)
+               and not _fact_superseded_in(ln, kept, orig_index, bounded, scope_of)
                and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
     extra = list(err) + sorted(out.difference(err))
     if extra:
         index = orig_index or {}
         for pos, ln in enumerate(extra):
             if (ln != after and ln not in after
-                    and not _fact_superseded_in(ln, kept, orig_index, bounded)
+                    and not _fact_superseded_in(ln, kept, orig_index, bounded, scope_of)
                     and not _fact_variant_present(ln, kept)):
                 missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
@@ -1686,16 +1689,17 @@ def _restore_fact_lines(before: str, after: str) -> str:
     extra = list(err) + sorted(out.difference(err))
     index = {ln: i for i, ln in enumerate(before.split("\n"))}
     bounded = _bounded_orig_index(kept, index)
+    scope_of = _document_scopes(before)
     missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
                if ln != before and ln not in after
-               and not _fact_superseded_in(ln, kept, index, bounded)
+               and not _fact_superseded_in(ln, kept, index, bounded, scope_of)
                and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
     # E6: an error exemplar the stage saw in ``before`` and lost goes back too —
     # independent of fact density, same supersession guard, same original order.
     # E12: protected outcome lines get the same treatment.
     for pos, ln in enumerate(extra):
         if (ln in before and ln not in after
-                and not _fact_superseded_in(ln, kept, index, bounded)
+                and not _fact_superseded_in(ln, kept, index, bounded, scope_of)
                 and not _fact_variant_present(ln, kept)):
             missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
@@ -1751,9 +1755,10 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
 
     raw_terms = tuple(t for t in _extract_terms(query or "") if len(t) >= 3)
     hit_terms = tuple(t.casefold() for t in raw_terms)
+    scope_of = _document_scopes(original_text) if original_text is not None else None
     missing = [
         f for f in facts
-        if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index, bounded)
+        if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index, bounded, scope_of)
         and not _fact_variant_present(f[3], kept, tuple(s for s in (f[1], f[2]) if s))
         and (not _log_fingerprint(f[3]) or _log_fingerprint(f[3]) not in kept_fps or _ctx(f[0]))
     ]

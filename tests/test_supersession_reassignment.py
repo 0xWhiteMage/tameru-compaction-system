@@ -145,13 +145,26 @@ def test_block_split_at_blank_line_still_supersedes():
     assert kept == {1}
 
 
-def test_ambiguous_section_namesake_kept():
-    # host under two different sections plus an unscoped host: the unscoped
-    # one can't be told apart, so nothing is dropped.
+def test_split_header_namesake_scoped_by_document_order():
+    # 'host_setting = c' stands after '[cache]' in the document — the
+    # blank-line block split does not unscope it, so it redefines
+    # cache.host_setting and leaves database.host_setting alone.
     scored = _scored(
         "[database]\nhost_setting = a",
         "[cache]\nhost_setting = b",
         "host_setting = c",
+    )
+    kept = apply_supersession(scored, {0, 1, 2})
+    assert kept == {0, 2}
+
+
+def test_truly_unscoped_namesake_kept():
+    # A top-level 'host_setting' before any section header shares its bare
+    # name with two different sections — still ambiguous, so nothing drops.
+    scored = _scored(
+        "host_setting = c",
+        "[database]\nhost_setting = a",
+        "[cache]\nhost_setting = b",
     )
     kept = apply_supersession(scored, {0, 1, 2})
     assert kept == {0, 1, 2}
@@ -189,11 +202,22 @@ def test_pure_stale_assignment_block_still_drops():
 
 
 def test_toml_array_table_scopes_assignments():
-    # [[servers]] is a TOML array-table header: keys under it must scope to
-    # 'servers', not leak the previous section's scope.
+    # [[servers]] is a TOML array-table header: keys under it scope to a
+    # fresh 'servers§k' per entry — siblings, never one table redefined.
     kv = _assignments("[alpha]\nhostname = a\n\n[[servers]]\nhostname = b\n")
-    assert kv.get("servers§hostname|") == "b"
+    assert kv.get("servers§1§hostname|") == "b"
     assert "alpha§hostname|" in kv
+
+
+def test_toml_array_entries_do_not_supersede_each_other():
+    # Two [[backends]] entries assign the same fields different values:
+    # both are live array elements in TOML, not a redefinition.
+    scored = _scored(
+        "[[backends]]\nhostname = alpha\nretries = 3",
+        "[[backends]]\nhostname = beta\nretries = 9",
+    )
+    kept = apply_supersession(scored, {0, 1})
+    assert kept == {0, 1}
 
 
 def test_generic_result_key_never_supersedes():

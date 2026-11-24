@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.10.0] - Unreleased
 
+- Fix: reassignment supersession scopes assignments by document position instead of block — headers split from their settings by a blank-line block boundary still scope what follows them, TOML `[[array-table]]` entries mint a fresh scope per element so siblings never read as redefinitions, and the fact-restore veto compares each line against settings from its true section.
 - Fix: the worker protocol's `min_savings_ratio` range is exclusive at 1.0 — a wire value of `1` fails validation as `bad_min_savings_ratio` instead of reaching the engine as a `ValueError`.
 - Performance: merge same-answer per-line probes into single compiled alternations — the five "log" patterns and two "chat" patterns in `classify_line`, and the failure-context and furniture guards in `_outcome_lines_scan`, which now computes each line's error flag once. Output is byte-identical. (#14)
 - Security: bound configured pin regex structure and aggregate search cost before searching tool output. Unsafe or invalid pin patterns preserve the full original input; bounded safe patterns retain their matching behavior.
