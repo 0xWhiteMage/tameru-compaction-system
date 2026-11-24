@@ -26,6 +26,7 @@ I/O. Rules:
 """
 from __future__ import annotations
 
+import math
 import re
 from itertools import islice
 from typing import Any, Mapping
@@ -306,7 +307,8 @@ def validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     if "budget_ratio" in request:
         options["budget_ratio"] = _number(request["budget_ratio"], MIN_BUDGET_RATIO, 1.0, "bad_budget_ratio")
     if "min_savings_ratio" in request:
-        options["min_savings_ratio"] = _number(request["min_savings_ratio"], 0.0, 1.0, "bad_min_savings_ratio")
+        # the engine's range is [0, 1): _number's inclusive cap would let 1 through to a ValueError there
+        options["min_savings_ratio"] = _number(request["min_savings_ratio"], 0.0, math.nextafter(1.0, 0.0), "bad_min_savings_ratio")
     if "pin_recent" in request:
         options["pin_recent"] = int(_number(request["pin_recent"], 0, MAX_PIN_RECENT, "bad_pin_recent"))
     for flag in _BOOL_FIELDS:
