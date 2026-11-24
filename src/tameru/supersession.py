@@ -63,7 +63,7 @@ _PARENT_RE = re.compile(
 _MAX_HEADER_LINE = 512
 # Sentinel section for lines inside a fenced code block: a config
 # example's assignments are documentation, never live settings.
-_FENCED_SCOPE = "\xa7fence"
+_FENCED_SCOPE = "\x1ffence"
 _TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
 _MIN_KEY_LENGTH = 5
 # Names too generic to be a distinctive ``=`` assignment key: cross-suite
@@ -117,12 +117,22 @@ def _advance(state: list, line: str) -> str | None:
     if fence is not None:
         if lstripped.startswith(fence):
             state[3] = None
+            if len(state) > 4:
+                state[4] = None
         return "fence"
     if lstripped.startswith("```") or lstripped.startswith("~~~"):
+        # The marker is the whole run: a ``` line does not close a ````
+        # fence, and the opener line is remembered so a restored line can
+        # be wrapped in its own fence pair, not the document's first.
+        marker = re.match(r"(`{3,}|~{3,})", lstripped).group(0)
         if len(state) > 3:
-            state[3] = lstripped[:3]
+            state[3] = marker
         else:
-            state.append(lstripped[:3])
+            state.append(marker)
+        if len(state) > 4:
+            state[4] = line
+        else:
+            state.append(line)
         return "fence"
     indent = len(line) - len(line.lstrip())
     # Match a bounded prefix rather than skipping long lines: a header
@@ -160,12 +170,12 @@ def _advance(state: list, line: str) -> str | None:
             name = ini if ini[:1] in "\"'" else ini.casefold()
         if line.lstrip().startswith("[["):
             state[2][name] = state[2].get(name, 0) + 1
-            state[0] = f"{name}§{state[2][name]}"
-        elif "§" in state[0] and name.startswith(state[0].split("§", 1)[0] + "."):
+            state[0] = f"{name}\x1f{state[2][name]}"
+        elif "\x1f" in state[0] and name.startswith(state[0].split("\x1f", 1)[0] + "."):
             # ``[backends.tls]`` under a ``[[backends]]`` element attaches
             # to that element, not the table path — each entry's subtable
             # is its own table.
-            state[0] = state[0] + "§" + name.split(".", 1)[1]
+            state[0] = state[0] + "\x1f" + name.split(".", 1)[1]
         else:
             state[0] = name
         state[1].clear()
@@ -208,10 +218,11 @@ def _assignments_tracked(text: str, state: list, minted: list | None = None) -> 
             if state[0] == _FENCED_SCOPE:
                 continue
             parent = state[0] or ("/".join(p for _i, p in state[1]) if state[1] else "")
-            # '§' can never appear inside a key (the charset excludes it), so
-            # a literal key like ``a/b`` can't collide with parent ``a`` +
-            # key ``b`` the way a "/" separator allowed.
-            scoped = (parent + "§" if parent else "") + m["key"].casefold() + "|" + m["indent"]
+            # '\x1f' can never appear inside a key or a quoted table name
+            # (TOML forbids control characters), so a literal key like
+            # ``a/b`` or a quoted name like ``"a\xa7b"`` can't collide the
+            # way a "/" or "\xa7" separator allowed.
+            scoped = (parent + "\x1f" if parent else "") + m["key"].casefold() + "|" + m["indent"]
             out[scoped] = _norm_assign_value(m["val"])
     return out
 
@@ -225,8 +236,13 @@ def _assignments(text: str) -> dict[str, str]:
 
 
 def _scope_state(scope) -> list:
-    """A fresh ``[section, parents, arrays]`` walk from a recorded
-    ``(section, parents)`` scope — or the empty document start."""
+    """A fresh ``[section, parents, arrays, fence, opener]`` walk from a
+    recorded scope — or the empty document start. A fence scope resumes
+    inside the fence: later lines are still documentation, not settings."""
+    if scope and scope[0] == _FENCED_SCOPE:
+        opener = scope[1][0] if len(scope) > 1 and scope[1] else "```"
+        marker = re.match(r"(`{3,}|~{3,})", opener.lstrip())
+        return [_FENCED_SCOPE, [], {}, marker.group(0) if marker else "```", opener]
     return [scope[0], list(scope[1]), {}] if scope else ["", [], {}]
 
 
@@ -240,9 +256,10 @@ def _document_scopes(text: str) -> dict[str, tuple]:
     for line in (text or "").split("\n"):
         if not line.strip():
             continue
+        prev_opener = state[4] if len(state) > 4 else None
         kind = _advance(state, line)
         if kind == "fence":
-            out[line] = (_FENCED_SCOPE, ())
+            out[line] = (_FENCED_SCOPE, (prev_opener or line,))
             continue
         if kind:
             continue
@@ -261,7 +278,7 @@ def _document_headers(text: str) -> dict[tuple, str]:
             continue
         kind = _advance(state, line)
         if kind == "fence" and state[3] is not None:
-            out.setdefault((_FENCED_SCOPE, ()), line)
+            out.setdefault((_FENCED_SCOPE, (line,)), line)
             continue
         if kind in ("ini", "yaml"):
             out[(state[0], tuple(p for _i, p in state[1]))] = line
@@ -295,11 +312,18 @@ def _append_scoped(after: str, lines: list[str], scope_of, headers, emit=None) -
     for line in lines:
         scope = scope_of.get(line) if scope_of else None
         if scope and scope[0] == _FENCED_SCOPE:
-            fence = headers.get(scope) or "```"
-            out_lines.extend([fence, emit(line) if emit else line, fence[:3]])
+            fence = headers.get(scope) or (
+                scope[1][0] if len(scope) > 1 and scope[1] else "```"
+            )
+            # The closer is the opener's own marker run — an indented or
+            # four-marker opener would otherwise emit a three-marker tail
+            # that never closes the fence.
+            marker = re.match(r"(`{3,}|~{3,})", fence.lstrip())
+            out_lines.extend([fence, emit(line) if emit else line,
+                              marker.group(0) if marker else "```"])
             cur = scope
             continue
-        if scope and "\xa7" in scope[0]:
+        if scope and "\x1f" in scope[0]:
             continue
         if scope and scope != cur and headers.get(scope):
             out_lines.append(headers[scope])
@@ -313,7 +337,7 @@ def _append_scoped(after: str, lines: list[str], scope_of, headers, emit=None) -
 
 def _key_parts(scoped: str) -> tuple[str, str]:
     """``(parent, basename|indent)`` of a scoped assignment key."""
-    parent, sep, base = scoped.rpartition("§")
+    parent, sep, base = scoped.rpartition("\x1f")
     return (parent if sep else "", base)
 
 

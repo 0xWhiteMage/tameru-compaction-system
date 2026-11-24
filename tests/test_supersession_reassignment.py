@@ -179,7 +179,7 @@ def test_commented_and_padded_headers_normalize():
 
 def test_yaml_parent_with_comment():
     kv = _assignments("database: # prod\n  connect_timeout_ms: 5000")
-    assert "database§connect_timeout_ms|  " in kv
+    assert "database\x1fconnect_timeout_ms|  " in kv
 
 
 def test_stale_block_with_unrelated_notes_is_kept():
@@ -204,10 +204,10 @@ def test_pure_stale_assignment_block_still_drops():
 
 def test_toml_array_table_scopes_assignments():
     # [[servers]] is a TOML array-table header: keys under it scope to a
-    # fresh 'servers§k' per entry — siblings, never one table redefined.
+    # fresh 'servers\x1fk' per entry — siblings, never one table redefined.
     kv = _assignments("[alpha]\nhostname = a\n\n[[servers]]\nhostname = b\n")
-    assert kv.get("servers§1§hostname|") == "b"
-    assert "alpha§hostname|" in kv
+    assert kv.get("servers\x1f1\x1fhostname|") == "b"
+    assert "alpha\x1fhostname|" in kv
 
 
 def test_toml_array_entries_do_not_supersede_each_other():
@@ -261,8 +261,8 @@ def test_toml_array_subtable_scoped_per_element():
         scopes=(scope_of[newer.split("\n")[-1]], scope_of[older.split("\n")[-1]]),
     )
     kv = supersession._assignments(older + "\n" + newer)
-    assert "backends§1§tls§verify|" in kv
-    assert "backends§2§tls§verify|" in kv
+    assert "backends\x1f1\x1ftls\x1fverify|" in kv
+    assert "backends\x1f2\x1ftls\x1fverify|" in kv
 
 
 def test_fenced_config_example_not_supersession():

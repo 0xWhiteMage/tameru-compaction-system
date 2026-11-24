@@ -1614,7 +1614,7 @@ def _fact_variant_present(
     if len(ln) <= _MAX_KEPT_LINE_CHARS:
         return False
     head = max(64, _MAX_KEPT_LINE_CHARS // 4)
-    want = tuple(unicodedata.normalize("NFKC", s) for s in must)
+    want = tuple(unicodedata.normalize("NFKD", s) for s in must)
     for k in kept_lines:
         if k == ln or not k.startswith(ln[:head]):
             continue
@@ -1624,7 +1624,7 @@ def _fact_variant_present(
         # fact. Case is NOT folded: a kept line whose value differs only by
         # case holds a different value — counting it would mask the newer
         # fact.
-        folded = unicodedata.normalize("NFKC", k) if want else k
+        folded = unicodedata.normalize("NFKD", k) if want else k
         if all(s in folded for s in want):
             return True
     return False
@@ -1765,9 +1765,9 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         fp = _log_fingerprint(f[3])
         if not fp or fp not in kept_fps or _ctx(f[0]):
             return False
-        want = tuple(unicodedata.normalize("NFKC", s) for s in (f[1], f[2]) if s)
+        want = tuple(unicodedata.normalize("NFKD", s) for s in (f[1], f[2]) if s)
         return any(
-            all(s in unicodedata.normalize("NFKC", ln) for s in want)
+            all(s in unicodedata.normalize("NFKD", ln) for s in want)
             for ln in kept_by_fp[fp]
         )
     # Error positions in the ORIGINAL line list the fact indices are read from,
@@ -6287,17 +6287,19 @@ def _window_oversized_line(
     # ('ß' → 'ss'), so folded offsets are mapped back to source — but only
     # when the fold actually grew. For ASCII (the megabyte-line case)
     # offsets are identity and no per-character map is built at all.
-    # NFKC first: a full-width 'ＴＥＲＭ' or a roman numeral matches the
-    # plain spelling scoring already recognises.
+    # NFKD first: a full-width 'ＴＥＲＭ' or a roman numeral matches the
+    # plain spelling scoring already recognises, and canonical forms like
+    # 'ΐ' decompose so the combining-mark strip sees them — NFKC would
+    # recompose the accent and hide the match.
     low = "".join(
         c for ch in line
-        for c in unicodedata.normalize("NFKC", ch.casefold())
+        for c in unicodedata.normalize("NFKD", ch.casefold())
         if not unicodedata.combining(c)
     )
 
     def _fold_len(ch: str) -> int:
         return sum(
-            1 for c in unicodedata.normalize("NFKC", ch.casefold())
+            1 for c in unicodedata.normalize("NFKD", ch.casefold())
             if not unicodedata.combining(c)
         )
 
@@ -6323,7 +6325,7 @@ def _window_oversized_line(
     intervals: list[list[int]] = []
     for ti, term in enumerate(hit_terms):
         t = "".join(
-            c for c in unicodedata.normalize("NFKC", term.casefold())
+            c for c in unicodedata.normalize("NFKD", term.casefold())
             if not unicodedata.combining(c)
         ) if term else ""
         if not t:
@@ -6769,17 +6771,29 @@ def _render(
         # code block must survive whole — extend the keep range to the
         # closing fence if it lands just outside, so agents see exact tokens.
         # A tilde fence and a numbered-code gutter ('75|```') count too —
-        # either hides a real fence from a plain startswith probe.
-        def _is_fence(ln: str) -> bool:
+        # either hides a real fence from a plain startswith probe. A fence
+        # only closes on its own marker char at its own length or longer —
+        # a `~~~` inside a ``` block is content, not a closer.
+        def _fence_marker(ln: str) -> str | None:
             probe = _GUTTER_RE.sub("", ln, count=1).strip()
-            return probe.startswith("```") or probe.startswith("~~~")
+            m = re.match(r"(`{3,}|~{3,})", probe)
+            return m.group(0) if m else None
+
+        def _closes(marker: str, m: str | None) -> bool:
+            return m is not None and m[0] == marker[0] and len(m) >= len(marker)
 
         kept_text = lines[start : end + 1]
-        fences = sum(1 for ln in kept_text if _is_fence(ln))
-        if fences % 2 == 1:
+        open_marker: str | None = None
+        for ln in kept_text:
+            m = _fence_marker(ln)
+            if open_marker is None:
+                open_marker = m
+            elif _closes(open_marker, m):
+                open_marker = None
+        if open_marker is not None:
             j = end + 1
             while j < len(lines):
-                if _is_fence(lines[j]):
+                if _closes(open_marker, _fence_marker(lines[j])):
                     end = j
                     break
                 j += 1
@@ -6790,13 +6804,18 @@ def _render(
         if b.get("pinned"):
             parts.extend(lines[start : end + 1])
         else:
-            in_fence = False
+            in_fence: str | None = None
             for ln in lines[start : end + 1]:
-                if _is_fence(ln):
-                    in_fence = not in_fence
+                m = _fence_marker(ln)
+                if in_fence is not None:
+                    if _closes(in_fence, m):
+                        in_fence = None
+                    parts.append(ln)
+                elif m is not None:
+                    in_fence = m
                     parts.append(ln)
                 else:
-                    parts.append(ln if in_fence else _bound(ln))
+                    parts.append(_bound(ln))
         prev_end = end
     if marker_fn is not None and chronological and parts and prev_end < len(lines) - 1:
         trail = _gap(prev_end + 1, len(lines))
