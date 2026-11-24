@@ -258,6 +258,26 @@ class LocalCacheFileTests(unittest.TestCase):
             stored = _ccr_store("fresh payload", td)
             self.assertEqual(retrieve(stored["hash"], td), "fresh payload")
 
+    def test_huge_int_cache_record_does_not_raise(self):
+        """``json.loads`` raises plain ``ValueError`` — not ``JSONDecodeError``
+        — for an integer literal over ``sys.get_int_max_str_digits()``. A
+        record holding one must not crash the sweep, ``retrieve``, or
+        ``_ccr_store`` (its caller only guards ``OSError``)."""
+        from tameru.compress_context import _ccr_store, retrieve, sweep_ccr_cache
+
+        with tempfile.TemporaryDirectory() as td:
+            digest = "e" * 24
+            record = Path(td) / f"{digest}.json"
+            record.write_text(
+                '{"hash": "' + digest + '", "stored_at": '
+                + "9" * 5000 + ', "ttl": 3600, "original": "x"}',
+                encoding="utf-8",
+            )
+            self.assertIn(sweep_ccr_cache(td), (0, 1))
+            self.assertIsNone(retrieve(digest, td))
+            stored = _ccr_store("fresh payload", td)
+            self.assertEqual(retrieve(stored["hash"], td), "fresh payload")
+
     def test_retrieve_revalidates_original_digest(self):
         from tameru.compress_context import retrieve
 

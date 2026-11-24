@@ -7485,7 +7485,8 @@ def sweep_ccr_cache(
             continue
         try:
             data = _read_ccr_record(fp)
-        except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+        except (OSError, UnicodeError, ValueError, RecursionError):
+            # ValueError covers JSONDecodeError + the 4300-digit int limit.
             continue
         metadata = _ccr_metadata(data)
         if (
@@ -7969,7 +7970,7 @@ def retrieve(
     fp = root / f"{ccr_hash}.json"
     try:
         data = _read_ccr_record(fp)
-    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+    except (OSError, UnicodeError, ValueError, RecursionError):
         return None
     if not isinstance(data, dict) or data.get("hash") != ccr_hash:
         return None
@@ -8015,7 +8016,7 @@ def list_ccr(
         if not fp.name.startswith(".") and _CCR_HASH_RE.fullmatch(fp.stem):
             try:
                 data = _read_ccr_record(fp)
-            except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+            except (OSError, UnicodeError, ValueError, RecursionError):
                 continue
             if not isinstance(data, dict):
                 continue
@@ -12333,7 +12334,7 @@ def _run_cli(args) -> int:
         if dc_path.is_file():
             try:
                 decision_cache = json.loads(dc_path.read_text(encoding="utf-8-sig"))
-            except (OSError, json.JSONDecodeError, RecursionError):
+            except (OSError, ValueError, RecursionError):
                 decision_cache = {}
             if not isinstance(decision_cache, dict):
                 decision_cache = {}
