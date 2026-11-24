@@ -228,6 +228,23 @@ def _supersedes(newer: str, older: str, *, newer_is_later: bool = True) -> bool:
 _MAX_SUPERSESSION_TOKENS = 120
 
 
+def _pure_assignments(text: str) -> bool:
+    """Every non-blank line is a section header or a recognised assignment —
+    a block mixing stale settings with notes/comments is NOT pure, so
+    supersession keeps it rather than deleting content it never analysed."""
+    for line in (text or "").split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        if _PARENT_RE.match(line):
+            continue
+        m = _ASSIGN_RE.match(line)
+        if m and _distinctive_key(m["key"], m["op"]):
+            continue
+        return False
+    return True
+
+
 def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]:
     """Drop kept blocks that a later kept block explicitly supersedes.
 
@@ -325,7 +342,7 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
                             superseded_keys.setdefault(prev_id, set()).add(prev_key)
             seen.setdefault(k, []).append((i, v, k))
     for bid, keys in superseded_keys.items():
-        if keys and set(block_kv[bid]) <= keys:
+        if keys and set(block_kv[bid]) <= keys and _pure_assignments(texts[bid]):
             stale.add(bid)
 
     if stale:

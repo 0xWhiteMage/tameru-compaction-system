@@ -166,3 +166,23 @@ def test_commented_and_padded_headers_normalize():
 def test_yaml_parent_with_comment():
     kv = _assignments("database: # prod\n  connect_timeout_ms: 5000")
     assert "database§connect_timeout_ms|  " in kv
+
+
+def test_stale_block_with_unrelated_notes_is_kept():
+    # A block mixing a stale setting with a note must not lose the note:
+    # whole-block deletion only applies to pure-assignment blocks.
+    scored = [
+        {"id": 0, "text": "timeout_ms = 30000\nremember to tune this"},
+        {"id": 1, "text": "timeout_ms = 5000"},
+    ]
+    kept = apply_supersession(scored, {0, 1})
+    assert 0 in kept
+
+
+def test_pure_stale_assignment_block_still_drops():
+    scored = [
+        {"id": 0, "text": "timeout_ms = 30000\nretry_limit = 3"},
+        {"id": 1, "text": "timeout_ms = 5000\nretry_limit = 9"},
+    ]
+    kept = apply_supersession(scored, {0, 1})
+    assert kept == {1}
