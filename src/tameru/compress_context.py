@@ -6232,7 +6232,7 @@ def _window_oversized_line(
                 break
             sa = _src(i)
             sb = _src(i + len(t) - 1) + 1
-            intervals.append([max(0, sa - span), min(n, sb + span), ti])
+            intervals.append([max(0, sa - span), min(n, sb + span), ti, sa, sb])
             pos = i + len(t)
             if len(intervals) >= 8192:
                 break
@@ -6244,13 +6244,19 @@ def _window_oversized_line(
     intervals.sort()
     spans: list[list[int]] = []
     span_terms: list[set[int]] = []
-    for a, b, ti in intervals:
+    # The hit bounds inside each merged window: a window too big to emit is
+    # clipped to an ANCHOR at its earliest still-missing hit rather than its
+    # tail — trailing context must never crowd the match itself out.
+    span_hits: list[list[list[int]]] = []
+    for a, b, ti, ha, hb in intervals:
         if spans and a <= spans[-1][1]:
             spans[-1][1] = max(spans[-1][1], b)
             span_terms[-1].add(ti)
+            span_hits[-1].append([ha, hb, ti])
         else:
             spans.append([a, b])
             span_terms.append({ti})
+            span_hits.append([[ha, hb, ti]])
 
     # An earlier folded-only match (an accent-stripped or 'ß'→'ss' variant)
     # must not spend the emit budget ahead of a later VERBATIM hit: spans
@@ -6298,6 +6304,14 @@ def _window_oversized_line(
                 break
             if i not in keep_set and _want(i):
                 _take(i)
+        # Spare slots fill by tier too — a weaker repeat earlier in the
+        # line must not take a stronger later window's slot.
+        for tier in (pref, q2):
+            for i, ok in enumerate(tier):
+                if len(keep_set) >= 32:
+                    break
+                if ok and i not in keep_set:
+                    _take(i)
         for i in range(len(spans)):
             if len(keep_set) >= 32:
                 break
@@ -6306,6 +6320,7 @@ def _window_oversized_line(
         keep = sorted(keep_set)
         spans = [spans[i] for i in keep]
         span_terms = [span_terms[i] for i in keep]
+        span_hits = [span_hits[i] for i in keep]
         pref = [pref[i] for i in keep]
         q2 = [q2[i] for i in keep]
         _seg_lows = [_seg_lows[i] for i in keep]
@@ -6331,6 +6346,25 @@ def _window_oversized_line(
         later_pref[i] = later_pref[i + 1] + (spans[i][1] - spans[i][0] if pref[i] else 0)
         later_q2[i] = later_q2[i + 1] + (spans[i][1] - spans[i][0] if q2[i] else 0)
 
+    def _clip_anchor(pos: int, b: int, room: int, hits: list[list[int]],
+                     qual: dict[int, int], covered: dict[int, int]) -> int:
+        """Where a clipped window begins: at the earliest still-missing hit
+        when one sits left of the tail clip, else the tail as before. Only
+        hits wholly past ``pos`` count — a hit whose head the prefix already
+        emitted is no fresh evidence; a hit for a covered term yields to one
+        for a still-missing term; and among candidates the best match
+        quality wins — a verbatim hit outranks an earlier case variant."""
+        pending = [h for h in hits if h[0] >= pos]
+        pool = [h for h in pending if covered.get(h[2], 0) == 0] or pending
+        if not pool:
+            pool = [h for h in hits if h[1] > pos]
+        if pool:
+            best = max(qual.get(h[2], 0) for h in pool)
+            anchor = min(h[0] for h in pool if qual.get(h[2], 0) == best)
+        else:
+            anchor = b - room
+        return max(pos, min(b - room, anchor))
+
     def mark(omitted: int) -> str:
         if marker_fn is not None:
             made = call_gap_marker(marker_fn, omitted, total_chars, "other")
@@ -6345,8 +6379,13 @@ def _window_oversized_line(
     # A hit window overlapping the head may extend it — but only within the
     # same ``cap`` every other segment obeys.
     head = min(span, n)
-    for a, b in spans:
-        if a <= head:
+    for idx, (a, b) in enumerate(spans):
+        # Only a strong-tier window may extend the head — a weaker match
+        # overlapping it is emitted through the budgeted path like any
+        # other — and only when the whole window fits inside ``cap``: a
+        # wider window extending the head to ``cap`` would drop a hit
+        # sitting past the boundary.
+        if a <= head and (pref[idx] or q2[idx]) and b <= cap:
             head = min(cap, max(head, b))
     segs.append(line[:head])
     emitted = head
@@ -6386,23 +6425,47 @@ def _window_oversized_line(
                     continue
             elif later_pref[idx + 1] and emitted + seg_len + later_pref[idx + 1] > cap:
                 # Reserve the remaining budget for a later verbatim-hit
-                # window — a folded-only window is skipped, not clipped.
+                # window — but keep this fresh hit too when trimming the
+                # window's context fits it next to the reservation. The clip
+                # is anchored at the earliest still-missing hit, not the
+                # window tail: ``room`` smaller than the trailing context
+                # would otherwise keep only context and drop the match.
+                room = cap - emitted - later_pref[idx + 1]
+                if room > 0:
+                    clip_a = _clip_anchor(pos, b, room, span_hits[idx],
+                                          span_qual[idx], covered)
+                    if clip_a > pos:
+                        segs.append(mark(clip_a - pos))
+                    clip_b = clip_a + room
+                    segs.append(line[clip_a:clip_b])
+                    emitted += clip_b - clip_a
+                    pos = clip_b
+                    for ti, q in span_qual[idx].items():
+                        covered[ti] = max(covered.get(ti, 0), q)
                 continue
         if emitted + seg_len > cap:
-            # A window that does not fit whole is not dropped: its tail end —
-            # which is where the hit sits (a ≤ hit, b ≥ hit+span) — fills the
-            # remaining budget, so a late query term is never silently lost.
+            # A window that does not fit whole is not dropped: it fills the
+            # remaining budget anchored at the earliest still-missing hit,
+            # so a late query term — or an early hit inside a merged window
+            # that sits before the tail — is never silently lost. ``pos``
+            # lands at the clip's end so a later marker counts what the
+            # clip actually omitted, not the whole window width.
             remain = cap - emitted
             if remain > 0:
-                segs.append(mark(b - remain - pos))
-                segs.append(line[b - remain : b])
-                # The clip consumed the whole budget: advance ``pos`` past
-                # the kept tail or the line tail below would re-emit
-                # retained text and overrun the cap.
-                emitted += remain
-                pos = b
+                clip_a = _clip_anchor(pos, b, remain, span_hits[idx],
+                                      span_qual[idx], covered)
+                if clip_a > pos:
+                    segs.append(mark(clip_a - pos))
+                clip_b = clip_a + remain
+                segs.append(line[clip_a:clip_b])
+                emitted += clip_b - clip_a
+                pos = clip_b
             break
-        segs.append(mark(a - pos))
+        # A window overlapping the kept prefix starts mid-match: nothing
+        # was omitted between ``pos`` and ``a``, so no boundary marker —
+        # inserting one would split the match visually.
+        if a > pos:
+            segs.append(mark(a - pos))
         segs.append(line[a:b])
         emitted += seg_len
         pos = b
