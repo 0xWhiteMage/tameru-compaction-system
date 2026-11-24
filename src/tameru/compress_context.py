@@ -8579,13 +8579,22 @@ def _normalise_options(
     )
     try:
         pin_recent_num = float(pin_recent or 0)
+        huge_int = False
+    except OverflowError:
+        # An int too large to represent as a float is still a valid count —
+        # the pre-float conversion accepted it.
+        huge_int = True
     except (TypeError, ValueError):
         pin_recent_num = math.nan
-    if not math.isfinite(pin_recent_num):
+        huge_int = False
+    if huge_int:
+        pin_recent = max(0, int(pin_recent))
+    elif not math.isfinite(pin_recent_num):
         raise ValueError(
             f"pin_recent must be a finite non-negative integer, got {pin_recent!r}"
         )
-    pin_recent = max(0, int(pin_recent_num))
+    else:
+        pin_recent = max(0, int(pin_recent_num))
     if min_savings_ratio is None:
         min_savings_ratio = 0.10
     min_savings_ratio = float(min_savings_ratio)
@@ -10857,6 +10866,10 @@ def compress_context(
             query = str(query)
         else:
             query = " ".join(str(part) for part in _q_it if part)
+    if limits is not None and not isinstance(limits, IndustrialLimits):
+        raise TypeError(
+            f"limits must be an IndustrialLimits instance, got {type(limits).__name__}"
+        )
     if compile_pin_patterns(pin_patterns) is None:
         tokens = estimate_tokens(full_text)
         return _with_schema_fields(CompressResult(

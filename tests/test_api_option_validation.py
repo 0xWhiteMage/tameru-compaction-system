@@ -36,9 +36,11 @@ def test_limits_must_be_industrial_limits():
 
 def test_falsy_scalar_query_is_coerced_not_dropped():
     # 0 / False are queries, not absence of one: coercion must yield their
-    # string form so the term is actually searched.
-    r = compress_context("value 0 here\n" + "noise\n" * 300, 0, ccr=False, citations=False)
-    assert r.fail_open or "0" in r.compressed_text
+    # string form so the term is actually searched. A compressible input keeps
+    # the check honest — a fail-open result would satisfy it trivially.
+    r = compress_context("value False here\n" + "noise\n" * 300, False, ccr=False, citations=False)
+    assert "False" in r.compressed_text
+    assert not r.fail_open
 
 
 def test_broken_iterator_propagates_typeerror():
