@@ -10294,11 +10294,27 @@ def _compress_context_impl(
     def _engine_output(text: str) -> bool:
         if any(m in text for m in _static_markers):
             return True
-        # A [CC-Retrieve: <hash>] marker counts only when its record exists:
-        # a pointer with no backing store entry is hostile input, not our
-        # own output, and may not disable compaction.
+        # A [CC-Retrieve: <hash>] marker counts only when retrieve() could
+        # still recover it: a forged pointer, an expired record or an
+        # unreadable store is plain input, not our own output — and may not
+        # disable compaction.
+        root = Path(ccr_dir)
+        now = time.time()
         for m in _CCR_POINTER_RE.finditer(text):
-            if (Path(ccr_dir) / f"{m.group('hash')}.json").is_file():
+            ccr_hash = m.group("hash")
+            fp = root / f"{ccr_hash}.json"
+            try:
+                data = _read_ccr_record(fp)
+            except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+                continue
+            if not isinstance(data, dict) or data.get("hash") != ccr_hash:
+                continue
+            metadata = _ccr_metadata(data)
+            if (
+                metadata is not None
+                and metadata[0] <= now + CCR_MAX_CLOCK_SKEW_SECONDS
+                and now - metadata[0] <= metadata[1]
+            ):
                 return True
         return False
 
