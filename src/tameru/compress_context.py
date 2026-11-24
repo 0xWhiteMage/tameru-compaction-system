@@ -10873,18 +10873,34 @@ def compress_context(
             query = str(query)
         else:
             query = " ".join(str(part) for part in _q_it if part)
-    if limits is not None and not isinstance(limits, IndustrialLimits):
+    if isinstance(limits, dict):
+        # A kwargs dict spells the same limits object — the dataclass
+        # constructor rejects unknown fields and __post_init__ the values.
+        limits = IndustrialLimits(**limits)
+    elif limits is not None and not isinstance(limits, IndustrialLimits):
         raise TypeError(
-            f"limits must be an IndustrialLimits instance, got {type(limits).__name__}"
+            f"limits must be an IndustrialLimits instance or dict, got {type(limits).__name__}"
         )
     if mode is not None and not isinstance(mode, str):
         # A non-str mode fell through to ``.strip()`` with AttributeError.
         raise TypeError(f"mode must be a str, got {type(mode).__name__}")
-    if budget_ratio is not None and not isinstance(budget_ratio, (int, float)):
-        # Fixed mode's ``float(budget_ratio)`` rejects late; adaptive recorded
-        # the raw value in the receipt. Reject non-numbers up front.
+    if budget_ratio is not None:
+        if not isinstance(budget_ratio, (int, float)) or isinstance(budget_ratio, bool):
+            # Fixed mode's ``float(budget_ratio)`` rejects late; adaptive recorded
+            # the raw value in the receipt. Reject non-numbers up front.
+            raise TypeError(
+                f"budget_ratio must be a number, got {type(budget_ratio).__name__}"
+            )
+        if not 0 < float(budget_ratio) <= 1:
+            # Out-of-range ratios meant different things per mode: fixed
+            # raised mid-pipeline, adaptive silently kept everything (≥1) or
+            # nothing (≤0). The documented domain is (0, 1] on every path.
+            raise ValueError(
+                f"budget_ratio must be in (0, 1], got {budget_ratio!r}"
+            )
+    if selector_query is not None and not isinstance(selector_query, str):
         raise TypeError(
-            f"budget_ratio must be a number, got {type(budget_ratio).__name__}"
+            f"selector_query must be a str, got {type(selector_query).__name__}"
         )
     if isinstance(pin_patterns, str):
         # A bare string is ONE pattern (same convention as recursion_markers),

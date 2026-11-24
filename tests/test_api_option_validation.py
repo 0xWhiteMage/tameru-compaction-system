@@ -100,3 +100,36 @@ def test_bare_string_pin_patterns_is_one_pattern():
     # iterable of characters (which failed open as unsafe_pin_patterns).
     r = compress_context(DOC, "build", pin_patterns="build", ccr=False, citations=False)
     assert "unsafe_pin_patterns" not in r.reasons
+
+
+def test_limits_accepts_a_kwargs_dict():
+    # A dict spells the same IndustrialLimits — the constructor's field
+    # names apply and __post_init__ validates the values.
+    r = compress_context(DOC, "build", ccr=False, citations=False,
+                         limits={"max_lines": 100})
+    assert r.compressed_text
+
+
+def test_limits_dict_rejects_unknown_fields():
+    with pytest.raises(TypeError):
+        compress_context(DOC, "build", ccr=False, citations=False,
+                         limits={"not_a_field": 1})
+
+
+def test_bool_budget_ratio_is_rejected():
+    # bool is an int subclass: True read as 1.0 silently.
+    with pytest.raises(TypeError, match="budget_ratio"):
+        compress_context(DOC, "build", budget_ratio=True, ccr=False, citations=False)
+
+
+@pytest.mark.parametrize("bad", [0, -0.5, 1.5])
+def test_out_of_range_budget_ratio_is_rejected(bad):
+    # Adaptive ignored out-of-range ratios (≥1 kept all, ≤0 kept none);
+    # the documented domain is (0, 1] on every path.
+    with pytest.raises(ValueError, match="budget_ratio"):
+        compress_context(DOC, "build", budget_ratio=bad, ccr=False, citations=False)
+
+
+def test_non_str_selector_query_is_rejected():
+    with pytest.raises(TypeError, match="selector_query"):
+        compress_context(DOC, "build", selector_query=42, ccr=False, citations=False)
