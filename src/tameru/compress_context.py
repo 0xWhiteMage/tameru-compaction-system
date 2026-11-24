@@ -1519,10 +1519,34 @@ def _protected_facts(text: str) -> tuple[tuple[int, str, str, str], ...]:
     return _fact_summary(text)[0]
 
 
+def _bounded_orig_index(
+    kept_lines: list[str], orig_index: dict[str, int] | None
+) -> dict[str, int]:
+    """Map kept bounded/windowed variants back to their original line's
+    index: the render emits ``line[:head] + omission markers`` for oversized
+    lines (``_fact_variant_present`` matching), so a variant is absent from
+    ``orig_index`` yet still IS that original line for ordering. Without
+    this a kept bounded stale value counts as later than every candidate
+    and vetoes restoring its own replacement."""
+    out: dict[str, int] = {}
+    if not orig_index:
+        return out
+    head = max(64, _MAX_KEPT_LINE_CHARS // 4)
+    for o in kept_lines:
+        if o in orig_index:
+            continue
+        for ln, i in orig_index.items():
+            if len(ln) > _MAX_KEPT_LINE_CHARS and o != ln and o.startswith(ln[:head]):
+                out.setdefault(o, i)
+                break
+    return out
+
+
 def _fact_superseded_in(
     line: str,
     kept_lines: list[str],
     orig_index: dict[str, int] | None = None,
+    bounded_index: dict[str, int] | None = None,
 ) -> bool:
     """``True`` when a line surviving in the output explicitly marks ``line`` stale
     (``supersession._supersedes``: an is-now/obsolete/override marker plus shared distinctive
@@ -1531,9 +1555,10 @@ def _fact_superseded_in(
     Reassignment supersession is directionless on its own (``k = v1`` vs ``k = v2`` are
     symmetric), so ``orig_index`` — each line's position in the original text — gates it:
     only a surviving line that stands LATER in the input may veto the candidate, otherwise
-    a kept stale value would refuse to let the current one back in. Kept lines absent from
-    ``orig_index`` (render markers) count as later, matching the pre-gate behavior; a
-    candidate with no known position keeps the permissive default too."""
+    a kept stale value would refuse to let the current one back in. A kept bounded variant
+    resolves through ``bounded_index`` to its original line's position; other kept lines
+    absent from ``orig_index`` (render markers) count as later, matching the pre-gate
+    behavior; a candidate with no known position keeps the permissive default too."""
     lp = orig_index.get(line) if orig_index is not None else None
     return any(
         o != line
@@ -1543,7 +1568,12 @@ def _fact_superseded_in(
             newer_is_later=(
                 True
                 if lp is None or orig_index is None
-                else orig_index.get(o, 1 << 62) > lp
+                else (
+                    orig_index[o]
+                    if o in orig_index
+                    else (bounded_index or {}).get(o, 1 << 62)
+                )
+                > lp
             ),
         )
         for o in kept_lines
@@ -1615,16 +1645,17 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
         return after
     kept = after.split("\n")
     orig_index = {ln: i for i, ln in enumerate(before.split("\n"))} if before is not None else None
+    bounded = _bounded_orig_index(kept, orig_index)
     missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
                if ln != after and ln not in after
-               and not _fact_superseded_in(ln, kept, orig_index)
+               and not _fact_superseded_in(ln, kept, orig_index, bounded)
                and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
     extra = list(err) + sorted(out.difference(err))
     if extra:
         index = orig_index or {}
         for pos, ln in enumerate(extra):
             if (ln != after and ln not in after
-                    and not _fact_superseded_in(ln, kept, orig_index)
+                    and not _fact_superseded_in(ln, kept, orig_index, bounded)
                     and not _fact_variant_present(ln, kept)):
                 missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
@@ -1644,16 +1675,17 @@ def _restore_fact_lines(before: str, after: str) -> str:
     kept = after.split("\n")
     extra = list(err) + sorted(out.difference(err))
     index = {ln: i for i, ln in enumerate(before.split("\n"))}
+    bounded = _bounded_orig_index(kept, index)
     missing = [(i, -1, _bound_fact_line(ln)) for i, _k, _v, ln in protected
                if ln != before and ln not in after
-               and not _fact_superseded_in(ln, kept, index)
+               and not _fact_superseded_in(ln, kept, index, bounded)
                and not _fact_variant_present(ln, kept, tuple(s for s in (_k, _v) if s))]
     # E6: an error exemplar the stage saw in ``before`` and lost goes back too —
     # independent of fact density, same supersession guard, same original order.
     # E12: protected outcome lines get the same treatment.
     for pos, ln in enumerate(extra):
         if (ln in before and ln not in after
-                and not _fact_superseded_in(ln, kept, index)
+                and not _fact_superseded_in(ln, kept, index, bounded)
                 and not _fact_variant_present(ln, kept)):
             missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return after if not missing else after + "\n" + "\n".join(_missing_in_original_order(missing))
@@ -1677,6 +1709,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     remains the append stands and the cost gate decides, exactly as before."""
     kept = compressed.split("\n")
     orig_index = {ln: i for i, ln in enumerate(original_text.split("\n"))} if original_text else None
+    bounded = _bounded_orig_index(kept, orig_index)
     # A line already represented by a surviving exemplar of its template (a
     # "[×N]"/"[last]" marker carries the exemplar text) is not missing — the
     # floor's budget is for templates the extract left unrepresented, like the
@@ -1710,7 +1743,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     hit_terms = tuple(t.casefold() for t in raw_terms)
     missing = [
         f for f in facts
-        if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index)
+        if f[3] not in compressed and not _fact_superseded_in(f[3], kept, orig_index, bounded)
         and not _fact_variant_present(f[3], kept, tuple(s for s in (f[1], f[2]) if s))
         and (not _log_fingerprint(f[3]) or _log_fingerprint(f[3]) not in kept_fps or _ctx(f[0]))
     ]

@@ -141,3 +141,26 @@ def test_cap_prefers_case_only_over_spelling_variant():
         total_chars=len(line), raw_terms=("strasse",),
     )
     assert "STRASSE" in out
+
+
+def test_bounded_variant_resolves_to_its_original_index():
+    """A kept bounded variant of an oversized stale line is absent from
+    orig_index; without ``_bounded_orig_index`` it counted as later than
+    every candidate and vetoed restoring its own replacement."""
+    import tameru.compress_context as cc
+
+    stale = "config_key = " + "7" * (cc._MAX_KEPT_LINE_CHARS + 200)
+    orig_lines = [stale, "filler", "config_key = 9"]
+    orig_index = {ln: i for i, ln in enumerate(orig_lines)}
+    kept = [cc._bound_fact_line(stale), "filler"]
+    bidx = cc._bounded_orig_index(kept, orig_index)
+    assert bidx[kept[0]] == 0
+    assert not cc._fact_superseded_in(
+        "config_key = 9", kept, orig_index, bidx
+    )
+    # ordering still works: a bounded stale line that stands later vetoes
+    idx2 = {"config_key = 9": 0, "filler": 1, stale: 2}
+    kept2 = [cc._bound_fact_line(stale)]
+    assert cc._fact_superseded_in(
+        "config_key = 9", kept2, idx2, cc._bounded_orig_index(kept2, idx2)
+    )
