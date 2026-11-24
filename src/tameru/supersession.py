@@ -117,20 +117,17 @@ def _assignments(text: str) -> dict[str, str]:
             # is whitespace or comment text — a cut landing inside trailing
             # whitespace before non-comment junk would fabricate a header
             # the full line never contained.
-            tail = line[_MAX_HEADER_LINE:].lstrip(" \t\r")
+            tail = line[_MAX_HEADER_LINE:].lstrip("]").lstrip(" \t\r")
             body = line[pm.end("ini" if pm["ini"] is not None else "yaml"):_MAX_HEADER_LINE]
             if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
                 pm = None
         if pm and pm["ini"] is not None:
             ini = pm["ini"]
-            # A quoted TOML name is case-sensitive ('["Worker"]' vs
-            # '["worker"]' are different tables); bare names fold, matching
-            # INI convention.
-            section = (
-                ini[1:-1]
-                if ini[:1] in "\"'" and ini[-1:] == ini[0]
-                else ini.casefold()
-            )
+            # Quoted TOML names keep their quotes: '"db.primary"' and the
+            # nested '[db.primary]' are different tables, '"Worker"' and
+            # '"worker"' differ by case, and '[""]' is a name too. Bare
+            # names fold, matching INI convention.
+            section = ini if ini[:1] in "\"'" else ini.casefold()
             parents.clear()
             continue
         while parents and parents[-1][0] >= indent:
