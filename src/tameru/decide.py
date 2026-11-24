@@ -8,7 +8,9 @@ a threshold. The basis string holds numbers and code names only, never request t
 
 Checks run in this order, the first failure decides: ``fail_open``, ``sanitized``, ``risk``,
 ``lost_fingerprint``; then, when ``policy.ev`` is set, the EV check in place of the confidence check;
-then ``no_gain``, ``low_confidence`` (skipped under EV) and ``not_enough_tokens``.
+then ``no_gain``, ``low_confidence`` (skipped under EV) and ``not_enough_tokens``. A result whose
+checked attributes are not usable values (non-str ``compressed_text``, non-numeric token counts or
+confidence) declines as ``malformed`` rather than raising — a host bug must not read as a crash.
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ from typing import Any, Mapping
 
 REASONS = (
     "ok", "fail_open", "risk", "lost_fingerprint", "low_confidence", "no_gain", "sanitized",
-    "not_enough_tokens", "negative_ev",
+    "not_enough_tokens", "negative_ev", "malformed",
 )
 _RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
@@ -267,9 +269,11 @@ def decide(
     if _RISK_ORDER.get(risk or "", 2) > _RISK_ORDER[policy.max_risk]:
         return Decision(False, "risk", f"risk={risk}>{policy.max_risk}")
     text = getattr(result, "compressed_text", "")
+    if not isinstance(text, str):
+        return Decision(False, "malformed", "compressed_text not str")
     if policy.require_fingerprints:
-        wanted = fingerprints if fingerprints is not None else (
-            _original_fingerprints(original) if original is not None else None
+        wanted = fingerprints if isinstance(fingerprints, Mapping) else (
+            _original_fingerprints(original) if isinstance(original, str) else None
         )
         if wanted is None:
             return Decision(False, "lost_fingerprint", "original_missing")
@@ -279,7 +283,10 @@ def decide(
     if policy.ev is not None:
         if n_eff is None or suffix_tokens is None or item_tokens is None:
             raise ValueError("an EV policy needs n_eff, suffix_tokens and item_tokens")
-        saved = float(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0) or 0)
+        try:
+            saved = float(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0) or 0)
+        except (TypeError, ValueError):
+            return Decision(False, "malformed", "tokens_saved not numeric")
         terms = ev_terms(result, policy.ev, saved, n_eff=n_eff, suffix_tokens=suffix_tokens,
                          item_tokens=item_tokens, cache_broken=cache_broken,
                          alternative=alternative, item_facts=item_facts)
@@ -292,10 +299,13 @@ def decide(
     else:
         ev_basis = None
     if policy.min_saved_ratio is not None:
-        if original is not None:
+        if isinstance(original, str):
             before, after, unit = len(original), len(text), "chars"
         else:
-            before, after, unit = int(result.original_tokens), int(result.kept_tokens), "tokens"
+            try:
+                before, after, unit = int(result.original_tokens), int(result.kept_tokens), "tokens"
+            except (TypeError, ValueError):
+                return Decision(False, "malformed", "token counts not numeric")
         saved = before - after
         if saved <= 0 or saved < policy.min_saved_ratio * before:
             return Decision(False, "no_gain", f"saved={saved}/{before} {unit}")
@@ -303,10 +313,17 @@ def decide(
         confidence = getattr(result, "confidence", None)
         if confidence is None:
             return Decision(False, "low_confidence", "confidence=None")
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            return Decision(False, "low_confidence", "confidence not numeric")
         if not isfinite(confidence) or not 0.0 <= confidence <= 1.0 or confidence < policy.min_confidence:
             return Decision(False, "low_confidence", f"confidence={confidence:.3f}<{policy.min_confidence}")
     if policy.min_tokens_saved is not None:
-        saved_tokens = int(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0))
+        try:
+            saved_tokens = int(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0))
+        except (TypeError, ValueError):
+            return Decision(False, "not_enough_tokens", "tokens_saved not numeric")
         if saved_tokens < policy.min_tokens_saved:
             return Decision(False, "not_enough_tokens", f"saved={saved_tokens}<{policy.min_tokens_saved}")
     return Decision(True, "ok", ev_basis)

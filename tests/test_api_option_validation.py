@@ -239,3 +239,29 @@ def test_yaml_requires_original_tolerates_none():
     from tameru.format_adapters import yaml_requires_original
     assert yaml_requires_original(None) is False
     assert yaml_requires_original("x: &anchor\ny: *anchor") is True
+
+
+def test_decide_declines_malformed_result_fields():
+    """decide() must decline, not raise, when a result's checked attributes
+    carry unusable values — a host bug reads as a closed reason code."""
+    from types import SimpleNamespace
+    from tameru.decide import decide, Policy
+    def mk(**k):
+        base = dict(fail_open=False, compression_risk="low", compressed_text="ok",
+                    original_tokens=100, kept_tokens=50, tokens_saved=50,
+                    confidence=0.9, fact_lines_dropped=0)
+        base.update(k)
+        return SimpleNamespace(**base)
+    pol_fp = Policy(require_fingerprints=True, min_saved_ratio=0.1)
+    pol_sr = Policy(min_saved_ratio=0.1)
+    pol_ts = Policy(min_tokens_saved=10)
+    pol_mc = Policy(min_confidence=0.5)
+    assert decide(mk(compressed_text=None), pol_fp, original="x" * 100).reason == "malformed"
+    assert decide(mk(compressed_text=12345), pol_fp, original="x" * 100).reason == "malformed"
+    assert decide(mk(), pol_fp, fingerprints=[1, 2]).reason == "lost_fingerprint"
+    assert decide(mk(), pol_fp, original=123).reason == "lost_fingerprint"
+    assert decide(mk(original_tokens=None), pol_sr).reason == "malformed"
+    assert decide(mk(kept_tokens="abc"), pol_sr).reason == "malformed"
+    assert decide(mk(tokens_saved="x"), pol_ts).reason == "not_enough_tokens"
+    assert decide(mk(confidence="x"), pol_mc).reason == "low_confidence"
+    assert decide(mk(), pol_fp, original="x" * 100).accept is True

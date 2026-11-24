@@ -31,7 +31,7 @@ def hermes_1_9(result, fingerprints, max_risk="high"):
 
 def test_reason_codes_are_closed():
     assert set(REASONS) == {"ok", "fail_open", "risk", "lost_fingerprint", "low_confidence", "no_gain",
-                            "sanitized", "not_enough_tokens", "negative_ev"}
+                            "sanitized", "not_enough_tokens", "negative_ev", "malformed"}
     assert Decision(True, "ok").basis is None
 
 
