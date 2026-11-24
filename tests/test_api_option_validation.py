@@ -324,3 +324,16 @@ def test_adapt_format_rejects_incoherent_arg_types():
     r = adapt_format(csv_text, "r10", limits={"max_records": 10}, format_name="csv")
     assert r.format == "csv"
     assert isinstance(adapt_format(csv_text, "r10", limits=FormatLimits(max_records=5)).format, str)
+
+
+def test_industrial_entries_reject_incoherent_limits():
+    """profile_input/industrial_preprocess read ``limits`` attributes directly —
+    an int or a dict crashed with AttributeError instead of coercing or raising."""
+    from tameru.industrial import IndustrialLimits, industrial_preprocess, profile_input
+    with pytest.raises(TypeError, match="IndustrialLimits"):
+        profile_input("x", limits=42)
+    with pytest.raises(TypeError, match="IndustrialLimits"):
+        industrial_preprocess("x", "q", limits=42)
+    assert profile_input("x", limits={"max_lines": 5}).lines == 1
+    r = industrial_preprocess("x", "q", limits=IndustrialLimits(max_lines=5))
+    assert r.limits.max_lines == 5
