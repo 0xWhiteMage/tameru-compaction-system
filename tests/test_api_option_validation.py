@@ -265,3 +265,45 @@ def test_decide_declines_malformed_result_fields():
     assert decide(mk(tokens_saved="x"), pol_ts).reason == "not_enough_tokens"
     assert decide(mk(confidence="x"), pol_mc).reason == "low_confidence"
     assert decide(mk(), pol_fp, original="x" * 100).accept is True
+
+
+def test_plan_item_rejects_negative_sizes():
+    """A negative chars/tokens/stock_kept_chars makes min(kept, chars) go
+    negative — the remnant reads as more saved than exists and predicted
+    totals go negative instead of failing loudly."""
+    from tameru.plan import PlanItem, Candidate
+    cand = Candidate(compressed_chars=10, tokens_saved=90, confidence=0.9,
+                     fail_open=False, risk="low", fingerprints_ok=True)
+    with pytest.raises(ValueError, match="nonnegative"):
+        PlanItem(id="i", position=0, tokens=-1, chars=100)
+    with pytest.raises(ValueError, match="nonnegative"):
+        PlanItem(id="i", position=0, tokens=100, chars=-1)
+    with pytest.raises(ValueError, match="nonnegative"):
+        PlanItem(id="i", position=0, tokens=100, chars=100, stock_kept_chars=-5)
+    with pytest.raises(ValueError, match="Candidate"):
+        PlanItem(id="i", position=0, tokens=100, chars=100, candidate=object())
+    with pytest.raises(ValueError, match="nonnegative"):
+        Candidate(compressed_chars=-1, tokens_saved=0, confidence=0.5,
+                  fail_open=False, risk="low", fingerprints_ok=True)
+
+
+def test_plan_input_rejects_negative_quantities():
+    """Negative budgets, horizons and step counts are incoherent — a
+    negative margin inflates the replace target past the trigger."""
+    from tameru.plan import PlanInput, CacheState, PlanItem
+    from tameru.decide import Policy
+    item = PlanItem(id="i", position=0, tokens=10, chars=40)
+    base = dict(event="trigger", host_mode="prune", prompt_tokens=100,
+                trigger_tokens=50, items=(item,), cache=CacheState(True, 1.0),
+                policy=Policy())
+    for field in ("prompt_tokens", "trigger_tokens", "K", "H",
+                  "retained_budget_chars", "growth_tokens_per_step", "margin_steps"):
+        with pytest.raises(ValueError, match="nonnegative"):
+            PlanInput(**{**base, field: -1})
+    with pytest.raises(ValueError, match="nonnegative"):
+        PlanInput(**{**base, "steps_since_last_act": -1})
+    with pytest.raises(ValueError, match="nonnegative"):
+        PlanInput(**{**base, "steps_to_trigger": -1})
+    with pytest.raises(ValueError, match="nonnegative"):
+        CacheState(warm=True, n_eff=-0.5)
+    PlanInput(**base)  # sane input still constructs

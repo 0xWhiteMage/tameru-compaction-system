@@ -42,6 +42,10 @@ class Candidate:
     confidence_basis: str | None = None   # what the confidence rests on (contract_gates.QUERY_BASES); feeds the S6 calibrator
     query_specific: bool | None = None    # the caller query names distinctive selectors; feeds the S6 calibrator
 
+    def __post_init__(self) -> None:
+        if self.compressed_chars < 0 or self.fact_lines_dropped < 0:
+            raise ValueError("compressed_chars and fact_lines_dropped must be nonnegative")
+
 
 @dataclass(frozen=True)
 class PlanItem:
@@ -64,12 +68,24 @@ class PlanItem:
     def __post_init__(self) -> None:
         if self.stock_action not in STOCK_ACTIONS:
             raise ValueError(f"stock_action must be one of {STOCK_ACTIONS}")
+        # A negative size is incoherent, not conservative: min(kept, chars) goes
+        # negative, the remnant reads as more saved than exists, and compact
+        # budgets grow. Reject it at construction instead of corrupting totals.
+        for name in ("tokens", "chars", "age_steps", "stock_kept_chars", "fact_lines"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be nonnegative")
+        if self.candidate is not None and not isinstance(self.candidate, Candidate):
+            raise ValueError("candidate must be a Candidate or None")
 
 
 @dataclass(frozen=True)
 class CacheState:
     warm: bool                            # the provider prefix cache is currently warm
     n_eff: float                          # later requests the cache is expected to serve
+
+    def __post_init__(self) -> None:
+        if self.n_eff < 0:
+            raise ValueError("n_eff must be nonnegative")
 
 
 @dataclass(frozen=True)
@@ -91,6 +107,16 @@ class PlanInput:
     growth_tokens_per_step: float = 0.0   # mean tokens the prompt adds per step; 0 disables warm acts
     margin_steps: int = 0                 # extra runway steps the act must leave beyond H
     replace_compaction: bool = False      # compact+trigger: aim the prune at trigger − growth × margin
+
+    def __post_init__(self) -> None:
+        for name in ("prompt_tokens", "trigger_tokens", "K", "H", "retained_budget_chars",
+                     "growth_tokens_per_step", "margin_steps"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be nonnegative")
+        for name in ("steps_since_last_act", "steps_to_trigger"):
+            value = getattr(self, name)
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must be nonnegative or None")
 
 
 @dataclass(frozen=True)
