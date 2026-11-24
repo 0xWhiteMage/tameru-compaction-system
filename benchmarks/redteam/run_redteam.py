@@ -180,6 +180,7 @@ def run_case(case: dict) -> dict:
     out_rec["metrics"].update(
         ms=round(ms, 1), in_len=in_len, out_len=len(output),
         saved_pct=round(r.tokens_saved_pct, 2), fail_open=r.fail_open,
+        original_tokens=r.original_tokens,
         risk=r.compression_risk, content_type=r.content_type,
         adapter=(r.receipt or {}).get("adapter"),
         bytes_wasted=in_len - len(output),
@@ -437,8 +438,12 @@ def main() -> int:
     # low-savings flags (metric + soft violation)
     for rec in results:
         m = rec["metrics"]
+        # The token floor: whitespace-only inputs (hostile-only-newlines,
+        # redos-tabs) estimate ~0 tokens, so 0.0% saved is correct output —
+        # not a low-savings violation.
         if (m.get("in_len") or 0) > 4096 and not m.get("fail_open") \
                 and m.get("input_nonblank") is not False \
+                and (m.get("original_tokens") or 0) >= 50 \
                 and (m.get("saved_pct") or 0) < 30:
             rec["violations"].append(
                 {"invariant": "low-savings",
