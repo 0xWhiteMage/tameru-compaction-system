@@ -61,3 +61,6 @@ R-0018 | verified | blue | engine | `gap_marker` callback fires once per compres
 - R-0055 | api-validation | diff adapters (detect/adapt/apply) tolerated None or crashed deep on non-str text → TypeError naming expected type | PR #41
 - R-0056 | supersession | kept-line veto missing — head-of-doc stale assignment shadowed later reassignment | PR #43
 - R-0057 | markers | guillemet-wrapped ALL-CAPS foreign banners survived as kept lines | PR #43
+- R-0058 | api-validation | artifact_markers=42 TypeError named recursion_markers (wrong option) | PR #47
+- R-0059 | cache | ContentCache get/set accepted non-str keys — silent never-matching entries | PR #48
+- R-0060 | veto polish | kept-line veto narrowed: eq-shape, single-occurrence, pinned/triple-quote mask, key precount | PR #43
