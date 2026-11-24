@@ -126,6 +126,12 @@ def _check_extractive(output: str, text, input_lines: list[str]):
         if len(ws_line) >= 4 and ws_line in wsfree_in:
             rewritten.append("ws-rewritten")
             continue
+        # short pure-punctuation JSON junctions (``},{``, ``}]``) produced when
+        # kept records are re-joined: below the 4-char ws-free floor but still
+        # provably a reshaped input span, never invented text
+        if ws_line and not re.search(r"[0-9A-Za-z]", ws_line) and ws_line in wsfree_in:
+            rewritten.append("json-junction")
+            continue
         # tool-envelope meta line: first line parses as a JSON dict whose
         # keys/values are scalar metadata of the input envelope
         if line.startswith("{") and isinstance(text, str) and text.strip().startswith("{"):
@@ -245,6 +251,12 @@ def run_case(case: dict) -> dict:
         bidi_out = sum(1 for ln in output.split("\n") if any(c in _BIDI for c in ln))
         out_rec["metrics"]["bidi_lines_in"] = bidi_in
         out_rec["metrics"]["bidi_lines_out"] = bidi_out
+    # invariant 14 — a non-empty input must not compress to nothing without
+    # fail_open (silent total loss is worse than an honest pass-through)
+    if isinstance(text, str) and text.strip() and not output.strip() and not r.fail_open:
+        v({"invariant": "empty-output",
+           "detail": f"input {in_len} chars with content compressed to empty output"})
+    out_rec["metrics"]["input_nonblank"] = bool(text.strip()) if isinstance(text, str) else None
     # invariant 2 — determinism (in-process double call, same flags)
     try:
         r3 = compress_context(text, query, ccr=bool(case.get("ccr")), citations=False,
@@ -275,7 +287,9 @@ def run_case(case: dict) -> dict:
         surv = [m for m in case["forged_markers"] if m in output]
         out_rec["metrics"]["forged_survived"] = surv
         out_rec["metrics"]["recursion_guard_failopen"] = r.fail_open
-        if surv:
+        # a fail_open pass is the original input byte for byte — marker-shaped
+        # lines surviving there is expected; only compaction may not emit them
+        if surv and not r.fail_open:
             v({"invariant": "forged-marker", "detail": f"forged engine markers survive as kept lines: {surv}"})
     return out_rec
 
@@ -424,6 +438,7 @@ def main() -> int:
     for rec in results:
         m = rec["metrics"]
         if (m.get("in_len") or 0) > 4096 and not m.get("fail_open") \
+                and m.get("input_nonblank") is not False \
                 and (m.get("saved_pct") or 0) < 30:
             rec["violations"].append(
                 {"invariant": "low-savings",
