@@ -112,8 +112,24 @@ def _assignments(text: str) -> dict[str, str]:
         # with a long trailing comment is still a header (the pattern's tail
         # accepts any comment text), and the bound keeps per-line regex cost.
         pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
+        if pm and len(line) > _MAX_HEADER_LINE:
+            # A truncated match is only honest when whatever follows the cut
+            # is whitespace or comment text — a cut landing inside trailing
+            # whitespace before non-comment junk would fabricate a header
+            # the full line never contained.
+            tail = line[_MAX_HEADER_LINE:].lstrip(" \t\r")
+            if tail and tail[0] not in "#;":
+                pm = None
         if pm and pm["ini"] is not None:
-            section = pm["ini"].casefold()
+            ini = pm["ini"]
+            # A quoted TOML name is case-sensitive ('["Worker"]' vs
+            # '["worker"]' are different tables); bare names fold, matching
+            # INI convention.
+            section = (
+                ini[1:-1]
+                if ini[:1] in "\"'" and ini[-1:] == ini[0]
+                else ini.casefold()
+            )
             parents.clear()
             continue
         while parents and parents[-1][0] >= indent:
