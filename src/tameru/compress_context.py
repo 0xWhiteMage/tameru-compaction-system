@@ -180,6 +180,11 @@ _SECRETS_RE = re.compile(
 # Recursion guard markers: output Tameru itself produced. Both wrapper tags
 # are listed: ``</compressed_context`` is not a substring of the open tag.
 _RECURSION_MARKERS = ("<compressed_context", "</compressed_context", "[CC-Retrieve:", "[tameru:report ")
+# Pointer verification: only a [CC-Retrieve: <hash>] whose record exists in
+# the CCR store is engine output. A forged pointer (no backing record) is
+# plain hostile input — treating it as engine output let any input disable
+# compaction by embedding the marker.
+_CCR_POINTER_RE = re.compile(r"\[CC-Retrieve: (?P<hash>[0-9a-f]{24})\]")
 
 # Already-elided standalone marker lines ([…] or the counted omitted form): a
 # conservative no-op check so previously compressed text short-circuits instead
@@ -11008,12 +11013,39 @@ def _compress_context_impl(
     # JSON tool envelope a marker can hide behind a ``[`` escape and a
     # line-start credential behind a ``\n`` escape.
     unwrapped_payload = unwrap_tool_payload(caller_text).inner
+    _static_markers = tuple(m for m in _RECURSION_MARKERS if not m.startswith("[CC-Retrieve"))
+
+    def _engine_output(text: str) -> bool:
+        if any(m in text for m in _static_markers):
+            return True
+        # A [CC-Retrieve: <hash>] marker counts only when retrieve() could
+        # still recover it: a forged pointer, an expired record or an
+        # unreadable store is plain input, not our own output — and may not
+        # disable compaction.
+        root = Path(ccr_dir)
+        now = time.time()
+        for m in _CCR_POINTER_RE.finditer(text):
+            ccr_hash = m.group("hash")
+            fp = root / f"{ccr_hash}.json"
+            try:
+                data = _read_ccr_record(fp)
+            except (OSError, UnicodeError, ValueError, RecursionError):
+                # ValueError covers JSONDecodeError + the int-digit limit.
+                continue
+            if not isinstance(data, dict) or data.get("hash") != ccr_hash:
+                continue
+            metadata = _ccr_metadata(data)
+            if (
+                metadata is not None
+                and metadata[0] <= now + CCR_MAX_CLOCK_SKEW_SECONDS
+                and now - metadata[0] <= metadata[1]
+            ):
+                return True
+        return False
+
     if (
-        any(marker in caller_text for marker in _RECURSION_MARKERS)
-        or (
-            unwrapped_payload != caller_text
-            and any(marker in unwrapped_payload for marker in _RECURSION_MARKERS)
-        )
+        _engine_output(caller_text)
+        or (unwrapped_payload != caller_text and _engine_output(unwrapped_payload))
         or (_DEFAULT_ELISION_LINE.search(caller_text) is not None and not _internal_sample)
         or (_has_anchored_marker(caller_text, recursion_markers))
     ):

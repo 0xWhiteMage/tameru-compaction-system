@@ -182,9 +182,13 @@ def test_forged_ccr_pointer_in_envelope_noops(tmp_path):
     )
     r = compress_context(env, "Why did the linker fail for parse_config?",
                          ccr_dir=tmp_path / "ccr", citations=False)
-    # Marker on the unwrapped payload -> recursion no-op; the engine does not
-    # lend the forged pointer its own framing.
-    assert r.compressed_text == env
+    # The pointer resolves to no record — a forged marker is hostile input,
+    # not engine output, so it cannot disable compaction. The payload still
+    # compresses and keeps both the pointer line and the error it sat on.
+    assert r.compressed_text != env
+    assert not r.fail_open
+    assert "CC-Retrieve" in r.compressed_text
+    assert "linker failed" in r.compressed_text
 
 
 # ---------------------------------------------------------------- GHSA-hmpw
