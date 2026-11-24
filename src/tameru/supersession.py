@@ -61,6 +61,9 @@ _PARENT_RE = re.compile(
 # A line past this length is never a section header or a bare mapping
 # parent — and per-line regex work on it is bounded.
 _MAX_HEADER_LINE = 512
+# Sentinel section for lines inside a fenced code block: a config
+# example's assignments are documentation, never live settings.
+_FENCED_SCOPE = "\x1ffence"
 _TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
 _MIN_KEY_LENGTH = 5
 # Names too generic to be a distinctive ``=`` assignment key: cross-suite
@@ -93,61 +96,115 @@ def _norm_assign_value(val: str) -> str:
     return " ".join(v.casefold().split())
 
 
-def _assignments(text: str) -> dict[str, str]:
-    """``key|indent → value`` for each distinctive assignment line in
-    ``text`` (the last assignment within the text wins). Indent is part of
-    the key so a nested YAML/INI setting never collides with a same-named
-    one at another level (``email.on_failure`` vs ``irc.on_failure``)."""
+def _advance(state: list, line: str) -> str | None:
+    """Fold one non-blank line into ``state`` = ``[section, parents, arrays, fence]``.
+
+    Returns ``"ini"``/``"yaml"``/``"fence"`` when the line was a header or
+    sits inside a fenced code block, else ``None``.
+    INI/TOML sections hold their body at the same indent as the header, so
+    a section name cannot live in the indent stack — it is tracked
+    separately. YAML mapping parents are indent-scoped and stack normally.
+    A ``[[name]]`` TOML array header opens a fresh ``name§k`` scope per
+    occurrence: two array entries are siblings, not one table redefined,
+    so a later entry must never supersede an earlier one's fields. A
+    ``[name.sub]`` header under an array element scopes to that element —
+    TOML attaches it to the LAST ``[[name]]`` — so each entry's subtable is
+    its own table too.
+    Lines inside a ```/~~~ fenced block are documentation, not settings:
+    a config example's ``k = v`` never redefines the live ``k = v``."""
+    lstripped = line.lstrip()
+    fence = state[3] if len(state) > 3 else None
+    if fence is not None:
+        if lstripped.startswith(fence):
+            state[3] = None
+            if len(state) > 4:
+                state[4] = None
+        return "fence"
+    if lstripped.startswith("```") or lstripped.startswith("~~~"):
+        # The marker is the whole run: a ``` line does not close a ````
+        # fence, and the opener line is remembered so a restored line can
+        # be wrapped in its own fence pair, not the document's first.
+        marker = re.match(r"(`{3,}|~{3,})", lstripped).group(0)
+        if len(state) > 3:
+            state[3] = marker
+        else:
+            state.append(marker)
+        if len(state) > 4:
+            state[4] = line
+        else:
+            state.append(line)
+        return "fence"
+    indent = len(line) - len(line.lstrip())
+    # Match a bounded prefix rather than skipping long lines: a header
+    # with a long trailing comment is still a header (the pattern's tail
+    # accepts any comment text), and the bound keeps per-line regex cost.
+    pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
+    if pm and len(line) > _MAX_HEADER_LINE:
+        # A truncated match is only honest when whatever follows the cut
+        # is whitespace or comment text — a cut landing inside trailing
+        # whitespace before non-comment junk would fabricate a header
+        # the full line never contained.
+        # A ']'-prefixed tail is a closer only when the cut landed
+        # inside it ('[[name]]' split at ']'): a ']' after the match
+        # otherwise is stray junk — '[x] ]#note' is no header, and
+        # accepting it scopes later settings under a fabricated table.
+        tail = line[_MAX_HEADER_LINE:]
+        if line[_MAX_HEADER_LINE - 1] == "]":
+            tail = tail.lstrip("]")
+        tail = tail.lstrip(" \t\r")
+        body = line[pm.end("ini" if pm["ini"] is not None else "yaml"):_MAX_HEADER_LINE]
+        if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
+            pm = None
+    if pm and pm["ini"] is not None:
+        ini = pm["ini"]
+        # A quoted TOML name with no dot is the same table as its bare
+        # spelling ('["database"]' == '[database]' — TOML treats a quoted
+        # key as the literal key), so it folds identically. A quoted
+        # name WITH a dot ('"db.primary"') is one literal key, not the
+        # nested '[db.primary]', and keeps its quotes to stay distinct;
+        # '[""]' is a name too — the empty name is not the top level.
+        # Bare names fold, matching INI convention.
+        if ini[:1] in "\"'" and ini[1:-1] and "." not in ini[1:-1]:
+            name = ini[1:-1].casefold()
+        else:
+            name = ini if ini[:1] in "\"'" else ini.casefold()
+        if line.lstrip().startswith("[["):
+            state[2][name] = state[2].get(name, 0) + 1
+            state[0] = f"{name}\x1f{state[2][name]}"
+        elif "\x1f" in state[0] and name.startswith(state[0].split("\x1f", 1)[0] + "."):
+            # ``[backends.tls]`` under a ``[[backends]]`` element attaches
+            # to that element, not the table path — each entry's subtable
+            # is its own table.
+            state[0] = state[0] + "\x1f" + name.split(".", 1)[1]
+        else:
+            state[0] = name
+        state[1].clear()
+        return "ini"
+    while state[1] and state[1][-1][0] >= indent:
+        state[1].pop()
+    if pm:
+        state[0] = ""
+        state[1].append((indent, pm["yaml"].casefold()))
+        return "yaml"
+    return None
+
+
+def _assignments_tracked(text: str, state: list, minted: list | None = None) -> dict[str, str]:
+    """Like ``_assignments`` but the scope walk lives in the caller's
+    ``state`` = ``[section, parents, arrays, fence]``, so a header in an
+    earlier block scopes this block's settings the way it does in the
+    document. ``minted``, when given, collects each scope element the
+    text's own headers define: ``('sec', name)`` or ``('par', name)``."""
     out: dict[str, str] = {}
-    # INI/TOML sections hold their body at the same indent as the header,
-    # so a section name cannot live in the indent stack — track it
-    # separately. YAML mapping parents are indent-scoped and stack normally.
-    section = ""
-    parents: list[tuple[int, str]] = []
     for line in (text or "").split("\n"):
         if not line.strip():
             continue
-        indent = len(line) - len(line.lstrip())
-        # Match a bounded prefix rather than skipping long lines: a header
-        # with a long trailing comment is still a header (the pattern's tail
-        # accepts any comment text), and the bound keeps per-line regex cost.
-        pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
-        if pm and len(line) > _MAX_HEADER_LINE:
-            # A truncated match is only honest when whatever follows the cut
-            # is whitespace or comment text — a cut landing inside trailing
-            # whitespace before non-comment junk would fabricate a header
-            # the full line never contained.
-            # A ']'-prefixed tail is a closer only when the cut landed
-            # inside it ('[[name]]' split at ']'): a ']' after the match
-            # otherwise is stray junk — '[x] ]#note' is no header, and
-            # accepting it scopes later settings under a fabricated table.
-            tail = line[_MAX_HEADER_LINE:]
-            if line[_MAX_HEADER_LINE - 1] == "]":
-                tail = tail.lstrip("]")
-            tail = tail.lstrip(" \t\r")
-            body = line[pm.end("ini" if pm["ini"] is not None else "yaml"):_MAX_HEADER_LINE]
-            if not (tail == "" or tail[0] in "#;" or "#" in body or ";" in body):
-                pm = None
-        if pm and pm["ini"] is not None:
-            ini = pm["ini"]
-            # A quoted TOML name with no dot is the same table as its bare
-            # spelling ('["database"]' == '[database]' — TOML treats a quoted
-            # key as the literal key), so it folds identically. A quoted
-            # name WITH a dot ('"db.primary"') is one literal key, not the
-            # nested '[db.primary]', and keeps its quotes to stay distinct;
-            # '[""]' is a name too — the empty name is not the top level.
-            # Bare names fold, matching INI convention.
-            if ini[:1] in "\"'" and ini[1:-1] and "." not in ini[1:-1]:
-                section = ini[1:-1].casefold()
-            else:
-                section = ini if ini[:1] in "\"'" else ini.casefold()
-            parents.clear()
-            continue
-        while parents and parents[-1][0] >= indent:
-            parents.pop()
-        if pm:
-            section = ""
-            parents.append((indent, pm["yaml"].casefold()))
+        kind = _advance(state, line)
+        if kind:
+            if minted is not None and kind == "ini":
+                minted.append(("sec", state[0], line))
+            elif minted is not None and kind == "yaml":
+                minted.append(("par", state[1][-1][1], line))
             continue
         m = _ASSIGN_RE.match(line)
         # A comment-only value (``key = ; note``) is not an assignment —
@@ -158,18 +215,129 @@ def _assignments(text: str) -> dict[str, str]:
         val = m["val"].lstrip() if m else ""
         comment_val = val.startswith("#") or (val.startswith(";") and m["op"] == "=")
         if m and not comment_val and _distinctive_key(m["key"], m["op"]):
-            parent = section or ("/".join(p for _i, p in parents) if parents else "")
-            # '§' can never appear inside a key (the charset excludes it), so
-            # a literal key like ``a/b`` can't collide with parent ``a`` +
-            # key ``b`` the way a "/" separator allowed.
-            scoped = (parent + "§" if parent else "") + m["key"].casefold() + "|" + m["indent"]
+            if state[0] == _FENCED_SCOPE:
+                continue
+            parent = state[0] or ("/".join(p for _i, p in state[1]) if state[1] else "")
+            # '\x1f' can never appear inside a key or a quoted table name
+            # (TOML forbids control characters), so a literal key like
+            # ``a/b`` or a quoted name like ``"a\xa7b"`` can't collide the
+            # way a "/" or "\xa7" separator allowed.
+            scoped = (parent + "\x1f" if parent else "") + m["key"].casefold() + "|" + m["indent"]
             out[scoped] = _norm_assign_value(m["val"])
     return out
 
 
+def _assignments(text: str) -> dict[str, str]:
+    """``key|indent → value`` for each distinctive assignment line in
+    ``text`` (the last assignment within the text wins). Indent is part of
+    the key so a nested YAML/INI setting never collides with a same-named
+    one at another level (``email.on_failure`` vs ``irc.on_failure``)."""
+    return _assignments_tracked(text, ["", [], {}])
+
+
+def _scope_state(scope) -> list:
+    """A fresh ``[section, parents, arrays, fence, opener]`` walk from a
+    recorded scope — or the empty document start. A fence scope resumes
+    inside the fence: later lines are still documentation, not settings."""
+    if scope and scope[0] == _FENCED_SCOPE:
+        opener = scope[1][0] if len(scope) > 1 and scope[1] else "```"
+        marker = re.match(r"(`{3,}|~{3,})", opener.lstrip())
+        return [_FENCED_SCOPE, [], {}, marker.group(0) if marker else "```", opener]
+    return [scope[0], list(scope[1]), {}] if scope else ["", [], {}]
+
+
+def _document_scopes(text: str) -> dict[str, tuple]:
+    """``line → (section, parents)`` for every significant line of a
+    document — the scope it stands under, for seeding per-line
+    comparisons. A repeated line keeps its last occurrence's scope,
+    matching ``orig_index``'s last-index convention."""
+    state: list = ["", [], {}]
+    out: dict[str, tuple] = {}
+    for line in (text or "").split("\n"):
+        if not line.strip():
+            continue
+        prev_opener = state[4] if len(state) > 4 else None
+        kind = _advance(state, line)
+        if kind == "fence":
+            out[line] = (_FENCED_SCOPE, (prev_opener or line,))
+            continue
+        if kind:
+            continue
+        out[line] = (state[0], tuple(state[1]))
+    return out
+
+
+def _document_headers(text: str) -> dict[tuple, str]:
+    """``(section, parents) scope → the literal header line that minted
+    it`` — used to re-emit a section before a restored line that would
+    otherwise land under whatever scope the extract happens to end in."""
+    state: list = ["", [], {}]
+    out: dict[tuple, str] = {}
+    for line in (text or "").split("\n"):
+        if not line.strip():
+            continue
+        kind = _advance(state, line)
+        if kind == "fence" and state[3] is not None:
+            out.setdefault((_FENCED_SCOPE, (line,)), line)
+            continue
+        if kind in ("ini", "yaml"):
+            out[(state[0], tuple(p for _i, p in state[1]))] = line
+    return out
+
+
+def _end_scope(text: str) -> tuple:
+    """The ``(section, parents)`` scope a line appended to ``text`` would
+    stand under."""
+    state: list = ["", [], {}]
+    for line in (text or "").split("\n"):
+        if line.strip():
+            _advance(state, line)
+    return (state[0], tuple(p for _i, p in state[1]))
+
+
+def _append_scoped(after: str, lines: list[str], scope_of, headers, emit=None) -> str:
+    """``after`` + restored ``lines``, re-emitting a line's section header
+    first when its recorded scope differs from the running scope — a
+    restored ``[database]`` setting must not read as a second value under
+    the ``[cache]`` mapping the extract ends in.
+    A fenced line goes back inside its own fence pair — a bare example
+    reads as a live setting. A line scoped to a ``[[array]]`` element is
+    NOT restored at all: re-emitting ``[[x]]`` mints a NEW entry, so the
+    field would describe a phantom record. ``emit`` transforms each
+    restored line before output (the floor's bounded render)."""
+    if not lines:
+        return after
+    cur = _end_scope(after)
+    out_lines: list[str] = []
+    for line in lines:
+        scope = scope_of.get(line) if scope_of else None
+        if scope and scope[0] == _FENCED_SCOPE:
+            fence = headers.get(scope) or (
+                scope[1][0] if len(scope) > 1 and scope[1] else "```"
+            )
+            # The closer is the opener's own marker run — an indented or
+            # four-marker opener would otherwise emit a three-marker tail
+            # that never closes the fence.
+            marker = re.match(r"(`{3,}|~{3,})", fence.lstrip())
+            out_lines.extend([fence, emit(line) if emit else line,
+                              marker.group(0) if marker else "```"])
+            cur = scope
+            continue
+        if scope and "\x1f" in scope[0]:
+            continue
+        if scope and scope != cur and headers.get(scope):
+            out_lines.append(headers[scope])
+        if scope:
+            cur = scope
+        out_lines.append(emit(line) if emit else line)
+    if not out_lines:
+        return after
+    return after + "\n" + "\n".join(out_lines)
+
+
 def _key_parts(scoped: str) -> tuple[str, str]:
     """``(parent, basename|indent)`` of a scoped assignment key."""
-    parent, sep, base = scoped.rpartition("§")
+    parent, sep, base = scoped.rpartition("\x1f")
     return (parent if sep else "", base)
 
 
@@ -194,14 +362,19 @@ def _same_setting(k1: str, k2: str, scopes: dict[str, set[str]]) -> bool:
     return b1 == _key_parts(k2)[1] and len(scopes.get(b1, ())) <= 1
 
 
-def _reassigns(newer: str, older: str) -> bool:
+def _reassigns(newer: str, older: str, scopes=None) -> bool:
     """True when both texts assign the same distinctive key and ``newer``
     gives it a different value — a later definition superseding an earlier
-    one (``connect_timeout_ms = 30000`` then ``connect_timeout_ms = 5000``)."""
-    new_kv = _assignments(newer)
+    one (``connect_timeout_ms = 30000`` then ``connect_timeout_ms = 5000``).
+    ``scopes`` seeds each side's document position — its ``(section,
+    parents)`` from ``_document_scopes`` — so a same-named key in a
+    DIFFERENT section is never read as this setting being redefined; a
+    side whose scope is unknown compares unscoped, as before."""
+    n_scope, o_scope = scopes or (None, None)
+    new_kv = _assignments_tracked(newer, _scope_state(n_scope))
     if not new_kv:
         return False
-    old_kv = _assignments(older)
+    old_kv = _assignments_tracked(older, _scope_state(o_scope))
     scopes = _scope_sets((new_kv, old_kv))
     return any(_same_setting(k_new, k, scopes) and new_kv[k_new] != v
                for k, v in old_kv.items()
@@ -246,7 +419,7 @@ def _meaningful_overlap(newer_terms: set[str], older_terms: set[str]) -> bool:
     return len(distinctive) >= 2
 
 
-def _supersedes(newer: str, older: str, *, newer_is_later: bool = True) -> bool:
+def _supersedes(newer: str, older: str, *, newer_is_later: bool = True, scopes=None) -> bool:
     """True when `newer` explicitly marks `older` stale.
 
     Conservative by design: requires an explicit staleness/override marker
@@ -268,7 +441,7 @@ def _supersedes(newer: str, older: str, *, newer_is_later: bool = True) -> bool:
         # reassignment carries no direction of its own: ``k = v1`` and
         # ``k = v2`` are symmetric. Only a KNOWN-later block may supersede —
         # a surviving stale value must not veto restoring the current one.
-        return newer_is_later and _reassigns(newer, older)
+        return newer_is_later and _reassigns(newer, older, scopes=scopes)
 
     # Content overlap: at least two *distinctive* (non-filler) terms shared.
     return _meaningful_overlap(_content_terms(newer), _content_terms(older))
@@ -365,11 +538,22 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     # when EVERY assignment it carries was superseded: supersession deletes
     # whole blocks, so a partially updated block keeps its line rather than
     # silently losing the unrelated settings beside the changed one.
-    block_kv: dict[int, dict[str, str]] = {
-        i: _assignments(texts[i])
-        for i in kept_ids
-        if len(terms_by_id[i]) <= _MAX_SUPERSESSION_TOKENS
-    }
+    block_kv: dict[int, dict[str, str]] = {}
+    # Scope walks the whole document, not one block: a header a blank line
+    # split into the previous block ('[database]\n\nhost = a' packs as two)
+    # still scopes the settings that follow it. Every scored block is
+    # walked in order, kept or not — a dropped header scopes just the same.
+    scope_state: list = ["", [], {}]
+    defines: dict[int, list[tuple[str, str]]] = {}
+    enters: dict[int, tuple] = {}
+    for i in range(len(scored)):
+        text = scored[i].get("text", "")
+        minted: list[tuple[str, str]] = []
+        enters[i] = (scope_state[0], tuple(p for _i, p in scope_state[1]))
+        kv = _assignments_tracked(text if isinstance(text, str) else "", scope_state, minted)
+        defines[i] = minted
+        if i in kept and len(terms_by_id.get(i, ())) <= _MAX_SUPERSESSION_TOKENS:
+            block_kv[i] = kv
     basename_index: dict[str, set[str]] = {}
     for kv in block_kv.values():
         for k in kv:
@@ -398,6 +582,33 @@ def apply_supersession(scored: list[dict[str, Any]], kept: set[int]) -> set[int]
     for bid, keys in superseded_keys.items():
         if keys and set(block_kv[bid]) <= keys and _pure_assignments(texts[bid]):
             stale.add(bid)
+
+    # A stale block still drops — but the scope elements it mints must not
+    # go with it: '[database]\nctm = 30000' superseded by a later bare
+    # 'ctm = 5000' leaves that line identified only by the dropped header.
+    # Re-emit each orphaned element's header line at the top of the first
+    # kept block that needed it, so the surviving value keeps its section.
+    for bid in sorted(stale):
+        for element in defines.get(bid, ()):
+            first_dependent = next(
+                (i for i in kept_ids
+                 if i not in stale
+                 and i > bid
+                 and ((element[0] == "sec" and element[1] == enters[i][0])
+                      or (element[0] == "par" and element[1] in enters[i][1]))
+                 and element not in defines.get(i, ())),
+                None,
+            )
+            if first_dependent is None:
+                continue
+            if any(j in kept_ids and j not in stale and j != bid
+                   and j < first_dependent
+                   and element in defines.get(j, ()) for j in kept_ids):
+                continue
+            scored[first_dependent]["text"] = (
+                element[2] + "\n" + scored[first_dependent].get("text", "")
+            )
+            defines.setdefault(first_dependent, []).append(element)
 
     if stale:
         kept -= stale

@@ -1,5 +1,6 @@
 """Reassignment supersession: a later block assigning a distinctive key a
 different value supersedes the earlier block — last definition wins."""
+from tameru import supersession
 from tameru.supersession import _assignments, _supersedes, apply_supersession
 
 
@@ -145,13 +146,26 @@ def test_block_split_at_blank_line_still_supersedes():
     assert kept == {1}
 
 
-def test_ambiguous_section_namesake_kept():
-    # host under two different sections plus an unscoped host: the unscoped
-    # one can't be told apart, so nothing is dropped.
+def test_split_header_namesake_scoped_by_document_order():
+    # 'host_setting = c' stands after '[cache]' in the document — the
+    # blank-line block split does not unscope it, so it redefines
+    # cache.host_setting and leaves database.host_setting alone.
     scored = _scored(
         "[database]\nhost_setting = a",
         "[cache]\nhost_setting = b",
         "host_setting = c",
+    )
+    kept = apply_supersession(scored, {0, 1, 2})
+    assert kept == {0, 2}
+
+
+def test_truly_unscoped_namesake_kept():
+    # A top-level 'host_setting' before any section header shares its bare
+    # name with two different sections — still ambiguous, so nothing drops.
+    scored = _scored(
+        "host_setting = c",
+        "[database]\nhost_setting = a",
+        "[cache]\nhost_setting = b",
     )
     kept = apply_supersession(scored, {0, 1, 2})
     assert kept == {0, 1, 2}
@@ -165,7 +179,7 @@ def test_commented_and_padded_headers_normalize():
 
 def test_yaml_parent_with_comment():
     kv = _assignments("database: # prod\n  connect_timeout_ms: 5000")
-    assert "database§connect_timeout_ms|  " in kv
+    assert "database\x1fconnect_timeout_ms|  " in kv
 
 
 def test_stale_block_with_unrelated_notes_is_kept():
@@ -189,11 +203,22 @@ def test_pure_stale_assignment_block_still_drops():
 
 
 def test_toml_array_table_scopes_assignments():
-    # [[servers]] is a TOML array-table header: keys under it must scope to
-    # 'servers', not leak the previous section's scope.
+    # [[servers]] is a TOML array-table header: keys under it scope to a
+    # fresh 'servers\x1fk' per entry — siblings, never one table redefined.
     kv = _assignments("[alpha]\nhostname = a\n\n[[servers]]\nhostname = b\n")
-    assert kv.get("servers§hostname|") == "b"
-    assert "alpha§hostname|" in kv
+    assert kv.get("servers\x1f1\x1fhostname|") == "b"
+    assert "alpha\x1fhostname|" in kv
+
+
+def test_toml_array_entries_do_not_supersede_each_other():
+    # Two [[backends]] entries assign the same fields different values:
+    # both are live array elements in TOML, not a redefinition.
+    scored = _scored(
+        "[[backends]]\nhostname = alpha\nretries = 3",
+        "[[backends]]\nhostname = beta\nretries = 9",
+    )
+    kept = apply_supersession(scored, {0, 1})
+    assert kept == {0, 1}
 
 
 def test_generic_result_key_never_supersedes():
@@ -222,3 +247,96 @@ def test_oversized_bracket_line_is_not_a_header():
     line = "[" + "x" * 5000  # no closing bracket
     kv = _assignments(line + "\ntimeout_ms = 5000\n")
     assert kv.get("timeout_ms|") == "5000"
+
+
+def test_toml_array_subtable_scoped_per_element():
+    # ``[backends.tls]`` after ``[[backends]]`` attaches to that element —
+    # a second entry's same-named subtable is its own table, not a
+    # redefinition of the first's.
+    older = "[[backends]]\nname = \"one\"\n[backends.tls]\nverify = false"
+    newer = "[[backends]]\nname = \"two\"\n[backends.tls]\nverify = false"
+    scope_of = supersession._document_scopes(older + "\n" + newer)
+    assert not supersession._reassigns(
+        newer, older,
+        scopes=(scope_of[newer.split("\n")[-1]], scope_of[older.split("\n")[-1]]),
+    )
+    kv = supersession._assignments(older + "\n" + newer)
+    assert "backends\x1f1\x1ftls\x1fverify|" in kv
+    assert "backends\x1f2\x1ftls\x1fverify|" in kv
+
+
+def test_fenced_config_example_not_supersession():
+    # A ``` block's ``k = v`` is documentation: it never redefines the live
+    # ``k = v`` and is never superseded by one.
+    doc = "setting_key = 1\n```\nsetting_key = 2\n```"
+    scope_of = supersession._document_scopes(doc)
+    assert supersession._assignments_tracked(
+        "setting_key = 2",
+        supersession._scope_state(scope_of["setting_key = 2"]),
+    ) == {}
+    assert not supersession._reassigns(
+        "setting_key = 2", "setting_key = 1",
+        scopes=(scope_of["setting_key = 2"], scope_of["setting_key = 1"]),
+    )
+
+
+def test_dropped_header_reemitted_on_surviving_block():
+    # The whole '[database]\nctm = 30000' block is stale once 'ctm = 5000'
+    # supersedes it — it still drops, but the '[database]' header the kept
+    # line depends on is re-emitted at the top of its block.
+    scored = _scored(
+        "Intro note about the system setup here.",
+        "[database]\nconnect_timeout_ms = 30000",
+        "Another unrelated note about the system.",
+        "connect_timeout_ms = 5000",
+    )
+    kept = apply_supersession(scored, {0, 1, 2, 3})
+    assert kept == {0, 2, 3}
+    # The header re-emits on the first kept block that needed it — scope
+    # flows forward from there, so the surviving value stays identified.
+    assert scored[2]["text"].startswith("[database]\n")
+
+
+def test_restore_reemits_section_header():
+    from tameru import compress_context as cc
+    scope_of = supersession._document_scopes(
+        "[database]\nconnect_timeout_ms = 30000\n"
+        "[cache]\nttl_seconds = 60"
+    )
+    after = "[cache]\nttl_seconds = 60"
+    out = cc._append_scoped(
+        after,
+        ["connect_timeout_ms = 30000"],
+        scope_of,
+        supersession._document_headers(
+            "[database]\nconnect_timeout_ms = 30000\n[cache]\nttl_seconds = 60"
+        ),
+    )
+    assert out == "[cache]\nttl_seconds = 60\n[database]\nconnect_timeout_ms = 30000"
+
+
+def test_restored_fenced_line_goes_back_in_a_fence():
+    from tameru import compress_context as cc
+    doc = "```\nsetting_key = 2\n```\n\n[cache]\nttl_seconds = 60"
+    scope_of = supersession._document_scopes(doc)
+    out = cc._append_scoped(
+        "[cache]\nttl_seconds = 60",
+        ["setting_key = 2"],
+        scope_of,
+        supersession._document_headers(doc),
+    )
+    assert out.endswith("\n```\nsetting_key = 2\n```")
+
+
+def test_restored_array_field_is_not_restored():
+    from tameru import compress_context as cc
+    doc = "[[backends]]\nname = \"one\"\nverify = false\n[[backends]]\nname = \"two\""
+    scope_of = supersession._document_scopes(doc)
+    out = cc._append_scoped(
+        "name = \"two\"",
+        ["verify = false"],
+        scope_of,
+        supersession._document_headers(doc),
+    )
+    # Re-emitting [[backends]] would mint a phantom entry — skip instead.
+    assert out == "name = \"two\""

@@ -164,3 +164,73 @@ def test_bounded_variant_resolves_to_its_original_index():
     assert cc._fact_superseded_in(
         "config_key = 9", kept2, idx2, cc._bounded_orig_index(kept2, idx2)
     )
+
+
+def test_accented_kept_text_does_not_cover_a_missing_fact():
+    from tameru.compress_context import _fact_variant_present
+    # 'café' decomposes to 'cafe' + U+0301 — a plain substring search then
+    # counts a kept 'café' as covering the dropped 'cafe' value. The match
+    # ends inside a combining sequence, so it must not count.
+    ln = "A" * 3000 + " cafe " + "B" * 6000
+    kept = [ln.replace(" cafe ", " café ")]
+    assert _fact_variant_present(ln, kept, must=("cafe",)) is False
+    assert _fact_variant_present(ln, kept, must=("café",)) is True
+
+
+def test_clip_anchor_prefers_verbatim_hit_over_accent_variant():
+    # Same term hit twice inside one merged window — 'café' (folded-only)
+    # before 'cafe' (verbatim): the clip anchor must rank the HIT's own
+    # exactness, not the window's, so budget goes to the verbatim match.
+    line = "café" + "x" * 200 + "cafe" + "t" * 500
+    out = _window_oversized_line(
+        line, 100, ("cafe",), None, len(line), raw_terms=("cafe",)
+    )
+    assert "cafe" in out
+
+
+def test_cancelling_folds_still_build_the_offset_map():
+    # Fifty combining marks fold to nothing (-50) and fifty 'ﬁ' expand to
+    # 'fi' (+50): folded length equals source length and the fold is pure
+    # ASCII, yet offsets before 'cafe' drift by -50. The map check must
+    # inspect the input, not the folded text — else the clip starts 50
+    # chars early, inside the 'x' run.
+    line = (
+        "h" * 400 + "hit1" + "x" * 400 + "́" * 50
+        + "cafe" + "ﬁ" * 50 + "t" * 400
+    )
+    out = _window_oversized_line(
+        line, 600, ("hit1", "cafe"), None, len(line),
+        raw_terms=("hit1", "cafe"),
+    )
+    assert "cafe" in out
+    assert "xcafe" not in out
+
+
+def test_clip_anchor_keeps_another_terms_only_hit():
+    # Term 'cafe' hits twice — 'café' (variant) then 'cafe' (verbatim) —
+    # while 'onlyB' has its single hit in between. Anchoring at the
+    # verbatim repeat would start the clip past onlyB's only match; the
+    # anchor is the earliest of each still-missing term's best hit.
+    line = "m" * 200 + "café" + "x" * 46 + "onlyB" + "y" * 145 + "cafe" + "t" * 300
+    out = _window_oversized_line(
+        line, 300, ("cafe", "onlyb"), None, len(line),
+        raw_terms=("cafe", "onlyB"),
+    )
+    assert "onlyB" in out
+    assert "cafe" in out
+
+
+def test_reserved_clip_marks_only_emitted_hits_covered():
+    # Window 1 ('café' variant + 'onlyb') clips to its first hit to reserve
+    # budget for the later verbatim window; window 2 holds 'onlyb''s second
+    # occurrence. Marking the clipped-out hit covered would let window 2's
+    # clip anchor past it — 'onlyb' would vanish entirely.
+    line = (
+        "m" * 100 + "café" + "x" * 176 + "onlyb" + "y" * 400
+        + "onlyb" + "z" * 206 + "nice" + "t" * 500
+    )
+    out = _window_oversized_line(
+        line, 400, ("cafe", "onlyb", "nice"), None, len(line),
+        raw_terms=("cafe", "onlyb", "nice"),
+    )
+    assert "onlyb" in out
