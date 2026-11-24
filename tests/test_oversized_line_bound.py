@@ -204,3 +204,17 @@ def test_cancelling_folds_still_build_the_offset_map():
     )
     assert "cafe" in out
     assert "xcafe" not in out
+
+
+def test_clip_anchor_keeps_another_terms_only_hit():
+    # Term 'cafe' hits twice — 'café' (variant) then 'cafe' (verbatim) —
+    # while 'onlyB' has its single hit in between. Anchoring at the
+    # verbatim repeat would start the clip past onlyB's only match; the
+    # anchor is the earliest of each still-missing term's best hit.
+    line = "m" * 200 + "café" + "x" * 46 + "onlyB" + "y" * 145 + "cafe" + "t" * 300
+    out = _window_oversized_line(
+        line, 300, ("cafe", "onlyb"), None, len(line),
+        raw_terms=("cafe", "onlyB"),
+    )
+    assert "onlyB" in out
+    assert "cafe" in out

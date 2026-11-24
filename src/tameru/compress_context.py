@@ -6493,16 +6493,18 @@ def _window_oversized_line(
             return 0
 
         if fresh:
-            # The earliest still-missing TERM wins the anchor — a later
-            # verbatim hit for another term cannot crowd out an earlier
-            # term's only match. Within that term the best-quality hit
-            # anchors: its verbatim occurrence beats an earlier case
-            # variant of the same term.
-            first = min(h[0] for h in fresh)
-            term = next(h[2] for h in fresh if h[0] == first)
-            same = [h for h in fresh if h[2] == term]
-            best = max(_hit_quality(h) for h in same)
-            anchor = min(h[0] for h in same if _hit_quality(h) == best)
+            # Every still-missing term must stay reachable: per term the
+            # best-quality hit anchors (verbatim beats an earlier case
+            # variant), and the clip starts at the earliest of those — a
+            # later exact repeat of one term may not push the anchor past
+            # another term's only match.
+            per_term: dict[int, list[list[int]]] = {}
+            for h in fresh:
+                per_term.setdefault(h[2], []).append(h)
+            anchor = min(
+                min(h[0] for h in hs if _hit_quality(h) == max(_hit_quality(x) for x in hs))
+                for hs in per_term.values()
+            )
         elif pool:
             best = max(_hit_quality(h) for h in pool)
             anchor = min(h[0] for h in pool if _hit_quality(h) == best)
