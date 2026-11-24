@@ -8577,7 +8577,15 @@ def _normalise_options(
     mode_norm = (
         "adaptive" if requested_mode in {"compiler", "precision"} else requested_mode
     )
-    pin_recent = max(0, int(pin_recent or 0))
+    try:
+        pin_recent_num = float(pin_recent or 0)
+    except (TypeError, ValueError):
+        pin_recent_num = math.nan
+    if not math.isfinite(pin_recent_num):
+        raise ValueError(
+            f"pin_recent must be a finite non-negative integer, got {pin_recent!r}"
+        )
+    pin_recent = max(0, int(pin_recent_num))
     if min_savings_ratio is None:
         min_savings_ratio = 0.10
     min_savings_ratio = float(min_savings_ratio)
@@ -10238,8 +10246,19 @@ def _compress_context_impl(
     caller_text = str(context or "")
     if not isinstance(query, str):
         # PAACE-style plan awareness: a sequence of upcoming-task strings is
-        # scored as a union — a term from any planned step counts.
-        query = " ".join(str(part) for part in (query or []) if part)
+        # scored as a union — a term from any planned step counts. A scalar
+        # (a lone int, a datetime) is coerced rather than iterated: the
+        # generator form would exhaust on the second join downstream.
+        try:
+            query = [part for part in (query or [])]
+        except TypeError:
+            query = str(query)
+        else:
+            query = " ".join(str(part) for part in query if part)
+    if limits is not None and not isinstance(limits, IndustrialLimits):
+        raise TypeError(
+            f"limits must be an IndustrialLimits instance, got {type(limits).__name__}"
+        )
     if content_hint is not None and (
         not isinstance(content_hint, str) or content_hint not in _CONTENT_HINTS
     ):
@@ -10820,6 +10839,16 @@ def compress_context(
     _internal_sample: bool = False,
 ) -> CompressResult:
     full_text = str(context or "")
+    if not isinstance(query, str):
+        # A scalar query (a lone int, a datetime) is coerced, not iterated —
+        # and a generator is materialised once so the joins below and the
+        # impl's union-scoring both see the same terms.
+        try:
+            query = [part for part in (query or [])]
+        except TypeError:
+            query = str(query)
+        else:
+            query = "\n".join(str(part) for part in query if part)
     if compile_pin_patterns(pin_patterns) is None:
         tokens = estimate_tokens(full_text)
         return _with_schema_fields(CompressResult(
