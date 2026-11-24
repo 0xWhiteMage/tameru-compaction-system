@@ -1532,13 +1532,23 @@ def _bounded_orig_index(
     if not orig_index:
         return out
     head = max(64, _MAX_KEPT_LINE_CHARS // 4)
+    oversized = [
+        (ln, i) for ln, i in orig_index.items() if len(ln) > _MAX_KEPT_LINE_CHARS
+    ]
+    if not oversized:
+        return out
     for o in kept_lines:
         if o in orig_index:
             continue
-        for ln, i in orig_index.items():
-            if len(ln) > _MAX_KEPT_LINE_CHARS and o != ln and o.startswith(ln[:head]):
-                out.setdefault(o, i)
-                break
+        match = None
+        for ln, i in oversized:
+            if o != ln and o.startswith(ln[:head]):
+                if match is not None and match != i:
+                    match = None
+                    break  # shared-prefix originals: no position beats a wrong one
+                match = i
+        if match is not None:
+            out.setdefault(o, match)
     return out
 
 
