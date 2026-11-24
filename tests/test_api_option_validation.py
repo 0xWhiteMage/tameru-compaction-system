@@ -7,6 +7,8 @@ DOC = "ERROR: build failed\n" + "filler\n" * 60
 
 
 @pytest.mark.parametrize("bad", [float("inf"), float("nan"), "abc", object()])
+
+
 def test_pin_recent_rejects_non_finite_or_non_numeric(bad):
     with pytest.raises(ValueError, match="pin_recent"):
         compress_context(DOC, "build", ccr=False, citations=False, pin_recent=bad)
@@ -123,6 +125,8 @@ def test_bool_budget_ratio_is_rejected():
 
 
 @pytest.mark.parametrize("bad", [0, -0.5, 1.5])
+
+
 def test_out_of_range_budget_ratio_is_rejected(bad):
     # Adaptive ignored out-of-range ratios (≥1 kept all, ≤0 kept none);
     # the documented domain is (0, 1] on every path.
@@ -216,3 +220,22 @@ def test_content_key_rejects_non_str_parts():
         content_key("v", None, "t")
     with pytest.raises(TypeError):
         content_key(1, "n", "t")
+
+
+def test_brief_context_budget_chars_must_be_positive_int():
+    import pytest
+    from tameru.compress_context import brief_context
+    text = "alpha beta\n" * 50
+    with pytest.raises(TypeError, match="budget_chars must be int, got str"):
+        brief_context(text, budget_chars="x")
+    for bad in (0, -1, float("nan"), float("inf"), True):
+        with pytest.raises((TypeError, ValueError), match="budget_chars"):
+            brief_context(text, budget_chars=bad)
+    # A positive fractional budget floors to one character, not zero.
+    assert brief_context(text, budget_chars=0.5) == "a"
+
+
+def test_yaml_requires_original_tolerates_none():
+    from tameru.format_adapters import yaml_requires_original
+    assert yaml_requires_original(None) is False
+    assert yaml_requires_original("x: &anchor\ny: *anchor") is True

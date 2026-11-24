@@ -8419,6 +8419,10 @@ def brief_context(
     marker would not be shorter than the span (1.4.1).
     """
     text = text if isinstance(text, str) else str(text or "")
+    if isinstance(budget_chars, bool) or not isinstance(budget_chars, (int, float)):
+        raise TypeError(f"budget_chars must be int, got {type(budget_chars).__name__}")
+    if not math.isfinite(budget_chars) or budget_chars <= 0:
+        raise ValueError(f"budget_chars must be a positive int, got {budget_chars!r}")
     budget = max(1, int(budget_chars))
     if len(text) <= budget:
         return text

@@ -419,7 +419,7 @@ _YAML_REFERENCE_RE = re.compile(r'(?:^|[\s,:\[{])(?:&|\*)[^\s,\[\]{}]+', re.MULT
 def yaml_requires_original(text: str) -> bool:
     """Conservative anchor/alias guard: YAML references need the original
     document, so a partial render declines instead of inventing closure."""
-    return bool(_YAML_REFERENCE_RE.search(text))
+    return bool(_YAML_REFERENCE_RE.search(text or ""))
 
 
 def _adapt_ndjson(
