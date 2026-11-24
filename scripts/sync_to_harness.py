@@ -11,8 +11,9 @@ Ownership contract:
   * Upstream (this repo) owns every `src/tameru/*.py` EXCEPT `__init__.py`.
   * The harness owns its registration glue (`__init__.py`, engine class,
     hook entry point) and its manifest (`plugin.yaml`, package.json, ...).
-    This script never touches those — except for stamping `version:` /
-    `description` in the manifest when --manifest is given.
+    This script never touches those — except for stamping the `Tameru X.Y.Z`
+    engine reference in `description` when --manifest is given. The harness
+    owns its own `version:`; it is bumped by the harness's release process.
 
 It refuses to run if the target dir does not already exist (create the
 harness-owned files first), copies all upstream modules, then verifies the
@@ -27,7 +28,7 @@ vendored subpackage, e.g. `hermes_tameru_plugin/plugin.yaml` for the target
 
 --check is a read-only drift check for CI. It reports what a sync would change
 (modules whose content differs, upstream modules missing from the target, stale
-vendored modules a sync would remove, manifest version/description stamps that
+vendored modules a sync would remove, manifest description stamps that
 would change, manifest files that cannot be found) and exits 1 with that list
 if anything differs, 0 if the target is in sync. It never writes anything.
 """
@@ -59,12 +60,11 @@ def _upstream_version() -> str:
 
 
 def _stamped(text: str, version: str) -> str:
-    out = re.sub(r"^version:\s*\S+", f"version: {version}", text, flags=re.M)
-    return re.sub(r"Tameru \d+\.\d+\.\d+", f"Tameru {version}", out)
+    return re.sub(r"Tameru \d+\.\d+\.\d+", f"Tameru {version}", text)
 
 
 def _stamp_manifest(manifest: Path, version: str, *, write: bool = True) -> bool:
-    """Bump `version:` and any 'Tameru X.Y.Z' in `description:`. Returns True if changed.
+    """Update the 'Tameru X.Y.Z' engine reference in `description:`. Returns True if changed.
 
     With ``write=False`` nothing is written; the return value says whether a
     write would have changed the file.
@@ -163,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--stamp-only",
         action="store_true",
-        help="glue-only target: stamp the manifest version, copy no modules",
+        help="glue-only target: stamp the manifest's engine reference, copy no modules",
     )
     p.add_argument(
         "--check",

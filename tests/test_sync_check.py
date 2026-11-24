@@ -112,10 +112,17 @@ class SyncCheckTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertRegex(out, r"stale:\s+removed_upstream\.py")
 
-    def test_stale_manifest_version_fails(self):
+    def test_manifest_version_is_harness_owned(self):
+        # The harness's own `version:` is never re-stamped, whatever it says.
+        code, out = self._check()
+        self.assertEqual(code, 0, out)
+        self.assertIn("version: 0.0.1", self.manifest.read_text(encoding="utf-8"))
+
+    def test_stale_manifest_engine_reference_fails(self):
+        # Only the `Tameru X.Y.Z` in `description:` tracks upstream.
         self.manifest.write_text(
             self.manifest.read_text(encoding="utf-8").replace(
-                f"version: {sync._upstream_version()}", "version: 0.0.1"
+                f"Tameru {sync._upstream_version()}", "Tameru 0.0.1"
             ),
             encoding="utf-8",
         )
@@ -157,7 +164,9 @@ class SyncCheckTests(unittest.TestCase):
     def test_stamp_only_check_ignores_modules(self):
         glue = Path(self._tmp.name) / "glue"
         glue.mkdir()
-        (glue / "plugin.yaml").write_text("version: 0.0.1\n", encoding="utf-8")
+        (glue / "plugin.yaml").write_text(
+            "version: 0.0.1\ndescription: Tameru 0.0.1 context engine\n", encoding="utf-8"
+        )
         args = (str(glue), "--manifest", "plugin.yaml", "--stamp-only", "--check")
         self.assertEqual(_run(*args)[0], 1)  # stale stamp
         self.assertEqual(_run(str(glue), "--manifest", "plugin.yaml", "--stamp-only")[0], 0)
