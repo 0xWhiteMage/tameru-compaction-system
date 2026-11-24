@@ -1625,9 +1625,24 @@ def _fact_variant_present(
         # case holds a different value — counting it would mask the newer
         # fact.
         folded = unicodedata.normalize("NFKD", k) if want else k
-        if all(s in folded for s in want):
+        if all(_span_present(folded, s) for s in want):
             return True
     return False
+
+
+def _span_present(hay: str, needle: str) -> bool:
+    """True when ``needle`` occurs in ``hay`` NOT ending inside a combining
+    sequence. NFKD decomposes 'café' into 'cafe' + U+0301 — a plain substring
+    search would count 'cafe' as present in 'café', a different value."""
+    start = 0
+    while True:
+        i = hay.find(needle, start)
+        if i < 0:
+            return False
+        end = i + len(needle)
+        if end >= len(hay) or not unicodedata.combining(hay[end]):
+            return True
+        start = i + 1
 
 
 def _bound_fact_line(
@@ -1767,7 +1782,7 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
             return False
         want = tuple(unicodedata.normalize("NFKD", s) for s in (f[1], f[2]) if s)
         return any(
-            all(s in unicodedata.normalize("NFKD", ln) for s in want)
+            all(_span_present(unicodedata.normalize("NFKD", ln), s) for s in want)
             for ln in kept_by_fp[fp]
         )
     # Error positions in the ORIGINAL line list the fact indices are read from,
@@ -6306,10 +6321,11 @@ def _window_oversized_line(
     # Offsets are identity only when EVERY char folds to exactly one output
     # char — len(low) == n alone is not enough: an expansion ('ß' → 'ss')
     # and a removed combining mark can cancel in total length while offsets
-    # in between still drift. ASCII folds are always length-1, so the
-    # megabyte-line case keeps the fast path with no per-char map.
+    # in between still drift. The check is on the INPUT: a non-ASCII line
+    # can fold to pure ASCII ('é' → 'e' plus a dropped mark), which is
+    # exactly the case where identity offsets land mid-character.
     need_map = len(low) != n or (
-        not low.isascii() and any(_fold_len(ch) != 1 for ch in line)
+        not line.isascii() and any(_fold_len(ch) != 1 for ch in line)
     )
     if not need_map:
         def _src(folded_pos: int) -> int:
@@ -6463,6 +6479,19 @@ def _window_oversized_line(
         pending = [h for h in hits if h[0] >= pos]
         fresh = [h for h in pending if covered.get(h[2], 0) == 0]
         pool = fresh or pending or [h for h in hits if h[1] > pos]
+
+        def _hit_quality(h: list[int]) -> int:
+            # Quality is per HIT, not per window: an accent-folded variant
+            # ('café' for 'cafe') must not inherit the exact occurrence's
+            # rank, else clipping shows the variant and cuts the match.
+            term = _qual_terms[h[2]] if h[2] < len(_qual_terms) else ""
+            seg = line[h[0]:h[1]]
+            if term and term in seg:
+                return 3
+            if term and term.lower() in seg.lower():
+                return 2
+            return 0
+
         if fresh:
             # The earliest still-missing TERM wins the anchor — a later
             # verbatim hit for another term cannot crowd out an earlier
@@ -6472,11 +6501,11 @@ def _window_oversized_line(
             first = min(h[0] for h in fresh)
             term = next(h[2] for h in fresh if h[0] == first)
             same = [h for h in fresh if h[2] == term]
-            best = max(qual.get(h[2], 0) for h in same)
-            anchor = min(h[0] for h in same if qual.get(h[2], 0) == best)
+            best = max(_hit_quality(h) for h in same)
+            anchor = min(h[0] for h in same if _hit_quality(h) == best)
         elif pool:
-            best = max(qual.get(h[2], 0) for h in pool)
-            anchor = min(h[0] for h in pool if qual.get(h[2], 0) == best)
+            best = max(_hit_quality(h) for h in pool)
+            anchor = min(h[0] for h in pool if _hit_quality(h) == best)
         else:
             anchor = b - room
         return max(pos, min(b - room, anchor))
