@@ -55,11 +55,20 @@ _ASSIGN_RE = re.compile(
 # ``cache:`` at the same indent are DIFFERENT settings — scoping by indent
 # alone dropped the earlier section's live value.
 _PARENT_RE = re.compile(
-    r"^\s*(?:\[\s*(?P<ini>[^\]]+?)\s*\]\s*(?:[;#].*)?"
+    r"^\s*(?:\[\[?\s*(?P<ini>[^\[\]\s][^\[\]]*?)\s*\]?\]\s*(?:[;#].*)?"
     r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:\s*(?:#.*)?)$"
 )
+# A line past this length is never a section header or a bare mapping
+# parent — and per-line regex work on it is bounded.
+_MAX_HEADER_LINE = 512
 _TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
 _MIN_KEY_LENGTH = 5
+# Names too generic to be a distinctive ``=`` assignment key: cross-suite
+# ``result = PASS`` / ``result = FAIL`` lines are not one setting being
+# redefined — they are independent reports that must never supersede.
+_GENERIC_EQ_KEYS = frozenset(
+    "result status state value name type data output count total code ok".split()
+)
 
 
 def _distinctive_key(key: str, op: str) -> bool:
@@ -70,6 +79,8 @@ def _distinctive_key(key: str, op: str) -> bool:
     definition."""
     k = key.casefold()
     if len(k) < _MIN_KEY_LENGTH or k in _STOP or k in _OVERLAP_STOP:
+        return False
+    if op == "=" and k in _GENERIC_EQ_KEYS:
         return False
     if op == ":" and "_" not in k and "." not in k and "-" not in k \
             and not key.isupper():
@@ -97,7 +108,7 @@ def _assignments(text: str) -> dict[str, str]:
         if not line.strip():
             continue
         indent = len(line) - len(line.lstrip())
-        pm = _PARENT_RE.match(line)
+        pm = _PARENT_RE.match(line) if len(line) <= _MAX_HEADER_LINE else None
         if pm and pm["ini"] is not None:
             section = pm["ini"].casefold()
             parents.clear()
@@ -109,7 +120,11 @@ def _assignments(text: str) -> dict[str, str]:
             parents.append((indent, pm["yaml"].casefold()))
             continue
         m = _ASSIGN_RE.match(line)
-        if m and _distinctive_key(m["key"], m["op"]):
+        # A comment-only value (``key = ; note``) is not an assignment —
+        # two such lines differ only in their comment text and must never
+        # read as a value being redefined.
+        if m and not m["val"].lstrip().startswith(("#", ";")) \
+                and _distinctive_key(m["key"], m["op"]):
             parent = section or ("/".join(p for _i, p in parents) if parents else "")
             # '§' can never appear inside a key (the charset excludes it), so
             # a literal key like ``a/b`` can't collide with parent ``a`` +
@@ -208,6 +223,11 @@ def _supersedes(newer: str, older: str, *, newer_is_later: bool = True) -> bool:
     Either way it also requires shared content vocabulary between the two
     blocks, so unrelated lines never evict each other.
     """
+    # Source order gates BOTH paths: a block standing earlier in the input
+    # can never mark a later one stale — otherwise a kept stale line that
+    # mentions "override" would veto restoring the current one.
+    if not newer_is_later:
+        return False
     n_low = newer.casefold()
     if not any(m in n_low for m in _SUPERSESSION_MARKERS):
         # Reassignment of a distinctive key to a different value is its own
@@ -236,10 +256,11 @@ def _pure_assignments(text: str) -> bool:
         s = line.strip()
         if not s:
             continue
-        if _PARENT_RE.match(line):
+        if len(line) <= _MAX_HEADER_LINE and _PARENT_RE.match(line):
             continue
         m = _ASSIGN_RE.match(line)
-        if m and _distinctive_key(m["key"], m["op"]):
+        if m and not m["val"].lstrip().startswith(("#", ";")) \
+                and _distinctive_key(m["key"], m["op"]):
             continue
         return False
     return True

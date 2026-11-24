@@ -186,3 +186,39 @@ def test_pure_stale_assignment_block_still_drops():
     ]
     kept = apply_supersession(scored, {0, 1})
     assert kept == {1}
+
+
+def test_toml_array_table_scopes_assignments():
+    # [[servers]] is a TOML array-table header: keys under it must scope to
+    # 'servers', not leak the previous section's scope.
+    kv = _assignments("[alpha]\nhostname = a\n\n[[servers]]\nhostname = b\n")
+    assert kv.get("servers§hostname|") == "b"
+    assert "alpha§hostname|" in kv
+
+
+def test_generic_result_key_never_supersedes():
+    # result = PASS / result = FAIL across two suites are independent
+    # reports, not one setting being redefined.
+    older = "result = PASS\nsuite = checkout\n"
+    newer = "result = FAIL\nsuite = checkout\n"
+    assert not _supersedes(newer, older)
+
+
+def test_comment_only_value_is_not_an_assignment():
+    kv = _assignments("timeout_ms = 5000\nsetting = ; just a note\n")
+    assert "setting|" not in kv
+    assert kv.get("timeout_ms|") == "5000"
+
+
+def test_earlier_override_comment_cannot_veto_later_line():
+    # A kept line standing EARLIER in the input that merely mentions
+    # 'override' must never mark a later line stale.
+    earlier = "docs say the timeout_ms setting can be overridden\n"
+    later = "timeout_ms = 5000\n"
+    assert not _supersedes(earlier, later, newer_is_later=False)
+
+
+def test_oversized_bracket_line_is_not_a_header():
+    line = "[" + "x" * 5000  # no closing bracket
+    kv = _assignments(line + "\ntimeout_ms = 5000\n")
+    assert kv.get("timeout_ms|") == "5000"
