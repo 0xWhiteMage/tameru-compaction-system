@@ -10305,7 +10305,8 @@ def _compress_context_impl(
             fp = root / f"{ccr_hash}.json"
             try:
                 data = _read_ccr_record(fp)
-            except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+            except (OSError, UnicodeError, ValueError, RecursionError):
+                # ValueError covers JSONDecodeError + the int-digit limit.
                 continue
             if not isinstance(data, dict) or data.get("hash") != ccr_hash:
                 continue
