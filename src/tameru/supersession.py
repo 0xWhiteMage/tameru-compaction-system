@@ -136,7 +136,7 @@ def _meaningful_overlap(newer_terms: set[str], older_terms: set[str]) -> bool:
     return len(distinctive) >= 2
 
 
-def _supersedes(newer: str, older: str) -> bool:
+def _supersedes(newer: str, older: str, *, newer_is_later: bool = True) -> bool:
     """True when `newer` explicitly marks `older` stale.
 
     Conservative by design: requires an explicit staleness/override marker
@@ -149,8 +149,11 @@ def _supersedes(newer: str, older: str) -> bool:
     n_low = newer.casefold()
     if not any(m in n_low for m in _SUPERSESSION_MARKERS):
         # Reassignment of a distinctive key to a different value is its own
-        # explicit override — no prose marker needed.
-        return _reassigns(newer, older)
+        # explicit override — no prose marker needed. Unlike a prose marker,
+        # reassignment carries no direction of its own: ``k = v1`` and
+        # ``k = v2`` are symmetric. Only a KNOWN-later block may supersede —
+        # a surviving stale value must not veto restoring the current one.
+        return newer_is_later and _reassigns(newer, older)
 
     # Content overlap: at least two *distinctive* (non-filler) terms shared.
     return _meaningful_overlap(_content_terms(newer), _content_terms(older))
