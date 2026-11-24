@@ -140,3 +140,10 @@ def test_huge_int_budget_ratio_is_rejected_as_value_error():
     # ValueError so callers catching ValueError see the rejection.
     with pytest.raises(ValueError, match="budget_ratio"):
         compress_context(DOC, "build", budget_ratio=10**400, ccr=False, citations=False)
+
+
+def test_non_str_strategy_is_rejected():
+    # ``(strategy or "extract").strip()`` raised AttributeError on an int;
+    # a falsy non-str silently became 'extract'.
+    with pytest.raises(TypeError, match="strategy"):
+        compress_context(DOC, "build", strategy=42, ccr=False, citations=False)

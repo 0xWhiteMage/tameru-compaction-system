@@ -10884,6 +10884,11 @@ def compress_context(
     if mode is not None and not isinstance(mode, str):
         # A non-str mode fell through to ``.strip()`` with AttributeError.
         raise TypeError(f"mode must be a str, got {type(mode).__name__}")
+    if strategy is not None and not isinstance(strategy, str):
+        # Same crash family: ``(strategy or "extract").strip()`` raised
+        # AttributeError on a non-str; a falsy non-str silently became
+        # 'extract'.
+        raise TypeError(f"strategy must be a str, got {type(strategy).__name__}")
     if budget_ratio is not None:
         if not isinstance(budget_ratio, (int, float)) or isinstance(budget_ratio, bool):
             # Fixed mode's ``float(budget_ratio)`` rejects late; adaptive recorded
