@@ -472,6 +472,8 @@ def _grep_parse_lines(lines: list[str]) -> list[tuple[str, str, int, str] | None
 def detect_grep_lines(text: str) -> bool:
     """≥70% of the non-blank lines are ``path:N:text`` matches or
     ``path-N-text`` context lines (``--`` separators are neutral)."""
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
     if not text:
         return False
     rows = [raw for raw in text.split("\n") if raw.strip()]
@@ -849,6 +851,8 @@ def adapt_grep_lines(
     lines hitting the remaining query words, and the first occurrence of each
     distinct match text (capped at ``per_file_cap`` new distinct lines).
     """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
     if not detect_grep_lines(text):
         return None
     if type(per_file_cap) is not int or per_file_cap < 1:
