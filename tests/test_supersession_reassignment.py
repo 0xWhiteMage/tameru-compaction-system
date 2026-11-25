@@ -470,3 +470,28 @@ def test_inlined_short_gap_does_not_duplicate_the_restored_header():
     marker = cc.InliningGapMarker(lambda omitted, total: "x" * (omitted + 10))
     out = cc._render(lines, scored, kept, gap_marker=marker)
     assert out.count("[database]") == 1
+
+
+def test_array_subtable_attaches_to_the_last_element_always():
+    # TOML keeps absorbing ``[name.*]`` tables into the last ``[[name]]``
+    # element for the rest of the document: an intervening ``[other]``
+    # header does not end the attachment, and a deeper ``[name.tls]``
+    # does not nest the next subtable under itself.
+    doc = (
+        '[[backends]]\nname = "a"\n[backends.tls]\ncert = "c1"\n'
+        '[backends.x]\nport = 1\n[other]\nk = 2\n[backends.z]\nhost = "h"'
+    )
+    scopes = supersession._document_scopes(doc)
+    assert scopes['cert = "c1"'][0] == "backends\x1f1\x1ftls"
+    assert scopes["port = 1"][0] == "backends\x1f1\x1fx"
+    assert scopes['host = "h"'][0] == "backends\x1f1\x1fz"
+    assert scopes["k = 2"][0] == "other"
+
+
+def test_nested_array_attaches_under_the_parent_element():
+    # ``[[a.b]]`` entries live inside the last ``[[a]]`` element, so the
+    # same ``b`` field under two ``a`` entries is never one setting.
+    doc = "[[a]]\nx = 1\n[[a.b]]\ny = 2\n[[a]]\nx = 3\n[[a.b]]\ny = 4"
+    scopes = supersession._document_scopes(doc)
+    assert scopes["y = 2"][0] == "a\x1f1\x1fa.b\x1f1"
+    assert scopes["y = 4"][0] == "a\x1f2\x1fa.b\x1f2"
