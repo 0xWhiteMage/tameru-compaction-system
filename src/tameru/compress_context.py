@@ -1870,7 +1870,7 @@ def _blank_same_line_triples(ln: str) -> tuple[str, list[tuple[int, int]]]:
     parts.append(ln[pos:])
     return "".join(parts), unpaired
 _SINGLE_QUOTED_RE = re.compile(
-    r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\'[^\']*\'
+    r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\'[^\']*\''
 )
 
 
