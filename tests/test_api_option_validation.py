@@ -267,6 +267,7 @@ def test_decide_declines_malformed_result_fields():
     assert decide(mk(), pol_fp, original="x" * 100).accept is True
 
 
+
 def test_plan_item_rejects_negative_sizes():
     """A negative chars/tokens/stock_kept_chars makes min(kept, chars) go
     negative — the remnant reads as more saved than exists and predicted
@@ -403,3 +404,31 @@ def test_plan_dataclasses_reject_nan_sizes():
         with pytest.raises(ValueError, match="nonnegative"):
             PlanInput(**{**base, field: nan})
     PlanInput(**base)  # sane input still constructs
+
+
+def test_decide_declines_nonfinite_result_fields():
+    """int(float('inf')) raises OverflowError — outside the malformed catches'
+    TypeError/ValueError pair — and nan/inf savings make every EV comparison
+    False so the negative_ev veto could never fire. Both read as declines."""
+    from types import SimpleNamespace
+    from tameru.decide import decide, EVPolicy, Policy
+    def mk(**k):
+        base = dict(fail_open=False, compression_risk="low", compressed_text="ok",
+                    original_tokens=100, kept_tokens=50, tokens_saved=50,
+                    confidence=0.9, fact_lines_dropped=0)
+        base.update(k)
+        return SimpleNamespace(**base)
+    pol_sr = Policy(min_saved_ratio=0.1)
+    pol_ts = Policy(min_tokens_saved=10)
+    pol_ev = Policy(ev=EVPolicy("deepseek-v4-pro", "replay-2026-11-21"))
+    assert decide(mk(original_tokens=float("inf")), pol_sr).reason == "malformed"
+    assert decide(mk(kept_tokens=float("inf")), pol_sr).reason == "malformed"
+    assert decide(mk(tokens_saved=float("inf")), pol_ts).reason == "not_enough_tokens"
+    # float(10**400) overflows — the EV saved conversion must catch it.
+    assert decide(mk(tokens_saved=10**400), pol_ev,
+                  n_eff=1, suffix_tokens=1, item_tokens=1).reason == "malformed"
+    # nan/inf savings would accept under EV even when the real ev is negative.
+    assert decide(mk(tokens_saved=float("nan")), pol_ev,
+                  n_eff=1, suffix_tokens=1, item_tokens=1).reason == "malformed"
+    assert decide(mk(tokens_saved=float("inf")), pol_ev,
+                  n_eff=1, suffix_tokens=1, item_tokens=1).reason == "malformed"
