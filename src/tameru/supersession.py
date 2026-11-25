@@ -239,7 +239,7 @@ def _triple_state(open_kind: str | None, line: str) -> str | None:
     lit: str | None = None  # inside a ``'``/``"`` single-line literal
     while True:
         m = _TQ_OR_LIT_RE.search(line, pos)
-        if m is None or (cut is not None and m.start() >= cut):
+        if m is None or (cut is not None and open_kind is None and m.start() >= cut):
             return open_kind
         k = m.group(0)
         s = m.start()
@@ -261,7 +261,19 @@ def _triple_state(open_kind: str | None, line: str) -> str | None:
             pos = s + 1
             continue
         if open_kind is None:
+            # A delimiter inside a comment is text — a ``#``/``;`` that
+            # started while no string or literal was open bounds the code,
+            # so ``x = 1 # use \"\"\"`` never opens a string.
+            if cut is None:
+                cm = _code_comment_pos(line, 0)
+                if cm is not None:
+                    cut = cm
+                    if s >= cut:
+                        continue
             open_kind = k
+            # Inside a string a ``#``/``;`` is content, not a comment start —
+            # the cut computed outside no longer bounds matches.
+            cut = None
         elif k == open_kind:
             open_kind = None
             if cut is None:

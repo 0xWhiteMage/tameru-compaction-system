@@ -771,3 +771,16 @@ def test_a_four_quote_run_is_content_plus_the_triple_closer():
     # content, not a fresh literal that would hide the comment.
     assert supersession._code_comment_pos('x = """a"""" # c') == 13
     assert supersession._code_comment_pos("x = '''a'''' # c") == 13
+
+
+def test_triple_state_delimiter_inside_comment_is_text():
+    """``x = 1 # use \"\"\"`` must not open a string — a ``#``/``;`` that starts
+    while no string or literal is open bounds the code, so delimiter mentions
+    inside the comment are prose."""
+    from tameru.supersession import _triple_state
+    assert _triple_state(None, 'x = 1 # use """') is None
+    assert _triple_state(None, "x = 1 ; use '''") is None
+    assert _triple_state(None, "x = 'lit' '''") == "'''"
+    # But once the string is open a `#` is content, not a comment.
+    assert _triple_state(None, "x = a = 1''' # '''") is None
+    assert _triple_state('"""', 'a # b """ c') is None
