@@ -1793,6 +1793,7 @@ _SECTION_HEAD_RE = re.compile(r"^\s*\[")
 
 _UNESCAPED_TRIPLE_DQ = re.compile(r'(?<!\\)"""')
 _UNESCAPED_TRIPLE_SQ = re.compile(r"(?<!\\)'''")
+
 _TRIPLE_RUN_RE = re.compile(r'"""|\'\'\'')
 
 
@@ -1854,7 +1855,8 @@ def _blank_same_line_triples(ln: str) -> tuple[str, list[tuple[int, int]]]:
         pos = e
     parts.append(ln[pos:])
     return "".join(parts), unpaired
-_SINGLE_QUOTED_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'[^\']*\'')
+_SINGLE_QUOTED_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
+
 
 
 def _toml_code_part(line: str) -> str:

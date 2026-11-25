@@ -618,4 +618,21 @@ def test_triple_quote_after_closed_literal_still_opens():
     masked = cc._triple_quoted_lines(text)
     assert "z = 1" in masked
     assert 'x = \'a # b\' """yes' in masked
+<<<<<<< HEAD
 >>>>>>> 52505fc (fix(engine): skip non-delimiter lines; hide triple quotes inside literals)
+||||||| parent of 8220955 (fix(engine): the ' literal scrub honours backslash escapes)
+=======
+
+
+def test_escaped_apostrophe_literal_does_not_hide_the_opener():
+    """In ``x = 'it\\'s' \"\"\"…`` the ``\\'`` is content, not a closer: a
+    quote-blanker that stops at it reads ``s'`` as an unclosed literal and
+    hides the real ``\"\"\"`` — leaving the string's body live to the
+    stale-setting veto."""
+    import tameru.compress_context as cc
+
+    text = "x = 'it\\'s' \"\"\"real\nbody\nz = 1\n\"\"\""
+    masked = cc._triple_quoted_lines(text)
+    assert "body" in masked
+    assert "z = 1" in masked
+>>>>>>> 8220955 (fix(engine): the ' literal scrub honours backslash escapes)
