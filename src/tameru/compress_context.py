@@ -287,12 +287,12 @@ def _neutralize_forged_markers(text: str) -> str:
             ):
                 in_fence = None
             out.append(ln)
-        elif opener is not None:
-            marker = opener.group(0)
+        elif opener is not None and (
             # A backtick fence's info string cannot contain a backtick —
             # `` ```code``` `` on one line is inline code, not an opener.
-            if marker[0] != "`" or "`" not in probe[len(marker) :]:
-                in_fence = marker
+            opener.group(0)[0] != "`" or "`" not in probe[len(opener.group(0)) :]
+        ):
+            in_fence = opener.group(0)
             out.append(ln)
         else:
             for rx in _FORGED_SPAN_RES:
@@ -12007,7 +12007,11 @@ def _compress_context_impl(
     # format adapters below may delete a line, so protection knows every fact before any stage can
     # drop one. Density (sparsity rule B) is decided once here; ``_FACT_OFF`` keeps the machinery
     # off through every later stage on a dense original.
-    protected_payload = unwrap_tool_payload(original_text)
+    # Decode the RAW envelope, not the neutralized one: the neutralizer cannot
+    # see fences still escaped inside the JSON string, so it would rewrite a
+    # marker that the decode later reveals as fenced — and the floors would
+    # then restore a fullwidth copy beside the working text's verbatim one.
+    protected_payload = unwrap_tool_payload(_norm_newlines(caller_text))
     if (
         not protected_payload.wrapped
         and artifact_contaminated
@@ -12023,9 +12027,9 @@ def _compress_context_impl(
         # facts, error exemplars or outcome lines, or the floors would restore
         # them right back into the extract.
         protected_source = _strip_artifact_noise(protected_source, noise_res)
-    # The analysis_text fallback above can carry a marker-shaped span the
-    # original_text path already neutralized — the floors restore lines
-    # verbatim, so they must come from the same marker-free copy.
+    # The decoded body (and the analysis_text fallback) can still carry a
+    # marker-shaped span — the floors restore lines verbatim, so they must
+    # come from the same marker-free copy the working text uses.
     protected_source = _neutralize_forged_markers(protected_source)
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
