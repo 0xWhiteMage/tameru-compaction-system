@@ -2307,7 +2307,15 @@ def _triple_quoted_lines(text: str) -> set[str]:
             continue
         # A ``"""`` inside a comment (``# use """ for multiline``) is prose,
         # not a delimiter — count quotes only in the code part of the line.
-        code = re.split(r"[#;]", ln, maxsplit=1)[0]
+        # And a ``#``/``;`` inside a quoted literal is content, not a comment
+        # start: a naive ``re.split`` at either char would cut before a real
+        # ``"""`` that follows it in the value (``x = 'has # a """'``) and
+        # leave the string opener uncounted.
+        blank = lambda m: " " * len(m.group(0))
+        scrubbed = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, ln)
+        scrubbed = _SINGLE_QUOTED_RE.sub(blank, scrubbed)
+        m = re.search(r"[#;]", scrubbed)
+        code = ln if m is None else ln[: m.start()]
         for q in ('"""', "'''"):
             if code.count(q) % 2 == 1:
                 masked.add(ln)

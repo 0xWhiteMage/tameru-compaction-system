@@ -523,6 +523,22 @@ def test_single_token_guillemet_tag_is_a_diagnostic():
     assert "⟪ERROR: database shutdown⟫" in r.compressed_text
 
 
+def test_hash_inside_quoted_value_does_not_hide_a_string_opener():
+    """In ``x = 'a # b' \"\"\"`` the ``#`` inside the literal is content — a
+    comment-strip that cuts at it loses the real triple-quote opener, so the
+    string's body reads as live settings and every line after the closer is
+    swallowed as inside-string text."""
+    import tameru.compress_context as cc
+
+    text = 'k = "live"\nx = \'a # b\' """not a comment\nk = "old"\n"""\nz = 1'
+    masked = cc._triple_quoted_lines(text)
+    # The opener line and its body are masked…
+    assert 'x = \'a # b\' """not a comment' in masked
+    assert 'k = "old"' in masked
+    # …and the setting after the closer is not inside the string.
+    assert "z = 1" not in masked
+
+
 def test_triple_quote_in_comment_does_not_disable_veto():
     """A ``\"\"\"`` inside a comment is prose, not a string opener: the mask
     must not swallow the settings after it and silence the stale-line veto."""
