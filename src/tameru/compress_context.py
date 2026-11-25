@@ -4698,6 +4698,7 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
 
     prev_type = None
     in_fence = False
+    in_string: str | None = None
     for i, line in enumerate(lines):
         kind = classify_line(line)
         line_toks = estimate_tokens(line)
@@ -4706,6 +4707,17 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
             if kind == "fence":
                 close(i)
                 in_fence = False
+            prev_type = kind
+            continue
+        if in_string is not None:
+            # Inside a TOML multiline string the whole line is content — a
+            # blank line or a shape change must not split the block, because
+            # selection is block-atomic: a partial span emits an unterminated
+            # opener or bare body lines, and no TOML parser accepts either.
+            tokens += line_toks
+            if _has_unescaped_triple(line, in_string):
+                close(i)
+                in_string = None
             prev_type = kind
             continue
         if kind == "fence":
@@ -4749,6 +4761,16 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
             tokens += line_toks
             if btype == "text" and kind != "blank":
                 btype = kind
+        # A line whose code part holds an odd number of unescaped triple
+        # quotes opens a TOML multiline string — the scan above keeps the
+        # span in one block. Quotes inside a trailing comment or a quoted
+        # literal are text, and an even count opens and closes on the line.
+        if in_string is None:
+            code = _quote_aware_code_part(line)
+            if _unescaped_triple_count(code, '"""') % 2:
+                in_string = '"""'
+            elif _unescaped_triple_count(code, "'''") % 2:
+                in_string = "'''"
         prev_type = kind
     close(len(lines) - 1)
     return blocks

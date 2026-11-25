@@ -586,3 +586,44 @@ def test_secret_body_lines_are_never_pulled_back():
     # ...while the rest of the value still restores whole.
     tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
     assert "normal body" in tomllib.loads(out)["x"]["v"]
+
+
+def test_segmentation_keeps_a_multiline_string_span_in_one_block():
+    """Selection is block-atomic, so a multiline string split across blocks
+    can emit a partial span: the opener alone is an unterminated string that
+    swallows the rest of the extract, and bare body lines are not valid TOML
+    statements. Blank lines and shape changes inside the span must not split
+    the block — the same contract fences already have."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    lines = (
+        'ml = """\nbody alpha filler\n\nbody beta with blank line above\n'
+        '"""\n[sec1]\nkey2 = "value2 filler filler filler"'
+    ).split("\n")
+    blocks = cc.segment_blocks(lines)
+    span = [b for b in blocks if 'ml = """' in b["text"]]
+    assert len(span) == 1
+    assert '"""' in span[0]["text"].split("\n")[-1] or span[0]["text"].count('"""') >= 2
+    assert "body beta" in span[0]["text"]
+
+
+def test_a_multiline_opener_never_emits_without_its_span():
+    """End to end: at a tight budget the whole span rides its one block —
+    the extract never strands the opener as an unterminated string."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    doc = (
+        'ml = """\nmlbody0 filler filler filler filler filler\n'
+        'mlbody1 filler filler filler filler filler\n"""\n'
+        '[sec1]\nkey0 = "value0 filler filler filler filler filler filler"\n'
+        'key2 = "value2 filler filler filler filler filler filler"\n'
+        '[sec2]\nkey0 = "value0 filler filler filler filler filler filler"\n'
+        'key2 = "value2 filler filler filler filler filler filler"\n'
+        'ml = """\nmlbody0 filler filler filler filler filler\n'
+        'mlbody2 filler filler filler filler filler\n"""'
+    )
+    r = cc.compress_context(doc, "value2", budget_ratio=0.05, **OPTS)
+    txt = r.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        ln for ln in txt.split("\n")
+        if not ln.startswith(("[§", "[…", "[×", "[last")))
+    if 'ml = """' in cleaned:
+        tomllib.loads(cleaned)  # raises when an opener is stranded
