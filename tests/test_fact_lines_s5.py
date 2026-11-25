@@ -483,7 +483,6 @@ def test_outcome_floor_restores_unreachable_lines_end_to_end():
     )
     assert res.fail_open or ("Event[90]:" in res.compressed_text
                              and "The event log service was stopped." in res.compressed_text)
-<<<<<<< ours
 
 
 def test_restored_multiline_opener_brings_its_body():
@@ -587,8 +586,6 @@ def test_secret_body_lines_are_never_pulled_back():
     # ...while the rest of the value still restores whole.
     tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
     assert "normal body" in tomllib.loads(out)["x"]["v"]
-||||||| base
-=======
 
 
 def test_restored_line_never_emitted_twice_end_to_end():
@@ -622,4 +619,3 @@ def test_restored_block_dedupes_one_source_line():
     out = _restored_block("x = 0", ["k = 1", "k = 1"], header_of, oi)
     assert out.count("k = 1") == 1
     assert out.count("[t]") == 1
->>>>>>> theirs
