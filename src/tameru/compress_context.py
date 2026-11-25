@@ -2566,7 +2566,7 @@ def _restored_block(
                     if (ek, os_) in opened or any(
                         l3.strip() == os_ for l3 in appended[pos + 1 : end]
                     ):
-                        present.update(emit); present.add(orig)
+                        present.update(emit[:1]); present.add(orig)
                         continue
                     j = pos + 1
                     while j < len(appended) and (
@@ -2576,7 +2576,7 @@ def _restored_block(
                         j += 1
                     appended.insert(j, os_)
                     opened.add((ek, os_))
-                    present.update(emit); present.add(orig)
+                    present.update(emit[:1]); present.add(orig)
                     continue
                 ap_norm = ap.strip()
                 ap_at = [
@@ -2594,7 +2594,7 @@ def _restored_block(
                         # again would start a second array entry. The
                         # subtable's members re-emit ``os_`` themselves via
                         # the hcand/extra path, so only mark it present.
-                        present.update(emit); present.add(orig)
+                        present.update(emit[:1]); present.add(orig)
                         continue
                     # An empty subtable has no member to re-emit ``os_`` —
                     # skipping here drops the header (and any protected
@@ -2635,7 +2635,7 @@ def _restored_block(
                     if last_entry and survives_last and not already:
                         insert_after.setdefault(j - 1, []).extend(emit)
                         extra_opened.add((ek, os_))
-                        present.update(emit); present.add(orig)
+                        present.update(emit[:1]); present.add(orig)
                         continue
                 appended.extend((ap, os_))
                 present.update((ap, orig))
@@ -2648,7 +2648,7 @@ def _restored_block(
                 opened.add((ek, os_))
             else:
                 appended.extend(emit)
-                present.update(emit); present.add(orig)
+                present.update(emit[:1]); present.add(orig)
                 if _SECTION_LIKE_RE.match(os_):
                     # A restored header is minted without ``_emit_open`` —
                     # register it so a member restoring later does not
@@ -2834,7 +2834,7 @@ def _restored_block(
                     if extra:
                         if skey in extra_opened:
                             if ln == h:
-                                present.update(emit); present.add(orig)
+                                present.update(emit[:1]); present.add(orig)
                                 continue
                             extra = ()
                         else:
@@ -2849,7 +2849,7 @@ def _restored_block(
                     ):
                         j += 1
                     insert_after.setdefault(j - 1, []).extend(extra + tuple(emit))
-                    present.update(extra + (orig,)); present.update(emit)
+                    present.update(extra + (orig,)); present.update(emit[:1])
                 else:
                     head = h.strip()
                     if _emit_open():
@@ -2859,10 +2859,10 @@ def _restored_block(
                         pass
                     else:
                         appended.extend(emit)
-                    present.update(emit); present.add(orig)
+                    present.update(emit[:1]); present.add(orig)
             else:
                 insert_before.setdefault(nxt[0], []).extend(open_seq + tuple(emit))
-                present.update(open_seq + (orig,)); present.update(emit)
+                present.update(open_seq + (orig,)); present.update(emit[:1])
             continue
         if not cand:
             # The section itself was dropped: re-emit its header with the
@@ -2875,7 +2875,7 @@ def _restored_block(
                 pass
             else:
                 appended.extend(emit)
-            present.update(emit); present.add(orig)
+            present.update(emit[:1]); present.add(orig)
             continue
         # A plain table: the surviving section owns the setting — insert at
         # the section's end, before the next header line.
@@ -2891,7 +2891,7 @@ def _restored_block(
         ):
             j += 1
         insert_after.setdefault(j - 1, []).extend(emit)
-        present.update(emit)
+        present.update(emit[:1])
         present.add(orig)
     if insert_after or insert_before:
         merged: list[str] = []

@@ -994,3 +994,19 @@ def test_orphan_collision_under_padded_array_mints_fresh_entry():
     doc = tomllib.loads(out)
     subs = sorted(e["sub"]["sub"] for e in doc["deps"])
     assert subs == [3, 7]
+
+def test_multiline_body_text_does_not_suppress_a_real_setting():
+    """A restored string's body quoting ``x = 1`` marks the quoted text, not
+    the real setting: a later table's identical line still restores."""
+    before = ('[a]\ndoc = """\nx = 1\n"""\n[t]\nx = 1\ny = 2')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[a]'
+    restore = ['doc = """', 'x = 1', '"""', 'x = 1', 'y = 2']
+    out = cc._restored_block(after, restore, lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["t"]["x"] == 1
+    assert doc["t"]["y"] == 2
+    assert 'x = 1' in doc["a"]["doc"]
