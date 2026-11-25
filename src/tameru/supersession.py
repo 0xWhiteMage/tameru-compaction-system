@@ -4,6 +4,7 @@ compress_context (which consumes this module), so no import cycles.
 """
 from __future__ import annotations
 
+import bisect
 import re
 from typing import Any
 
@@ -172,7 +173,36 @@ def _advance(state: list, line: str) -> str | None:
         else:
             name = ini if ini[:1] in "\"'" else ini.casefold()
         if line.lstrip().startswith("[["):
-            count = state[2].get(name, (0, ""))[0] + 1
+            # A new element ends the previous one: array registrations
+            # nested under it (``a.arr`` and deeper) belonged to that
+            # element, so they must not capture paths below the new one —
+            # ``[a.arr.x]`` after a fresh ``[[a]]`` is a plain table of the
+            # NEW element in TOML, never part of the old element's array.
+            # Numbering is continuous per array path across the document —
+            # it survives the invalidation below in a control-keyed side
+            # table so the second element's first ``[[a.b]]`` is still the
+            # array's entry 2. The side tables key on tuples: this pass runs
+            # on log text too, where a header name can hold ANY character
+            # (including ``\x1f``), so no string sentinel is collision-proof.
+            counts = state[2].setdefault(("\x1fc",), {})
+            # The name registry is one sorted list: dotted descendants of a
+            # name sort into one contiguous range, so invalidating one
+            # element's nested arrays bisects the range and drops it — no
+            # rescan of every active path per header, and no per-prefix
+            # index memory (a deep chain otherwise amplifies input memory
+            # by its depth). Insertion is a bounded memmove.
+            registry = state[2].setdefault(("\x1freg",), [])
+            prefix = name + "."
+            lo = bisect.bisect_left(registry, prefix)
+            hi = lo
+            while hi < len(registry) and registry[hi].startswith(prefix):
+                hi += 1
+            for key in registry[lo:hi]:
+                state[2].pop(key, None)
+            if hi > lo:
+                registry[lo:hi] = []
+            count = counts.get(name, 0) + 1
+            counts[name] = count
             scope = f"{name}\x1f{count}"
             root = name
             attach = None
@@ -192,6 +222,9 @@ def _advance(state: list, line: str) -> str | None:
             # the scope is what ``[name.sub]`` prefixes itself with when it
             # attaches under the last element.
             state[2][name] = (count, scope)
+            at = bisect.bisect_left(registry, name)
+            if at >= len(registry) or registry[at] != name:
+                registry.insert(at, name)
         else:
             # ``[name.sub]`` always attaches to the LAST ``[[name]]``
             # element — TOML keeps absorbing ``name.*`` tables for the
