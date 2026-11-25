@@ -2150,6 +2150,9 @@ def _advance_triple_state(ln: str, inside_basic: bool, inside_literal: bool):
     return inside_basic, inside_literal
 
 
+_CITATION_SHAPE_RE = re.compile(r"\[§[0-9a-f]{0,16}\]\s")
+
+
 def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
     """Close a multiline TOML string whose closer was dropped with the
     lines around it. Emitted while still inside one, a section header or
@@ -2205,12 +2208,23 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
             in_fence = not in_fence
             out.append(ln)
             continue
+        scan_suppressed = False
         if sv.startswith("[§"):
-            # Citation annotations embed quoted content verbatim — their
-            # quote runs are not TOML delimiters, so the line is emitted
-            # untouched and never scanned.
-            out.append(ln)
-            continue
+            if not in_s:
+                # Citation annotations embed quoted content verbatim —
+                # their quote runs are not TOML delimiters, so the line is
+                # emitted untouched and never scanned.
+                out.append(ln)
+                continue
+            # Inside a multiline string the shape means something else
+            # entirely: a source content line may genuinely start with
+            # "[§" (and carry the string's real closer), while an emitted
+            # citation landing mid-string marks the exact point a drop
+            # happened — the trigger below must see it, but its quoted
+            # fragments ("{head}"…"{tail}") are text, not delimiters.
+            # The digest-shaped annotation form is never scanned; any
+            # other "[§" line is content and scans normally.
+            scan_suppressed = bool(_CITATION_SHAPE_RE.match(sv))
         if in_fence:
             # Fenced code is kept verbatim — a """/''' or a header-shaped
             # line inside it is code content, never TOML syntax.
@@ -2227,7 +2241,7 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
         )
         trigger_shape = in_s and (not in_s_fence or unclosed_s_fence) and (
             _DEFAULT_ELISION_LINE.match(sv)
-            or sv.startswith("[§")
+            or scan_suppressed
             or sv in header_texts
         )
         delim = '"""' if inside_basic else "'''"
@@ -2237,7 +2251,12 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
                 if _triple_close_positions(parts[j], delim):
                     hazard_at = j
                     break
-        if trigger_shape and (not closes_later or hazard_at >= 0):
+        self_closes = (
+            trigger_shape
+            and not scan_suppressed
+            and bool(_triple_close_positions(ln, delim))
+        )
+        if trigger_shape and not self_closes and (not closes_later or hazard_at >= 0):
             # A same-kind delimiter run between the opener and here closes
             # the string early in real TOML — the parity "closer" behind
             # it can never be reached, so it cannot be ours. Mint the close
@@ -2266,6 +2285,10 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
                     str_delim = '"""' if inside_basic else "'''"
             in_s = False
         out.append(ln)
+        if scan_suppressed:
+            # The annotation's quoted fragments are text — advancing the
+            # delimiter scan over them would toggle phantom string state.
+            continue
         was_in = in_s
         inside_basic, inside_literal = _advance_triple_state(ln, inside_basic, inside_literal)
         if was_in and not (inside_basic or inside_literal):

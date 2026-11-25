@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import tomllib
 
 try:
     import tomllib
@@ -1181,3 +1182,30 @@ def test_citation_lines_are_not_scanned_for_delimiters():
         if not l.startswith(("[§", "[…", "[×", "[last"))
     )
     tomllib.loads(cleaned)  # must parse — no stray minted closers
+
+
+def test_citation_at_a_mid_string_drop_triggers_the_close():
+    """A citation annotation emitted mid-string marks where lines were
+    dropped — when the string's closer went with them, the repair must
+    mint the close at the citation, not at the end of the extract. The
+    annotation's quoted fragments are text: even an embedded triple quote
+    is never a closer, and the keys after it must survive as keys."""
+    parts = ['ml4 = """', '[§3049a1ba] "body text"…"""""', "[sec2]", "key = 1"]
+    out = cc._toml_string_repair(parts, set())
+    assert out.index('"""') == 1  # minted right before the citation
+    body = "\n".join(l for l in out if not l.strip().startswith("[§"))
+    parsed = tomllib.loads(body)
+    assert parsed["sec2"]["key"] == 1
+
+
+def test_a_content_line_starting_with_the_citation_shape_scans_normally():
+    """Inside a multiline string a line can genuinely start with ``[§`` —
+    it is content, not an annotation. When it carries the string's real
+    closer the repair must leave the span untouched: skipping the scan
+    used to miss the close and mint a stray trailing delimiter."""
+    parts = ['ml = """', '[§ content line """', "next = 1"]
+    out = cc._toml_string_repair(parts, set())
+    assert out == parts  # no minted closers anywhere
+    parsed = tomllib.loads("\n".join(out))
+    assert parsed["next"] == 1
+    assert parsed["ml"] == "[§ content line "
