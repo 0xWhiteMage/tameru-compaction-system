@@ -69,3 +69,5 @@ R-0018 | verified | blue | engine | `gap_marker` callback fires once per compres
 - R-0063 | probe-closed-no-bug | budget_ratio verified adaptive: unique low-score filler keeps 30/150/300 lines at ratio 0.1/0.5/0.9 exactly proportional; fail-open returns byte-identical original (len match, zero divergence). Early flat readings were correct: all-fact inputs hit keep floors, self-similar noise dedupes before selection. Not a gap.
 - R-0064 | inspect_compressibility | non-str text/query crashed mid-estimate; now entry TypeError (None query stays tolerated) | PR #65
 - R-0065 | milestone | red-team 228/228 clean, zero findings on v1.10.0 1afc770 — first fully-green baseline since harness inception
+- R-0066 | release hygiene | CHANGELOG.md on v1.10.0 had committed nested merge-conflict markers around token_units entries; resolved keeping final wording | PR #66
+- R-0067 | option validation | min_savings_ratio skipped type check — str/list/dict crashed with bare float() error; now TypeError naming the option | PR #67
