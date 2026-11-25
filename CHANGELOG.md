@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
+- Fix: a line reaching the restore pool from two protection sources (a fact that is also an outcome line) restores once — `_restored_block` dedupes entries that resolve to the same original line, so a `port = 1` under a dropped `[deps.serve]` no longer emits twice, and the floor's displacement eviction can no longer drop a pooled line's section header, so a surviving setting keeps the table it belongs to. - Unreleased
 - Fix: the plan dataclasses' nonnegative guards accepted NaN — ``nan < 0`` is False, so a NaN ``n_eff``, ``tokens`` or ``growth_tokens_per_step`` slipped through and poisoned totals downstream; the checks now reject NaN alongside negatives. - Unreleased
 - Fix: a `[name.sub]` table under a `[[name]]` array now attaches to the last element for the whole document, as TOML requires — an intervening `[other]` header no longer drops the attachment and a deeper `[name.tls]` no longer absorbs the next sibling. `[[a.b]]` nested arrays attach under the last `[[a]]` element, and their own `[a.b.c]` subtables keep the full element scope (`a\x1f1\x1fa.b\x1f1\x1fc`) instead of colliding with a top-level `[[a.b]]`'s same-named subtable. - Unreleased
 

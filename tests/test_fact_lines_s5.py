@@ -483,6 +483,7 @@ def test_outcome_floor_restores_unreachable_lines_end_to_end():
     )
     assert res.fail_open or ("Event[90]:" in res.compressed_text
                              and "The event log service was stopped." in res.compressed_text)
+<<<<<<< ours
 
 
 def test_restored_multiline_opener_brings_its_body():
@@ -586,3 +587,39 @@ def test_secret_body_lines_are_never_pulled_back():
     # ...while the rest of the value still restores whole.
     tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
     assert "normal body" in tomllib.loads(out)["x"]["v"]
+||||||| base
+=======
+
+
+def test_restored_line_never_emitted_twice_end_to_end():
+    """A protected line that is also an outcome line reaches ``_restored_block``
+    from both pools — one original line restores once, and the section header
+    its setting needs is exempt from the floor's displacement eviction."""
+    toml = "\n".join([
+        "[root]", 'name = "app"', "",
+        "[[deps]]", 'lib = "a"', "ver = 1", "",
+        "[[deps]]", 'lib = "b"', "ver = 2", 'extra = "gone"', "",
+        "[deps.serve]", "port = 1", "",
+    ])
+    text = toml + "\n".join(
+        f"other topic line {i} words words" for i in range(300)
+    )
+    res = cc.compress_context(text, "extra gone", **OPTS)
+    out = res.compressed_text
+    assert out.count("port = 1") == 1
+    assert "[deps.serve]" in out
+    assert out.index("[deps.serve]") < out.index("port = 1")
+    assert "[root]" in out
+
+
+def test_restored_block_dedupes_one_source_line():
+    """``_restored_block`` emits each original line once: two entries that
+    resolve to the same source line (a bounded form and the verbatim one)
+    produce a single restore."""
+    from tameru.compress_context import _restored_block
+    header_of = {"k = 1": "[t]"}
+    oi = {"k = 1": 3}
+    out = _restored_block("x = 0", ["k = 1", "k = 1"], header_of, oi)
+    assert out.count("k = 1") == 1
+    assert out.count("[t]") == 1
+>>>>>>> theirs

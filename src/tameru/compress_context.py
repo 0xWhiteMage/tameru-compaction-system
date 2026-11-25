@@ -2071,7 +2071,16 @@ def _restored_block(
                 return ln
         return hits[0] if hits else ln
 
+    seen: set[str] = set()
     for ln in lines:
+        if ln in seen:
+            # Two protection pools can hand up the same line (a fact that
+            # is also an outcome line) — identical text emits once. Dedupe
+            # on the line itself, not the resolved source: two distinct
+            # originals bound to different text must both restore even
+            # when _resolve maps them to the same line.
+            continue
+        seen.add(ln)
         orig = _resolve(ln)
         target0 = oi.get(orig)
         emit = [ln]
@@ -2561,11 +2570,16 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
                     line_score[ln] = b["score"]
     rendered = compressed.split("\n")
     pool_texts = {f[3] for f in facts}
+    # A pooled line's section header is as protected as the line: evicting
+    # ``[deps.serve]`` while ``port = 1`` survives rewrites the extract's
+    # scope — the surviving setting now reads under the last kept table.
+    pool_headers = {line_headers.get(ln) for ln in pool_texts}
     cand = sorted(
         (
             i for i, ln in enumerate(rendered)
             if ln in line_score
             and ln not in pool_texts
+            and ln not in pool_headers
             and not _OUTCOME_ERR_NEAR_RE.search(ln)
             and not _is_trust_risk_line(ln)
         ),
