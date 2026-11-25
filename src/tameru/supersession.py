@@ -732,6 +732,12 @@ def _line_scopes(
         code = _code_part(line)
         if _TQ_DELIM_RE.search(code) and _triple_state(None, code) is not None:
             scopes[line] = section or "/".join(p for _i, p in parents)
+            # The opener line itself is a live statement (`v = """` is an
+            # assignment under its section) — record its header so a
+            # restored opener re-emits the section it belongs to. Lines
+            # INSIDE the string stay content and skip the map.
+            if line_headers is not None and section:
+                line_headers[line] = cur_header
             tq = _triple_state(None, code)
             continue
         fm = _FUNC_DEF_RE.match(line)
