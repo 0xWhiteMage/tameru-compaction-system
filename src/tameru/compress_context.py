@@ -2211,13 +2211,19 @@ def _restored_block(
     # header too — mask out lines that sit inside a """ or ''' string.
     header_texts = set(header_of.values())
     in_string = [False] * len(after_lines)
+    after_hdr: list[str | None] = [None] * len(after_lines)
     inside_basic = inside_literal = False
+    cur_after_hdr: str | None = None
     for i, l in enumerate(after_lines):
         in_string[i] = inside_basic or inside_literal
+        after_hdr[i] = cur_after_hdr
         # Only the code part of the line opens or closes a TOML string —
         # quotes inside a trailing # comment are text, and \"-escaped
         # quotes inside a basic string don't end it.
         code = _delim_view(l, inside_basic or inside_literal)
+        if not in_string[i] and _SECTION_LIKE_RE.match(l):
+            cur_after_hdr = l
+            after_hdr[i] = l
         if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
             inside_basic = not inside_basic
         if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
@@ -2447,6 +2453,7 @@ def _restored_block(
             oi_pos = [
                 i for i, l in enumerate(after_lines)
                 if l == otext and not in_string[i]
+                and after_hdr[i] == enclosing.get(oidx)
             ]
             if oi_pos:
                 insert_after.setdefault(oi_pos[-1], []).append(ln)

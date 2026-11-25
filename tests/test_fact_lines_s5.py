@@ -1010,3 +1010,22 @@ def test_multiline_body_text_does_not_suppress_a_real_setting():
     assert doc["t"]["x"] == 1
     assert doc["t"]["y"] == 2
     assert 'x = 1' in doc["a"]["doc"]
+
+
+def test_continuation_anchors_to_its_own_sections_opener_not_a_same_text_one():
+    """Two ``key = \"\"\"`` openers under different tables: a dropped span's
+    continuation restores the whole value under ITS section, never inside a
+    surviving same-text opener of another table."""
+    before = ('[a]\nkey = """\nfirst body\n"""\n[b]\nkey = """\n'
+              'second body\n"""\nother = 1')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[a]\nkey = """\nfirst body\n"""\n[b]\nother = 1'
+    restore = ['key = """', 'second body', '"""']
+    out = cc._restored_block(after, restore, lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["a"]["key"] == "first body\n"
+    assert doc["b"]["key"] == "second body\n"
+    assert doc["b"]["other"] == 1
