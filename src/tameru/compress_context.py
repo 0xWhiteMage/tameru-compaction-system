@@ -2192,7 +2192,11 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
     for i in range(len(parts) - 2, -1, -1):
         dq_par[i] = dq_par[i + 1] ^ dq_t[i + 1]
         sq_par[i] = sq_par[i + 1] ^ sq_t[i + 1]
+    out_pos: dict[int, int] = {}
+    str_start = -1
+    str_delim = '"""'
     for i, ln in enumerate(parts):
+        out_pos[i] = len(out)
         in_s = inside_basic or inside_literal
         if not in_s:
             in_s_fence = False
@@ -2215,16 +2219,56 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
         closes_later = (inside_basic and dq_par[i]) or (
             inside_literal and sq_par[i]
         )
-        if in_s and not closes_later and (not in_s_fence or unclosed_s_fence) and (
+        chain_open = str_start >= 0
+        delim = ('"""' if inside_basic else "'''") if in_s else str_delim
+        hazard_at = -1
+        if in_s or chain_open:
+            for j in range(str_start + 1, i):
+                if _triple_close_positions(parts[j], delim):
+                    hazard_at = j
+                    break
+        if (in_s or chain_open) and (not closes_later or hazard_at >= 0) and (not in_s_fence or unclosed_s_fence) and (
             _DEFAULT_ELISION_LINE.match(sv)
             or sv.startswith("[§")
             or sv in header_texts
         ):
-            out.append('"""' if inside_basic else "'''")
+            # A same-kind delimiter run between the opener and here closes
+            # the string early in real TOML — the parity "closer" behind
+            # it can never be reached, so it cannot be ours. Mint the close
+            # before the first such run so the extract still parses.
+            at = out_pos[hazard_at] if hazard_at >= 0 else len(out)
+            out.insert(at, delim)
+            # Re-sync the scan with the mutated reality: the minted closer
+            # ends the string before the hazard line, so everything from
+            # there on is fresh code — re-scan it or later delimiters of
+            # the intervening string would toggle phantom episodes.
             inside_basic = inside_literal = False
+            str_start = -1
+            rescan_from = hazard_at if hazard_at >= 0 else i
+            for k in range(rescan_from, i):
+                hb = inside_basic or inside_literal
+                inside_basic, inside_literal = _advance_triple_state(
+                    parts[k], inside_basic, inside_literal
+                )
+                if not hb and (inside_basic or inside_literal) and str_start < 0:
+                    str_start = k
+                    str_delim = '"""' if inside_basic else "'''"
             in_s = False
         out.append(ln)
+        was_in = in_s
         inside_basic, inside_literal = _advance_triple_state(ln, inside_basic, inside_literal)
+        if was_in and not (inside_basic or inside_literal):
+            # The scan says the string closed here — but on an assignment-
+            # shaped line (``x = \"\"\"``) that delimiter is far more
+            # likely the opener of a LATER string whose own closer survives:
+            # the close is ambiguous, so the unclosed chain continues and
+            # the line stays a premature-close hazard for the repair.
+            if not re.match(r"\s*[A-Za-z0-9_.\-]+\s*=", ln):
+                str_start = -1
+        if not was_in and (inside_basic or inside_literal):
+            if str_start < 0:
+                str_start = i
+                str_delim = '"""' if inside_basic else "'''" 
     if inside_basic:
         out.append('"""')
     elif inside_literal:

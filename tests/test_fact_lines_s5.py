@@ -1094,3 +1094,20 @@ def test_repair_still_closes_a_genuinely_dropped_closer():
     assert '"""' in [l.strip() for l in out]
     doc = tomllib.loads("\n".join(out))
     assert doc["real"]["x"] == 1
+
+
+def test_repair_mints_the_close_before_a_later_strings_opener():
+    """A dropped closer followed by another string's intact opener: the
+    opener is a premature-close hazard — the minted close must precede it
+    or the body lines in between are stranded as bare text (invalid TOML)."""
+    parts = ['a = """', 'body', 'x = """', 'content # hash', 'tail"""', '[real]', 'k = 1']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    doc = tomllib.loads("\n".join(out))
+    assert doc["real"]["k"] == 1
+    assert doc["x"] == "content # hash\n"
+
+
+def test_repair_mints_before_an_opener_when_the_header_sits_inside_it():
+    parts = ['a = """', 'body', 'x = """', '[real]', 'k = 1', '"""', 'w = 2']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    tomllib.loads("\n".join(out))  # must parse — no bare text lines
