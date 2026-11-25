@@ -197,3 +197,29 @@ class SyncCheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DryRunTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.plugin = Path(self._tmp.name) / "plugin"
+        self.target = self.plugin / "tameru"
+        self.target.mkdir(parents=True)
+        (self.target / "__init__.py").write_text("# glue\n", encoding="utf-8")
+        self.manifest = self.plugin / "plugin.yaml"
+        self.manifest.write_text(
+            f"description: Tameru {sync._upstream_version()} engine\n",
+            encoding="utf-8",
+        )
+
+    def test_dry_run_reports_only_manifests_that_would_change(self):
+        # An already-stamped manifest must not list under "manifests stamped".
+        code, out, _ = _run(str(self.target), "--manifest", "../plugin.yaml", "--dry-run")
+        self.assertEqual(code, 0)
+        self.assertIn("manifests stamped: none", out)
+        self.manifest.write_text("description: Tameru 0.0.1 engine\n", encoding="utf-8")
+        code, out, _ = _run(str(self.target), "--manifest", "../plugin.yaml", "--dry-run")
+        self.assertIn("manifests stamped: ['plugin.yaml']", out)
+        # A dry run writes nothing.
+        self.assertIn("Tameru 0.0.1", self.manifest.read_text(encoding="utf-8"))

@@ -212,7 +212,9 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
     stamped = [
-        m.name for m in manifests if args.dry_run or _stamp_manifest(m, version)
+        m.name
+        for m in manifests
+        if _stamp_manifest(m, version, write=not args.dry_run)
     ]
 
     if not args.dry_run:
