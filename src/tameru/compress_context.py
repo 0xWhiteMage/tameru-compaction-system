@@ -2652,10 +2652,30 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     span_texts: set[str] = set()
     if original_text is not None:
         in_basic = in_literal = False
+        fence_marker: str | None = None
         for oln in original_text.split("\n"):
             in_s = in_basic or in_literal
-            if in_s:
+            # Fenced code spans are load-bearing the same way: a dropped
+            # opener strands bare code under a bare closer, presenting a
+            # mutilated block as verbatim. A fence inside a string is
+            # content, so string state wins; fences do not nest.
+            probe = _GUTTER_RE.sub("", oln, count=1).strip()
+            fm = re.match(r"(`{3,}|~{3,})", probe)
+            fc = re.fullmatch(r"(`{3,}|~{3,})", probe)
+            if in_s or fence_marker is not None:
                 span_texts.add(oln)
+            if fence_marker is not None:
+                if (
+                    fc is not None
+                    and fc.group(0)[0] == fence_marker[0]
+                    and len(fc.group(0)) >= len(fence_marker)
+                ):
+                    fence_marker = None
+                continue
+            if not in_s and fm is not None:
+                span_texts.add(oln)
+                fence_marker = fm.group(0)
+                continue
             code = oln if in_s else _quote_aware_code_part(oln)
             if not in_literal and _unescaped_triple_count(code, '"""') % 2:
                 if not in_basic:

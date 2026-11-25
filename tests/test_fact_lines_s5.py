@@ -735,3 +735,30 @@ def test_floor_eviction_never_splits_a_multiline_string_span():
     # The eviction may only touch k = 1 — every line of the span survives.
     for ln in ('desc = """', "body one filler", "body two filler", '"""'):
         assert ln in out
+
+
+def test_floor_eviction_never_splits_a_fenced_code_span():
+    """A dropped fence opener strands bare code under a bare closer — a
+    mutilated block presented as verbatim. Fenced spans are load-bearing as
+    a set, exactly like multiline strings."""
+    original = (
+        '[x]\nnote = "example:"\n```\ncode line one filler\n'
+        'code line two filler\n```\nk = 1\n[y]\nport = 8002'
+    )
+    compressed = (
+        '[x]\nnote = "example:"\n```\ncode line one filler\n'
+        'code line two filler\n```\nk = 1'
+    )
+    scored = [
+        {"id": 0, "score": 0.1,
+         "text": 'note = "example:"\n```\ncode line one filler\n'
+                 'code line two filler\n```\nk = 1',
+         "entity_hits": 0, "term_hits": 0},
+    ]
+    facts = [(8, "port", "8002", "port = 8002")]
+    out = cc._apply_fact_floor(
+        compressed=compressed, facts=facts, query="port", budget_chars=None,
+        scored=scored, kept_ids={0}, min_savings_ratio=0.99,
+        original_text=original,
+    )
+    assert "```\ncode line one filler\ncode line two filler\n```" in out
