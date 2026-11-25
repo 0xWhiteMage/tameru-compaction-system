@@ -229,6 +229,11 @@ _ARTIFACT_NOISE_RES = (
 
 _ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
 
+# A run of three or more backticks or tildes opens a fenced block; the same
+# run (bare, same char, own length or longer) closes it. `match` reads an
+# opener, `fullmatch` a closer — closing fences take no info string.
+_FENCE_RUN_RE = re.compile(r"(`{3,}|~{3,})")
+
 
 def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[str]:
     """Lines of ``text`` that carry an engine-artifact span. Callers gate this
@@ -244,11 +249,35 @@ def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[s
 def _strip_artifact_noise(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> str:
     """Drop every line carrying an engine-artifact span. Whole-line removal —
     excising the span mid-line would emit text that is not an input prefix,
-    which the extractive contract forbids."""
-    return "\n".join(
-        ln for ln in text.split("\n")
-        if not any(rx.search(strip_ansi(ln)) for rx in res)
-    )
+    which the extractive contract forbids. Lines inside a fenced block are
+    quoted content, never structure — a marker-shaped line in a fenced
+    example is literal text (the same fence rules the render uses: the
+    closer is the opener's own marker char at its own length or longer,
+    bare)."""
+    kept: list[str] = []
+    in_fence: str | None = None
+    for ln in text.split("\n"):
+        probe = _GUTTER_RE.sub("", strip_ansi(ln), count=1).strip()
+        opener = _FENCE_RUN_RE.match(probe)
+        if in_fence is not None:
+            closer = _FENCE_RUN_RE.fullmatch(probe)
+            if (
+                closer is not None
+                and closer.group(0)[0] == in_fence[0]
+                and len(closer.group(0)) >= len(in_fence)
+            ):
+                in_fence = None
+            kept.append(ln)
+        elif opener is not None:
+            marker = opener.group(0)
+            # A backtick fence's info string cannot contain a backtick —
+            # `` ```code``` `` on one line is inline code, not an opener.
+            if marker[0] != "`" or "`" not in probe[len(marker) :]:
+                in_fence = marker
+            kept.append(ln)
+        elif not any(rx.search(strip_ansi(ln)) for rx in res):
+            kept.append(ln)
+    return "\n".join(kept)
 
 
 # Perf (v1.5.0): the pure text-level analyses below are memoized for texts of
