@@ -679,3 +679,19 @@ def test_python_adjacent_concatenation_does_not_eat_the_next_strings_opener():
     # TOML followers still consume the content quote
     line2 = "arr = [" + DQ + "a" + DQ + '", ' + DQ
     assert cc._advance_multiline_state(line2, None) == DQ
+
+
+def test_restored_opener_joins_its_surviving_array_entry():
+    """A ``[[x]]`` element whose ``v = \"\"\"`` opener was dropped but whose
+    ``w = 2`` survived keeps the value in the SAME element — minting a second
+    ``[[x]]`` splits one element's fields across two."""
+    before = '[[x]]\nv = """\nbody\n"""\nw = 2'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[[x]]\nw = 2', ['v = """'], lh, oi, before.split("\n"))
+    tomllib = pytest.importorskip("tomllib")
+    assert tomllib.loads(out) == {"x": [{"w": 2, "v": "body\n"}]}
+    # A dead entry still restores as its own element.
+    out2 = cc._restored_block('w = 2', ['v = """'], lh, oi, before.split("\n"))
+    assert tomllib.loads(out2) == {"w": 2, "x": [{"v": "body\n"}]}

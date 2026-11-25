@@ -2255,9 +2255,40 @@ def _restored_block(
         if h.lstrip().startswith("[["):
             # Array-of-tables: re-emitting the header would start a NEW entry,
             # and a bare insert lands in whatever entry happens to be last —
-            # duplicating a key that entry already holds. The line's own entry
-            # is gone, so restore it AS an entry before the next surviving
-            # entry (or at the end when it was the last).
+            # duplicating a key that entry already holds. When the line's own
+            # entry still has surviving members in the extract it joins that
+            # element instead of minting a second one; only a dead entry
+            # restores AS an entry, before the next surviving entry (or at the
+            # end when it was the last).
+            if target is not None and orig_lines is not None:
+                hdr_pos = [j for j, ol in enumerate(orig_lines) if ol == h]
+                estart = max((p for p in hdr_pos if p <= target), default=None)
+                if estart is not None:
+                    eend = min(
+                        (p for p in hdr_pos if p > estart),
+                        default=len(orig_lines),
+                    )
+
+                    def _elem_block(c: int) -> int:
+                        j = c + 1
+                        while j < len(after_lines) and (
+                            after_lines[j] not in header_texts or in_string[j]
+                        ):
+                            j += 1
+                        return j
+
+                    joined = False
+                    for c in cand:
+                        e = _elem_block(c)
+                        if any(
+                            estart < oi.get(_resolve(l), -1) < eend
+                            for l in after_lines[c + 1:e]
+                        ):
+                            insert_after.setdefault(e - 1, []).extend(emit)
+                            joined = True
+                            break
+                    if joined:
+                        continue
             nxt = (
                 [c for c in cand if oi.get(after_lines[c], 1 << 62) > target]
                 if target is not None
