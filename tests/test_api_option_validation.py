@@ -347,3 +347,17 @@ def test_grep_adapters_reject_non_str_text():
         detect_grep_lines(42)
     with pytest.raises(TypeError, match="text must be str"):
         adapt_grep_lines(42, "q")
+
+
+def test_resolve_preset_rejects_non_mapping_overrides():
+    """resolve_preset iterated ``overrides.items()`` directly — an int or list
+    crashed with AttributeError instead of the documented type contract."""
+    from tameru.presets import resolve_preset
+    name = "tool-result@1"
+    with pytest.raises(TypeError, match="mapping"):
+        resolve_preset(name, 42)
+    with pytest.raises(TypeError, match="mapping"):
+        resolve_preset(name, [1])
+    with pytest.raises(ValueError, match="not allowed"):
+        resolve_preset(name, {"bogus_opt": 1})
+    assert resolve_preset(name, {"ccr": True})["ccr"] is True

@@ -53,6 +53,10 @@ def resolve_preset(name: str, overrides: Mapping[str, Any] | None = None) -> dic
     presets = _load()
     if not isinstance(name, str) or name not in presets:
         raise ValueError("unknown preset")
+    if overrides is not None and not isinstance(overrides, Mapping):
+        raise TypeError(
+            f"overrides must be a mapping, got {type(overrides).__name__}"
+        )
     out = deepcopy(presets[name])
     for key, value in (overrides or {}).items():
         if key not in ALLOWED_OPTIONS:
