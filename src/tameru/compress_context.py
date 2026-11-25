@@ -12633,23 +12633,13 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
 
 def _cli_read_bounded(stream, max_chars: int) -> str:
-    """Read ``stream`` capped to roughly ``max_chars`` decoded characters —
+    """Read a text ``stream`` capped to roughly ``max_chars`` characters —
     enough for the input preflight to reject an oversized document without
-    buffering a stream that never reaches EOF. A UTF-8 character takes at
-    most 4 bytes; a trailing partial sequence is dropped so decoding stays
-    strict."""
-    cap = max(4 * max_chars + 64, 1 << 20)
-    raw = stream.read(cap)
-    if len(raw) == cap:
-        i = len(raw) - 1
-        while i > 0 and raw[i] & 0xC0 == 0x80:
-            i -= 1
-        if raw[i] >= 0x80:
-            lead = raw[i]
-            need = 2 if lead < 0xE0 else 3 if lead < 0xF0 else 4
-            if len(raw) - i < need:
-                raw = raw[:i]
-    return raw.decode("utf-8-sig")
+    buffering a stream that never reaches EOF. Text mode keeps the
+    stream's configured encoding (``PYTHONIOENCODING`` on stdin) and its
+    newline conversion, so a CRLF file is measured the way the preflight
+    measures it."""
+    return stream.read(max(4 * max_chars + 64, 1 << 20))
 
 
 def _run_cli(args) -> int:
@@ -12659,14 +12649,14 @@ def _run_cli(args) -> int:
         max_chars = IndustrialLimits().max_input_chars
     if args.context_file == "-":
         try:
-            ctx = _cli_read_bounded(_sys.stdin.buffer, max_chars)
+            ctx = _cli_read_bounded(_sys.stdin, max_chars)
         except (OSError, UnicodeError) as exc:
             print(f"tameru-compress: error: cannot read stdin: {exc}",
                   file=_sys.stderr)
             return 2
     else:
         try:
-            with open(args.context_file, "rb") as fh:
+            with open(args.context_file, "r", encoding="utf-8-sig") as fh:
                 ctx = _cli_read_bounded(fh, max_chars)
         except (OSError, UnicodeError) as exc:
             print(f"tameru-compress: error: cannot read "
