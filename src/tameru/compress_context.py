@@ -1839,8 +1839,12 @@ def _advance_multiline_state(code: str, state: str | None) -> str | None:
                 # five or fewer AND such a follower comes next — otherwise
                 # (Python's adjacent-literal concatenation, where the next
                 # quote opens a new string) they are fresh code.
+                # The count caps at three: the decision below only needs
+                # two-or-fewer versus more, and scanning the whole maximal
+                # run at every close re-reads the suffix once per open/close
+                # cycle of a long quote run — quadratic.
                 extra = 0
-                while i + extra < n and code[i + extra] == quote:
+                while extra < 3 and i + extra < n and code[i + extra] == quote:
                     extra += 1
                 if extra <= 2 and (i + extra >= n or code[i + extra] in ",]}#; \t"):
                     i += extra
