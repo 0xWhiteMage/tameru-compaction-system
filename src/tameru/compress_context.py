@@ -10009,6 +10009,8 @@ def _normalise_options(
         pin_recent = max(0, int(pin_recent_num))
     if min_savings_ratio is None:
         min_savings_ratio = 0.10
+    if isinstance(min_savings_ratio, bool) or not isinstance(min_savings_ratio, (int, float)):
+        raise TypeError(f"min_savings_ratio must be a number, got {type(min_savings_ratio).__name__}")
     min_savings_ratio = float(min_savings_ratio)
     if not 0.0 <= min_savings_ratio < 1.0:
         raise ValueError(

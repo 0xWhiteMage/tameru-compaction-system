@@ -403,3 +403,12 @@ def test_plan_dataclasses_reject_nan_sizes():
         with pytest.raises(ValueError, match="nonnegative"):
             PlanInput(**{**base, field: nan})
     PlanInput(**base)  # sane input still constructs
+
+
+def test_min_savings_ratio_type_error_names_the_option():
+    import pytest
+    from tameru.compress_context import compress_context
+    base = "key = value\n" + "filler\n" * 40
+    for bad in ("x", [], {}, True):
+        with pytest.raises(TypeError, match="min_savings_ratio must be a number"):
+            compress_context(base, "key", min_savings_ratio=bad)
