@@ -64,3 +64,4 @@ R-0018 | verified | blue | engine | `gap_marker` callback fires once per compres
 - R-0058 | api-validation | artifact_markers=42 TypeError named recursion_markers (wrong option) | PR #47
 - R-0059 | cache | ContentCache get/set accepted non-str keys — silent never-matching entries | PR #48
 - R-0060 | veto polish | kept-line veto narrowed: eq-shape, single-occurrence, pinned/triple-quote mask, key precount | PR #43
+- R-0061 | api-validation | unwrap/rewrap_tool_payload non-str/non-payload args → int inner or AttributeError; now TypeError | PR #61
