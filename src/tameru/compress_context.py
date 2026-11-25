@@ -2518,6 +2518,23 @@ def _triple_quoted_lines(text: str) -> set[str]:
             elif kind == inside:
                 inside = None
             pos = pos + m.end()
+        if inside is not None and uq is not None and uq < (m.start() if m else len(scrubbed)):
+            # A lone quote that can open a value cut the code part — but a
+            # string that opened BEFORE it holds it as content, and the
+            # region the cut hid may carry the real closer
+            # (``x = "a\"""""x 'y"""`` closes). Rescan the tail for it; a
+            # lone ``'``/``"`` can never straddle the boundary, so starting
+            # past ``uq`` cannot split a delimiter.
+            pos = uq + 1
+            tail = scrubbed[: m.start() if m else len(scrubbed)]
+            while (m2 := re.search(r'"""|\'\'\'', tail[pos:])) is not None:
+                m_start = pos + m2.start()
+                if m2.group(0) == '"""' and _odd_backslashes(tail, m_start):
+                    pos = m_start + 1
+                    continue
+                if m2.group(0) == inside:
+                    inside = None
+                pos = pos + m2.end()
         if inside is not None:
             masked.add(ln)
     return masked
