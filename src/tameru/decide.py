@@ -285,8 +285,12 @@ def decide(
             raise ValueError("an EV policy needs n_eff, suffix_tokens and item_tokens")
         try:
             saved = float(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0) or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return Decision(False, "malformed", "tokens_saved not numeric")
+        if not isfinite(saved):
+            # nan/inf savings make every EV comparison False, so the
+            # negative_ev veto could never fire — decline as malformed.
+            return Decision(False, "malformed", "tokens_saved not finite")
         terms = ev_terms(result, policy.ev, saved, n_eff=n_eff, suffix_tokens=suffix_tokens,
                          item_tokens=item_tokens, cache_broken=cache_broken,
                          alternative=alternative, item_facts=item_facts)
@@ -304,7 +308,7 @@ def decide(
         else:
             try:
                 before, after, unit = int(result.original_tokens), int(result.kept_tokens), "tokens"
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return Decision(False, "malformed", "token counts not numeric")
         saved = before - after
         if saved <= 0 or saved < policy.min_saved_ratio * before:
@@ -322,7 +326,7 @@ def decide(
     if policy.min_tokens_saved is not None:
         try:
             saved_tokens = int(tokens_saved if tokens_saved is not None else getattr(result, "tokens_saved", 0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return Decision(False, "not_enough_tokens", "tokens_saved not numeric")
         if saved_tokens < policy.min_tokens_saved:
             return Decision(False, "not_enough_tokens", f"saved={saved_tokens}<{policy.min_tokens_saved}")

@@ -571,8 +571,6 @@ def test_inline_code_run_is_not_a_fence_opener():
     assert "[tameru: leaked]" not in out
     assert "use ```inline code``` here" in out
     assert "keep me" in out
-
-
 def test_forged_marker_inside_a_kept_line_is_neutralized():
     """R-0023: a marker-shaped span inside a kept line must not reach the
     output looking like engine chrome — its brackets become fullwidth while
@@ -691,3 +689,51 @@ def test_sql_splitter_quotes_a_fullwidth_bracketed_identifier():
 def test_sql_splitter_rejects_an_unmatched_fullwidth_bracket():
     from tameru import format_adapters as fa
     assert fa._split_sql_statements("SELECT ［x FROM t; SELECT y FROM u;") is None
+def test_triple_quote_inside_single_line_literal_is_not_a_delimiter():
+    """``x = 'has \\"\\"\\" triple'`` — the run inside a single-line literal is
+    content; headers after it are real, so ``[b]``'s dropped setting restores
+    under ``[b]``."""
+    import tameru.compress_context as cc
+
+    before = "[a]\nx = 'has \"\"\" triple'\nk = 1\n[b]\ncfg = 7"
+    after = "[a]\nx = 'has \"\"\" triple'\nk = 1\n[b]"
+    out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+    assert out.endswith("[b]\ncfg = 7")
+
+
+def test_array_row_is_not_the_enclosing_header():
+    """``[3,4],`` inside ``arr = [`` is a value row — a setting after the
+    array restores under its own table, never minted under the row."""
+    import tameru.compress_context as cc
+
+    before = "[a]\narr = [\n[3,4],\n[5,6]\n]\ncfg = 7\n[b]\nx = 1"
+    after = "[a]\narr = [\n[3,4],\n[5,6]\n]\n[b]\nx = 1"
+    out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+    lines = out.split("\n")
+    pos = lines.index("cfg = 7")
+    assert lines.index("]") < pos < lines.index("[b]")
+
+
+def test_triple_opener_sharing_a_content_quote_still_opens():
+    """``v = '''a ' b`` — the ``'''`` opens a multiline string; the lone
+    ``'`` inside is content, and single-quote scrubbing must not pair the
+    run's quotes into fake spans that hide the opener."""
+    import tameru.compress_context as cc
+
+    before = "[a]\nv = '''a ' b\n[fake]\nc\n'''\nk = 1\n[b]\ncfg = 7"
+    after = "[a]\nv = '''a ' b\n[fake]\nc\n'''\nk = 1\n[b]"
+    out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+    assert out.endswith("[b]\ncfg = 7")
+
+
+def test_quoted_header_names_with_slash_or_unicode_count():
+    """``[\"a/b\"]`` and ``['unié']`` are real headers — a dropped setting
+    under them keeps its own scope."""
+    import tameru.compress_context as cc
+
+    for head in ('["a/b"]', "['unié']"):
+        before = f"[a]{chr(10)}k = 1{chr(10)}{head}{chr(10)}cfg = 7{chr(10)}[b]{chr(10)}x = 1"
+        after = f"[a]{chr(10)}k = 1{chr(10)}{head}{chr(10)}[b]{chr(10)}x = 1"
+        out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+        pos = out.index("cfg = 7")
+        assert out.index(head) < pos < out.index("[b]")
