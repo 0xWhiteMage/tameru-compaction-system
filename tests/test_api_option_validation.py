@@ -307,3 +307,20 @@ def test_plan_input_rejects_negative_quantities():
     with pytest.raises(ValueError, match="nonnegative"):
         CacheState(warm=True, n_eff=-0.5)
     PlanInput(**base)  # sane input still constructs
+
+
+def test_adapt_format_rejects_incoherent_arg_types():
+    """adapt_format's own entry coerced nothing: ``limits=42`` crashed inside
+    the adapters with AttributeError, and ``format_name=42`` echoed a non-str
+    ``format`` on the result against its declared contract."""
+    from tameru.format_adapters import FormatLimits, adapt_format, adapt_report
+    csv_text = "a,b\n" + "\n".join(f"r{i},v{i}" for i in range(50))
+    with pytest.raises(TypeError, match="FormatLimits"):
+        adapt_format(csv_text, "r10", limits=42, format_name="csv")
+    with pytest.raises(TypeError, match="FormatLimits"):
+        adapt_report('{"a":1}\n' * 10, "a", limits=42)
+    with pytest.raises(TypeError, match="format_name"):
+        adapt_format(csv_text, "r10", format_name=42)
+    r = adapt_format(csv_text, "r10", limits={"max_records": 10}, format_name="csv")
+    assert r.format == "csv"
+    assert isinstance(adapt_format(csv_text, "r10", limits=FormatLimits(max_records=5)).format, str)
