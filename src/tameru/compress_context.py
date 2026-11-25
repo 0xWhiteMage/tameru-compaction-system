@@ -2443,13 +2443,13 @@ def _triple_quoted_lines(text: str) -> set[str]:
     for ln in (text or "").split("\n"):
         if inside is not None:
             masked.add(ln)
-            # A ``"""`` basic-string run closes only on an UNESCAPED delimiter:
-            # ``body\\"""`` is content and the string continues past it. TOML
-            # literal strings never escape — any ``'''`` ends the run.
+            # A ``"""`` basic-string run closes on a delimiter an odd
+            # backslash run does not escape; TOML literal strings never
+            # escape — any ``'''`` ends the run.
             if inside == "'''":
                 if inside in ln:
                     inside = None
-            elif _UNESCAPED_TRIPLE_DQ.search(ln):
+            elif _has_unescaped_triple(ln, '"""'):
                 inside = None
             continue
         # A ``"""`` inside a comment (``# use """ for multiline``) is prose,
