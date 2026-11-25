@@ -6,8 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [1.10.0]
-- Fix: the triple-quote mask's unclosed-literal cut fired on ANY lone quote — ``x = ba'a"""`` (a mid-word apostrophe) or the `'` in ``'t''''`` (a kept literal's quotes) hid the real ``"""`` opener, so a live line inside the string read as settings. The cut now only fires where a quote can start a value, and quotes covered by a matched literal no longer count as unclosed. A "literal" match starting inside a triple run (``"""ba'''"``) also keeps its text — it is part of the run, so blanking it erased the opener — a ``'''`` match whose first quote is a kept literal's closer (``'a b'''``) retries one char in, and a ``#``/``;`` inside a kept literal no longer cuts the line's code part before the real delimiter. An inside-run match now keeps only the run's own quote chars — blanking its content hides a ``"""`` the pseudo-literal held (``x = '''x"""'``), so it can no longer read as a live delimiter for the restore walk. A ``'''``/``"""`` match whose first quote is a kept literal's char or an escaped quote (``x = "a\"""""`` — ``"a\""`` then ``"""``) now scans the raw line one or two chars in for the real run, since the run's chars may sit in a blanked pseudo-literal or past the unclosed-quote cut; and a lone quote inside a run no longer counts as unclosed, so ``"\""" """``'s ``"""`` opener survives. When a string opened before the cut, the lone quote it saw was string content — the tail past the cut is now rescanned for the real closer (``x = "a\"""""x 'y"""`` closes, it no longer swallows the next section header). The rescan keeps toggling once the closer is recovered — a second ``"""`` opener in the hidden region (``x = "a\"""""x 'y""" + """tail``) opens a new string instead of being skipped, while a run a kept literal covers still reads as content. - Unreleased
+## [1.10.0] - Unreleased
 
 - Fix: `check_host_rules.py` missed `from urllib import request`-style imports — the `ImportFrom` visitor only checked the parent package (`urllib`), which is not a listed network module, so the submodule it actually binds (`urllib.request`) slipped past the network gate. Each imported name is now also checked as a module path (`urllib.request`, `asyncio.streams`, ...).
 
@@ -692,3 +691,4 @@ affected by the fixes below is unchanged.
 [1.2.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v0.10.0...v1.1.0
+- fix(engine): TOML multiline masking now honors backslash-escape parity — an even run of backslashes before closing triple quotes no longer swallows the closer (and literal strings never escape), so lines after such a string are correctly classified as outside it during supersession restore.

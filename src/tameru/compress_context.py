@@ -1791,23 +1791,35 @@ def _missing_in_original_order(missing: list[tuple[int, int, str]]) -> list[str]
 
 _SECTION_HEAD_RE = re.compile(r"^\s*\[")
 
-def _odd_backslashes(s: str, i: int) -> bool:
-    """``s[i]`` is escaped — preceded by an odd run of backslashes.
+def _triple_close_positions(line: str, delim: str) -> list[int]:
+    """Positions of ``delim`` occurrences that close a TOML multiline string.
 
-    ``\\`` + a triple quote is an escaped backslash then a REAL delimiter;
-    a single-char ``(?<!\\)`` lookbehind wrongly rejects it."""
-    n = 0
-    j = i - 1
-    while j >= 0 and s[j] == "\\":
-        n += 1
-        j -= 1
-    return n % 2 == 1
+    A basic string's quotes are escaped only by an ODD run of preceding
+    backslashes — an even run is escaped backslashes (literal content), so a
+    bare ``(?<!\\\\)`` lookbehind misses every closer after an escaped
+    backslash pair. A literal string has no escapes at all: every occurrence
+    closes.
+    """
+    out = []
+    i = line.find(delim)
+    while i >= 0:
+        if delim == "'''" or not _odd_backslashes(line, i):
+            out.append(i)
+            i = line.find(delim, i + 3)
+        else:
+            # Escaped: step one quote so an adjacent real closer — the
+            # ``\\"`` of ``\\"`` immediately followed by the closing run —
+            # is not skipped over.
+            i = line.find(delim, i + 1)
+    return out
 
 
-_UNESCAPED_TRIPLE_DQ = re.compile(r'(?<!\\)"""')
-_UNESCAPED_TRIPLE_SQ = re.compile(r"(?<!\\)'''")
+def _unescaped_triple_count(line: str, delim: str) -> int:
+    return len(_triple_close_positions(line, delim))
 
 
+def _has_unescaped_triple(line: str, delim: str) -> bool:
+    return bool(_triple_close_positions(line, delim))
 _TRIPLE_RUN_RE = re.compile(r'"""|\'\'\'')
 
 
@@ -2066,7 +2078,6 @@ def _restored_block(
 
                     cut = m_end + len(_toml_code_part(code[m_end:]))
             pos = m_end
-
     # A restored ``k = "\"\" ..."`` opener without the value's body leaves an
     # unterminated string that swallows every emitted line after it — the
     # whole extract stops parsing. The opener restores its continuation
@@ -2095,8 +2106,8 @@ def _restored_block(
             pending_body.append(ol)
             pend_code = ol
             if (
-                (inside_literal and _UNESCAPED_TRIPLE_SQ.search(pend_code))
-                or (inside_basic and _UNESCAPED_TRIPLE_DQ.search(pend_code))
+                (inside_literal and _has_unescaped_triple(pend_code, "'''"))
+                or (inside_basic and _has_unescaped_triple(pend_code, '"""'))
             ):
                 openers[pending[0]] = oidx
                 body_of[pending[0]] = pending_body
@@ -2115,19 +2126,17 @@ def _restored_block(
             if header_of.get(ol) == ol:
                 cur_hdr = ol
                 enclosing[oidx] = cur_hdr
-            if len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2 or len(
-                _UNESCAPED_TRIPLE_SQ.findall(code)
-            ) % 2:
+            if _unescaped_triple_count(code, '"""') % 2 or _unescaped_triple_count(code, "'''") % 2:
                 pending = (oidx, ol)
-                dq = len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2
-                sq = len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2
+                dq = _unescaped_triple_count(code, '"""') % 2
+                sq = _unescaped_triple_count(code, "'''") % 2
                 inside_basic = bool(dq)
                 inside_literal = not inside_basic and bool(sq)
                 close_kind[oidx] = "'''" if inside_literal else '"""'
                 continue
-        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
+        if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
             inside_basic = not inside_basic
-        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
+        if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
             inside_literal = not inside_literal
     insert_after: dict[int, list[str]] = {}
     insert_before: dict[int, list[str]] = {}
