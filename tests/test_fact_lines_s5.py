@@ -1046,3 +1046,33 @@ def test_surviving_fragment_of_a_restored_span_is_not_emitted_twice():
     assert doc["b"]["key"].strip() == "second body"
     assert doc["b"]["other"] == 2
     assert out.count("second body") == 1
+
+
+def test_same_text_real_setting_in_span_section_is_not_dropped():
+    """A surviving ``other = 2`` that merely shares text with a restored
+    string's body line is real content — only a line whose original index
+    sat inside the span may drop."""
+    before = '[b]\nkey = """\nother = 2\n"""\nother = 2\nz = 9'
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[b]\nother = 2\nz = 9'
+    out = cc._restored_block(after, ['key = """', '"""'], lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["b"]["other"] == 2
+    assert doc["b"]["z"] == 9
+
+
+def test_continuation_attaches_to_a_top_level_surviving_opener():
+    """A string above every table has no header: its surviving opener still
+    takes the missing body back (top-level scope compares equal, not None)."""
+    before = 'key = """\nbody text\n"""\n[t]\nx = 1'
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = 'key = """\n[t]\nx = 1'
+    out = cc._restored_block(after, ['body text'], lh, oi, lines)
+    assert out.count('key = """') == 1
+    assert 'body text' in out

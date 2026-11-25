@@ -2211,9 +2211,9 @@ def _restored_block(
     # header too — mask out lines that sit inside a """ or ''' string.
     header_texts = set(header_of.values())
     in_string = [False] * len(after_lines)
-    after_hdr: list[str | None] = [None] * len(after_lines)
+    after_hdr: list[str] = [""] * len(after_lines)
     inside_basic = inside_literal = False
-    cur_after_hdr: str | None = None
+    cur_after_hdr = ""
     for i, l in enumerate(after_lines):
         in_string[i] = inside_basic or inside_literal
         after_hdr[i] = cur_after_hdr
@@ -2454,7 +2454,7 @@ def _restored_block(
             oi_pos = [
                 i for i, l in enumerate(after_lines)
                 if l == otext and not in_string[i]
-                and after_hdr[i] == enclosing.get(oidx)
+                and after_hdr[i] == (enclosing.get(oidx) or "")
             ]
             if oi_pos:
                 insert_after.setdefault(oi_pos[-1], []).append(ln)
@@ -2473,7 +2473,7 @@ def _restored_block(
             if emit[-1] != body_of[oidx][-1]:
                 emit.append(close_kind.get(oidx, '"""'))
             claimed.add(oidx)
-            spans_emitted.append((enclosing.get(oidx) or header_of.get(orig), set(emit[1:])))
+            spans_emitted.append((oidx, enclosing.get(oidx) or header_of.get(orig) or "", set(emit[1:])))
             # ``_line_scopes`` is not string-aware — a fake ``[x.w]`` inside
             # the value claims the lines after it. The real enclosing scope
             # is the last unquoted header.
@@ -2503,7 +2503,7 @@ def _restored_block(
             if emit[-1] != body_of[target0][-1]:
                 emit.append(close_kind.get(target0, '"""'))
             claimed.add(target0)
-            spans_emitted.append((enclosing.get(target0) or header_of.get(orig), set(emit[1:])))
+            spans_emitted.append((target0, enclosing.get(target0) or header_of.get(orig) or "", set(emit[1:])))
         h = header_of.get(orig)
         if h is not None and oi.get(h) in cont_of:
             # ``_line_scopes`` is not string-aware: a ``[x.w]`` that only
@@ -2907,13 +2907,15 @@ def _restored_block(
     if spans_emitted:
         # A fragment of a dropped span that survived stays verbatim at its own
         # position — the span's whole-value restore would print it twice. Drop
-        # the stray copy when it sits in the span's own section; a same-text
-        # line under a DIFFERENT header is real content and stays.
+        # the stray copy only when its resolved ORIGINAL index sits inside that
+        # span: a same-text line that was never part of the value is real
+        # content and stays, whatever section it is in.
         for i, l in enumerate(after_lines):
             if in_string[i] or _SECTION_LIKE_RE.match(l):
                 continue
-            for eh, texts in spans_emitted:
-                if l in texts and after_hdr[i] == eh:
+            for oidx, eh, texts in spans_emitted:
+                if (l in texts and after_hdr[i] == eh
+                        and cont_of.get(oi.get(l)) == oidx):
                     drop_after.add(i)
                     break
     if insert_after or insert_before or drop_after:
