@@ -542,3 +542,44 @@ def test_member_after_a_fake_header_uses_the_real_scope():
     doc = tomllib.loads(out)
     assert doc["x"][0]["y"]["m"] == 1
     assert "w" not in doc["x"][0]["y"]
+
+
+def test_shared_closer_lines_dont_collapse_two_strings():
+    """Two values ending on identical ``\"\"\"`` lines must map to their own
+    spans — the last-occurrence index alone would fuse them."""
+    before = ('[x]\nk1 = """\nbody1\n"""\nk2 = """\nbody2\n"""\nm = 1')
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[x]\nm = 1', ['body1'], lh, oi,
+                             before.split("\n"))
+    import tomllib
+    doc = tomllib.loads(out)
+    assert doc["x"]["k1"].strip() == "body1"
+    assert "k2" not in out  # k2's assignment is not swallowed as content
+
+
+def test_triple_quote_inside_unclosed_literal_is_not_a_replay_opener():
+    """``'a \"\"\"`` is an unclosed literal, not a string opener — a real
+    opener later on must still map its own span."""
+    before = "[x]\nnote = 'a \"\"\"\nv = \"\"\"\nbody\n\"\"\"\nm = 1"
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[x]\nm = 1', ['body'], lh, oi,
+                             before.split("\n"))
+    import tomllib
+    doc = tomllib.loads(out)
+    assert doc["x"]["v"].strip() == "body"
+
+
+def test_secret_body_lines_are_never_pulled_back():
+    """A body line dropped by the credential screen stays dropped — the
+    whole-value restore must not smuggle it back."""
+    before = ('[x]\nv = """\nnormal body\nPASSWORD=hunter2sekrit\n"""\nm = 1')
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[x]\nm = 1', ['normal body'], lh, oi,
+                             before.split("\n"))
+    assert "hunter2sekrit" not in out

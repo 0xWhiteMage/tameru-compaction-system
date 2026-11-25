@@ -1786,11 +1786,58 @@ def _toml_code_part(line: str) -> str:
     return line if cut < 0 else line[:cut]
 
 
+def _quote_aware_code_part(ln: str) -> str:
+    """``ln`` with quoted literals blanked, cut at the first real comment
+    or unclosed quote — the same scrub the string mask uses: a ``#``/``;``
+    inside a literal is content, a literal that swallowed a ``'''``/``\"\"\"``
+    run hides it, and an unclosed ``'``/``\"`` ends the code part so a
+    ``\"\"\"`` inside it never reads as an opener."""
+    if '"""' not in ln and "'''" not in ln and "'" not in ln and '"' not in ln \
+            and "#" not in ln and ";" not in ln:
+        return ln
+    blank = lambda m: " " * len(m.group(0))
+    scrubbed = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, ln)
+    tri_runs = [
+        (m3.start(), m3.end()) for m3 in re.finditer(r'"""|\'\'\'', scrubbed)
+    ]
+
+    def _blank_literal(m):
+        s, e = m.span()
+        # A literal that swallowed a run whole ('a """') is blanked; a bare
+        # ""/'' match only overlapping the run's own quotes IS the opener.
+        if any(s <= ts and e >= te for ts, te in tri_runs) or not any(
+            s < te and e > ts for ts, te in tri_runs
+        ):
+            return " " * (e - s)
+        return m.group(0)
+
+    scrubbed = _SINGLE_QUOTED_RE.sub(_blank_literal, scrubbed)
+    m = re.search(r"[#;]", scrubbed)
+    cut = m.start() if m is not None else len(scrubbed)
+    m2 = re.search(r"(?<!')'(?!')|(?<!\")\"(?!\")", scrubbed)
+    if m2 is not None:
+        cut = min(cut, m2.start())
+    return scrubbed[:cut]
+
+
+def _unsafe_restored_line(ln: str) -> bool:
+    """The line-level safety screens a verbatim restore must honour: the
+    credential scan, the env-dump reducer's sensitive key/value test, and
+    the trust-risk (injection-shaped) check — the same predicates the
+    fact/error protection rules apply."""
+    probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
+    if _secret_scan(probe) or _is_trust_risk_line(probe):
+        return True
+    em = _env_match(probe)
+    return em is not None and _env_is_sensitive(em.group(1), em.group(2))
+
+
 def _restored_block(
     after: str,
     lines: list[str],
     line_headers: dict[str, str] | None,
     orig_index: dict[str, int] | None,
+    orig_lines: list[str] | None = None,
 ) -> str:
     """``after`` with ``lines`` restored into their surviving sections.
 
@@ -1833,17 +1880,22 @@ def _restored_block(
     # lines verbatim (they are its own content), and a continuation line on
     # its own can never be a valid TOML statement: it joins a surviving
     # opener's body or is skipped. Replay triple-quote state over the
-    # original line order to map each value's span — ``oi`` resolves a
-    # repeated line to its last index, so positions approximate there.
+    # original line list — ``oi`` keeps only a repeated line's LAST index,
+    # so two strings that share a closing line would collapse into one span.
     openers: dict[int, int] = {}      # opener idx -> closer idx
     body_of: dict[int, list[str]] = {}  # opener idx -> continuation lines
     cont_of: dict[int, int] = {}      # continuation idx -> opener idx
     enclosing: dict[int, str] = {}    # idx -> last UNQUOTED header
+    replay = (
+        enumerate(orig_lines)
+        if orig_lines is not None
+        else ((oidx, ol) for ol, oidx in sorted(oi.items(), key=lambda kv: kv[1]))
+    )
     inside_basic = inside_literal = False
     pending: tuple[int, str] | None = None
     pending_body: list[str] = []
     cur_hdr = ""
-    for ol, oidx in sorted(oi.items(), key=lambda kv: kv[1]):
+    for oidx, ol in replay:
         enclosing[oidx] = cur_hdr
         if pending is not None:
             pending_body.append(ol)
@@ -1858,9 +1910,13 @@ def _restored_block(
                     cont_of[cidx] = pending[0]
                 pending = None
                 pending_body = []
+                inside_basic = inside_literal = False
             continue
         ins = inside_basic or inside_literal
-        code = ol if ins else _toml_code_part(ol)
+        if ins:
+            code = ol
+        else:
+            code = _quote_aware_code_part(ol)
         if not ins:
             if header_of.get(ol) == ol:
                 cur_hdr = ol
@@ -1869,6 +1925,11 @@ def _restored_block(
                 _UNESCAPED_TRIPLE_SQ.findall(code)
             ) % 2:
                 pending = (oidx, ol)
+                dq = len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2
+                sq = len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2
+                inside_basic = bool(dq)
+                inside_literal = not inside_basic and bool(sq)
+                continue
         if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
             inside_basic = not inside_basic
         if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
@@ -1923,7 +1984,13 @@ def _restored_block(
             # otherwise the whole value — opener through closer — goes back
             # in its place (restoring only the piece is not valid TOML).
             oidx = cont_of[target0]
-            otext = next(ol for ol, i2 in oi.items() if i2 == oidx)
+            otext = next((ol for ol, i2 in oi.items() if i2 == oidx), None)
+            if otext is None:
+                # The replay maps true positions; a duplicate opener line may
+                # resolve past ``oi``'s last-occurrence index.
+                if orig_lines is None or oidx >= len(orig_lines):
+                    continue
+                otext = orig_lines[oidx]
             oi_pos = [
                 i for i, l in enumerate(after_lines)
                 if l == otext and not in_string[i]
@@ -1932,6 +1999,11 @@ def _restored_block(
                 insert_after.setdefault(oi_pos[-1], []).append(ln)
                 continue
             if oidx in claimed:
+                continue
+            if any(_unsafe_restored_line(b) for b in body_of[oidx]):
+                # Pulling body lines back verbatim bypasses the credential
+                # and injection screens a normal fact restore runs — a body
+                # dropped BY those screens must stay dropped.
                 continue
             claimed.add(oidx)
             emit = [otext] + body_of[oidx]
@@ -1955,6 +2027,11 @@ def _restored_block(
         elif target0 in openers:
             if target0 in claimed:
                 # A continuation already pulled the whole span.
+                continue
+            if any(_unsafe_restored_line(b) for b in body_of[target0]):
+                # Same safety screen as above — never re-emit body lines a
+                # deliberate strip removed; emit nothing rather than a
+                # bare opener (which would leave the string unterminated).
                 continue
             claimed.add(target0)
             emit = [ln] + body_of[target0]
@@ -2080,7 +2157,8 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
                     and not (record_doc and _RECORD_BOUNDARY_RE.match(ln))):
                 missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return _restored_block(
-        after, _missing_in_original_order(missing), line_headers, orig_index
+        after, _missing_in_original_order(missing), line_headers, orig_index,
+        before.split("\n") if before is not None else None,
     )
 
 
@@ -2116,7 +2194,8 @@ def _restore_fact_lines(before: str, after: str) -> str:
                 and not _fact_variant_present(ln, kept)):
             missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return _restored_block(
-        after, _missing_in_original_order(missing), line_headers, index
+        after, _missing_in_original_order(missing), line_headers, index,
+        before.split("\n"),
     )
 
 
@@ -2345,7 +2424,10 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         _bound_fact_line(f[3], hit_terms, raw_terms, must=(f[1], f[2]))
         for f in sorted(chosen, key=lambda f: f[0])
     ]
-    out = _restored_block(compressed, bound_lines, line_headers, orig_index)
+    out = _restored_block(
+        compressed, bound_lines, line_headers, orig_index,
+        original_text.split("\n") if original_text else None,
+    )
     if out == compressed:
         return compressed
     if scored is None or kept_ids is None or min_savings_ratio is None or original_text is None:
@@ -2398,7 +2480,10 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         need_chr -= len(ln) + 1
     if drop:
         compressed = "\n".join(ln for i, ln in enumerate(rendered) if i not in drop)
-        out = _restored_block(compressed, bound_lines, line_headers, orig_index)
+        out = _restored_block(
+            compressed, bound_lines, line_headers, orig_index,
+            original_text.split("\n") if original_text else None,
+        )
     return out
 
 
