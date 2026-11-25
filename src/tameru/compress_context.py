@@ -1791,8 +1791,30 @@ def _missing_in_original_order(missing: list[tuple[int, int, str]]) -> list[str]
 
 _SECTION_HEAD_RE = re.compile(r"^\s*\[")
 
-_UNESCAPED_TRIPLE_DQ = re.compile(r'(?<!\\)"""')
-_UNESCAPED_TRIPLE_SQ = re.compile(r"(?<!\\)'''")
+def _triple_close_positions(line: str, delim: str) -> list[int]:
+    """Positions of ``delim`` occurrences that close a TOML multiline string.
+
+    A basic string's quotes are escaped only by an ODD run of preceding
+    backslashes — an even run is escaped backslashes (literal content), so a
+    bare ``(?<!\\\\)`` lookbehind misses every closer after an escaped
+    backslash pair. A literal string has no escapes at all: every occurrence
+    closes.
+    """
+    out = []
+    i = line.find(delim)
+    while i >= 0:
+        if delim == "'''" or not _odd_backslashes(line, i):
+            out.append(i)
+        i = line.find(delim, i + 3)
+    return out
+
+
+def _unescaped_triple_count(line: str, delim: str) -> int:
+    return len(_triple_close_positions(line, delim))
+
+
+def _has_unescaped_triple(line: str, delim: str) -> bool:
+    return bool(_triple_close_positions(line, delim))
 _TRIPLE_RUN_RE = re.compile(r'"""|\'\'\'')
 
 
@@ -1955,9 +1977,9 @@ def _restored_block(
         # quotes inside a trailing # comment are text, and \"-escaped
         # quotes inside a basic string don't end it.
         code = l if (inside_basic or inside_literal) else _toml_code_part(l)
-        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
+        if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
             inside_basic = not inside_basic
-        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
+        if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
             inside_literal = not inside_literal
     # A restored ``k = "\"\" ..."`` opener without the value's body leaves an
     # unterminated string that swallows every emitted line after it — the
@@ -1987,8 +2009,8 @@ def _restored_block(
             pending_body.append(ol)
             pend_code = ol
             if (
-                (inside_literal and _UNESCAPED_TRIPLE_SQ.search(pend_code))
-                or (inside_basic and _UNESCAPED_TRIPLE_DQ.search(pend_code))
+                (inside_literal and _has_unescaped_triple(pend_code, "'''"))
+                or (inside_basic and _has_unescaped_triple(pend_code, '"""'))
             ):
                 openers[pending[0]] = oidx
                 body_of[pending[0]] = pending_body
@@ -2007,19 +2029,17 @@ def _restored_block(
             if header_of.get(ol) == ol:
                 cur_hdr = ol
                 enclosing[oidx] = cur_hdr
-            if len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2 or len(
-                _UNESCAPED_TRIPLE_SQ.findall(code)
-            ) % 2:
+            if _unescaped_triple_count(code, '"""') % 2 or _unescaped_triple_count(code, "'''") % 2:
                 pending = (oidx, ol)
-                dq = len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2
-                sq = len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2
+                dq = _unescaped_triple_count(code, '"""') % 2
+                sq = _unescaped_triple_count(code, "'''") % 2
                 inside_basic = bool(dq)
                 inside_literal = not inside_basic and bool(sq)
                 close_kind[oidx] = "'''" if inside_literal else '"""'
                 continue
-        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
+        if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
             inside_basic = not inside_basic
-        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
+        if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
             inside_literal = not inside_literal
     insert_after: dict[int, list[str]] = {}
     insert_before: dict[int, list[str]] = {}
