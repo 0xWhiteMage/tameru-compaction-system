@@ -375,3 +375,40 @@ def test_content_cache_rejects_incoherent_max_bytes():
     c.set("k", "v")
     assert c.get("k") == "v"
     assert ContentCache(max_bytes=0).get("k") is not None  # always-evict, by design
+
+
+def test_plan_dataclasses_reject_nan_sizes():
+    """NaN slips past ``x < 0`` — every nonnegative guard must reject it too."""
+    import math
+    from tameru.plan import Candidate, CacheState, PlanInput, PlanItem, Policy
+    nan = math.nan
+    with pytest.raises(ValueError, match="nonnegative"):
+        Candidate(compressed_chars=nan, tokens_saved=1, confidence=None,
+                  fail_open=False, risk="low", fingerprints_ok=True)
+    for field in ("tokens", "chars", "age_steps", "stock_kept_chars", "fact_lines"):
+        with pytest.raises(ValueError, match="nonnegative"):
+            PlanItem(**{"id": "i", "position": 0, "tokens": 10, "chars": 40,
+                        field: nan})
+    with pytest.raises(ValueError, match="nonnegative"):
+        CacheState(warm=True, n_eff=nan)
+    item = PlanItem(id="i", position=0, tokens=10, chars=40)
+    base = dict(event="trigger", host_mode="prune", prompt_tokens=100,
+                trigger_tokens=50, items=(item,), cache=CacheState(True, 1.0),
+                policy=Policy())
+    for field in ("prompt_tokens", "trigger_tokens", "K", "H",
+                  "retained_budget_chars", "growth_tokens_per_step", "margin_steps"):
+        with pytest.raises(ValueError, match="nonnegative"):
+            PlanInput(**{**base, field: nan})
+    for field in ("steps_since_last_act", "steps_to_trigger"):
+        with pytest.raises(ValueError, match="nonnegative"):
+            PlanInput(**{**base, field: nan})
+    PlanInput(**base)  # sane input still constructs
+
+
+def test_min_savings_ratio_type_error_names_the_option():
+    import pytest
+    from tameru.compress_context import compress_context
+    base = "key = value\n" + "filler\n" * 40
+    for bad in ("x", [], {}, True):
+        with pytest.raises(TypeError, match="min_savings_ratio must be a number"):
+            compress_context(base, "key", min_savings_ratio=bad)

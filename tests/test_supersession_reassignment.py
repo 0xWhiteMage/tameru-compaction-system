@@ -470,3 +470,41 @@ def test_inlined_short_gap_does_not_duplicate_the_restored_header():
     marker = cc.InliningGapMarker(lambda omitted, total: "x" * (omitted + 10))
     out = cc._render(lines, scored, kept, gap_marker=marker)
     assert out.count("[database]") == 1
+
+
+def test_array_subtable_attaches_to_the_last_element_always():
+    # TOML keeps absorbing ``[name.*]`` tables into the last ``[[name]]``
+    # element for the rest of the document: an intervening ``[other]``
+    # header does not end the attachment, and a deeper ``[name.tls]``
+    # does not nest the next subtable under itself.
+    doc = (
+        '[[backends]]\nname = "a"\n[backends.tls]\ncert = "c1"\n'
+        '[backends.x]\nport = 1\n[other]\nk = 2\n[backends.z]\nhost = "h"'
+    )
+    scopes = supersession._document_scopes(doc)
+    assert scopes['cert = "c1"'][0] == "backends\x1f1\x1ftls"
+    assert scopes["port = 1"][0] == "backends\x1f1\x1fx"
+    assert scopes['host = "h"'][0] == "backends\x1f1\x1fz"
+    assert scopes["k = 2"][0] == "other"
+
+
+def test_nested_array_attaches_under_the_parent_element():
+    # ``[[a.b]]`` entries live inside the last ``[[a]]`` element, so the
+    # same ``b`` field under two ``a`` entries is never one setting.
+    doc = "[[a]]\nx = 1\n[[a.b]]\ny = 2\n[[a]]\nx = 3\n[[a.b]]\ny = 4"
+    scopes = supersession._document_scopes(doc)
+    assert scopes["y = 2"][0] == "a\x1f1\x1fa.b\x1f1"
+    assert scopes["y = 4"][0] == "a\x1f2\x1fa.b\x1f2"
+
+
+def test_nested_array_subtable_keeps_the_whole_element_scope():
+    # ``[a.b.c]`` under a nested ``[[a.b]]`` element prefixes with that
+    # element's full scope — a top-level ``[[a.b]]``'s own ``[a.b.c]`` is a
+    # different table and can never take its place.
+    doc = "[[a]]\n[[a.b]]\nk = 1\n[a.b.c]\nk = 2\n[[a.b]]\nk = 3"
+    scopes = supersession._document_scopes(doc)
+    assert scopes["k = 1"][0] == "a\x1f1\x1fa.b\x1f1"
+    assert scopes["k = 2"][0] == "a\x1f1\x1fa.b\x1f1\x1fc"
+    assert scopes["k = 3"][0] == "a\x1f1\x1fa.b\x1f2"
+    top = supersession._document_scopes("[[a.b]]\n[a.b.c]\nk = 9")
+    assert top["k = 9"][0] == "a.b\x1f1\x1fc"

@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [1.10.0] - Unreleased
+## [1.10.0]
+- Fix: the plan dataclasses' nonnegative guards accepted NaN — ``nan < 0`` is False, so a NaN ``n_eff``, ``tokens`` or ``growth_tokens_per_step`` slipped through and poisoned totals downstream; the checks now reject NaN alongside negatives. - Unreleased
+- Fix: a `[name.sub]` table under a `[[name]]` array now attaches to the last element for the whole document, as TOML requires — an intervening `[other]` header no longer drops the attachment and a deeper `[name.tls]` no longer absorbs the next sibling. `[[a.b]]` nested arrays attach under the last `[[a]]` element, and their own `[a.b.c]` subtables keep the full element scope (`a\x1f1\x1fa.b\x1f1\x1fc`) instead of colliding with a top-level `[[a.b]]`'s same-named subtable. - Unreleased
 
 - Fix: `check_host_rules.py` missed `from urllib import request`-style imports — the `ImportFrom` visitor only checked the parent package (`urllib`), which is not a listed network module, so the submodule it actually binds (`urllib.request`) slipped past the network gate. Each imported name is now also checked as a module path (`urllib.request`, `asyncio.streams`, ...).
 
@@ -28,7 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Fix: restored facts keep their framing — a fenced example returns inside its own fence pair (its own opener's language and a marker run long enough to close it), and a `[[array]]`-scoped line is skipped rather than minting a phantom entry. A quoted table name containing `§` is no longer mistaken for an array element — the scope sentinel is now a control character TOML names cannot hold. A `~~~` line inside a ```` ``` ```` fence is content, not a closer, so code past it stays verbatim. Oversized-line handling: tilde fences and numbered-gutter fences are honoured inside the verbatim exemption, two-character CJK terms and full-width forms are searched for, the fold decomposes canonical marks (a `μαιου` query hits `Μαΐου`), clipped windows only cover the hits they actually emit so a repeated term can't crowd out a still-missing one, and bounded fact lines anchor on the fact's own key=value pair. Review follow-ups: a kept 'café' no longer counts as covering a dropped 'cafe' fact (matches ending inside a combining sequence do not count); clip anchors rank each hit's own exactness so accent variants cannot displace verbatim matches; the fold-offset map is built whenever the INPUT has a non-ASCII char, covering folds whose expansions and removals cancel to an ASCII result.
 - Fix: dropped-block restoration no longer mistakes `[`-lines inside TOML multiline strings for table boundaries, and comments can no longer desync the string mask; `]` inside a quoted dotted name and apostrophes in INI names stay part of the header, a `#` inside a same-line triple-quoted value is content, and bounded lines sharing a head prefix restore under their own table.
 
+- Fix: a non-iterable `artifact_markers` option names itself in the `TypeError` instead of `recursion_markers`.
 - Fix: `brief_context` validates `budget_chars` — a non-numeric value raises `TypeError`, a non-positive or non-finite value raises `ValueError`, and `yaml_requires_original` tolerates `None` instead of raising `TypeError`.
+- Fix: outcome/landmark protection flows through the budget-bounded restores only; the verbatim stage exemptions are dropped because one protected line inside a repeated stream or table broke the fold around it and the retention cost compounded past host compaction thresholds. Detection classes, the scan and the selection floor are unchanged.
 - Fix: the worker protocol's `min_savings_ratio` range is exclusive at 1.0 — a wire value of `1` fails validation as `bad_min_savings_ratio` instead of reaching the engine as a `ValueError`.
 - Performance: merge same-answer per-line probes into single compiled alternations — the five "log" patterns and two "chat" patterns in `classify_line`, and the failure-context and furniture guards in `_outcome_lines_scan`, which now computes each line's error flag once. Output is byte-identical. (#14)
 - Security: bound configured pin regex structure and aggregate search cost before searching tool output. Unsafe or invalid pin patterns preserve the full original input; bounded safe patterns retain their matching behavior.
@@ -692,3 +696,4 @@ affected by the fixes below is unchanged.
 [1.1.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v0.10.0...v1.1.0
 - fix(engine): TOML multiline masking now honors backslash-escape parity — an even run of backslashes before closing triple quotes no longer swallows the closer (and literal strings never escape), so lines after such a string are correctly classified as outside it during supersession restore.
+- Fix: `min_savings_ratio` rejects non-numeric types with a TypeError naming the option

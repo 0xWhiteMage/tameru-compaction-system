@@ -43,7 +43,9 @@ class Candidate:
     query_specific: bool | None = None    # the caller query names distinctive selectors; feeds the S6 calibrator
 
     def __post_init__(self) -> None:
-        if self.compressed_chars < 0 or self.fact_lines_dropped < 0:
+        # ``nan >= 0`` is False, so a NaN fails ``not (v >= 0)`` the same as a
+        # negative — NaN sizes corrupt totals the same way negatives do.
+        if not (self.compressed_chars >= 0) or not (self.fact_lines_dropped >= 0):
             raise ValueError("compressed_chars and fact_lines_dropped must be nonnegative")
 
 
@@ -72,7 +74,7 @@ class PlanItem:
         # negative, the remnant reads as more saved than exists, and compact
         # budgets grow. Reject it at construction instead of corrupting totals.
         for name in ("tokens", "chars", "age_steps", "stock_kept_chars", "fact_lines"):
-            if getattr(self, name) < 0:
+            if not (getattr(self, name) >= 0):
                 raise ValueError(f"{name} must be nonnegative")
         if self.candidate is not None and not isinstance(self.candidate, Candidate):
             raise ValueError("candidate must be a Candidate or None")
@@ -84,7 +86,7 @@ class CacheState:
     n_eff: float                          # later requests the cache is expected to serve
 
     def __post_init__(self) -> None:
-        if self.n_eff < 0:
+        if not (self.n_eff >= 0):
             raise ValueError("n_eff must be nonnegative")
 
 
@@ -111,11 +113,11 @@ class PlanInput:
     def __post_init__(self) -> None:
         for name in ("prompt_tokens", "trigger_tokens", "K", "H", "retained_budget_chars",
                      "growth_tokens_per_step", "margin_steps"):
-            if getattr(self, name) < 0:
+            if not (getattr(self, name) >= 0):
                 raise ValueError(f"{name} must be nonnegative")
         for name in ("steps_since_last_act", "steps_to_trigger"):
             value = getattr(self, name)
-            if value is not None and value < 0:
+            if value is not None and not (value >= 0):
                 raise ValueError(f"{name} must be nonnegative or None")
 
 
