@@ -1,4 +1,5 @@
 import os
+import socket
 from pathlib import Path
 import subprocess
 import sys
@@ -77,3 +78,50 @@ def test_cli_compresses_stdin():
     assert done.returncode == 0, done.stderr
     assert done.stdout == "Example payload.\n\n"
     assert done.stderr == ""
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="posix only")
+def test_cli_accepts_a_readable_pipe(tmp_path):
+    # Process substitution and named pipes are readable but not regular
+    # files — ``is_file()`` used to reject them before compression ran.
+    import threading
+
+    fifo = tmp_path / "ctx.fifo"
+    os.mkfifo(fifo)
+    feeder = threading.Thread(
+        target=lambda: fifo.write_text("Example payload.\n"), daemon=True)
+    feeder.start()
+    done = _run_cli(
+        "from tameru.cli import main; raise SystemExit(main())",
+        [str(fifo), "", "--no-ccr", "--no-citations"],
+    )
+    feeder.join(10)
+    assert done.returncode == 0, done.stderr
+    assert "Example payload." in done.stdout
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="posix only")
+def test_cli_unopenable_stream_errors_cleanly(tmp_path):
+    import socket
+
+    sp = tmp_path / "ctx.sock"
+    socket.socket(socket.AF_UNIX).bind(str(sp))
+    done = _run_cli(
+        "from tameru.cli import main; raise SystemExit(main())",
+        [str(sp), "question"],
+    )
+    assert done.returncode == 2, done.stderr
+    assert "cannot read" in done.stderr
+    assert "Traceback" not in done.stderr
+
+
+def test_cli_invalid_utf8_input_errors_cleanly(tmp_path):
+    bad = tmp_path / "bad.bin"
+    bad.write_bytes(b"\xff\xfe" * 200)
+    done = _run_cli(
+        "from tameru.cli import main; raise SystemExit(main())",
+        [str(bad), "question", "--no-ccr"],
+    )
+    assert done.returncode == 2, done.stderr
+    assert "cannot read" in done.stderr
+    assert "Traceback" not in done.stderr

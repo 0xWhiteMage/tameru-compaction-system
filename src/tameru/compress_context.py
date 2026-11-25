@@ -12632,12 +12632,33 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return _run_cli(_parse_args(argv))
 
 
+def _cli_read(stream) -> str:
+    """Read a text ``stream`` to completion. Text mode keeps the
+    stream's configured encoding (``PYTHONIOENCODING`` on stdin) and
+    its newline conversion, so a CRLF file is measured the way the
+    preflight measures it. The ``max_input_chars`` limit is the
+    engine's call — it may pass oversized input through degraded — so
+    the read never truncates it first."""
+    return stream.read()
+
+
 def _run_cli(args) -> int:
+    import sys as _sys
     if args.context_file == "-":
-        import sys as _sys
-        ctx = _sys.stdin.read()
+        try:
+            ctx = _cli_read(_sys.stdin)
+        except (OSError, UnicodeError) as exc:
+            print(f"tameru-compress: error: cannot read stdin: {exc}",
+                  file=_sys.stderr)
+            return 2
     else:
-        ctx = Path(args.context_file).read_text(encoding="utf-8-sig")
+        try:
+            with open(args.context_file, "r", encoding="utf-8-sig") as fh:
+                ctx = _cli_read(fh)
+        except (OSError, UnicodeError) as exc:
+            print(f"tameru-compress: error: cannot read "
+                  f"'{args.context_file}': {exc}", file=_sys.stderr)
+            return 2
     # Resolve ccr/citations defaults (None = use library default True)
     ccr_val = True if args.ccr is None else args.ccr
     citations_val = True if args.citations is None else args.citations
