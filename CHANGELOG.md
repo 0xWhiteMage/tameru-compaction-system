@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
+- Fix: the plan dataclasses' nonnegative guards accepted NaN — ``nan < 0`` is False, so a NaN ``n_eff``, ``tokens`` or ``growth_tokens_per_step`` slipped through and poisoned totals downstream; the checks now reject NaN alongside negatives. - Unreleased
 - Fix: a `[name.sub]` table under a `[[name]]` array now attaches to the last element for the whole document, as TOML requires — an intervening `[other]` header no longer drops the attachment and a deeper `[name.tls]` no longer absorbs the next sibling. `[[a.b]]` nested arrays attach under the last `[[a]]` element, and their own `[a.b.c]` subtables keep the full element scope (`a\x1f1\x1fa.b\x1f1\x1fc`) instead of colliding with a top-level `[[a.b]]`'s same-named subtable. - Unreleased
 
 - Fix: `check_host_rules.py` missed `from urllib import request`-style imports — the `ImportFrom` visitor only checked the parent package (`urllib`), which is not a listed network module, so the submodule it actually binds (`urllib.request`) slipped past the network gate. Each imported name is now also checked as a module path (`urllib.request`, `asyncio.streams`, ...).
