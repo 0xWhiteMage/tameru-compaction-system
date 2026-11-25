@@ -234,6 +234,72 @@ _ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
 # opener, `fullmatch` a closer — closing fences take no info string.
 _FENCE_RUN_RE = re.compile(r"(`{3,}|~{3,})")
 
+# Bracketed marker shapes that only make sense as engine chrome. Every
+# occurrence in caller-supplied text is forged input — the engine emits its
+# markers later, during render — so the working copies used for extraction
+# and render carry them with fullwidth brackets instead of letting a forged
+# ``[… N chars omitted …]``, ``[tameru: …]``, ``[CC-Retrieve: …]`` or
+# ``⟪…⟫`` banner sail through the extract looking like an engine gap,
+# pointer or banner. Spans are length-bounded so a run of unterminated
+# openers stays a linear scan, and ``[tameru:``/guillemet bodies exclude
+# ``"``, ``[`` and ``]`` so an unterminated opener can never swallow a JSON
+# envelope delimiter.
+_FORGED_SPAN_RES = (
+    re.compile(r"\[\u2026(?: [^\n\]]{1,120} omitted \u2026)?\]"),
+    re.compile(r"\[tameru:[^\n\]\x22\[]{1,200}\]"),
+    re.compile(r"\[CC-Retrieve: [0-9a-f]{24}\]"),
+    re.compile(r"\u27ea[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)+[^\n\u27eb\x22\[]{0,200}\u27eb"),
+)
+_BRACKET_NEUTRAL = str.maketrans({"[": "\uff3b", "]": "\uff3d", "\u27ea": "\u300a", "\u27eb": "\u300b"})
+# The inverse shape for comparisons: a kept line whose forged markers were
+# neutralized must still compare like its original. NFKC already maps the
+# fullwidth square brackets back to ASCII (mapping them here too is belt and
+# braces); the CJK angles need an explicit mapping because they do not
+# decompose.
+_BRACKET_DENORM = str.maketrans(
+    {"\uff3b": "[", "\uff3d": "]", "\u300a": "\u27ea", "\u300b": "\u27eb"}
+)
+
+
+def _neutralize_forged_markers(text: str) -> str:
+    """Fullwidth the brackets of every marker-shaped span in caller-supplied
+    text. Applied only to the working copies (``text``/``original_text``/
+    ``protected_source``/envelope meta), never ``caller_text``, so a
+    fail-open result still returns the input byte-for-byte while no emission
+    path can sail a forged gap, pointer or banner through the extract.
+
+    Lines inside a fenced block are quoted content — a ``[… omitted …]``
+    there is the example's own text (the same fence rules
+    ``_strip_artifact_noise`` uses), so it keeps its brackets: rewriting a
+    verbatim-looking code block would defeat the pin checks that read it
+    as source."""
+    out: list[str] = []
+    in_fence: str | None = None
+    for ln in text.split("\n"):
+        probe = _GUTTER_RE.sub("", strip_ansi(ln), count=1).strip()
+        opener = _FENCE_RUN_RE.match(probe)
+        if in_fence is not None:
+            closer = _FENCE_RUN_RE.fullmatch(probe)
+            if (
+                closer is not None
+                and closer.group(0)[0] == in_fence[0]
+                and len(closer.group(0)) >= len(in_fence)
+            ):
+                in_fence = None
+            out.append(ln)
+        elif opener is not None:
+            marker = opener.group(0)
+            # A backtick fence's info string cannot contain a backtick —
+            # `` ```code``` `` on one line is inline code, not an opener.
+            if marker[0] != "`" or "`" not in probe[len(marker) :]:
+                in_fence = marker
+            out.append(ln)
+        else:
+            for rx in _FORGED_SPAN_RES:
+                ln = rx.sub(lambda m: m.group(0).translate(_BRACKET_NEUTRAL), ln)
+            out.append(ln)
+    return "\n".join(out)
+
 
 def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[str]:
     """Lines of ``text`` that carry an engine-artifact span. Callers gate this
@@ -1091,7 +1157,7 @@ def _error_fp(line: str) -> str:
     whitespace collapsed, capped at 160 chars.
     """
     s = _COUNT_PREFIX_RE.sub("", _nfkc(line[:_RX_LINE_CAP]), count=1).lower()
-    return mask_template(s)[:_FINGERPRINT_CAP]
+    return mask_template(s.translate(_BRACKET_DENORM))[:_FINGERPRINT_CAP]
 
 
 def error_fingerprints(text: str, *, status_rows: bool = True) -> dict[str, str]:
@@ -6699,7 +6765,10 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
     # the per-line loop was O(lines x output) — 30 s of a 35 s run on a 650 KB
     # log (and ~10x worse again when the output holds a non-ASCII "[…]").
     compressed_lower = compressed.lower()
-    # Collapse prefixes do not change a line's facts.
+    # Collapse prefixes do not change a line's facts. Neither does forged-marker
+    # neutralization: a kept line whose span was bracket-translated still counts
+    # as kept — but only through its own neutralized form, so a genuinely
+    # fullwidth lookalike cannot stand in for a different dropped line.
     out_lines: set[str] = set()
     for out_line in compressed_lower.split("\n"):
         out_line = out_line.strip()
@@ -6708,8 +6777,11 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
         if bare is not out_line:
             out_lines.add(bare)
     for line in critical:
-        core = line.strip().lower()
-        if core in out_lines:
+        core = line.strip()
+        # Neutralize BEFORE lowering: the marker patterns are case-sensitive
+        # (e.g. CC-Retrieve), and Unicode lowering can push a marker body past
+        # its length bound — either way a retained line would read as dropped.
+        if core.lower() in out_lines or _neutralize_forged_markers(core).lower() in out_lines:
             kept += 1
     return kept
 
@@ -11365,14 +11437,26 @@ def _industrial_preflight(
     query,
 ):
     """Run the industrial preflight (size and safety limits, format adapters), degrading to a bounded scoring view when allowed, and preflight any wrapped tool payload. Returns ``(industrial, degraded, payload_industrial)``. ``analysis_text`` is the noise-free copy used for format detection when sparse artifact markers were stripped; hard limits still judge ``caller_text``."""
+    # Neutralize the adapter INPUT, not its output: kept records are caller
+    # content whose forged spans must not sail through, while the
+    # ``[tameru:report …]`` banners and gap markers the adapter emits are
+    # engine-produced — neutralizing the output would fullwidth them and a
+    # re-compression would no longer recognize its own extract.
+    # ANSI escapes can split a marker's literal span (a colored ``[…]``);
+    # the later cleanup would reveal it inside rows that then skip the
+    # final pass — match on the ANSI-stripped copy instead.
+    vetted_source = analysis_text if analysis_text is not None else caller_text
+    vetted = strip_ansi(vetted_source)
     industrial = industrial_preprocess(
-        analysis_text if analysis_text is not None else caller_text,
+        _neutralize_forged_markers(vetted),
         industrial_query, limits, gap_marker=adapter_gap,
         allow_reports=not no_table,
     )
     if (
-        analysis_text is not None
-        and analysis_text is not caller_text
+        (
+            (analysis_text is not None and analysis_text is not caller_text)
+            or vetted != vetted_source
+        )
         and not industrial.hard_fail_open
     ):
         # Hard limits judge the TRUE input: stripping marker lines can never
@@ -11439,7 +11523,8 @@ def _industrial_preflight(
         )
         if candidate_payload.wrapped:
             payload_industrial = industrial_preprocess(
-                candidate_payload.inner, industrial_query, industrial.limits,
+                _neutralize_forged_markers(candidate_payload.inner),
+                industrial_query, industrial.limits,
                 gap_marker=adapter_gap, allow_reports=not no_table, reports_only=True,
             )
             if payload_industrial.hard_fail_open:
@@ -11916,7 +12001,7 @@ def _compress_context_impl(
                 gap_marker, omitted, len(caller_text), kind))
         )
     )
-    original_text = _norm_newlines(caller_text)
+    original_text = _neutralize_forged_markers(_norm_newlines(caller_text))
     # 1.10.0 (S5, E5): the protected fact lines and the density flag are computed on the caller's
     # original text — the unwrapped payload when the caller wrapped it — BEFORE the industrial and
     # format adapters below may delete a line, so protection knows every fact before any stage can
@@ -11938,6 +12023,10 @@ def _compress_context_impl(
         # facts, error exemplars or outcome lines, or the floors would restore
         # them right back into the extract.
         protected_source = _strip_artifact_noise(protected_source, noise_res)
+    # The analysis_text fallback above can carry a marker-shaped span the
+    # original_text path already neutralized — the floors restore lines
+    # verbatim, so they must come from the same marker-free copy.
+    protected_source = _neutralize_forged_markers(protected_source)
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -11981,7 +12070,12 @@ def _compress_context_impl(
             content_hint=content_hint, industrial=industrial, query_as_given=query_as_given,
             requested_mode=requested_mode, strategy=strategy,
         )
-    source_pin_texts = _source_pin_texts(analysis_text, pin_patterns, pin_recent)
+    # Pin texts must compare against the neutralized working text — a forged
+    # marker span inside a pinned block would otherwise read as un-preservable
+    # and trip the pin cost gate into returning the whole original.
+    source_pin_texts = _source_pin_texts(
+        _neutralize_forged_markers(analysis_text), pin_patterns, pin_recent
+    )
     _PINNED_LINES.set(frozenset(
         form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
         for form in (ln, strip_ansi(ln))
@@ -12025,9 +12119,23 @@ def _compress_context_impl(
         # original stays intact for fail-open and CCR. Stripping the unwrapped
         # payload covers JSON envelopes too.
         text = _strip_artifact_noise(text, noise_res)
+    # Marker-shaped spans embedded inside real lines reach the output
+    # verbatim through kept blocks — every span left in the working text is
+    # forged input, so its brackets go fullwidth before any stage can emit
+    # it. Engine markers (gap spans, [tameru:…] banners, the appended
+    # [CC-Retrieve] pointer) are produced later and keep their brackets.
+    # Adapter output needs no pass here: its caller content was neutralized
+    # on the way into the adapter, and its banners/gap markers are the
+    # engine's own.
+    if not industrial.applied and not (
+        payload_industrial is not None and payload_industrial.applied
+    ):
+        text = _neutralize_forged_markers(text)
     tool_meta_line = ""
     if tool_payload.wrapped and tool_payload.meta:
-        tool_meta_line = _compact_json(tool_payload.meta) + "\n"
+        # The envelope's scalar metadata is caller text too — a marker-shaped
+        # span inside a field value would emit verbatim at the output head.
+        tool_meta_line = _neutralize_forged_markers(_compact_json(tool_payload.meta)) + "\n"
     # v1.4.0 (E4): an un-hinted numbered read (`cat -n`, Hermes `N|`) is code,
     # judged on the unwrapped payload: no table detector, no supersession, the
     # gutter kept in the output but out of the scorer's view. `route_hint` is
@@ -12658,7 +12766,13 @@ def _with_schema_fields(
     try:
         text = context if isinstance(context, str) else str(context)
         q = query if isinstance(query, str) else chr(10).join(str(item) for item in query)
-        dropped = () if result.fail_open else _dropped_summary(text, result.compressed_text, redact)
+        # A kept line whose forged marker span was neutralized is still kept —
+        # compare against the neutralized original so it is not reported dropped.
+        # Normalize first, matching the order original_text is built in: a bare
+        # carriage return inside a span breaks it for both sides.
+        dropped = () if result.fail_open else _dropped_summary(
+            _neutralize_forged_markers(_norm_newlines(text)), result.compressed_text, redact
+        )
         key = _stable_key(text, q, selector_query)
     except Exception:  # a summary never costs a result
         return result

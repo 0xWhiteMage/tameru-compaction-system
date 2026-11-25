@@ -1142,6 +1142,10 @@ def _adapt_xml(
 
 
 _SQL_DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
+_NEUTRAL_MARKER_RE = re.compile(
+    r"［(?:…(?: [^\n\x22［］]{1,120} omitted …)?|tameru:[^\n\x22［］]{1,200}|"
+    r"CC-Retrieve: [0-9a-f]{24})］|《[^\n\x22［《》]{1,200}》"
+)
 _SQL_CLIENT_LINE_RE = re.compile(
     r"(?:go(?:[ \t]+[1-9][0-9]*)?[ \t]*(?:--[^\r\n]*)?|delimiter[ \t]+[^ \t\r\n]+[^\r\n]*)(?=[\r\n]|$)",
     re.IGNORECASE,
@@ -1177,7 +1181,7 @@ def _split_sql_statements(text: str) -> list[str] | None:
                     index += 2
                     continue
                 quote = ""
-            elif char == "\\" and quote != "]" and index + 1 < len(text):
+            elif char == "\\" and quote not in {"]", "］"} and index + 1 < len(text):
                 index += 2
                 continue
             index += 1
@@ -1201,6 +1205,18 @@ def _split_sql_statements(text: str) -> list[str] | None:
                 return None  # Client-side boundaries are not SQL statements.
         if char == "\\":
             return None  # An unquoted backslash may start a client metacommand.
+        if char in {"［", "《"}:
+            # Marker neutralization rewrites forged spans to ``［…］`` /
+            # ``《…》``; skip a span atomically so a ``;`` inside it cannot
+            # cut a statement. A bare one outside those shapes is a real
+            # bracketed identifier — quote it like ``[…]``.
+            marker = _NEUTRAL_MARKER_RE.match(text, index)
+            if marker:
+                index = marker.end()
+                continue
+            quote = "］" if char == "［" else "》"
+            index += 1
+            continue
         if char in {"'", '"', "`", "["}:
             quote = "]" if char == "[" else char
             index += 1
