@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 — dev extra installs tomli
+    import tomli as tomllib
+
 from tameru import compress_context as cc
 from tameru.transcript import build_query, build_selector_query
 
@@ -665,7 +670,6 @@ def test_orphan_subtable_merges_into_the_restored_parent_entry():
     lh = {}
     cc._line_scopes(before, lh)
     out = cc._restored_block(after, ['f0 = "v2"'], lh, oi, before.split("\n"))
-    import tomllib
     doc = tomllib.loads(out)
     assert isinstance(doc["deps"], list)
     subs = [e.get("sub") for e in doc["deps"] if isinstance(e, dict)]
@@ -689,7 +693,6 @@ def test_orphan_subtable_merge_keeps_colliding_keys_in_a_fresh_entry():
     lh = {}
     cc._line_scopes(before, lh)
     out = cc._restored_block(after, ['sub = 7'], lh, oi, before.split("\n"))
-    import tomllib
     doc = tomllib.loads(out)
     subs = sorted(e["sub"]["sub"] for e in doc["deps"])
     assert subs == [3, 7]
@@ -709,7 +712,6 @@ def test_orphan_of_nested_array_mints_its_own_entry():
     lh = {}
     cc._line_scopes(before, lh)
     out = cc._restored_block(after, ['b0 = 9', 'b1 = 8'], lh, oi, before.split("\n"))
-    import tomllib
     doc = tomllib.loads(out)
     assert isinstance(doc["x"][0]["b"], list)
     assert any(e.get("c", {}).get("c") == 3 for e in doc["x"][0]["b"])
@@ -740,7 +742,6 @@ def test_fenced_header_inside_toml_string_stays_content():
     joined = "\n".join(out)
     assert joined.count('"""') == 2
     assert out[3] == '[deps]'
-    import tomllib
     assert tomllib.loads(joined)["x"] == 'intro\n```\n[deps]\n```\ntail\n'
 
 
@@ -788,7 +789,6 @@ def test_spaced_dotted_subtable_stays_in_same_array_entry():
     out = cc._restored_block(
         after, ['[service . cache]', 'c = 1'], lh, oi, before.split("\n")
     )
-    import tomllib
     doc = tomllib.loads(out)
     assert len(doc["service"]) == 1
     assert doc["service"][0]["cache"]["c"] == 1
@@ -800,7 +800,6 @@ def test_string_repair_keeps_header_line_when_real_closer_survives():
     was dropped."""
     parts = ['x = """', '```', '[deps]', 'tail', '"""', '[real]', 'k = 1']
     out = cc._toml_string_repair(parts, {"[deps]", "[real]"})
-    import tomllib
     doc = tomllib.loads("\n".join(out))
     assert doc["x"] == '```\n[deps]\ntail\n'
     assert doc["real"]["k"] == 1
@@ -819,7 +818,6 @@ def test_array_parent_prefers_last_spelling_per_norm():
     out = cc._restored_block(
         after, ['[a.b.c]', 'c = 4'], lh, oi, before.split("\n")
     )
-    import tomllib
     doc = tomllib.loads(out)
     assert doc["a"]["b"][2]["c"]["c"] == 4
 
@@ -844,7 +842,6 @@ def test_empty_subtable_header_restores_under_surviving_array():
     out = cc._restored_block(
         after, ['[x.y]'], lh, oi, before.split("\n")
     )
-    import tomllib
     doc = tomllib.loads(out)
     assert "y" in doc["x"][0]
 
@@ -856,7 +853,6 @@ def test_string_repair_closes_early_when_only_later_string_quotes():
     parts = ['x = """', '```', '[deps]', 'k = 0', '[real]', 'k = 1',
              'y = """z"""', 'w = 2']
     out = cc._toml_string_repair(parts, {"[deps]", "[real]"})
-    import tomllib
     doc = tomllib.loads("\n".join(out))
     assert doc["deps"]["k"] == 0
     assert doc["real"]["k"] == 1
@@ -870,7 +866,6 @@ def test_string_repair_keeps_two_header_lines_inside_a_real_string():
     parts = ['x = """', '[deps]', 'k = 0', '[other]', 'o = 1', '"""',
              'w = 2']
     out = cc._toml_string_repair(parts, {"[deps]", "[other]"})
-    import tomllib
     doc = tomllib.loads("\n".join(out))
     assert doc["w"] == 2
     assert "[deps]" in doc["x"]
@@ -888,7 +883,6 @@ def test_empty_subtable_extends_its_minted_entry():
     out = cc._restored_block(
         after, ['[[x]]', 'b = 2', '[x.y]'], lh, oi, before.split("\n")
     )
-    import tomllib
     doc = tomllib.loads(out)
     assert len(doc["x"]) == 2
     assert doc["x"][0]["a"] == 1
@@ -906,7 +900,6 @@ def test_restore_does_not_duplicate_a_line_dropped_by_two_pools():
     out = cc.compress_context(
         text, query="y0", budget_ratio=0.4
     ).compressed_text
-    import tomllib
     doc = tomllib.loads(out.split("[CC-Retrieve")[0])
     assert doc["other"]["o"] == 1
     assert out.count("o = 1") == 1
@@ -924,7 +917,6 @@ def test_padded_array_header_does_not_crash_subtable_restore():
     out = cc._restored_block(
         after, ["[x.y]", "[x.z]"], lh, oi, before.split("\n")
     )
-    import tomllib
     doc = tomllib.loads(out)
     assert doc["x"][0]["y"] == {}
     assert doc["x"][0]["z"] == {}
@@ -942,7 +934,6 @@ def test_member_joins_its_registered_subtable_not_the_sibling():
     out = cc._restored_block(
         after, ["[x.a]", "[x.b]", "v = 1"], lh, oi, before.split("\n")
     )
-    import tomllib
     doc = tomllib.loads(out)
     assert doc["x"][0]["b"]["v"] == 1
     assert "a" in doc["x"][0]
@@ -960,7 +951,6 @@ def test_earlier_entry_subtable_does_not_steal_final_entry_settings():
     out = cc._restored_block(
         after, ["[x.a]", "q = 1"], lh, oi, before.split("\n")
     )
-    import tomllib
     doc = tomllib.loads(out)
     assert len(doc["x"]) == 2
     assert doc["x"][0]["a"] == {}
@@ -980,7 +970,6 @@ def test_member_restore_joins_subtable_inside_a_multiline_value():
     after = '[[x]]\nw = 2'
     restore = ['v = """', '[x.w]', 'fake', '"""', 'm = 1']
     out = cc._restored_block(after, restore, lh, oi, lines)
-    import tomllib
     doc = tomllib.loads(out)
     # The string-shaped content stays inside ``v``; every member survives
     # somewhere in the array — the doc stays valid and lossless.
@@ -1002,7 +991,6 @@ def test_orphan_collision_under_padded_array_mints_fresh_entry():
     cc._line_scopes(before, lh)
     after = '[deps.sub]\nsub = 3\ns0 = 2'
     out = cc._restored_block(after, ['sub = 7'], lh, oi, lines)
-    import tomllib
     doc = tomllib.loads(out)
     subs = sorted(e["sub"]["sub"] for e in doc["deps"])
     assert subs == [3, 7]
