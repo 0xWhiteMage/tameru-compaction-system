@@ -2104,6 +2104,52 @@ def _toml_section_scope(lines: list[str]):
     return head_text, enclosing_idx, ancestors, in_string
 
 
+
+def _triple_positions_from(line: str, delim: str, pos: int) -> list[int]:
+    return [p for p in _triple_close_positions(line, delim) if p >= pos]
+
+
+def _advance_triple_state(ln: str, inside_basic: bool, inside_literal: bool):
+    """Triple-quote state after one line, scanned in position order.
+
+    Once a string closes mid-line the rest is code again — delimiter-looking
+    runs in its comment tail are text, because the outside view blanks them.
+    Per-kind independent parity would count them as openers. Returns
+    ``(inside_basic, inside_literal)``.
+    """
+    ln, _ = _blank_same_line_triples(ln)
+    pos = 0
+    view_out = _delim_view(ln, False)
+    n = len(ln)
+    while pos < n:
+        if inside_basic:
+            ps = _triple_positions_from(ln, '"""', pos)
+            if not ps:
+                break
+            inside_basic = False
+            pos = ps[0] + 3
+        elif inside_literal:
+            ps = _triple_positions_from(ln, "'''", pos)
+            if not ps:
+                break
+            inside_literal = False
+            pos = ps[0] + 3
+        else:
+            dq = _triple_positions_from(view_out, '"""', pos)
+            sq = _triple_positions_from(view_out, "'''", pos)
+            first_dq = dq[0] if dq else n + 1
+            first_sq = sq[0] if sq else n + 1
+            if first_dq == n + 1 and first_sq == n + 1:
+                break
+            if first_sq < first_dq:
+                inside_literal = True
+                pos = first_sq + 3
+            else:
+                inside_basic = True
+                pos = first_dq + 3
+    return inside_basic, inside_literal
+
+
 def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
     """Close a multiline TOML string whose closer was dropped with the
     lines around it. Emitted while still inside one, a section header or
@@ -2125,15 +2171,27 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
     # header-shaped lines are content and must not force an early close.
     # An EVEN count means every later quote pairs up (a different string's
     # opener and closer) — ours was dropped and the early close is needed.
+    # The toggles come from the same forward lexing the emit pass uses —
+    # quote runs inside string content or a trailing comment never count.
+    dq_t = [False] * len(parts)
+    sq_t = [False] * len(parts)
+    sim_basic = sim_literal = False
+    sim_fence = False
+    for i, ln in enumerate(parts):
+        if not (sim_basic or sim_literal) and ln.strip().startswith("```"):
+            sim_fence = not sim_fence
+            continue
+        if sim_fence:
+            continue
+        pb, pl = sim_basic, sim_literal
+        sim_basic, sim_literal = _advance_triple_state(ln, sim_basic, sim_literal)
+        dq_t[i] = pb != sim_basic
+        sq_t[i] = pl != sim_literal
     dq_par = [False] * len(parts)
     sq_par = [False] * len(parts)
     for i in range(len(parts) - 2, -1, -1):
-        dq_par[i] = dq_par[i + 1] ^ bool(
-            _unescaped_triple_count(parts[i + 1], '"""') % 2
-        )
-        sq_par[i] = sq_par[i + 1] ^ bool(
-            _unescaped_triple_count(parts[i + 1], "'''") % 2
-        )
+        dq_par[i] = dq_par[i + 1] ^ dq_t[i + 1]
+        sq_par[i] = sq_par[i + 1] ^ sq_t[i + 1]
     for i, ln in enumerate(parts):
         in_s = inside_basic or inside_literal
         if not in_s:
@@ -2166,11 +2224,7 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
             inside_basic = inside_literal = False
             in_s = False
         out.append(ln)
-        code = _delim_view(ln, in_s)
-        if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
-            inside_basic = not inside_basic
-        if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
-            inside_literal = not inside_literal
+        inside_basic, inside_literal = _advance_triple_state(ln, inside_basic, inside_literal)
     if inside_basic:
         out.append('"""')
     elif inside_literal:

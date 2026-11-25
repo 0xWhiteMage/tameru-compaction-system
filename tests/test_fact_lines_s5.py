@@ -1076,3 +1076,21 @@ def test_continuation_attaches_to_a_top_level_surviving_opener():
     out = cc._restored_block(after, ['body text'], lh, oi, lines)
     assert out.count('key = """') == 1
     assert 'body text' in out
+
+
+def test_comment_tail_quotes_do_not_count_as_delimiters_in_repair():
+    """A ``'''`` inside the comment tail of a line where a basic string
+    closes is text — the repair must not mint a literal closer for it."""
+    parts = ['doc = """', 'body', 'end"""  # use \'\'\' for literals', '[real]', 'x = 1']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    assert not any(l.strip() == "'''" for l in out)
+    doc = tomllib.loads("\n".join(out))
+    assert doc["real"]["x"] == 1
+
+
+def test_repair_still_closes_a_genuinely_dropped_closer():
+    parts = ['doc = """', 'body text', 'tail end', '[real]', 'x = 1']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    assert '"""' in [l.strip() for l in out]
+    doc = tomllib.loads("\n".join(out))
+    assert doc["real"]["x"] == 1
