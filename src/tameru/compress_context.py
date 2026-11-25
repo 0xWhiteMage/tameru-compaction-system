@@ -12633,13 +12633,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
 
 def _cli_read_bounded(stream, max_chars: int) -> str:
-    """Read a text ``stream`` capped to roughly ``max_chars`` characters —
-    enough for the input preflight to reject an oversized document without
-    buffering a stream that never reaches EOF. Text mode keeps the
-    stream's configured encoding (``PYTHONIOENCODING`` on stdin) and its
-    newline conversion, so a CRLF file is measured the way the preflight
-    measures it."""
-    return stream.read(max(4 * max_chars + 64, 1 << 20))
+    """Read a text ``stream`` for at most ``max_chars + 1`` characters —
+    exactly what the input preflight needs to reject an oversized
+    document, so the read returns as soon as the limit is provably
+    exceeded and never waits for more of a stream that already overran.
+    Text mode keeps the stream's configured encoding
+    (``PYTHONIOENCODING`` on stdin) and its newline conversion, so a
+    CRLF file is measured the way the preflight measures it."""
+    return stream.read(max_chars + 1)
 
 
 def _run_cli(args) -> int:
