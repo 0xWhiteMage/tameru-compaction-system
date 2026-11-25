@@ -2253,6 +2253,7 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
                     break
         self_closes = (
             trigger_shape
+            and sv.startswith("[§")
             and not scan_suppressed
             and bool(_triple_close_positions(ln, delim))
         )

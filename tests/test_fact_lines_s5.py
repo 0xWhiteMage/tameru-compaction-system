@@ -1209,3 +1209,18 @@ def test_a_content_line_starting_with_the_citation_shape_scans_normally():
     parsed = tomllib.loads("\n".join(out))
     assert parsed["next"] == 1
     assert parsed["ml"] == "[§ content line "
+
+
+def test_a_header_comment_triple_is_never_the_string_closer():
+    """A known section header is drop evidence by definition — it cannot
+    be string content, so a triple quote inside its trailing comment is
+    coincidental text, not the closer. Treating it as one leaves the
+    header inside the string: the close lands mid-line, the header never
+    takes effect, and its keys parse into the previous table (or the
+    extract stops parsing at all)."""
+    hdr = '[tbl1] # note with """ inside'
+    parts = ["[tbl0]", 'ml = """', "body text", hdr, "key = 1"]
+    out = cc._toml_string_repair(parts, {hdr})
+    assert out.index('"""') == 3  # minted right before the header
+    parsed = tomllib.loads("\n".join(out))
+    assert parsed["tbl1"]["key"] == 1
