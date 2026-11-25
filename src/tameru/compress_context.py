@@ -2205,6 +2205,12 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
             in_fence = not in_fence
             out.append(ln)
             continue
+        if sv.startswith("[§"):
+            # Citation annotations embed quoted content verbatim — their
+            # quote runs are not TOML delimiters, so the line is emitted
+            # untouched and never scanned.
+            out.append(ln)
+            continue
         if in_fence:
             # Fenced code is kept verbatim — a """/''' or a header-shaped
             # line inside it is code content, never TOML syntax.
@@ -2246,6 +2252,8 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
             str_start = -1
             rescan_from = hazard_at if hazard_at >= 0 else i
             for k in range(rescan_from, i):
+                if parts[k].strip().startswith("[§"):
+                    continue
                 hb = inside_basic or inside_literal
                 inside_basic, inside_literal = _advance_triple_state(
                     parts[k], inside_basic, inside_literal

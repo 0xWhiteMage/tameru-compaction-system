@@ -1141,3 +1141,43 @@ def test_query_hit_settings_stay_under_their_restored_header():
     tasks = parsed.get("tasks", {})
     assert sorted(k for k in tasks if k.startswith("step")) == ["step1", "step2", "step3"]
     assert not any(k.startswith("step") for k in parsed if k != "tasks")
+
+
+def test_citation_lines_are_not_scanned_for_delimiters():
+    """A ``[§hash]`` citation annotation embeds omitted content verbatim —
+    its quote runs (e.g. a trailing ``\"\"\"`` of an elided closer) are not
+    TOML delimiters. Scanning them toggles phantom string state and mints
+    stray closers after the intact string that follows."""
+    doc = "\n".join(
+        ["[sec0]", "arr0 = [1, 2, 3]", "arr1 = [1, 2, 3]", "[sec1]",
+         'key0 = "val0 padding padding padding padding"',
+         'ml1 = """',
+         "body text line 0 filler filler filler filler",
+         "body text line 1 filler filler filler filler",
+         "body text line 2 filler filler filler filler",
+         '"""',
+         'key2 = "val2 padding padding padding padding"',
+         'key3 = "val3 padding padding padding padding"',
+         'ml4 = """',
+         "body text line 0 filler filler filler filler",
+         '"""',
+         "[sec2]",
+         'ml0 = """',
+         "body text line 0 filler filler filler filler",
+         "body text line 1 filler filler filler filler",
+         '"""',
+         'key1 = "val1 padding padding padding padding"',
+         'key2 = "val2 padding padding padding padding"',
+         "arr3 = [1, 2, 3]",
+         'ml4 = """',
+         "body text line 0 filler filler filler filler",
+         "body text line 1 filler filler filler filler",
+         '"""']
+    )
+    out = cc.compress_context(doc, query="body", budget_ratio=0.05)
+    txt = out.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        l for l in txt.split("\n")
+        if not l.startswith(("[§", "[…", "[×", "[last"))
+    )
+    tomllib.loads(cleaned)  # must parse — no stray minted closers
