@@ -97,3 +97,30 @@ def test_cli_accepts_a_readable_pipe(tmp_path):
     feeder.join(10)
     assert done.returncode == 0, done.stderr
     assert "Example payload." in done.stdout
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="posix only")
+def test_cli_unopenable_stream_errors_cleanly(tmp_path):
+    import socket
+
+    sp = tmp_path / "ctx.sock"
+    socket.socket(socket.AF_UNIX).bind(str(sp))
+    done = _run_cli(
+        "from tameru.cli import main; raise SystemExit(main())",
+        [str(sp), "question"],
+    )
+    assert done.returncode == 2, done.stderr
+    assert "cannot read" in done.stderr
+    assert "Traceback" not in done.stderr
+
+
+def test_cli_invalid_utf8_input_errors_cleanly(tmp_path):
+    bad = tmp_path / "bad.bin"
+    bad.write_bytes(b"\xff\xfe" * 200)
+    done = _run_cli(
+        "from tameru.cli import main; raise SystemExit(main())",
+        [str(bad), "question", "--no-ccr"],
+    )
+    assert done.returncode == 2, done.stderr
+    assert "cannot read" in done.stderr
+    assert "Traceback" not in done.stderr

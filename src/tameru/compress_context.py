@@ -12632,12 +12632,46 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return _run_cli(_parse_args(argv))
 
 
+def _cli_read_bounded(stream, max_chars: int) -> str:
+    """Read ``stream`` capped to roughly ``max_chars`` decoded characters —
+    enough for the input preflight to reject an oversized document without
+    buffering a stream that never reaches EOF. A UTF-8 character takes at
+    most 4 bytes; a trailing partial sequence is dropped so decoding stays
+    strict."""
+    cap = max(4 * max_chars + 64, 1 << 20)
+    raw = stream.read(cap)
+    if len(raw) == cap:
+        i = len(raw) - 1
+        while i > 0 and raw[i] & 0xC0 == 0x80:
+            i -= 1
+        if raw[i] >= 0x80:
+            lead = raw[i]
+            need = 2 if lead < 0xE0 else 3 if lead < 0xF0 else 4
+            if len(raw) - i < need:
+                raw = raw[:i]
+    return raw.decode("utf-8-sig")
+
+
 def _run_cli(args) -> int:
+    import sys as _sys
+    max_chars = args.max_input_chars
+    if not isinstance(max_chars, int) or max_chars <= 0:
+        max_chars = IndustrialLimits().max_input_chars
     if args.context_file == "-":
-        import sys as _sys
-        ctx = _sys.stdin.read()
+        try:
+            ctx = _cli_read_bounded(_sys.stdin.buffer, max_chars)
+        except (OSError, UnicodeError) as exc:
+            print(f"tameru-compress: error: cannot read stdin: {exc}",
+                  file=_sys.stderr)
+            return 2
     else:
-        ctx = Path(args.context_file).read_text(encoding="utf-8-sig")
+        try:
+            with open(args.context_file, "rb") as fh:
+                ctx = _cli_read_bounded(fh, max_chars)
+        except (OSError, UnicodeError) as exc:
+            print(f"tameru-compress: error: cannot read "
+                  f"'{args.context_file}': {exc}", file=_sys.stderr)
+            return 2
     # Resolve ccr/citations defaults (None = use library default True)
     ccr_val = True if args.ccr is None else args.ccr
     citations_val = True if args.citations is None else args.citations
