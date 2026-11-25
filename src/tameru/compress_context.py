@@ -2195,6 +2195,16 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
     for i in range(len(parts) - 2, -1, -1):
         dq_par[i] = dq_par[i + 1] ^ dq_t[i + 1]
         sq_par[i] = sq_par[i + 1] ^ sq_t[i + 1]
+    # A plain header text is unique in valid TOML, so when the SAME text
+    # appears more than once in the extract every occurrence but one is
+    # string content. The early close is suppressed at all but the LAST
+    # occurrence — the content copies keep scanning as string body, and
+    # the close still fires at the last one, which is the real header
+    # whenever it survives. Array-of-tables headers repeat legitimately
+    # and are exempt.
+    stripped_last: dict[str, int] = {}
+    for _i, _ln in enumerate(parts):
+        stripped_last[_ln.strip()] = _i
     out_pos: dict[int, int] = {}
     str_start = -1
     str_delim = '"""'
@@ -2239,10 +2249,15 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
         closes_later = (inside_basic and dq_par[i]) or (
             inside_literal and sq_par[i]
         )
+        header_trigger = sv in header_texts and not (
+            sv.startswith("[")
+            and not sv.startswith("[[")
+            and stripped_last.get(sv, -1) != i
+        )
         trigger_shape = in_s and (not in_s_fence or unclosed_s_fence) and (
             _DEFAULT_ELISION_LINE.match(sv)
             or scan_suppressed
-            or sv in header_texts
+            or header_trigger
         )
         delim = '"""' if inside_basic else "'''"
         hazard_at = -1

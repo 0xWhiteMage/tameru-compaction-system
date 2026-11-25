@@ -1224,3 +1224,16 @@ def test_a_header_comment_triple_is_never_the_string_closer():
     assert out.index('"""') == 3  # minted right before the header
     parsed = tomllib.loads("\n".join(out))
     assert parsed["tbl1"]["key"] == 1
+
+
+def test_a_header_text_repeated_in_string_content_defers_the_close():
+    """A plain header is unique in valid TOML, so when its text appears
+    again later in the extract the earlier copy inside a string must be
+    content. Closing there mints the delimiter too early: the content
+    line becomes a second table declaration and the extract is invalid.
+    The close now fires only at the last occurrence."""
+    parts = ["[tbl0]", 'ml = """', "body", "  [tbl1]  ", "more body", "[tbl1]", "key = 1"]
+    out = cc._toml_string_repair(parts, {"[tbl1]"})
+    parsed = tomllib.loads("\n".join(out))
+    assert parsed["tbl1"]["key"] == 1
+    assert "[tbl1]" in parsed["tbl0"]["ml"]  # the content copy stays string body
