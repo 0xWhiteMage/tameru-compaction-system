@@ -550,6 +550,7 @@ def test_triple_quote_in_comment_does_not_disable_veto():
                          ccr=False, citations=False)
     assert "connect_timeout_ms = 30000" not in r.compressed_text
     assert "connect_timeout_ms = 5000" in r.compressed_text
+<<<<<<< HEAD
 
 
 def test_marker_shaped_line_inside_a_fence_is_content():
@@ -587,3 +588,34 @@ def test_inline_code_run_is_not_a_fence_opener():
     assert "[tameru: leaked]" not in out
     assert "use ```inline code``` here" in out
     assert "keep me" in out
+||||||| parent of 52505fc (fix(engine): skip non-delimiter lines; hide triple quotes inside literals)
+=======
+
+
+def test_triple_quote_inside_unclosed_literal_is_not_an_opener():
+    """In ``x = 'a # b \"\"\"`` the ``\"\"\"`` sits inside a literal that never
+    closed — it must not open the mask and swallow the lines after it."""
+    import tameru.compress_context as cc
+
+    text = 'x = \'a # b """\nz = 1'
+    assert cc._triple_quoted_lines(text) == set()
+
+
+def test_triple_quote_inside_closed_literal_is_not_an_opener():
+    """A ``\"\"\"`` fully inside a quoted literal (``'a \"\"\"'``) is content,
+    not a delimiter, even when a comment follows it on the same line."""
+    import tameru.compress_context as cc
+
+    text = 'x = \'a """\' ; t\nz = 1'
+    assert cc._triple_quoted_lines(text) == set()
+
+
+def test_triple_quote_after_closed_literal_still_opens():
+    """The opener may legitimately follow a closed literal on the line."""
+    import tameru.compress_context as cc
+
+    text = 'x = \'a # b\' """yes\nz = 1\n"""'
+    masked = cc._triple_quoted_lines(text)
+    assert "z = 1" in masked
+    assert 'x = \'a # b\' """yes' in masked
+>>>>>>> 52505fc (fix(engine): skip non-delimiter lines; hide triple quotes inside literals)

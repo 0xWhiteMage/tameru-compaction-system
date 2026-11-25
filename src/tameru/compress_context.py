@@ -2305,6 +2305,8 @@ def _triple_quoted_lines(text: str) -> set[str]:
             if inside in ln:
                 inside = None
             continue
+        if '"""' not in ln and "'''" not in ln:
+            continue
         # A ``"""`` inside a comment (``# use """ for multiline``) is prose,
         # not a delimiter — count quotes only in the code part of the line.
         # And a ``#``/``;`` inside a quoted literal is content, not a comment
@@ -2313,9 +2315,33 @@ def _triple_quoted_lines(text: str) -> set[str]:
         # leave the string opener uncounted.
         blank = lambda m: " " * len(m.group(0))
         scrubbed = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, ln)
-        scrubbed = _SINGLE_QUOTED_RE.sub(blank, scrubbed)
+        tri_runs = [
+            (m3.start(), m3.end()) for m3 in re.finditer(r'"""|\'\'\'', scrubbed)
+        ]
+
+        def _blank_literal(m):
+            s, e = m.span()
+            # A literal that swallowed a ``'''``/``"""`` run whole (e.g.
+            # ``'a """'``) is blanked; a bare ``""``/``''`` match that only
+            # overlaps the run's own quotes (``x = 'a' """``) is the opener
+            # and must survive.
+            if any(s <= ts and e >= te for ts, te in tri_runs) or not any(
+                s < te and e > ts for ts, te in tri_runs
+            ):
+                return " " * (e - s)
+            return m.group(0)
+
+        scrubbed = _SINGLE_QUOTED_RE.sub(_blank_literal, scrubbed)
         m = re.search(r"[#;]", scrubbed)
-        code = ln if m is None else ln[: m.start()]
+        cut = m.start() if m is not None else len(scrubbed)
+        # A ``'``/``"`` left unblanked never closed: a ``"""`` after it is
+        # inside that literal, not an opener (``x = 'a # b """`` unclosed), so cut
+        # there too — a quote starting a ``'''``/``"""`` run is the opener
+        # itself and never counts as unclosed.
+        m2 = re.search(r"(?<!')'(?!')|(?<!\")\"(?!\")", scrubbed)
+        if m2 is not None:
+            cut = min(cut, m2.start())
+        code = scrubbed[:cut]
         for q in ('"""', "'''"):
             if code.count(q) % 2 == 1:
                 masked.add(ln)
