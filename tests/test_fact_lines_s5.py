@@ -586,8 +586,6 @@ def test_secret_body_lines_are_never_pulled_back():
     # ...while the rest of the value still restores whole.
     tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
     assert "normal body" in tomllib.loads(out)["x"]["v"]
-
-
 def test_segmentation_keeps_a_multiline_string_span_in_one_block():
     """Selection is block-atomic, so a multiline string split across blocks
     can emit a partial span: the opener alone is an unterminated string that
@@ -679,3 +677,88 @@ def test_python_adjacent_concatenation_does_not_eat_the_next_strings_opener():
     # TOML followers still consume the content quote
     line2 = "arr = [" + DQ + "a" + DQ + '", ' + DQ
     assert cc._advance_multiline_state(line2, None) == DQ
+def test_floor_eviction_never_drops_a_section_header():
+    """The savings-floor eviction scores lines, not structure: ties break by
+    position, so a kept block's ``[[deps]]`` header evicted before its own
+    settings — orphaning them at the document root, where two entries'
+    ``name`` keys collided and strict TOML parsers reject the extract."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    doc = (
+        '[[deps]]\nname = "pkg0 padding padding padding padding"\n'
+        'field0 = "val0 filler filler filler filler filler"\n'
+        '[[deps]]\nname = "pkg1 padding padding padding padding"\n'
+        'field0 = "val0 filler filler filler filler filler"\n'
+        '[[deps]]\nfield0 = "val0 filler filler filler filler filler"\n'
+        '[deps.serve]\nport = 8002\n'
+        'host = "localhost filler filler filler filler"'
+    )
+    r = cc.compress_context(doc, "pkg1", budget_ratio=0.3, **OPTS)
+    txt = r.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        ln for ln in txt.split("\n")
+        if not ln.startswith(("[§", "[…", "[×", "[last"))
+    )
+    parsed = tomllib.loads(cleaned)  # raises when a header orphan collides
+    # No setting of any array entry may surface at the document root.
+    assert "name" not in parsed
+    assert "field0" not in parsed
+    for entry in parsed.get("deps", []):
+        assert isinstance(entry, dict)
+
+
+def test_floor_eviction_never_splits_a_multiline_string_span():
+    """Eviction walks tied lines in position order and can stop mid-span: a
+    dropped opener strands its body as bare text under a bare closer, and a
+    dropped closer leaves the opener unterminated — either way strict TOML
+    parsers reject the extract. Span lines are never eviction candidates."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    original = (
+        '[x]\ndesc = """\nbody one filler\nbody two filler\n"""\nk = 1\n'
+        '[y]\nport = 8002\nhost = "localhost filler filler"'
+    )
+    compressed = '[x]\ndesc = """\nbody one filler\nbody two filler\n"""\nk = 1'
+    scored = [
+        {"id": 0, "score": 0.1,
+         "text": 'desc = """\nbody one filler\nbody two filler\n"""\nk = 1',
+         "entity_hits": 0, "term_hits": 0},
+    ]
+    facts = [
+        (6, "port", "8002", "port = 8002"),
+        (7, "host", "localhost filler filler", 'host = "localhost filler filler"'),
+    ]
+    out = cc._apply_fact_floor(
+        compressed=compressed, facts=facts, query="port", budget_chars=None,
+        scored=scored, kept_ids={0}, min_savings_ratio=0.99,
+        original_text=original,
+    )
+    tomllib.loads(out)  # raises when the span is dismembered
+    # The eviction may only touch k = 1 — every line of the span survives.
+    for ln in ('desc = """', "body one filler", "body two filler", '"""'):
+        assert ln in out
+
+
+def test_floor_eviction_never_splits_a_fenced_code_span():
+    """A dropped fence opener strands bare code under a bare closer — a
+    mutilated block presented as verbatim. Fenced spans are load-bearing as
+    a set, exactly like multiline strings."""
+    original = (
+        '[x]\nnote = "example:"\n```\ncode line one filler\n'
+        'code line two filler\n```\nk = 1\n[y]\nport = 8002'
+    )
+    compressed = (
+        '[x]\nnote = "example:"\n```\ncode line one filler\n'
+        'code line two filler\n```\nk = 1'
+    )
+    scored = [
+        {"id": 0, "score": 0.1,
+         "text": 'note = "example:"\n```\ncode line one filler\n'
+                 'code line two filler\n```\nk = 1',
+         "entity_hits": 0, "term_hits": 0},
+    ]
+    facts = [(8, "port", "8002", "port = 8002")]
+    out = cc._apply_fact_floor(
+        compressed=compressed, facts=facts, query="port", budget_chars=None,
+        scored=scored, kept_ids={0}, min_savings_ratio=0.99,
+        original_text=original,
+    )
+    assert "```\ncode line one filler\ncode line two filler\n```" in out
