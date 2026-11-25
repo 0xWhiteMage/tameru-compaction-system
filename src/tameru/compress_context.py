@@ -3360,6 +3360,13 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
     exemplar_idx: dict[str, int] = {}
     protected_out_indices: set[int] = set()  # E12: verbatim out slots the count pass must not rewrite
     last_seen: dict[str, str] = {}  # v1.4.0 (E10): last instance of each template
+    # Floor-only calibration: a protected instance inside a collapsing run is
+    # not pinned outside the fold (that broke the fold open); instead it
+    # becomes the exemplar text at count-attach time — zero extra lines, and
+    # the decision-relevant instance (the account a failure hit, the rare
+    # variant) is the one the fold shows.
+    prot_texts = frozenset(_ERR_PROTECTED.get()) | _OUTCOME_PROTECTED.get()
+    protected_inst: dict[str, str] = {}
 
     short_counts: dict[str, int] = {}
     for line in kept_lines:
@@ -3405,6 +3412,8 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
             if fp in exemplar_idx:
                 seen[fp] += 1
                 last_seen[fp] = line
+                if prot_texts and line in prot_texts and fp not in protected_inst:
+                    protected_inst[fp] = line
                 i += 1
                 continue
             exemplar_idx[fp] = len(out)
@@ -3428,10 +3437,14 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
         fp = fingerprint(ln)
         cnt = seen.get(fp, 1) if fp else 1
         if fp and cnt > 1 and not ln.lstrip().startswith("[\u00d7"):
-            counted_out.append(f"[\u00d7{cnt}] {ln}")
-            counted_src.append(out_src[idx])
+            pin = protected_inst.get(fp)
+            # Substitute only when the protected instance would otherwise vanish:
+            # if it already survives as the first or last instance, keep those.
             last = last_seen.get(fp)
-            if cnt >= 3 and last is not None and last != ln:
+            exemplar_text = pin if pin and pin != ln and pin != last else ln
+            counted_out.append(f"[\u00d7{cnt}] {exemplar_text}")
+            counted_src.append(out_src[idx])
+            if cnt >= 3 and last is not None and last != exemplar_text:
                 counted_out.append(f"[last] {last}")
                 counted_src.append(out_src[idx])
         else:
@@ -12203,6 +12216,12 @@ def _compress_context_impl(
     # the existing rule.
     if not fail_open and (fact_lines or break_lines or outcome_lines):
         line_set = set(lines)
+        # Floor-only calibration: an outcome line a template fold carries as
+        # its exemplar text survives preprocessing (substring retention — the
+        # count attach rewrites the line, so exact membership never matches).
+        # The gate's safety purpose is unaffected: the scan never protects
+        # secret or injection shapes, and ``_is_trust_risk_line`` still vetoes.
+        joined_lines = "\n".join(lines)
         floor_facts = [
             f for f in fact_lines
             if f[3] in line_set and not _is_trust_risk_line(f[3])
@@ -12215,7 +12234,7 @@ def _compress_context_impl(
         floor_seen.update(f[3] for f in floor_pool)
         floor_pool += [
             f for f in outcome_lines
-            if f[3] in line_set and f[3] not in floor_seen
+            if (f[3] in line_set or f[3] in joined_lines) and f[3] not in floor_seen
         ]
         if floor_pool:
             budget_chars = int(budget_ratio * len(caller_text)) if budget_ratio else None
