@@ -120,6 +120,16 @@ class Scan(ast.NodeVisitor):
             return
         if node.module:
             self.module(node.module, node)
+            # ``from urllib import request`` binds the submodule itself —
+            # check each imported name as a module path, or the parent
+            # package dodges the gate (``urllib`` is not a listed module,
+            # ``urllib.request`` is).
+            for alias in node.names:
+                qualified = node.module + "." + alias.name
+                if qualified in NETWORK_MODULES or any(
+                    qualified.startswith(m + ".") for m in NETWORK_MODULES if "." in m
+                ):
+                    self.add("network", qualified, node)
 
     def visit_Call(self, node: ast.Call) -> None:
         name = dotted(node.func)

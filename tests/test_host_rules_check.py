@@ -33,6 +33,8 @@ def rules(code: str) -> set[str]:
     [
         ("import socket", "network"),
         ("from urllib.request import urlopen", "network"),
+        ("from urllib import request", "network"),
+        ("from asyncio import streams", "network"),
         ("import http.client", "network"),
         ("import requests", "network"),
         ("import subprocess", "process"),
