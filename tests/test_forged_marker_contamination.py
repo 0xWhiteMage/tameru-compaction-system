@@ -752,3 +752,25 @@ def test_lone_apostrophe_does_not_hide_a_triple_opener():
     # A quote that CAN start a value still swallows the ``"""`` after it —
     # the literal never closes, so no triple delimiter is seen.
     assert _triple_quoted_lines("x = 'a # b \"\"\"") == set()
+
+
+def test_literal_opener_with_double_quotes_inside_restores_its_body():
+    # ``note = '''it's \"""`` — the literal opens FIRST; the ``"""`` later
+    # in the line is its content. Giving ``"""`` priority tracked a basic
+    # string, so the replay restored the opener without its body/closer.
+    import tomllib
+    from tameru import compress_context as cc
+    esc = chr(92)
+    after = (
+        "note = '''it's " + esc + '"""' + "\n"
+        "body line\n"
+        "end'''\n"
+        "[real]\nkeep_v = 1")
+    tomllib.loads(after + "\n")  # sanity: parses — note is a literal string
+    r = cc._restored_block(
+        after, ["drop_v = 2"], {"drop_v = 2": "[real]"},
+        {"drop_v = 2": 6})
+    assert "drop_v = 2" in r
+    # the restore must not splice inside the literal: dropped line lands
+    # after the string closes, under [real]
+    assert r.index("end'''") < r.index("drop_v = 2")

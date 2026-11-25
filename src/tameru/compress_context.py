@@ -2008,6 +2008,50 @@ def _unsafe_restored_line(ln: str) -> bool:
     return em is not None and _env_is_sensitive(em.group(1), em.group(2))
 
 
+
+def _scan_positions_from(line: str, delim: str, pos: int) -> list[int]:
+    return [p for p in _triple_close_positions(line, delim) if p >= pos]
+
+
+def _advance_replay_state(ln: str, inside_basic: bool, inside_literal: bool):
+    """Triple-quote state after one line, scanned in position order: the
+    FIRST delimiter run opens, and a run of the other kind inside it is
+    content — ``note = '''it\\\"\"\"`` opens a literal, not a basic
+    string. Same-line pairs are pre-blanked: self-contained in every
+    lexing state."""
+    ln, _ = _blank_same_line_triples(ln)
+    view_out = _quote_aware_code_part(ln)
+    pos = 0
+    n = len(ln)
+    while pos < n:
+        if inside_basic:
+            ps = _scan_positions_from(ln, '"""', pos)
+            if not ps:
+                break
+            inside_basic = False
+            pos = ps[0] + 3
+        elif inside_literal:
+            ps = _scan_positions_from(ln, "'''", pos)
+            if not ps:
+                break
+            inside_literal = False
+            pos = ps[0] + 3
+        else:
+            dq = _scan_positions_from(view_out, '"""', pos)
+            sq = _scan_positions_from(view_out, "'''", pos)
+            first_dq = dq[0] if dq else n + 1
+            first_sq = sq[0] if sq else n + 1
+            if first_dq == n + 1 and first_sq == n + 1:
+                break
+            if first_sq < first_dq:
+                inside_literal = True
+                pos = first_sq + 3
+            else:
+                inside_basic = True
+                pos = first_dq + 3
+    return inside_basic, inside_literal
+
+
 def _restored_block(
     after: str,
     lines: list[str],
@@ -2126,12 +2170,10 @@ def _restored_block(
             if header_of.get(ol) == ol:
                 cur_hdr = ol
                 enclosing[oidx] = cur_hdr
-            if _unescaped_triple_count(code, '"""') % 2 or _unescaped_triple_count(code, "'''") % 2:
+            nb, nl = _advance_replay_state(ol, False, False)
+            if nb or nl:
                 pending = (oidx, ol)
-                dq = _unescaped_triple_count(code, '"""') % 2
-                sq = _unescaped_triple_count(code, "'''") % 2
-                inside_basic = bool(dq)
-                inside_literal = not inside_basic and bool(sq)
+                inside_basic, inside_literal = nb, nl
                 close_kind[oidx] = "'''" if inside_literal else '"""'
                 continue
         if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
