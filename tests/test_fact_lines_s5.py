@@ -483,3 +483,62 @@ def test_outcome_floor_restores_unreachable_lines_end_to_end():
     )
     assert res.fail_open or ("Event[90]:" in res.compressed_text
                              and "The event log service was stopped." in res.compressed_text)
+
+
+def test_restored_multiline_opener_brings_its_body():
+    """A ``k = "\\"\\" ..."`` fact line restored alone leaves the string
+    unterminated — every emitted line after it is swallowed and the whole
+    extract stops parsing. The opener restores its continuation lines
+    verbatim: they are its own content."""
+    before = ('[[x]]\n[x.y]\nv = """\n[x.w]\nfake\n"""\nm = 1\n'
+              '[[x]]\nw = 2')
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[[x]]\nw = 2', ['v = """'], lh, oi)
+    import tomllib
+    doc = tomllib.loads(out)
+    y = doc["x"][0]["y"]
+    assert "[x.w]" in y["v"] and "fake" in y["v"]
+
+
+def test_multiline_continuation_joins_a_surviving_opener():
+    """A mid-string line restores into its surviving opener's body — never
+    as a standalone statement (``fake`` bare is not even valid TOML)."""
+    before = '[[x]]\n[x.y]\nv = """\n[x.w]\nfake\n"""\nm = 1\n[[x]]\nw = 2'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[[x]]\n[x.y]\nv = """\n"""\n[[x]]\nw = 2'
+    out = cc._restored_block(after, ['fake'], lh, oi)
+    import tomllib
+    doc = tomllib.loads(out)
+    assert doc["x"][0]["y"]["v"].strip() == "fake"
+
+
+def test_homeless_multiline_continuation_restores_the_whole_value():
+    """A continuation line whose opener neither survived nor restores
+    pulls the whole span — the value is the atomic unit."""
+    before = '[[x]]\n[x.y]\nv = """\n[x.w]\nfake\n"""\nm = 1\n[[x]]\nw = 2'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[[x]]\nw = 2', ['fake'], lh, oi)
+    import tomllib
+    doc = tomllib.loads(out)
+    y = doc["x"][0]["y"]
+    assert "[x.w]" in y["v"]
+
+
+def test_member_after_a_fake_header_uses_the_real_scope():
+    """``_line_scopes`` is not string-aware: ``[x.w]`` inside a ``\"\"\"``
+    value claims the lines after it — ``m = 1`` belongs under ``[x.y]``."""
+    before = '[[x]]\n[x.y]\nv = """\n[x.w]\nfake\n"""\nm = 1\n[[x]]\nw = 2'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[[x]]\nw = 2', ['m = 1'], lh, oi)
+    import tomllib
+    doc = tomllib.loads(out)
+    assert doc["x"][0]["y"]["m"] == 1
+    assert "w" not in doc["x"][0]["y"]

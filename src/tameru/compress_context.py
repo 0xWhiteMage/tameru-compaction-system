@@ -1827,10 +1827,57 @@ def _restored_block(
             inside_basic = not inside_basic
         if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
             inside_literal = not inside_literal
+    # A restored ``k = "\"\" ..."`` opener without the value's body leaves an
+    # unterminated string that swallows every emitted line after it — the
+    # whole extract stops parsing. The opener restores its continuation
+    # lines verbatim (they are its own content), and a continuation line on
+    # its own can never be a valid TOML statement: it joins a surviving
+    # opener's body or is skipped. Replay triple-quote state over the
+    # original line order to map each value's span — ``oi`` resolves a
+    # repeated line to its last index, so positions approximate there.
+    openers: dict[int, int] = {}      # opener idx -> closer idx
+    body_of: dict[int, list[str]] = {}  # opener idx -> continuation lines
+    cont_of: dict[int, int] = {}      # continuation idx -> opener idx
+    enclosing: dict[int, str] = {}    # idx -> last UNQUOTED header
+    inside_basic = inside_literal = False
+    pending: tuple[int, str] | None = None
+    pending_body: list[str] = []
+    cur_hdr = ""
+    for ol, oidx in sorted(oi.items(), key=lambda kv: kv[1]):
+        enclosing[oidx] = cur_hdr
+        if pending is not None:
+            pending_body.append(ol)
+            pend_code = ol
+            if (
+                (inside_literal and _UNESCAPED_TRIPLE_SQ.search(pend_code))
+                or (inside_basic and _UNESCAPED_TRIPLE_DQ.search(pend_code))
+            ):
+                openers[pending[0]] = oidx
+                body_of[pending[0]] = pending_body
+                for cidx in range(pending[0] + 1, oidx + 1):
+                    cont_of[cidx] = pending[0]
+                pending = None
+                pending_body = []
+            continue
+        ins = inside_basic or inside_literal
+        code = ol if ins else _toml_code_part(ol)
+        if not ins:
+            if header_of.get(ol) == ol:
+                cur_hdr = ol
+                enclosing[oidx] = cur_hdr
+            if len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2 or len(
+                _UNESCAPED_TRIPLE_SQ.findall(code)
+            ) % 2:
+                pending = (oidx, ol)
+        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
+            inside_basic = not inside_basic
+        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
+            inside_literal = not inside_literal
     insert_after: dict[int, list[str]] = {}
     insert_before: dict[int, list[str]] = {}
     appended: list[str] = []
     opened: set[str] = set()
+    claimed: set[int] = set()
 
     def _resolve(ln: str) -> str:
         """The original line a possibly window-bounded ``ln`` came from.
@@ -1867,7 +1914,56 @@ def _restored_block(
 
     for ln in lines:
         orig = _resolve(ln)
+        target0 = oi.get(orig)
+        emit = [ln]
+        if target0 in cont_of:
+            # Content of a multiline value is never a standalone statement:
+            # a surviving opener takes it straight into the string body,
+            # an opener restoring with it already emitted it verbatim, and
+            # otherwise the whole value — opener through closer — goes back
+            # in its place (restoring only the piece is not valid TOML).
+            oidx = cont_of[target0]
+            otext = next(ol for ol, i2 in oi.items() if i2 == oidx)
+            oi_pos = [
+                i for i, l in enumerate(after_lines)
+                if l == otext and not in_string[i]
+            ]
+            if oi_pos:
+                insert_after.setdefault(oi_pos[-1], []).append(ln)
+                continue
+            if oidx in claimed:
+                continue
+            claimed.add(oidx)
+            emit = [otext] + body_of[oidx]
+            # ``_line_scopes`` is not string-aware — a fake ``[x.w]`` inside
+            # the value claims the lines after it. The real enclosing scope
+            # is the last unquoted header.
+            h = enclosing.get(oidx) or header_of.get(orig)
+            if h == otext:
+                h = None
+            cand = [i for i, l in enumerate(after_lines) if l == h] if h else []
+            if not h:
+                appended.extend(emit)
+            elif not cand:
+                if h not in opened:
+                    appended.append(h)
+                    opened.add(h)
+                appended.extend(emit)
+            else:
+                insert_after.setdefault(cand[-1], []).extend(emit)
+            continue
+        elif target0 in openers:
+            if target0 in claimed:
+                # A continuation already pulled the whole span.
+                continue
+            claimed.add(target0)
+            emit = [ln] + body_of[target0]
         h = header_of.get(orig)
+        if h is not None and oi.get(h) in cont_of:
+            # ``_line_scopes`` is not string-aware: a ``[x.w]`` that only
+            # ever sat inside a multiline value still claims the lines
+            # after it. The real scope is the last unquoted header.
+            h = enclosing.get(target0) or h
         if h == orig:
             # A section head maps to itself only to mark it as a boundary;
             # it still restores bare — re-opening under itself would nest
@@ -1875,7 +1971,7 @@ def _restored_block(
             h = None
         cand = [i for i, l in enumerate(after_lines) if l == h] if h else []
         if not h:
-            appended.append(ln)
+            appended.extend(emit)
             continue
         if not cand:
             # The section itself was dropped: re-emit its header with the
@@ -1883,7 +1979,7 @@ def _restored_block(
             if h not in opened:
                 appended.append(h)
                 opened.add(h)
-            appended.append(ln)
+            appended.extend(emit)
             continue
         target = oi.get(orig)
         if h.lstrip().startswith("[["):
@@ -1901,9 +1997,9 @@ def _restored_block(
                 if h not in opened:
                     appended.append(h)
                     opened.add(h)
-                appended.append(ln)
+                appended.extend(emit)
             else:
-                insert_before.setdefault(nxt[0], []).extend((h, ln))
+                insert_before.setdefault(nxt[0], []).extend((h,) + tuple(emit))
             continue
         # A plain table: the surviving section owns the setting — insert at
         # the section's end, before the next header line.
@@ -1918,7 +2014,7 @@ def _restored_block(
             and (after_lines[j] not in header_texts or in_string[j])
         ):
             j += 1
-        insert_after.setdefault(j - 1, []).append(ln)
+        insert_after.setdefault(j - 1, []).extend(emit)
     if insert_after or insert_before:
         merged: list[str] = []
         for i, l in enumerate(after_lines):
