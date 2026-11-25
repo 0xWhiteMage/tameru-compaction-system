@@ -635,4 +635,20 @@ def test_escaped_apostrophe_literal_does_not_hide_the_opener():
     masked = cc._triple_quoted_lines(text)
     assert "body" in masked
     assert "z = 1" in masked
+<<<<<<< HEAD
 >>>>>>> 8220955 (fix(engine): the ' literal scrub honours backslash escapes)
+||||||| parent of aedc44a (fix(engine): ' literals close at \' when no escaped closer exists)
+=======
+
+
+def test_toml_backslash_path_literal_does_not_hide_the_opener():
+    """TOML literals keep backslashes: in ``'C:\\path\\' \"\"\"…`` the ``\\'``
+    is not an escape — the literal closes there and the ``\"\"\"`` is a real
+    opener whose body must mask."""
+    import tameru.compress_context as cc
+
+    text = "x = 'C:\\path\\' \"\"\"op\nbody\nz = 1\n\"\"\""
+    masked = cc._triple_quoted_lines(text)
+    assert "body" in masked
+    assert "z = 1" in masked
+>>>>>>> aedc44a (fix(engine): ' literals close at \' when no escaped closer exists)
