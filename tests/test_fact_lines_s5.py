@@ -704,3 +704,34 @@ def test_floor_eviction_never_drops_a_section_header():
     assert "field0" not in parsed
     for entry in parsed.get("deps", []):
         assert isinstance(entry, dict)
+
+
+def test_floor_eviction_never_splits_a_multiline_string_span():
+    """Eviction walks tied lines in position order and can stop mid-span: a
+    dropped opener strands its body as bare text under a bare closer, and a
+    dropped closer leaves the opener unterminated — either way strict TOML
+    parsers reject the extract. Span lines are never eviction candidates."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    original = (
+        '[x]\ndesc = """\nbody one filler\nbody two filler\n"""\nk = 1\n'
+        '[y]\nport = 8002\nhost = "localhost filler filler"'
+    )
+    compressed = '[x]\ndesc = """\nbody one filler\nbody two filler\n"""\nk = 1'
+    scored = [
+        {"id": 0, "score": 0.1,
+         "text": 'desc = """\nbody one filler\nbody two filler\n"""\nk = 1',
+         "entity_hits": 0, "term_hits": 0},
+    ]
+    facts = [
+        (6, "port", "8002", "port = 8002"),
+        (7, "host", "localhost filler filler", 'host = "localhost filler filler"'),
+    ]
+    out = cc._apply_fact_floor(
+        compressed=compressed, facts=facts, query="port", budget_chars=None,
+        scored=scored, kept_ids={0}, min_savings_ratio=0.99,
+        original_text=original,
+    )
+    tomllib.loads(out)  # raises when the span is dismembered
+    # The eviction may only touch k = 1 — every line of the span survives.
+    for ln in ('desc = """', "body one filler", "body two filler", '"""'):
+        assert ln in out

@@ -2643,12 +2643,35 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     # mis-scope. Evicting a header's body lines is always the safer spend:
     # an emptied section still parses.
     header_texts = set((line_headers or {}).values())
+    # Lines of a multiline string span are load-bearing as a set: the scan
+    # evicts in position order inside a tied block, so it can stop mid-span —
+    # a dropped opener strands its body as bare text and a bare closer, a
+    # dropped closer leaves the opener unterminated and the rest of the
+    # extract parses as string content. Either way strict TOML parsers reject
+    # the extract, so no line of a span is a candidate on its own.
+    span_texts: set[str] = set()
+    if original_text is not None:
+        in_basic = in_literal = False
+        for oln in original_text.split("\n"):
+            in_s = in_basic or in_literal
+            if in_s:
+                span_texts.add(oln)
+            code = oln if in_s else _quote_aware_code_part(oln)
+            if not in_literal and _unescaped_triple_count(code, '"""') % 2:
+                if not in_basic:
+                    span_texts.add(oln)
+                in_basic = not in_basic
+            if not in_basic and _unescaped_triple_count(code, "'''") % 2:
+                if not in_literal:
+                    span_texts.add(oln)
+                in_literal = not in_literal
     cand = sorted(
         (
             i for i, ln in enumerate(rendered)
             if ln in line_score
             and ln not in pool_texts
             and ln not in header_texts
+            and ln not in span_texts
             and not _OUTCOME_ERR_NEAR_RE.search(ln)
             and not _is_trust_risk_line(ln)
         ),
