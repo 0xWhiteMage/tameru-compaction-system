@@ -26,6 +26,12 @@ def _run_cli(source, argv, **kwargs):
     [
         (["--help"], 0, "Local query-aware extractive compressor"),
         (["-", "question", "--mode", "bogus"], 2, "invalid choice"),
+        # Out-of-range numeric flags get a clean error, not a traceback from
+        # IndustrialLimits.__post_init__ or compress_context.
+        (["-", "question", "--max-lines", "-5"], 2, "must be a positive integer"),
+        (["-", "question", "--pin-recent", "-1"], 2, "must be a non-negative integer"),
+        (["-", "question", "--budget-ratio", "-0.5"], 2, "must be in (0, 1]"),
+        (["-", "question", "--min-savings-ratio", "1"], 2, "must be in [0, 1)"),
     ],
 )
 def test_cli_exits_before_loading_engine_or_limits(argv, status, message):
