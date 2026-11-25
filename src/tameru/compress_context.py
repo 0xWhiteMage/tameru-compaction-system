@@ -1880,6 +1880,44 @@ def _blank_same_line_triples(ln: str) -> tuple[str, list[tuple[int, int]]]:
 _SINGLE_QUOTED_RE = re.compile(
     r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\'[^\']*\''
 )
+_QUOTE_OPENERS = " \t=:[,{(\"'"
+
+
+def _quote_opens(line: str, i: int) -> bool:
+    """True when a ``'``/``"`` at ``i`` can start a quoted value — a lone
+    quote mid-word (``ba'a``, ``it's``) is prose, not an unclosed literal.
+    A Python-style prefix (``r".."``, ``rb'..'``) counts when the letter
+    itself sits at a value position."""
+    if i == 0:
+        return True
+    p = line[i - 1]
+    if p in _QUOTE_OPENERS:
+        return True
+    if p in "rbufRBUF":
+        j = i - 2
+        if j < 0:
+            return True
+        return (line[j] in _QUOTE_OPENERS
+                or (line[j] in "rbufRBUF"
+                    and (j - 1 < 0 or line[j - 1] in _QUOTE_OPENERS)))
+    return False
+
+
+def _unclosed_quote_pos(scrubbed: str) -> int | None:
+    """Offset of a lone ``'``/``"`` that opens a literal and never closes,
+    or ``None`` — a lone quote only swallows the line where it can start a
+    value, and quotes a matched literal covers (``'t'`` in ``'t''''``) are
+    paired, not unclosed."""
+    covered: list[tuple[int, int]] = [
+        m.span() for m in _SINGLE_QUOTED_RE.finditer(scrubbed)
+    ]
+    for m2 in re.finditer(r"(?<!')'(?!')|(?<!\")\"(?!\")", scrubbed):
+        s = m2.start()
+        if any(a <= s < b for a, b in covered):
+            continue
+        if _quote_opens(scrubbed, s):
+            return s
+    return None
 
 
 
@@ -1917,6 +1955,10 @@ def _quote_aware_code_part(ln: str) -> str:
         s, e = m.span()
         # A literal that swallowed a run whole ('a """') is blanked; a bare
         # ""/'' match only overlapping the run's own quotes IS the opener.
+        # A "literal" starting INSIDE a run (``"""ba'''"`` matches ``"ba'''"``)
+        # is part of the run, not a literal — keep it or the run's quotes go.
+        if any(ts < s < te for ts, te in tri_runs):
+            return m.group(0)
         if any(s <= ts and e >= te for ts, te in tri_runs) or not any(
             s < te and e > ts for ts, te in tri_runs
         ):
@@ -1926,9 +1968,9 @@ def _quote_aware_code_part(ln: str) -> str:
     scrubbed = _SINGLE_QUOTED_RE.sub(_blank_literal, scrubbed)
     m = re.search(r"[#;]", scrubbed)
     cut = m.start() if m is not None else len(scrubbed)
-    m2 = re.search(r"(?<!')'(?!')|(?<!\")\"(?!\")", scrubbed)
-    if m2 is not None:
-        cut = min(cut, m2.start())
+    uq = _unclosed_quote_pos(scrubbed)
+    if uq is not None:
+        cut = min(cut, uq)
     return scrubbed[:cut]
 
 
@@ -2375,16 +2417,22 @@ def _triple_quoted_lines(text: str) -> set[str]:
             (m3.start(), m3.end()) for m3 in re.finditer(r'"""|\'\'\'', scrubbed)
         ]
 
+        lit_ends: list[int] = []
+
         def _blank_literal(m):
             s, e = m.span()
             # A literal that swallowed a ``'''``/``"""`` run whole (e.g.
             # ``'a """'``) is blanked; a bare ``""``/``''`` match that only
             # overlaps the run's own quotes (``x = 'a' """``) is the opener
-            # and must survive.
+            # and must survive. A "literal" starting INSIDE a run (its first
+            # quote is the run's last) keeps its text too.
+            if any(ts < s < te for ts, te in tri_runs):
+                return m.group(0)
             if any(s <= ts and e >= te for ts, te in tri_runs) or not any(
                 s < te and e > ts for ts, te in tri_runs
             ):
                 return " " * (e - s)
+            lit_ends.append(e - 1)
             return m.group(0)
 
         scrubbed = _SINGLE_QUOTED_RE.sub(_blank_literal, scrubbed)
@@ -2392,11 +2440,11 @@ def _triple_quoted_lines(text: str) -> set[str]:
         cut = m.start() if m is not None else len(scrubbed)
         # A ``'``/``"`` left unblanked never closed: a ``"""`` after it is
         # inside that literal, not an opener (``x = 'a # b """`` unclosed), so cut
-        # there too — a quote starting a ``'''``/``"""`` run is the opener
-        # itself and never counts as unclosed.
-        m2 = re.search(r"(?<!')'(?!')|(?<!\")\"(?!\")", scrubbed)
-        if m2 is not None:
-            cut = min(cut, m2.start())
+        # there too — but only where the quote can start a value (``x = ba'a"""``
+        # is a lone apostrophe, not an unclosed literal — its ``"""`` opens).
+        uq = _unclosed_quote_pos(scrubbed)
+        if uq is not None:
+            cut = min(cut, uq)
         code = scrubbed[:cut]
         # Delimiters toggle in position order: ``x = ''' """`` opens a
         # LITERAL string (the ``"""`` is its content) — checking ``"""``
@@ -2406,6 +2454,12 @@ def _triple_quoted_lines(text: str) -> set[str]:
         pos = 0
         while (m := re.search(r'"""|\'\'\'', code[pos:])) is not None:
             m_start = pos + m.start()
+            if m_start in lit_ends:
+                # The match's first quote is a kept literal's closer —
+                # ``'a b'''`` is ``'a b'`` then ``''``, so the run starts one
+                # char later; retry there for a real ``'''`` (``'a b''''``).
+                pos = m_start + 1
+                continue
             if m.group(0) == '"""' and _odd_backslashes(code, m_start):
                 # an escaped quote may be followed by the real closer — retry
                 # one char in, so ``\""""`` still closes.

@@ -771,4 +771,20 @@ def test_same_line_triple_holding_an_opposite_pair_blanks_wholesale():
     s2, u2 = _blank_same_line_triples(ln2)
     assert '"""' not in s2 and "'''" not in s2
     assert u2 == []
+<<<<<<< HEAD
 >>>>>>> d9ec91a (fix(engine): nested same-line triple spans no longer expose the outer closer)
+||||||| parent of 81b2786 (fix(engine): lone quotes only cut where a value can start)
+=======
+
+
+def test_lone_apostrophe_does_not_hide_a_triple_opener():
+    """``x = ba'a\"\"\"`` — the ``'`` after ``ba`` cannot start a value, so the
+    ``\"\"\"`` is a real opener and the line is in-string; and ``'t''''`` is
+    ``'t'`` plus ``'''`` — a literal's quotes are paired, not unclosed."""
+    from tameru.compress_context import _triple_quoted_lines
+    assert _triple_quoted_lines('x = ba\'a"""') == {'x = ba\'a"""'}
+    assert _triple_quoted_lines("x = 't''''x = 1") == {"x = 't''''x = 1"}
+    # A quote that CAN start a value still swallows the ``"""`` after it —
+    # the literal never closes, so no triple delimiter is seen.
+    assert _triple_quoted_lines("x = 'a # b \"\"\"") == set()
+>>>>>>> 81b2786 (fix(engine): lone quotes only cut where a value can start)
