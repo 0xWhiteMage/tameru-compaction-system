@@ -1029,3 +1029,20 @@ def test_continuation_anchors_to_its_own_sections_opener_not_a_same_text_one():
     assert doc["a"]["key"] == "first body\n"
     assert doc["b"]["key"] == "second body\n"
     assert doc["b"]["other"] == 1
+
+
+def test_surviving_fragment_of_a_restored_span_is_not_emitted_twice():
+    """``second body`` survived bare under ``[b]`` while its opener and closer
+    were dropped: the whole-value restore covers it, so the stray copy goes
+    away — the doc prints the line once and stays valid."""
+    before = ('[a]\nx = 1\n[b]\nkey = """\nsecond body\n"""\nother = 2')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[a]\nx = 1\n[b]\nsecond body\nother = 2'
+    out = cc._restored_block(after, ['key = """', '"""'], lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["b"]["key"].strip() == "second body"
+    assert doc["b"]["other"] == 2
+    assert out.count("second body") == 1

@@ -2299,6 +2299,7 @@ def _restored_block(
     emitted_keys: dict[object, set[str]] = {}
     extra_opened: set[object] = set()
     claimed: set[int] = set()
+    spans_emitted: list[tuple[str | None, set[str]]] = []
     # A ``[[x]]``-shaped line inside a multiline string is content, not an
     # entry boundary — but ``oi`` records its position as the header's last
     # occurrence all the same, which would split one real entry's fields
@@ -2472,6 +2473,7 @@ def _restored_block(
             if emit[-1] != body_of[oidx][-1]:
                 emit.append(close_kind.get(oidx, '"""'))
             claimed.add(oidx)
+            spans_emitted.append((enclosing.get(oidx) or header_of.get(orig), set(emit[1:])))
             # ``_line_scopes`` is not string-aware — a fake ``[x.w]`` inside
             # the value claims the lines after it. The real enclosing scope
             # is the last unquoted header.
@@ -2501,6 +2503,7 @@ def _restored_block(
             if emit[-1] != body_of[target0][-1]:
                 emit.append(close_kind.get(target0, '"""'))
             claimed.add(target0)
+            spans_emitted.append((enclosing.get(target0) or header_of.get(orig), set(emit[1:])))
         h = header_of.get(orig)
         if h is not None and oi.get(h) in cont_of:
             # ``_line_scopes`` is not string-aware: a ``[x.w]`` that only
@@ -2900,11 +2903,25 @@ def _restored_block(
         insert_after.setdefault(j - 1, []).extend(emit)
         present.update(emit[:1])
         present.add(orig)
-    if insert_after or insert_before:
+    drop_after: set[int] = set()
+    if spans_emitted:
+        # A fragment of a dropped span that survived stays verbatim at its own
+        # position — the span's whole-value restore would print it twice. Drop
+        # the stray copy when it sits in the span's own section; a same-text
+        # line under a DIFFERENT header is real content and stays.
+        for i, l in enumerate(after_lines):
+            if in_string[i] or _SECTION_LIKE_RE.match(l):
+                continue
+            for eh, texts in spans_emitted:
+                if l in texts and after_hdr[i] == eh:
+                    drop_after.add(i)
+                    break
+    if insert_after or insert_before or drop_after:
         merged: list[str] = []
         for i, l in enumerate(after_lines):
             merged.extend(insert_before.get(i, ()))
-            merged.append(l)
+            if i not in drop_after:
+                merged.append(l)
             merged.extend(insert_after.get(i, ()))
     else:
         merged = list(after_lines)
