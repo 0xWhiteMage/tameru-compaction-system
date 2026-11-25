@@ -8602,6 +8602,10 @@ def inspect_compressibility(text: str, query: str) -> dict[str, Any]:
     Returns {"worth_it": bool, "repetition_ratio": float, "reason": str}.
     Cheap heuristics only — no compression is performed.
     """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
+    if query is not None and not isinstance(query, str):
+        raise TypeError(f"query must be str, got {type(query).__name__}")
     tokens = estimate_tokens(text)
     if tokens < 200:
         return {
