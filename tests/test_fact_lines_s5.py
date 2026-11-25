@@ -1111,3 +1111,29 @@ def test_repair_mints_before_an_opener_when_the_header_sits_inside_it():
     parts = ['a = """', 'body', 'x = """', '[real]', 'k = 1', '"""', 'w = 2']
     out = cc._toml_string_repair(parts, {"[real]"})
     tomllib.loads("\n".join(out))  # must parse — no bare text lines
+
+
+def test_query_hit_settings_stay_under_their_restored_header():
+    """R-0069: selection kept the hit steps but dropped the ``[tasks]``
+    header and the multiline note; the fact restore then landed the
+    header AFTER the emitted steps and they parsed as root keys. The
+    restored output must seat every step back under ``[tasks]``."""
+    doc_lines = ["[tasks]",
+        'step1 = "do the first thing"',
+        'note = """',
+        "a long multiline note body line one",
+        "body line two with more detail",
+        '"""',
+        'step2 = "then do the second thing"',
+        'step3 = "finally do the third thing"']
+    noise = [
+        f'noise{i} = "filler text number {i} padding padding padding padding extra filler"'
+        for i in range(80)
+    ]
+    doc = "\n".join(noise + doc_lines)
+    out = cc.compress_context(doc, query="third thing", budget_ratio=0.05)
+    body = out.compressed_text.split("[CC-Retrieve")[0].replace("[…]", "").strip()
+    parsed = tomllib.loads(body)
+    tasks = parsed.get("tasks", {})
+    assert sorted(k for k in tasks if k.startswith("step")) == ["step1", "step2", "step3"]
+    assert not any(k.startswith("step") for k in parsed if k != "tasks")
