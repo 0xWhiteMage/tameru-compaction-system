@@ -2636,11 +2636,62 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
                     line_score[ln] = b["score"]
     rendered = compressed.split("\n")
     pool_texts = {f[3] for f in facts}
+    # A section header is never an eviction candidate: scoring ties break by
+    # position, so the header of a low-scoring kept block evicts before its
+    # own settings — orphaning them at the document root or under the wrong
+    # table, which strict TOML parsers reject (a repeated key) or silently
+    # mis-scope. Evicting a header's body lines is always the safer spend:
+    # an emptied section still parses.
+    header_texts = set((line_headers or {}).values())
+    # Lines of a multiline string span are load-bearing as a set: the scan
+    # evicts in position order inside a tied block, so it can stop mid-span —
+    # a dropped opener strands its body as bare text and a bare closer, a
+    # dropped closer leaves the opener unterminated and the rest of the
+    # extract parses as string content. Either way strict TOML parsers reject
+    # the extract, so no line of a span is a candidate on its own.
+    span_texts: set[str] = set()
+    if original_text is not None:
+        in_basic = in_literal = False
+        fence_marker: str | None = None
+        for oln in original_text.split("\n"):
+            in_s = in_basic or in_literal
+            # Fenced code spans are load-bearing the same way: a dropped
+            # opener strands bare code under a bare closer, presenting a
+            # mutilated block as verbatim. A fence inside a string is
+            # content, so string state wins; fences do not nest.
+            probe = _GUTTER_RE.sub("", oln, count=1).strip()
+            fm = re.match(r"(`{3,}|~{3,})", probe)
+            fc = re.fullmatch(r"(`{3,}|~{3,})", probe)
+            if in_s or fence_marker is not None:
+                span_texts.add(oln)
+            if fence_marker is not None:
+                if (
+                    fc is not None
+                    and fc.group(0)[0] == fence_marker[0]
+                    and len(fc.group(0)) >= len(fence_marker)
+                ):
+                    fence_marker = None
+                continue
+            if not in_s and fm is not None:
+                span_texts.add(oln)
+                fence_marker = fm.group(0)
+                continue
+            code = oln if in_s else _quote_aware_code_part(oln)
+            if not in_literal and _unescaped_triple_count(code, '"""') % 2:
+                if not in_basic:
+                    span_texts.add(oln)
+                in_basic = not in_basic
+            if not in_basic and _unescaped_triple_count(code, "'''") % 2:
+                if not in_literal:
+                    span_texts.add(oln)
+                in_literal = not in_literal
     cand = sorted(
         (
             i for i, ln in enumerate(rendered)
             if ln in line_score
             and ln not in pool_texts
+            and ln not in header_texts
+            and ln not in span_texts
             and not _OUTCOME_ERR_NEAR_RE.search(ln)
             and not _is_trust_risk_line(ln)
         ),
