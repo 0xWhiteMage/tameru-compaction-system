@@ -1764,11 +1764,56 @@ _SECTION_HEAD_RE = re.compile(r"^\s*\[")
 
 _UNESCAPED_TRIPLE_DQ = re.compile(r'(?<!\\)"""')
 _UNESCAPED_TRIPLE_SQ = re.compile(r"(?<!\\)'''")
-_TRIPLE_QUOTED_SAME_LINE_RE = re.compile(
-    # Escaped-quote languages (TOML basic strings, Python) never close a
-    # run on a ``"""`` preceded by ``\\`` — ``x = """body\\"""`` is an
-    # opener whose body continues, not a same-line string.
-    r'"""(?:[^"\\]|\\.|"(?!(?:\\?"")))*(?<!\\)"""|\'\'\'(?:[^\'\\]|\\.|\'(?!(?:\\?\'\')))*(?<!\\)\'\'\'')
+_TRIPLE_RUN_RE = re.compile(r'"""|\'\'\'')
+
+
+def _odd_backslashes(ln: str, pos: int) -> bool:
+    """``True`` when an odd run of ``\\`` precedes ``pos`` — the delimiter
+    at ``pos`` is escaped (a backslash-quoted triple opens nothing)."""
+    i = pos - 1
+    while i >= 0 and ln[i] == "\\":
+        i -= 1
+    return (pos - i) % 2 == 0
+
+
+def _blank_same_line_triples(ln: str) -> tuple[str, list[tuple[int, int]]]:
+    """``ln`` with closed same-line ``'''``/``\"\"\"`` runs blanked, plus the
+    (start, end) of each UNPAIRED delimiter left standing — the run's real
+    openers. Single pass, no regex backtracking: a delimiter escaped by an
+    odd ``\\`` run is content; otherwise consecutive same-kind delimiters
+    pair off as closed runs and the leftover is the opener.
+
+    A ``'''`` run reads TWO ways: Python treats ``\\'''`` as escaped so the
+    run stays open; a TOML literal string never escapes so it closes. The
+    literal read wins here — ``'''abc\\'''`` blanks like ``'C:\\path\\'``
+    does in ``_toml_code_part`` — because a missed same-line literal feeds
+    live-looking ``k = v`` lines to the veto where a false opener only
+    masks content."""
+    runs = [
+        (m.start(), m.group(0))
+        for m in _TRIPLE_RUN_RE.finditer(ln)
+        # Basic strings escape (\\""" is content, never a delimiter); TOML
+        # literal strings never do — a \''' still closes the run.
+        if m.group(0) == "'''" or not _odd_backslashes(ln, m.start())
+    ]
+    spans: list[tuple[int, int]] = []
+    unpaired: list[tuple[int, int]] = []
+    i = 0
+    while i < len(runs):
+        s, q = runs[i]
+        j = i + 1
+        while j < len(runs) and runs[j][1] != q:
+            j += 1
+        if j < len(runs):
+            spans.append((s, runs[j][0] + 3))
+            i = j + 1
+        else:
+            unpaired.append((s, s + 3))
+            i += 1
+    scrubbed = ln
+    for s, e in reversed(spans):
+        scrubbed = scrubbed[:s] + " " * (e - s) + scrubbed[e:]
+    return scrubbed, unpaired
 _SINGLE_QUOTED_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'[^\']*\'')
 
 
@@ -1782,9 +1827,10 @@ def _toml_code_part(line: str) -> str:
     ``_restored_block``. An unclosed triple quote is never blanked: it
     legitimately opens a multiline string. Not a full TOML lex, just
     enough to keep comment quotes from desyncing."""
-    blank = lambda m: " " * len(m.group(0))
-    scrubbed = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, line)
-    scrubbed = _SINGLE_QUOTED_RE.sub(blank, scrubbed)
+    scrubbed, _ = _blank_same_line_triples(line)
+    scrubbed = _SINGLE_QUOTED_RE.sub(
+        lambda m: " " * len(m.group(0)), scrubbed
+    )
     cut = scrubbed.find("#")
     return line if cut < 0 else line[:cut]
 
@@ -1798,11 +1844,7 @@ def _quote_aware_code_part(ln: str) -> str:
     if '"""' not in ln and "'''" not in ln and "'" not in ln and '"' not in ln \
             and "#" not in ln and ";" not in ln:
         return ln
-    blank = lambda m: " " * len(m.group(0))
-    scrubbed = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, ln)
-    tri_runs = [
-        (m3.start(), m3.end()) for m3 in re.finditer(r'"""|\'\'\'', scrubbed)
-    ]
+    scrubbed, tri_runs = _blank_same_line_triples(ln)
 
     def _blank_literal(m):
         s, e = m.span()
@@ -1897,6 +1939,7 @@ def _restored_block(
     inside_basic = inside_literal = False
     pending: tuple[int, str] | None = None
     pending_body: list[str] = []
+    close_kind: dict[int, str] = {}   # opener idx -> its delimiter
     cur_hdr = ""
     for oidx, ol in replay:
         enclosing[oidx] = cur_hdr
@@ -1932,6 +1975,7 @@ def _restored_block(
                 sq = len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2
                 inside_basic = bool(dq)
                 inside_literal = not inside_basic and bool(sq)
+                close_kind[oidx] = "'''" if inside_literal else '"""'
                 continue
         if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
             inside_basic = not inside_basic
@@ -2010,6 +2054,10 @@ def _restored_block(
             emit = [otext] + [
                 b for b in body_of[oidx] if not _unsafe_restored_line(b)
             ]
+            # The closing line carried the delimiter: filtering it must not
+            # leave the restored string unterminated.
+            if emit[-1] != body_of[oidx][-1]:
+                emit.append(close_kind.get(oidx, '"""'))
             claimed.add(oidx)
             # ``_line_scopes`` is not string-aware — a fake ``[x.w]`` inside
             # the value claims the lines after it. The real enclosing scope
@@ -2037,6 +2085,8 @@ def _restored_block(
             emit = [ln] + [
                 b for b in body_of[target0] if not _unsafe_restored_line(b)
             ]
+            if emit[-1] != body_of[target0][-1]:
+                emit.append(close_kind.get(target0, '"""'))
             claimed.add(target0)
         h = header_of.get(orig)
         if h is not None and oi.get(h) in cont_of:
