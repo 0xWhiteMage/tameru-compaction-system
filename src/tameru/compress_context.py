@@ -1816,11 +1816,15 @@ def _blank_same_line_triples(ln: str) -> tuple[str, list[tuple[int, int]]]:
     unpaired = [(s, s + 3) for qs in waiting.values() for s in qs]
     if not spans:
         return ln, unpaired
-    chars = list(ln)
+    spans.sort()
+    parts: list[str] = []
+    pos = 0
     for s, e in spans:
-        for p in range(s, e):
-            chars[p] = " "
-    return "".join(chars), unpaired
+        parts.append(ln[pos:s])
+        parts.append(" " * (e - s))
+        pos = e
+    parts.append(ln[pos:])
+    return "".join(parts), unpaired
 _SINGLE_QUOTED_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'[^\']*\'')
 
 
