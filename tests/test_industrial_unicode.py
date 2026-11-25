@@ -79,6 +79,28 @@ class SearchUnitTests(unittest.TestCase):
         self.assertEqual(token_units("数据库"), ["数", "据", "库"])
         self.assertEqual(token_units("👩‍💻"), ["👩‍💻"])
 
+    def test_token_units_emit_a_lone_word_joiner(self):
+        # A joiner that cannot extend a run is still a logical unit — it must
+        # not vanish like whitespace does.
+        self.assertEqual(token_units("-abc"), ["-", "abc"])
+        self.assertEqual(token_units("a : b"), ["a", ":", "b"])
+        self.assertEqual(token_units("👩‍💻-z"), ["👩‍💻", "-", "z"])
+
+    def test_token_units_charge_a_joiner_divider_once(self):
+        # A run of lone joiners is one unit — the estimator prices punctuation
+        # runs separately, so per-hyphen units would double-count a divider.
+        self.assertEqual(token_units("--x"), ["--", "x"])
+        self.assertEqual(token_units("-" * 100), ["-" * 100])
+        self.assertEqual(token_units("-::-x"), ["-::-", "x"])
+
+    def test_token_units_charge_each_separated_divider(self):
+        # Separated lone joiners are distinct units — only ADJACENT joiners
+        # collapse into one, matching the estimator's per-run charge.
+        self.assertEqual(token_units("- - -"), ["-", "-", "-"])
+        self.assertEqual(token_units("-- --"), ["--", "--"])
+        self.assertEqual(token_units("-,-"), ["-", "-"])
+        self.assertEqual(token_units("a - b"), ["a", "-", "b"])
+
 
 class EngineUnicodeIntegrationTests(unittest.TestCase):
     def test_hebrew_query_terms_drive_lossy_compaction(self):
