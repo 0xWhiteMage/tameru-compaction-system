@@ -694,3 +694,4 @@ affected by the fixes below is unchanged.
 [1.1.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v0.10.0...v1.1.0
 - fix(engine): TOML multiline masking now honors backslash-escape parity — an even run of backslashes before closing triple quotes no longer swallows the closer (and literal strings never escape), so lines after such a string are correctly classified as outside it during supersession restore.
+- Fix: `min_savings_ratio` rejects non-numeric types with a TypeError naming the option
