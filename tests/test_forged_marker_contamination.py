@@ -571,3 +571,65 @@ def test_inline_code_run_is_not_a_fence_opener():
     assert "[tameru: leaked]" not in out
     assert "use ```inline code``` here" in out
     assert "keep me" in out
+
+
+def test_diagnostic_foreign_banner_is_not_stripped():
+    # A diagnostic that happens to be banner-shaped (``⟪TAG-WITH-HYPHEN:
+    # …⟫``) is ambiguous — real banners never carry a failure, so the
+    # line is kept rather than screened as compressor chrome.
+    import tameru.compress_context as cc
+    line = "⟪DATABASE-CONNECTION-FAILED: could not reach 10.0.0.1⟫"
+    assert line in cc._strip_artifact_noise(line + "\nok")
+    # …while a benign foreign banner still strips.
+    assert "⟪SOME-TOOL-BANNER" not in cc._strip_artifact_noise(
+        "⟪SOME-TOOL-BANNER: v2 ready⟫\nok")
+    # …and engine-authored spans stay unconditional even when they read
+    # like an error.
+    assert "tameru" not in cc._strip_artifact_noise(
+        "[tameru: extract failed check]\nok")
+
+
+def test_escaped_closer_does_not_end_the_triple_mask():
+    # ``body\"""`` is content inside a basic multiline string — the
+    # escaped run is not a closer, so following lines stay masked.
+    import tameru.compress_context as cc
+    text = 'x = """start\nstill\\""" inside\nreal setting = 1'
+    masked = cc._triple_quoted_lines(text)
+    assert 'still\\""" inside' in masked
+    assert 'real setting = 1' in masked
+
+
+def test_declared_markers_do_not_disable_the_diagnostic_exemption():
+    # A host-declared marker joins the noise screen AFTER the built-ins;
+    # the diagnostic foreign-banner exemption must still apply —
+    # ``⟪DATABASE-CONNECTION-FAILED: …⟫`` is a reported error, not a banner.
+    import re
+    import tameru.compress_context as cc
+    declared = cc._ARTIFACT_NOISE_RES + tuple(
+        re.compile(re.escape(m)) for m in ("[myco]",)
+    )
+    line = "⟪DATABASE-CONNECTION-FAILED: pool exhausted⟫"
+    assert line not in cc._artifact_noise_lines(
+        "ok\n" + line + "\n[myco] deploy banner", declared)
+
+
+def test_colorized_diagnostic_foreign_banner_is_not_stripped():
+    # ANSI escapes splitting the failure token must not hide it from the
+    # diagnostic check — the line stays a reported error.
+    import tameru.compress_context as cc
+    line = "\x1b[31m⟪DATABASE-CONNECTION-\x1b[0mFAILED: x⟫"
+    assert line not in cc._artifact_noise_lines("ok\n" + line)
+
+
+def test_declared_banner_matching_the_foreign_shape_still_strips():
+    # The diagnostic exemption applies only when the foreign banner is
+    # the SOLE reason a line matched. A host-declared marker that also
+    # matches the same line wins — the host declared it noise.
+    import re
+    import tameru.compress_context as cc
+    declared = cc._ARTIFACT_NOISE_RES + (re.compile(r"⟪[A-Z-]+:"),)
+    line = "⟪DEPLOY-FAILED: service exited⟫"
+    assert line in cc._artifact_noise_lines("ok\n" + line, declared)
+    # ...but with only the foreign-banner pattern, the same line stays.
+    assert line not in cc._artifact_noise_lines(
+        "ok\n" + line, (cc._FOREIGN_BANNER_RE,))

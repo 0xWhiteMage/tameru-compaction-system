@@ -64,6 +64,211 @@ _MAX_HEADER_LINE = 512
 # Sentinel section for lines inside a fenced code block: a config
 # example's assignments are documentation, never live settings.
 _FENCED_SCOPE = "\x1ffence"
+# A function or class definition bounds a local scope — Python ``def``/
+# ``class``, JS ``function``, Go ``func``, Rust ``fn``, shell ``function``,
+# VB ``sub``, Tcl ``proc`` — so a same-named local in another function
+# never reads as a reassignment of this one.
+_FUNC_DEF_RE = re.compile(
+    r"^\s*(?P<kind>async\s+def|def|function|func|fn|sub|proc|method|defun|class)\s+"
+    r"(?P<fn>[A-Za-z_][A-Za-z0-9_.]*)\s*[({:]"
+)
+_TQ_DELIM_RE = re.compile(r"'''|\"\"\"")
+_TQ_OR_LIT_RE = re.compile(r"'''|\"\"\"|'|\"")
+# Characters a ``'``/``"`` can follow to open a quoted value: an
+# assignment, a separator, whitespace, or another quote of a ``""``/``''``
+# pair. A quote after anything else (``it's`` in a YAML plain scalar) is
+# text, not a literal opener.
+_QUOTE_OPENERS = " \t=:[,{(\"'"
+_BRACKET_PAIRS = {"[": "]", "{": "}", "(": ")"}
+
+
+def _quote_opens(line: str, i: int) -> bool:
+    """True when a ``'``/``"`` at ``i`` can start a quoted value.
+
+    Besides the ``_QUOTE_OPENERS`` positions, a Python-style string
+    prefix (``r".."``, ``b'..'``, ``u".."``, ``f".."``, ``rb".."``) puts
+    the quote right after the prefix letter — but only when the letter
+    itself sits at a value position, so ``error's`` stays prose."""
+    if i == 0:
+        return True
+    p = line[i - 1]
+    if p in _QUOTE_OPENERS:
+        return True
+    if p in "rbufRBUF":
+        j = i - 2
+        # Column 0 is a value position: ``r"…"``/``rb"…"`` opening the
+        # line is still a prefixed string (a bare ``ar"`` is not, since
+        # the letter before ``r`` fails the opener check).
+        if j < 0:
+            return True
+        return (line[j] in _QUOTE_OPENERS
+                or (line[j] in "rbufRBUF"
+                    and (j - 1 < 0 or line[j - 1] in _QUOTE_OPENERS)))
+    return False
+
+
+def _odd_backslashes(text: str, pos: int) -> bool:
+    n = 0
+    i = pos - 1
+    while i >= 0 and text[i] == "\\":
+        n += 1
+        i -= 1
+    return n % 2 == 1
+
+
+def _code_comment_pos(line: str, pos: int = 0) -> int | None:
+    """Offset of the ``#``/``;`` that starts a comment — at column 0 or
+    right after whitespace — or ``None``. Single- and double-quoted
+    literals are skipped, so a ``#`` inside ``\"a # b\"`` is not one."""
+    dq = sq = False
+    prefixed_at: int | None = None
+    brackets: list[str] = []  # [{ ( depth outside quoted strings
+    sq_bracket: str | None = None  # container the open ' literal sits in
+    i = pos
+    while i < len(line):
+        c = line[i]
+        if dq:
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                dq = False
+                prefixed_at = None
+        elif sq:
+            if c == "'":
+                close = True
+                if _odd_backslashes(line, i):
+                    # ``\'`` escapes only where a Python string could keep
+                    # going: the next non-whitespace char must be content,
+                    # not a comment start or EOL — ``'C:\dir\' # c`` and
+                    # ``path = 'C:\dir\'`` close the literal (TOML/YAML
+                    # literals never escape) while ``'it\'s'``/``'a\' b'``
+                    # read as escaped apostrophes. Inside a ``[``/``{``
+                    # container a terminator (``]``/``}``/``,``) closes it
+                    # too — ``['C:\dir\']`` is a valid array — but only
+                    # when no ``'`` remains: a later quote lets the Python
+                    # string complete (``['a\'] # b'`` is one string), and
+                    # cutting there would hide a real ``"""`` opener past
+                    # its end.
+                    j = i + 1
+                    while j < len(line) and line[j] in " \t":
+                        j += 1
+                    nxt = line[j] if j < len(line) else ""
+                    close = (
+                        j >= len(line) or nxt in "#;"
+                        or (line.find("'", j) < 0 and (
+                            (nxt == "]" and sq_bracket == "[")
+                            or (nxt == "}" and sq_bracket == "{")
+                            or (nxt == ")" and sq_bracket == "(")
+                            or (nxt == "," and sq_bracket in "[{")))
+                    )
+                if close:
+                    sq = False
+                    sq_bracket = None
+                    prefixed_at = None
+        elif line.startswith('"""', i) and _quote_opens(line, i):
+            # A triple run is ONE delimiter: the quotes inside it are
+            # content, not single-quote toggles that misalign the scan.
+            # The closer must be unescaped — ``\""""`` is an escaped quote
+            # plus content, so retry past an odd backslash run.
+            end = i + 3
+            while True:
+                end = line.find('"""', end)
+                if end < 0:
+                    return None  # unterminated — the rest is string content
+                if not _odd_backslashes(line, end):
+                    break
+                end += 1
+            i = end + 3
+            # A run of more than three quotes is trailing content plus the
+            # closer (``x = """a""""`` is ``a"``): consume the whole run
+            # so the last quote does not open a fresh literal.
+            while i < len(line) and line[i] == '"':
+                i += 1
+            continue
+        elif line.startswith("'''", i) and _quote_opens(line, i):
+            end = line.find("'''", i + 3)
+            if end < 0:
+                return None
+            i = end + 3
+            while i < len(line) and line[i] == "'":
+                i += 1
+            continue
+        elif c == '"' and _quote_opens(line, i):
+            dq = True
+            prefixed_at = i if i > 0 and line[i - 1] in "rbufRBUF" else None
+        elif c == "'" and _quote_opens(line, i):
+            sq = True
+            sq_bracket = brackets[-1] if brackets else None
+            prefixed_at = i if i > 0 and line[i - 1] in "rbufRBUF" else None
+        elif c in "[{(":
+            brackets.append(c)
+        elif c in "]})" and brackets and _BRACKET_PAIRS[brackets[-1]] == c:
+            brackets.pop()
+        elif c in "#;" and (i == 0 or line[i - 1] in " \t"):
+            return i
+        i += 1
+    if prefixed_at is not None and (dq or sq):
+        # An unterminated ``r"…"``/``b'…'`` is invalid Python — in a YAML
+        # plain scalar the letter is text and ``"`` content, so a real
+        # comment may still follow the quote.
+        for j in range(prefixed_at + 1, len(line)):
+            if line[j] in "#;" and line[j - 1] in " \t":
+                return j
+    return None
+
+
+def _code_part(line: str) -> str:
+    """The line before its ``#``/``;`` comment, if one starts there."""
+    cm = _code_comment_pos(line)
+    return line[:cm] if cm is not None else line
+
+
+def _triple_state(open_kind: str | None, line: str) -> str | None:
+    """The still-open triple-quote delimiter after ``line``, or ``None``.
+
+    ``'''`` toggles unconditionally — TOML literals do not escape — while
+    ``\"\"\"`` toggles only when not preceded by an odd run of backslashes.
+    A delimiter of the other kind inside an open string is content. Once
+    a string closes, the rest of the line is code again — a comment
+    there (``x = \"\"\"a\"\"\"  # note \"\"\"``) is text, not a fresh
+    opener. The comment scan runs once per line: quote-aware, and only
+    text after the first close is a candidate anyway."""
+    pos = 0
+    cut: int | None = None
+    lit: str | None = None  # inside a ``'``/``"`` single-line literal
+    while True:
+        m = _TQ_OR_LIT_RE.search(line, pos)
+        if m is None or (cut is not None and m.start() >= cut):
+            return open_kind
+        k = m.group(0)
+        s = m.start()
+        pos = m.end()
+        if lit is not None:
+            if k == lit and not _odd_backslashes(line, s):
+                lit = None
+            continue
+        if k in ("'", '"'):
+            # A quote inside an open multiline string is content; outside
+            # one it opens a literal only where a value can start, so
+            # ``x = ' # """'`` never fakes a triple-quote opener.
+            if open_kind is None and _quote_opens(line, s):
+                lit = k
+            continue
+        # ``\""""`` is an escaped quote then a REAL ``"""`` at s+1 — a
+        # match consumed the run whole, so retry one character in.
+        if k == '"""' and _odd_backslashes(line, s):
+            pos = s + 1
+            continue
+        if open_kind is None:
+            open_kind = k
+        elif k == open_kind:
+            open_kind = None
+            if cut is None:
+                cm = _code_comment_pos(line, pos)
+                cut = cm if cm is not None else len(line)
+
+
 _TRAILING_COMMENT_RE = re.compile(r"\s+(?:#|;).*$")
 _MIN_KEY_LENGTH = 5
 # Names too generic to be a distinctive ``=`` assignment key: cross-suite
@@ -134,6 +339,23 @@ def _advance(state: list, line: str) -> str | None:
         else:
             state.append(line)
         return "fence"
+    # A line inside a triple-quoted string is content: it neither scopes
+    # the lines around it nor ends a scope — a flush-left line inside a
+    # docstring or TOML multiline value is not a dedent, so the enclosing
+    # function's settings stay in scope. The opener line is string content
+    # too: ``x = \"\"\"`` assigns a multiline value, not a redefinable scalar.
+    tq = state[5] if len(state) > 5 else None
+    if tq is not None:
+        state[5] = _triple_state(tq, line)
+        return "str"
+    # Comment text is not string syntax: ``note = 1 # see \"\"\"docs`` and
+    # a flush-left ``# see \"\"\"`` line do not open a string.
+    code_part = _code_part(line)
+    if _TQ_DELIM_RE.search(code_part) and _triple_state(None, code_part) is not None:
+        while len(state) <= 5:
+            state.append(None)
+        state[5] = _triple_state(None, code_part)
+        return "str"
     indent = len(line) - len(line.lstrip())
     # Match a bounded prefix rather than skipping long lines: a header
     # with a long trailing comment is still a header (the pattern's tail
@@ -222,6 +444,18 @@ def _advance(state: list, line: str) -> str | None:
         state[0] = ""
         state[1].append((indent, pm["yaml"].casefold()))
         return "yaml"
+    fm = _FUNC_DEF_RE.match(line)
+    if fm is not None:
+        # A code scope — a function or class body — bounds a local scope
+        # the way a section header does: ``x = 1`` in ``def f`` and
+        # ``x = 2`` in ``def g`` are different settings, not a
+        # reassignment. It stacks on the indent parents: a dedented line
+        # ends it, ``def run`` in ``class A`` never merges with
+        # ``def run`` in ``class B``, and the name keeps its case —
+        # ``def Parse`` and ``def parse`` are different functions.
+        kind = "cls" if fm.group("kind") == "class" else "fn"
+        state[1].append((indent, kind + " " + fm.group("fn")))
+        return "func"
     return None
 
 
@@ -253,12 +487,20 @@ def _assignments_tracked(text: str, state: list, minted: list | None = None) -> 
         if m and not comment_val and _distinctive_key(m["key"], m["op"]):
             if state[0] == _FENCED_SCOPE:
                 continue
-            parent = state[0] or ("/".join(p for _i, p in state[1]) if state[1] else "")
+            par = "/".join(p for _i, p in state[1])
+            parent = (state[0] + "/" + par) if state[0] and par else (state[0] or par)
             # '\x1f' can never appear inside a key or a quoted table name
             # (TOML forbids control characters), so a literal key like
             # ``a/b`` or a quoted name like ``"a\xa7b"`` can't collide the
             # way a "/" or "\xa7" separator allowed.
-            scoped = (parent + "\x1f" if parent else "") + m["key"].casefold() + "|" + m["indent"]
+            # The operator and the key's own casing stay in the scoped key:
+            # TOML/YAML keys are case-sensitive, so ``CACHE_TTL`` and
+            # ``cache_ttl`` are DISTINCT settings, and a YAML ``k: v`` must
+            # never read as the TOML-style ``k = v`` being redefined.
+            scoped = (
+                (parent + "\x1f" if parent else "")
+                + m["key"] + "|" + m["op"] + "|" + m["indent"]
+            )
             out[scoped] = _norm_assign_value(m["val"])
     return out
 
@@ -476,10 +718,36 @@ def _line_scopes(
     section = ""
     cur_header = ""
     parents: list[tuple[int, str]] = []
+    tq: str | None = None
     for line in (text or "").split("\n"):
         if not line.strip():
             continue
         indent = len(line) - len(line.lstrip())
+        if tq is not None:
+            # A line inside a triple-quoted string keeps the enclosing
+            # scope — a flush-left docstring line is not a dedent.
+            scopes[line] = section or "/".join(p for _i, p in parents)
+            tq = _triple_state(tq, line)
+            continue
+        code = _code_part(line)
+        if _TQ_DELIM_RE.search(code) and _triple_state(None, code) is not None:
+            scopes[line] = section or "/".join(p for _i, p in parents)
+            tq = _triple_state(None, code)
+            continue
+        fm = _FUNC_DEF_RE.match(line)
+        if fm is not None:
+            # Function-local scope: a same-named local in another
+            # function is a different setting. The scope stacks on the
+            # indent parents the way a YAML parent does — a dedented
+            # line ends it, a method stays under its class, and the
+            # name keeps its case.
+            while parents and parents[-1][0] >= indent:
+                parents.pop()
+            scopes[line] = section or "/".join(p for _i, p in parents)
+            cur_header = ""
+            kind = "cls" if fm.group("kind") == "class" else "fn"
+            parents.append((indent, kind + " " + fm.group("fn")))
+            continue
         pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
         if pm and len(line) > _MAX_HEADER_LINE:
             tail = line[_MAX_HEADER_LINE:]
@@ -511,7 +779,8 @@ def _line_scopes(
             parents.append((indent, pm["yaml"].casefold()))
             scopes[line] = ""
             continue
-        scopes[line] = section or "/".join(p for _i, p in parents)
+        par = "/".join(p for _i, p in parents)
+        scopes[line] = (section + "/" + par) if section and par else (section or par)
         if line_headers is not None and section:
             line_headers[line] = cur_header
     return scopes
@@ -577,11 +846,17 @@ _MAX_SUPERSESSION_TOKENS = 120
 def _pure_assignments(text: str) -> bool:
     """Every non-blank line is a section header or a recognised assignment —
     a block mixing stale settings with notes/comments is NOT pure, so
-    supersession keeps it rather than deleting content it never analysed."""
+    supersession keeps it rather than deleting content it never analysed.
+    A block holding a multiline ``\"\"\"``/``'''`` value is not pure either:
+    its string lines are unanalysed content, and approving the block for
+    deletion can strand half a value (an opener without its closer)."""
     for line in (text or "").split("\n"):
         s = line.strip()
         if not s:
             continue
+        code = _code_part(line)
+        if _TQ_DELIM_RE.search(code) and _triple_state(None, code) is not None:
+            return False
         if len(line) <= _MAX_HEADER_LINE and _PARENT_RE.match(line):
             continue
         m = _ASSIGN_RE.match(line)

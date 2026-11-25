@@ -227,6 +227,8 @@ _ARTIFACT_NOISE_RES = (
     re.compile(_ARTIFACT_NOISE_LEAD + r"⟪[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)+[^⟫\r\n]{0,200}⟫" + _ARTIFACT_NOISE_TAIL),
 )
 
+_FOREIGN_BANNER_RE = _ARTIFACT_NOISE_RES[-1]
+
 _ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
 
 # A run of three or more backticks or tildes opens a fenced block; the same
@@ -239,11 +241,23 @@ def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[s
     """Lines of ``text`` that carry an engine-artifact span. Callers gate this
     behind ``_ARTIFACT_NOISE_TOKENS`` so ordinary text pays one substring scan.
     Matching runs on the ANSI-stripped line: a colorized marker is still a
-    marker."""
-    return [
-        ln for ln in text.split("\n")
-        if any(rx.search(strip_ansi(ln)) for rx in res)
-    ]
+    marker. A foreign-banner line that also reads as a diagnostic
+    (``⟪DATABASE-CONNECTION-FAILED: …⟫``) is ambiguous — banners never look
+    like failures — so keeping it costs one banner but never drops a
+    reported error. Engine-authored spans (``[tameru:…]``, ``[…]``) stay
+    unconditional, and the exemption applies only when the foreign banner
+    is the SOLE reason the line matched — a host-declared marker or an
+    engine span on the same line still strips."""
+    out: list[str] = []
+    for ln in text.split("\n"):
+        clean = strip_ansi(ln)
+        matched = [rx for rx in res if rx.search(clean)]
+        if matched and not (
+            all(rx is _FOREIGN_BANNER_RE for rx in matched)
+            and _is_error_line(clean)
+        ):
+            out.append(ln)
+    return out
 
 
 def _strip_artifact_noise(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> str:
@@ -2388,7 +2402,13 @@ def _triple_quoted_lines(text: str) -> set[str]:
     for ln in (text or "").split("\n"):
         if inside is not None:
             masked.add(ln)
-            if inside in ln:
+            # A ``"""`` basic-string run closes only on an UNESCAPED delimiter:
+            # ``body\\"""`` is content and the string continues past it. TOML
+            # literal strings never escape — any ``'''`` ends the run.
+            if inside == "'''":
+                if inside in ln:
+                    inside = None
+            elif _UNESCAPED_TRIPLE_DQ.search(ln):
                 inside = None
             continue
         # A ``"""`` inside a comment (``# use """ for multiline``) is prose,
