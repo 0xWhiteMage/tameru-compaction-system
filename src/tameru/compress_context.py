@@ -2219,19 +2219,19 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
         closes_later = (inside_basic and dq_par[i]) or (
             inside_literal and sq_par[i]
         )
-        chain_open = str_start >= 0
-        delim = ('"""' if inside_basic else "'''") if in_s else str_delim
+        trigger_shape = in_s and (not in_s_fence or unclosed_s_fence) and (
+            _DEFAULT_ELISION_LINE.match(sv)
+            or sv.startswith("[§")
+            or sv in header_texts
+        )
+        delim = '"""' if inside_basic else "'''"
         hazard_at = -1
-        if in_s or chain_open:
+        if trigger_shape:
             for j in range(str_start + 1, i):
                 if _triple_close_positions(parts[j], delim):
                     hazard_at = j
                     break
-        if (in_s or chain_open) and (not closes_later or hazard_at >= 0) and (not in_s_fence or unclosed_s_fence) and (
-            _DEFAULT_ELISION_LINE.match(sv)
-            or sv.startswith("[§")
-            or sv in header_texts
-        ):
+        if trigger_shape and (not closes_later or hazard_at >= 0):
             # A same-kind delimiter run between the opener and here closes
             # the string early in real TOML — the parity "closer" behind
             # it can never be reached, so it cannot be ours. Mint the close
@@ -2250,6 +2250,9 @@ def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
                 inside_basic, inside_literal = _advance_triple_state(
                     parts[k], inside_basic, inside_literal
                 )
+                if hb and not (inside_basic or inside_literal):
+                    if not re.match(r"\s*[A-Za-z0-9_.\-]+\s*=", parts[k]):
+                        str_start = -1
                 if not hb and (inside_basic or inside_literal) and str_start < 0:
                     str_start = k
                     str_delim = '"""' if inside_basic else "'''"
