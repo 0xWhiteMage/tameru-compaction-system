@@ -586,8 +586,6 @@ def test_secret_body_lines_are_never_pulled_back():
     # ...while the rest of the value still restores whole.
     tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
     assert "normal body" in tomllib.loads(out)["x"]["v"]
-
-
 def test_segmentation_keeps_a_multiline_string_span_in_one_block():
     """Selection is block-atomic, so a multiline string split across blocks
     can emit a partial span: the opener alone is an unterminated string that
@@ -679,3 +677,30 @@ def test_python_adjacent_concatenation_does_not_eat_the_next_strings_opener():
     # TOML followers still consume the content quote
     line2 = "arr = [" + DQ + "a" + DQ + '", ' + DQ
     assert cc._advance_multiline_state(line2, None) == DQ
+def test_floor_eviction_never_drops_a_section_header():
+    """The savings-floor eviction scores lines, not structure: ties break by
+    position, so a kept block's ``[[deps]]`` header evicted before its own
+    settings — orphaning them at the document root, where two entries'
+    ``name`` keys collided and strict TOML parsers reject the extract."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    doc = (
+        '[[deps]]\nname = "pkg0 padding padding padding padding"\n'
+        'field0 = "val0 filler filler filler filler filler"\n'
+        '[[deps]]\nname = "pkg1 padding padding padding padding"\n'
+        'field0 = "val0 filler filler filler filler filler"\n'
+        '[[deps]]\nfield0 = "val0 filler filler filler filler filler"\n'
+        '[deps.serve]\nport = 8002\n'
+        'host = "localhost filler filler filler filler"'
+    )
+    r = cc.compress_context(doc, "pkg1", budget_ratio=0.3, **OPTS)
+    txt = r.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        ln for ln in txt.split("\n")
+        if not ln.startswith(("[§", "[…", "[×", "[last"))
+    )
+    parsed = tomllib.loads(cleaned)  # raises when a header orphan collides
+    # No setting of any array entry may surface at the document root.
+    assert "name" not in parsed
+    assert "field0" not in parsed
+    for entry in parsed.get("deps", []):
+        assert isinstance(entry, dict)

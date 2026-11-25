@@ -2636,11 +2636,19 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
                     line_score[ln] = b["score"]
     rendered = compressed.split("\n")
     pool_texts = {f[3] for f in facts}
+    # A section header is never an eviction candidate: scoring ties break by
+    # position, so the header of a low-scoring kept block evicts before its
+    # own settings — orphaning them at the document root or under the wrong
+    # table, which strict TOML parsers reject (a repeated key) or silently
+    # mis-scope. Evicting a header's body lines is always the safer spend:
+    # an emptied section still parses.
+    header_texts = set((line_headers or {}).values())
     cand = sorted(
         (
             i for i, ln in enumerate(rendered)
             if ln in line_score
             and ln not in pool_texts
+            and ln not in header_texts
             and not _OUTCOME_ERR_NEAR_RE.search(ln)
             and not _is_trust_risk_line(ln)
         ),
