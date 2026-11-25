@@ -289,8 +289,18 @@ def _strip_artifact_noise(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> str:
             if marker[0] != "`" or "`" not in probe[len(marker) :]:
                 in_fence = marker
             kept.append(ln)
-        elif not any(rx.search(strip_ansi(ln)) for rx in res):
-            kept.append(ln)
+        else:
+            clean = strip_ansi(ln)
+            matched = [rx for rx in res if rx.search(clean)]
+            # Same exemption _artifact_noise_lines applies: a foreign-banner
+            # line that also reads as a diagnostic is ambiguous — banners
+            # never report failures — so it is kept unless an engine span or
+            # a host-declared marker also matched.
+            if not matched or (
+                all(rx is _FOREIGN_BANNER_RE for rx in matched)
+                and _is_error_line(clean)
+            ):
+                kept.append(ln)
     return "\n".join(kept)
 
 
