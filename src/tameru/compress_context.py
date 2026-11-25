@@ -1903,17 +1903,22 @@ def _quote_opens(line: str, i: int) -> bool:
     return False
 
 
-def _unclosed_quote_pos(scrubbed: str) -> int | None:
+def _unclosed_quote_pos(
+    scrubbed: str, tri_runs: list[tuple[int, int]] = ()
+) -> int | None:
     """Offset of a lone ``'``/``"`` that opens a literal and never closes,
     or ``None`` — a lone quote only swallows the line where it can start a
-    value, and quotes a matched literal covers (``'t'`` in ``'t''''``) are
-    paired, not unclosed."""
+    value, quotes a matched literal covers (``'t'`` in ``'t''''``) are
+    paired, not unclosed, and a quote inside a ``\'\'\'``/``\"\"\"`` run
+    belongs to the run, never to a literal."""
     covered: list[tuple[int, int]] = [
         m.span() for m in _SINGLE_QUOTED_RE.finditer(scrubbed)
     ]
     for m2 in re.finditer(r"(?<!')'(?!')|(?<!\")\"(?!\")", scrubbed):
         s = m2.start()
         if any(a <= s < b for a, b in covered):
+            continue
+        if any(a <= s < b for a, b in tri_runs):
             continue
         if _quote_opens(scrubbed, s):
             return s
@@ -1973,7 +1978,7 @@ def _quote_aware_code_part(ln: str) -> str:
     scrubbed = _SINGLE_QUOTED_RE.sub(_blank_literal, scrubbed)
     m = re.search(r"[#;]", scrubbed)
     cut = m.start() if m is not None else len(scrubbed)
-    uq = _unclosed_quote_pos(scrubbed)
+    uq = _unclosed_quote_pos(scrubbed, tri_runs)
     if uq is not None:
         cut = min(cut, uq)
     return scrubbed[:cut]
@@ -2442,11 +2447,17 @@ def _triple_quoted_lines(text: str) -> set[str]:
                 s < te and e > ts for ts, te in tri_runs
             ):
                 return " " * (e - s)
-            lit_spans.append((s, e))
+            # A bare ``""``/``''`` whose chars are all run chars is a
+            # pseudo-literal — it overlaps a real ``'''``/``"""`` match, not
+            # a literal — so it is not a literal span for the cuts below.
+            if not all(
+                any(ts <= s + i < te for ts, te in tri_runs)
+                for i in range(e - s)
+            ):
+                lit_spans.append((s, e))
             return m.group(0)
 
         scrubbed = _SINGLE_QUOTED_RE.sub(_blank_literal, scrubbed)
-        lit_ends = [e - 1 for _, e in lit_spans]
         m = next(
             (
                 mm
@@ -2460,7 +2471,7 @@ def _triple_quoted_lines(text: str) -> set[str]:
         # inside that literal, not an opener (``x = 'a # b """`` unclosed), so cut
         # there too — but only where the quote can start a value (``x = ba'a"""``
         # is a lone apostrophe, not an unclosed literal — its ``"""`` opens).
-        uq = _unclosed_quote_pos(scrubbed)
+        uq = _unclosed_quote_pos(scrubbed, tri_runs)
         if uq is not None:
             cut = min(cut, uq)
         code = scrubbed[:cut]
@@ -2472,20 +2483,39 @@ def _triple_quoted_lines(text: str) -> set[str]:
         pos = 0
         while (m := re.search(r'"""|\'\'\'', code[pos:])) is not None:
             m_start = pos + m.start()
-            if m_start in lit_ends:
-                # The match's first quote is a kept literal's closer —
-                # ``'a b'''`` is ``'a b'`` then ``''``, so the run starts one
-                # char later; retry there for a real ``'''`` (``'a b''''``).
-                pos = m_start + 1
+            kind = m.group(0)
+            if inside is None and (
+                any(a <= m_start < b for a, b in lit_spans)
+                or (kind == '"""' and _odd_backslashes(code, m_start))
+            ):
+                # The match's first quote is a kept literal's char or an
+                # escaped quote — ``'a b'''`` is ``'a b'`` then ``''`` and
+                # ``x = "a\"""""`` is ``"a\""`` then ``"""`` — so the real
+                # run can start one or two chars later. Check the raw line:
+                # the run's chars may sit in a blanked pseudo-literal or
+                # past the unclosed-quote cut. Inside an open string a
+                # match is only a closer or content — this literal
+                # bookkeeping does not apply.
+                for p in (m_start + 1, m_start + 2):
+                    if (
+                        ln[p : p + 3] == kind
+                        and not any(a <= p < b for a, b in lit_spans)
+                        and not (kind == '"""' and _odd_backslashes(code, p))
+                    ):
+                        inside = kind
+                        pos = p + 3
+                        break
+                else:
+                    pos = m_start + 1
                 continue
-            if m.group(0) == '"""' and _odd_backslashes(code, m_start):
+            if inside is not None and kind == '"""' and _odd_backslashes(code, m_start):
                 # an escaped quote may be followed by the real closer — retry
                 # one char in, so ``\""""`` still closes.
                 pos = m_start + 1
                 continue
             if inside is None:
-                inside = m.group(0)
-            elif m.group(0) == inside:
+                inside = kind
+            elif kind == inside:
                 inside = None
             pos = pos + m.end()
         if inside is not None:
