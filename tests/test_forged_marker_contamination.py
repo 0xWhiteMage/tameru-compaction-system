@@ -651,4 +651,27 @@ def test_toml_backslash_path_literal_does_not_hide_the_opener():
     masked = cc._triple_quoted_lines(text)
     assert "body" in masked
     assert "z = 1" in masked
+<<<<<<< HEAD
 >>>>>>> aedc44a (fix(engine): ' literals close at \' when no escaped closer exists)
+||||||| parent of d8c66ee (fix(engine): delimiter kinds toggle in position order)
+=======
+
+
+def test_literal_first_opener_tracks_the_literal_kind():
+    # ``x = ''' """`` opens a LITERAL string — the ``"""`` is its content.
+    # Checking ``"""`` first tracked the wrong kind, so the real ``'''``
+    # closer never closed and the mask ran past the end of the string.
+    import tameru.compress_context as cc
+    text = "x = ''' \"\"\"\ninner_val = 1\n'''\nouter_val = 2"
+    masked = cc._triple_quoted_lines(text)
+    assert "inner_val = 1" in masked
+    assert "outer_val = 2" not in masked
+    # Same line, delimiters swapped: ``"""`` opens basic, ``'''`` is content.
+    text2 = 'x = """ \'\'\'\ninner2 = 1\n"""\nouter2 = 2'
+    masked2 = cc._triple_quoted_lines(text2)
+    assert "inner2 = 1" in masked2
+    assert "outer2 = 2" not in masked2
+    # ``''' \"\"\" '''`` closes its own literal — nothing stays open.
+    text3 = "x = ''' \"\"\" '''\nplain_val = 3"
+    assert "plain_val = 3" not in cc._triple_quoted_lines(text3)
+>>>>>>> d8c66ee (fix(engine): delimiter kinds toggle in position order)

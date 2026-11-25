@@ -1961,72 +1961,17 @@ def _restored_block(
         # quotes inside a trailing # comment are text, and \"-escaped
         # quotes inside a basic string don't end it.
         code = l if (inside_basic or inside_literal) else _toml_code_part(l)
-        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
-            inside_basic = not inside_basic
-        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
-            inside_literal = not inside_literal
-    # A restored ``k = "\"\" ..."`` opener without the value's body leaves an
-    # unterminated string that swallows every emitted line after it — the
-    # whole extract stops parsing. The opener restores its continuation
-    # lines verbatim (they are its own content), and a continuation line on
-    # its own can never be a valid TOML statement: it joins a surviving
-    # opener's body or is skipped. Replay triple-quote state over the
-    # original line list — ``oi`` keeps only a repeated line's LAST index,
-    # so two strings that share a closing line would collapse into one span.
-    openers: dict[int, int] = {}      # opener idx -> closer idx
-    body_of: dict[int, list[str]] = {}  # opener idx -> continuation lines
-    cont_of: dict[int, int] = {}      # continuation idx -> opener idx
-    enclosing: dict[int, str] = {}    # idx -> last UNQUOTED header
-    replay = (
-        enumerate(orig_lines)
-        if orig_lines is not None
-        else ((oidx, ol) for ol, oidx in sorted(oi.items(), key=lambda kv: kv[1]))
-    )
-    inside_basic = inside_literal = False
-    pending: tuple[int, str] | None = None
-    pending_body: list[str] = []
-    close_kind: dict[int, str] = {}   # opener idx -> its delimiter
-    cur_hdr = ""
-    for oidx, ol in replay:
-        enclosing[oidx] = cur_hdr
-        if pending is not None:
-            pending_body.append(ol)
-            pend_code = ol
-            if (
-                (inside_literal and _UNESCAPED_TRIPLE_SQ.search(pend_code))
-                or (inside_basic and _UNESCAPED_TRIPLE_DQ.search(pend_code))
-            ):
-                openers[pending[0]] = oidx
-                body_of[pending[0]] = pending_body
-                for cidx in range(pending[0] + 1, oidx + 1):
-                    cont_of[cidx] = pending[0]
-                pending = None
-                pending_body = []
-                inside_basic = inside_literal = False
-            continue
-        ins = inside_basic or inside_literal
-        if ins:
-            code = ol
-        else:
-            code = _quote_aware_code_part(ol)
-        if not ins:
-            if header_of.get(ol) == ol:
-                cur_hdr = ol
-                enclosing[oidx] = cur_hdr
-            if len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2 or len(
-                _UNESCAPED_TRIPLE_SQ.findall(code)
-            ) % 2:
-                pending = (oidx, ol)
-                dq = len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2
-                sq = len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2
-                inside_basic = bool(dq)
-                inside_literal = not inside_basic and bool(sq)
-                close_kind[oidx] = "'''" if inside_literal else '"""'
-                continue
-        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
-            inside_basic = not inside_basic
-        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
-            inside_literal = not inside_literal
+
+        # Delimiters toggle in position order: ``x = ''' """`` opens a
+        # LITERAL string (the ``"""`` is its content), so checking the
+        # basic kind first would mis-track the open kind and run the mask
+        # past the real closer.
+        for m in re.finditer(r'(?<!\\)"""|(?<!\\)\'\'\'', code):
+            if m.group(0) == '"""' and not inside_literal:
+                inside_basic = not inside_basic
+            elif m.group(0) == "'''" and not inside_basic:
+                inside_literal = not inside_literal
+
     insert_after: dict[int, list[str]] = {}
     insert_before: dict[int, list[str]] = {}
     appended: list[str] = []
@@ -2348,11 +2293,18 @@ def _triple_quoted_lines(text: str) -> set[str]:
         if m2 is not None:
             cut = min(cut, m2.start())
         code = scrubbed[:cut]
-        for q in ('"""', "'''"):
-            if code.count(q) % 2 == 1:
-                masked.add(ln)
-                inside = q
-                break
+        # Delimiters toggle in position order: ``x = ''' """`` opens a
+        # LITERAL string (the ``"""`` is its content) — checking ``"""``
+        # first would mis-track the open kind and mask past the real
+        # closer. A ``\'\'\'`` run always toggles (TOML literals do not
+        # escape); a ``\"\"\"`` run toggles only when unescaped.
+        for m in re.finditer(r'(?<!\\)"""|\'\'\'', code):
+            if inside is None:
+                inside = m.group(0)
+            elif m.group(0) == inside:
+                inside = None
+        if inside is not None:
+            masked.add(ln)
     return masked
 
 
