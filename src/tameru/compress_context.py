@@ -12632,25 +12632,21 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     return _run_cli(_parse_args(argv))
 
 
-def _cli_read_bounded(stream, max_chars: int) -> str:
-    """Read a text ``stream`` for at most ``max_chars + 1`` characters —
-    exactly what the input preflight needs to reject an oversized
-    document, so the read returns as soon as the limit is provably
-    exceeded and never waits for more of a stream that already overran.
-    Text mode keeps the stream's configured encoding
-    (``PYTHONIOENCODING`` on stdin) and its newline conversion, so a
-    CRLF file is measured the way the preflight measures it."""
-    return stream.read(max_chars + 1)
+def _cli_read(stream) -> str:
+    """Read a text ``stream`` to completion. Text mode keeps the
+    stream's configured encoding (``PYTHONIOENCODING`` on stdin) and
+    its newline conversion, so a CRLF file is measured the way the
+    preflight measures it. The ``max_input_chars`` limit is the
+    engine's call — it may pass oversized input through degraded — so
+    the read never truncates it first."""
+    return stream.read()
 
 
 def _run_cli(args) -> int:
     import sys as _sys
-    max_chars = args.max_input_chars
-    if not isinstance(max_chars, int) or max_chars <= 0:
-        max_chars = IndustrialLimits().max_input_chars
     if args.context_file == "-":
         try:
-            ctx = _cli_read_bounded(_sys.stdin, max_chars)
+            ctx = _cli_read(_sys.stdin)
         except (OSError, UnicodeError) as exc:
             print(f"tameru-compress: error: cannot read stdin: {exc}",
                   file=_sys.stderr)
@@ -12658,7 +12654,7 @@ def _run_cli(args) -> int:
     else:
         try:
             with open(args.context_file, "r", encoding="utf-8-sig") as fh:
-                ctx = _cli_read_bounded(fh, max_chars)
+                ctx = _cli_read(fh)
         except (OSError, UnicodeError) as exc:
             print(f"tameru-compress: error: cannot read "
                   f"'{args.context_file}': {exc}", file=_sys.stderr)
