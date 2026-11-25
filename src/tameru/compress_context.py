@@ -3519,7 +3519,11 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
             exemplar_text = pin if pin and pin != ln and pin != last else ln
             counted_out.append(f"[\u00d7{cnt}] {exemplar_text}")
             counted_src.append(out_src[idx])
-            if cnt >= 3 and last is not None and last != exemplar_text:
+            if (
+                last is not None
+                and last != exemplar_text
+                and (cnt >= 3 or (pin is not None and pin == last))
+            ):
                 counted_out.append(f"[last] {last}")
                 counted_src.append(out_src[idx])
         else:
