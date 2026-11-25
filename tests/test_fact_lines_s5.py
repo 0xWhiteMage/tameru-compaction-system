@@ -1104,7 +1104,7 @@ def test_repair_mints_the_close_before_a_later_strings_opener():
     out = cc._toml_string_repair(parts, {"[real]"})
     doc = tomllib.loads("\n".join(out))
     assert doc["real"]["k"] == 1
-    assert doc["x"] == "content # hash\n"
+    assert doc["x"] == "content # hash\ntail"
 
 
 def test_repair_mints_before_an_opener_when_the_header_sits_inside_it():
