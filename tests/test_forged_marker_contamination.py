@@ -674,4 +674,23 @@ def test_literal_first_opener_tracks_the_literal_kind():
     # ``''' \"\"\" '''`` closes its own literal — nothing stays open.
     text3 = "x = ''' \"\"\" '''\nplain_val = 3"
     assert "plain_val = 3" not in cc._triple_quoted_lines(text3)
+<<<<<<< HEAD
 >>>>>>> d8c66ee (fix(engine): delimiter kinds toggle in position order)
+||||||| parent of 21faa1b (fix(engine): a comment after a string close hides the delimiters it mentions)
+=======
+
+
+def test_a_comment_after_a_string_close_does_not_reopen_the_mask():
+    # ``''' # note """`` — the literal closed before the comment, so the
+    # ``"""`` it mentions is text. Without the comment cut the header after
+    # it is masked as string content and a dropped line restores stray.
+    from tameru import compress_context as cc
+    after = (
+        "x = '''\nbody\n''' # note " + '"""' +
+        " \n[real_header]\nkeep_v = 1")
+    r = cc._restored_block(
+        after, ["drop_v = 2"], {"drop_v = 2": "[real_header]"},
+        {"drop_v = 2": 5})
+    assert r.split("\n")[-1] == "drop_v = 2"
+    assert "[real_header]" in r
+>>>>>>> 21faa1b (fix(engine): a comment after a string close hides the delimiters it mentions)

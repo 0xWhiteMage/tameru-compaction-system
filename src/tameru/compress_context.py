@@ -1966,11 +1966,23 @@ def _restored_block(
         # LITERAL string (the ``"""`` is its content), so checking the
         # basic kind first would mis-track the open kind and run the mask
         # past the real closer.
+        # Once a string closes mid-line the rest of the line is code again —
+        # a ``#``/``;`` comment in that tail (``''' # note """``) is text, so
+        # delimiters it mentions never open a new string. The comment cut is
+        # computed once, after the first close on the line.
+        cut: int | None = None
         for m in re.finditer(r'(?<!\\)"""|(?<!\\)\'\'\'', code):
+            if cut is not None and m.start() >= cut:
+                break
             if m.group(0) == '"""' and not inside_literal:
                 inside_basic = not inside_basic
+                if not inside_basic and cut is None:
+                    cut = m.end() + len(_toml_code_part(code[m.end():]))
             elif m.group(0) == "'''" and not inside_basic:
                 inside_literal = not inside_literal
+
+                if not inside_literal and cut is None:
+                    cut = m.end() + len(_toml_code_part(code[m.end():]))
 
     insert_after: dict[int, list[str]] = {}
     insert_before: dict[int, list[str]] = {}
