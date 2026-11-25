@@ -1765,7 +1765,10 @@ _SECTION_HEAD_RE = re.compile(r"^\s*\[")
 _UNESCAPED_TRIPLE_DQ = re.compile(r'(?<!\\)"""')
 _UNESCAPED_TRIPLE_SQ = re.compile(r"(?<!\\)'''")
 _TRIPLE_QUOTED_SAME_LINE_RE = re.compile(
-    r'"""(?:[^"]|"(?!""))*"""|\'\'\'(?:[^\']|\'(?!\'\'))*\'\'\'')
+    # Escaped-quote languages (TOML basic strings, Python) never close a
+    # run on a ``"""`` preceded by ``\\`` — ``x = """body\\"""`` is an
+    # opener whose body continues, not a same-line string.
+    r'"""(?:[^"\\]|\\.|"(?!(?:\\?"")))*(?<!\\)"""|\'\'\'(?:[^\'\\]|\\.|\'(?!(?:\\?\'\')))*(?<!\\)\'\'\'')
 _SINGLE_QUOTED_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'[^\']*\'')
 
 
@@ -2000,13 +2003,14 @@ def _restored_block(
                 continue
             if oidx in claimed:
                 continue
-            if any(_unsafe_restored_line(b) for b in body_of[oidx]):
-                # Pulling body lines back verbatim bypasses the credential
-                # and injection screens a normal fact restore runs — a body
-                # dropped BY those screens must stay dropped.
-                continue
+            # Pulling body lines back verbatim bypasses the credential and
+            # injection screens a normal fact restore runs — a line dropped
+            # BY those screens stays dropped, line by line, while the rest
+            # of the value restores whole.
+            emit = [otext] + [
+                b for b in body_of[oidx] if not _unsafe_restored_line(b)
+            ]
             claimed.add(oidx)
-            emit = [otext] + body_of[oidx]
             # ``_line_scopes`` is not string-aware — a fake ``[x.w]`` inside
             # the value claims the lines after it. The real enclosing scope
             # is the last unquoted header.
@@ -2028,13 +2032,12 @@ def _restored_block(
             if target0 in claimed:
                 # A continuation already pulled the whole span.
                 continue
-            if any(_unsafe_restored_line(b) for b in body_of[target0]):
-                # Same safety screen as above — never re-emit body lines a
-                # deliberate strip removed; emit nothing rather than a
-                # bare opener (which would leave the string unterminated).
-                continue
+            # Same safety screen as above — a body line a deliberate strip
+            # removed is never re-emitted; the rest of the value restores.
+            emit = [ln] + [
+                b for b in body_of[target0] if not _unsafe_restored_line(b)
+            ]
             claimed.add(target0)
-            emit = [ln] + body_of[target0]
         h = header_of.get(orig)
         if h is not None and oi.get(h) in cont_of:
             # ``_line_scopes`` is not string-aware: a ``[x.w]`` that only

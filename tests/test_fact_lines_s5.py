@@ -583,3 +583,6 @@ def test_secret_body_lines_are_never_pulled_back():
     out = cc._restored_block('[x]\nm = 1', ['normal body'], lh, oi,
                              before.split("\n"))
     assert "hunter2sekrit" not in out
+    # ...while the rest of the value still restores whole.
+    import tomllib
+    assert "normal body" in tomllib.loads(out)["x"]["v"]
