@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -95,8 +96,14 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
                    help="On empty/generic query, infer a conservative objective from the document's recurring rare terms instead of failing open")
     p.add_argument("--stats", action="store_true")
     args = p.parse_args(list(argv) if argv is not None else None)
-    if args.context_file != "-" and not Path(args.context_file).is_file():
-        p.error(f"argument context_file: cannot read '{args.context_file}'")
+    if args.context_file != "-":
+        path = Path(args.context_file)
+        # ``is_file()`` is S_ISREG-only: it rejects the readable streams a
+        # shell hands over — process substitution (/dev/fd/N), named
+        # pipes, char devices. A directory still errors on read, so keep
+        # the explicit guard.
+        if path.is_dir() or not os.access(path, os.R_OK):
+            p.error(f"argument context_file: cannot read '{args.context_file}'")
 
     from .industrial import IndustrialLimits
 

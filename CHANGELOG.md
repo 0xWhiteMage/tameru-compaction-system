@@ -8,21 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.10.0] - Unreleased
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 - Fix: a CCR record or decision-cache file whose JSON holds an integer literal over `sys.get_int_max_str_digits()` (4300 digits) raised plain `ValueError` — not the `JSONDecodeError` the readers caught — so one such `.json` in the cache directory crashed `sweep_ccr_cache`, `retrieve`, `list_ccr_records` and the CLI's decision-cache load. Because `sweep_ccr_cache` runs inside `_ccr_store` (whose callers only guard `OSError`), a single malformed record broke every `compress_context` call with `ccr=True` until the file was removed by hand. The catches now take `ValueError`, matching the codebase's existing "JSONDecodeError + the 4300-digit int limit" convention.
 - Fix: `tameru-compress` exits with a clean `argument context_file: cannot read ...` error (status 2) when the input path is missing or not a regular file — previously it crashed with a raw `FileNotFoundError`/`IsADirectoryError` traceback.
 - Fix: `token_units` no longer drops a word joiner that cannot extend a run — a lone `-`, `:`, `@`, `/`, `.`, `+` or `_` now counts as its own unit instead of vanishing, so `token_units("-abc")` reads `["-", "abc"]` and separator-padded text ("status : 500") stops undercounting.
-||||||| parent of d5fb497 (fix(engine): collapse a lone-joiner divider run into one unit)
 - Fix: `token_units` no longer drops a word joiner that cannot extend a run — a lone `-`, `:`, `@`, `/`, `.`, `+` or `_` now counts as its own unit instead of vanishing, so `token_units("-abc")` reads `["-", "abc"]` and separator-padded text ("status : 500") stops undercounting.
-=======
 - Fix: `token_units` no longer drops a word joiner that cannot extend a run — a lone `-`, `:`, `@`, `/`, `.`, `+` or `_` now counts as a unit instead of vanishing, so `token_units("-abc")` reads `["-", "abc"]` and separator-padded text ("status : 500") stops undercounting; a divider run such as `----------` collapses to one unit rather than double-counting against the estimator's punctuation-run charge.
->>>>>>> d5fb497 (fix(engine): collapse a lone-joiner divider run into one unit)
-||||||| parent of 6bab967 (fix(engine): separated lone joiners keep their own token unit)
 - Fix: `token_units` no longer drops a word joiner that cannot extend a run — a lone `-`, `:`, `@`, `/`, `.`, `+` or `_` now counts as a unit instead of vanishing, so `token_units("-abc")` reads `["-", "abc"]` and separator-padded text ("status : 500") stops undercounting; a divider run such as `----------` collapses to one unit rather than double-counting against the estimator's punctuation-run charge.
-=======
 - Fix: `token_units` no longer drops a word joiner that cannot extend a run — a lone `-`, `:`, `@`, `/`, `.`, `+` or `_` now counts as a unit instead of vanishing, so `token_units("-abc")` reads `["-", "abc"]` and separator-padded text ("status : 500") stops undercounting; a divider run such as `----------` collapses to one unit rather than double-counting against the estimator's punctuation-run charge; only ADJACENT joiners share that collapse, so separated dividers (`- - -`) still count per divider as the estimator's per-run charge does.
->>>>>>> 6bab967 (fix(engine): separated lone joiners keep their own token unit)
 - Fix: `sync_to_harness.py --dry-run` no longer lists every manifest under "manifests stamped" — it now reports only the manifests whose `Tameru X.Y.Z` reference would actually change (the short-circuit skipped the check entirely).
 - Fix: `test_determinism_under_hash_seed` is no longer collected as a parametrized test that returns its subprocess output — renamed to a private helper so pytest stops warning `PytestReturnNotNoneWarning` (a collection error in pytest 9), runs the two seed subprocesses only once in `test_determinism_both_seeds_equal`, and the return-value-as-assertion anti-pattern is gone.
 - Fix: out-of-range `tameru-compress` flags — a non-positive `--max-*` limit or `--pin-recent`, a `--budget-ratio` outside `(0, 1]`, or a `--min-savings-ratio` outside `[0, 1)` — crashed with a `ValueError` traceback from `IndustrialLimits.__post_init__` or `compress_context`. They are now validated at the argparse layer and print a normal `error:` message.

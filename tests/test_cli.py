@@ -77,3 +77,23 @@ def test_cli_compresses_stdin():
     assert done.returncode == 0, done.stderr
     assert done.stdout == "Example payload.\n\n"
     assert done.stderr == ""
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="posix only")
+def test_cli_accepts_a_readable_pipe(tmp_path):
+    # Process substitution and named pipes are readable but not regular
+    # files — ``is_file()`` used to reject them before compression ran.
+    import threading
+
+    fifo = tmp_path / "ctx.fifo"
+    os.mkfifo(fifo)
+    feeder = threading.Thread(
+        target=lambda: fifo.write_text("Example payload.\n"), daemon=True)
+    feeder.start()
+    done = _run_cli(
+        "from tameru.cli import main; raise SystemExit(main())",
+        [str(fifo), "", "--no-ccr", "--no-citations"],
+    )
+    feeder.join(10)
+    assert done.returncode == 0, done.stderr
+    assert "Example payload." in done.stdout
