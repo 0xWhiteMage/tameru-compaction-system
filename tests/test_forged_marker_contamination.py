@@ -534,3 +534,40 @@ def test_triple_quote_in_comment_does_not_disable_veto():
                          ccr=False, citations=False)
     assert "connect_timeout_ms = 30000" not in r.compressed_text
     assert "connect_timeout_ms = 5000" in r.compressed_text
+
+
+def test_marker_shaped_line_inside_a_fence_is_content():
+    """A literal ``[… omitted …]`` line inside a fenced example is quoted
+    text, not engine structure: the strip must not silently rewrite the
+    example. Lines outside the fence still strip."""
+    from tameru.compress_context import _strip_artifact_noise
+    text = (
+        "head\n[… 3 lines omitted …]\n"
+        "```toml\nport = 1\n[… 4 lines omitted …]\n```\n"
+        "[tameru: x]\ntail"
+    )
+    out = _strip_artifact_noise(text)
+    assert "[… 3 lines omitted …]" not in out     # outside the fence: noise
+    assert "[tameru: x]" not in out
+    assert "[… 4 lines omitted …]" in out        # inside the fence: literal
+    assert "```toml" in out and "port = 1" in out
+
+
+def test_fenced_marker_line_survives_end_to_end():
+    text = (
+        "# guide\nexample:\n\n```toml\n[server]\n"
+        "host = \"example\"\n[… 4 lines omitted …]\nport = 8080\n```\n\n"
+        + "\n".join(f"filler line {i} with enough words to be interesting content" for i in range(200))
+    )
+    r = compress_context(text, "example output", ccr=False, citations=False, strategy="extract")
+    assert "[… 4 lines omitted …]" in r.compressed_text
+
+
+def test_inline_code_run_is_not_a_fence_opener():
+    from tameru.compress_context import _strip_artifact_noise, _ARTIFACT_NOISE_RES
+
+    text = "use ```inline code``` here\n[tameru: leaked]\nkeep me"
+    out = _strip_artifact_noise(text, _ARTIFACT_NOISE_RES)
+    assert "[tameru: leaked]" not in out
+    assert "use ```inline code``` here" in out
+    assert "keep me" in out
