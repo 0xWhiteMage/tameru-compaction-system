@@ -337,3 +337,13 @@ def test_industrial_entries_reject_incoherent_limits():
     assert profile_input("x", limits={"max_lines": 5}).lines == 1
     r = industrial_preprocess("x", "q", limits=IndustrialLimits(max_lines=5))
     assert r.limits.max_lines == 5
+
+
+def test_grep_adapters_reject_non_str_text():
+    """detect_grep_lines/adapt_grep_lines split the text arg directly — an int
+    crashed with AttributeError while sibling adapters raised TypeError."""
+    from tameru.agent_formats import adapt_grep_lines, detect_grep_lines
+    with pytest.raises(TypeError, match="text must be str"):
+        detect_grep_lines(42)
+    with pytest.raises(TypeError, match="text must be str"):
+        adapt_grep_lines(42, "q")
