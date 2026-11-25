@@ -1357,6 +1357,25 @@ def test_python_adjacent_concatenation_does_not_eat_the_next_strings_opener():
     # TOML followers still consume the content quote
     line2 = "arr = [" + DQ + "a" + DQ + '", ' + DQ
     assert cc._advance_multiline_state(line2, None) == DQ
+def test_a_two_event_fold_keeps_a_protected_last_instance():
+    """A template folding to ``[xN]`` emits ``[last]`` only at three or
+    more — but the exemplar substitution trusts that marker to carry the
+    protected instance when it IS the last one. At exactly two events the
+    protected second instance vanished entirely. The marker now emits at
+    two whenever the protected instance would otherwise be lost."""
+    base = "uploading chunk {} of payload to staging bucket"
+    first, second = base.format(1000), base.format(1001)
+    lines = ["ctx filler filler filler filler filler", first, second,
+             "tail filler filler filler filler"]
+    token = cc._OUTCOME_PROTECTED.set(frozenset({second}))
+    try:
+        out = cc.preprocess_logs(lines, "ctx")
+    finally:
+        cc._OUTCOME_PROTECTED.reset(token)
+    assert any("1001" in ln for ln in out), out
+    # without protection a two-event fold must stay marker-only
+    plain = cc.preprocess_logs(lines, "ctx")
+    assert not any(ln.startswith("[last] ") for ln in plain), plain
 def test_floor_eviction_never_drops_a_section_header():
     """The savings-floor eviction scores lines, not structure: ties break by
     position, so a kept block's ``[[deps]]`` header evicted before its own
