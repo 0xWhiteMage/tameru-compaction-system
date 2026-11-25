@@ -1806,6 +1806,81 @@ def _unescaped_triple_count(line: str, delim: str) -> int:
 
 def _has_unescaped_triple(line: str, delim: str) -> bool:
     return bool(_triple_close_positions(line, delim))
+
+
+def _advance_multiline_state(code: str, state: str | None) -> str | None:
+    """Advance TOML multiline-string state across one line, position
+    ordered. The first unescaped triple of either kind opens the string
+    (a same-line triple of the other kind after the opener is literal
+    content, not a competing opener); inside one only its own delimiter
+    closes it; and the remainder after a close is fresh code that may
+    open another string on the same line. In fresh code a ``#``/``;``
+    starts a comment — triples inside it are text, never delimiters —
+    and single-line quoted literals are skipped, so their quotes open
+    nothing."""
+    i = 0
+    n = len(code)
+    while i < n:
+        if state is not None:
+            if (
+                i + 3 <= n
+                and code.startswith(state, i)
+                and (state == "'''" or not _odd_backslashes(code, i))
+            ):
+                quote = state[0]
+                state = None
+                i += 3
+                # TOML lets one or two content quotes sit right against the
+                # closing delimiter (``"""say "hi"""""``); they are string
+                # content, not the start of fresh code. The run tells the two
+                # grammars apart: in TOML a value's close can only be
+                # followed by ``,`` ``]`` ``}`` a comment or the line end, so
+                # trailing quotes are content only when the maximal run is
+                # five or fewer AND such a follower comes next — otherwise
+                # (Python's adjacent-literal concatenation, where the next
+                # quote opens a new string) they are fresh code.
+                # The count caps at three: the decision below only needs
+                # two-or-fewer versus more, and scanning the whole maximal
+                # run at every close re-reads the suffix once per open/close
+                # cycle of a long quote run — quadratic.
+                extra = 0
+                while extra < 3 and i + extra < n and code[i + extra] == quote:
+                    extra += 1
+                if extra <= 2 and (i + extra >= n or code[i + extra] in ",]}#; \t"):
+                    i += extra
+                continue
+            i += 1
+            continue
+        ch = code[i]
+        if ch in "#;":
+            break
+        if ch == '"' and i + 3 <= n and code.startswith('"""', i):
+            if not _odd_backslashes(code, i):
+                state = '"""'
+                i += 3
+                continue
+            i += 1
+            continue
+        if ch == "'" and i + 3 <= n and code.startswith("'''", i):
+            state = "'''"
+            i += 3
+            continue
+        if ch == '"':
+            i += 1
+            while i < n and code[i] != '"':
+                i += 2 if code[i] == "\\" else 1
+            i += 1
+            continue
+        if ch == "'":
+            i += 1
+            while i < n and code[i] != "'":
+                i += 1
+            i += 1
+            continue
+        i += 1
+    return state
+
+
 _TRIPLE_RUN_RE = re.compile(r'"""|\'\'\'')
 
 
@@ -4070,6 +4145,8 @@ def unwrap_tool_payload(text: str, min_field_chars: int = 200) -> ToolPayload:
     A recognized report document (SARIF, notebook, GraphQL) is NOT a tool
     envelope even when it carries a long ``content``/``output`` property.
     """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
     unwrapped = ToolPayload(inner=text, field=None, meta={}, wrapped=False)
     if not isinstance(text, str):
         return unwrapped
@@ -4105,6 +4182,10 @@ def rewrap_tool_payload(payload: ToolPayload, new_inner: str) -> str:
     separators, so the result is one line of JSON that Hermes' own
     ``"exit_code"\\s*:\\s*N`` matchers still read.
     """
+    if not isinstance(payload, ToolPayload):
+        raise TypeError(f"payload must be ToolPayload, got {type(payload).__name__}")
+    if not isinstance(new_inner, str):
+        raise TypeError(f"new_inner must be str, got {type(new_inner).__name__}")
     if not payload.wrapped or payload.field is None:
         return new_inner
     out: dict[str, Any] = {}
@@ -4692,6 +4773,7 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
 
     prev_type = None
     in_fence = False
+    in_string: str | None = None
     for i, line in enumerate(lines):
         kind = classify_line(line)
         line_toks = estimate_tokens(line)
@@ -4700,6 +4782,19 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
             if kind == "fence":
                 close(i)
                 in_fence = False
+            prev_type = kind
+            continue
+        if in_string is not None:
+            # Inside a TOML multiline string the whole line is content — a
+            # blank line or a shape change must not split the block, because
+            # selection is block-atomic: a partial span emits an unterminated
+            # opener or bare body lines, and no TOML parser accepts either.
+            # The block is NOT closed at the closer: trailing settings keep
+            # gluing to the span's block exactly as they did before strings
+            # were tracked, so a tight budget cannot keep a setting while
+            # dropping the table header the span block carries.
+            tokens += line_toks
+            in_string = _advance_multiline_state(line, in_string)
             prev_type = kind
             continue
         if kind == "fence":
@@ -4743,6 +4838,13 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
             tokens += line_toks
             if btype == "text" and kind != "blank":
                 btype = kind
+        # A line whose code part holds an odd number of unescaped triple
+        # quotes opens a TOML multiline string — the scan above keeps the
+        # span in one block. Quotes inside a trailing comment or a quoted
+        # literal are text, and an even count opens and closes on the line.
+        if in_string is None:
+            code = _quote_aware_code_part(line)
+            in_string = _advance_multiline_state(code, None)
         prev_type = kind
     close(len(lines) - 1)
     return blocks
@@ -8596,6 +8698,10 @@ def inspect_compressibility(text: str, query: str) -> dict[str, Any]:
     Returns {"worth_it": bool, "repetition_ratio": float, "reason": str}.
     Cheap heuristics only — no compression is performed.
     """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
+    if query is not None and not isinstance(query, str):
+        raise TypeError(f"query must be str, got {type(query).__name__}")
     tokens = estimate_tokens(text)
     if tokens < 200:
         return {
@@ -9999,6 +10105,8 @@ def _normalise_options(
         pin_recent = max(0, int(pin_recent_num))
     if min_savings_ratio is None:
         min_savings_ratio = 0.10
+    if isinstance(min_savings_ratio, bool) or not isinstance(min_savings_ratio, (int, float)):
+        raise TypeError(f"min_savings_ratio must be a number, got {type(min_savings_ratio).__name__}")
     min_savings_ratio = float(min_savings_ratio)
     if not 0.0 <= min_savings_ratio < 1.0:
         raise ValueError(

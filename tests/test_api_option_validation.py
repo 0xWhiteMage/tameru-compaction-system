@@ -404,8 +404,6 @@ def test_plan_dataclasses_reject_nan_sizes():
         with pytest.raises(ValueError, match="nonnegative"):
             PlanInput(**{**base, field: nan})
     PlanInput(**base)  # sane input still constructs
-
-
 def test_decide_declines_nonfinite_result_fields():
     """int(float('inf')) raises OverflowError — outside the malformed catches'
     TypeError/ValueError pair — and nan/inf savings make every EV comparison
@@ -432,3 +430,10 @@ def test_decide_declines_nonfinite_result_fields():
                   n_eff=1, suffix_tokens=1, item_tokens=1).reason == "malformed"
     assert decide(mk(tokens_saved=float("inf")), pol_ev,
                   n_eff=1, suffix_tokens=1, item_tokens=1).reason == "malformed"
+def test_min_savings_ratio_type_error_names_the_option():
+    import pytest
+    from tameru.compress_context import compress_context
+    base = "key = value\n" + "filler\n" * 40
+    for bad in ("x", [], {}, True):
+        with pytest.raises(TypeError, match="min_savings_ratio must be a number"):
+            compress_context(base, "key", min_savings_ratio=bad)

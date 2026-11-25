@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
-- Fix: `decide()` declines non-finite result fields instead of misbehaving — `int(float("inf"))` raises `OverflowError`, outside the `TypeError`/`ValueError` pair the malformed checks catch, so infinite token counts crashed the gate; and `nan`/`inf` `tokens_saved` makes every EV comparison `False`, so the `negative_ev` veto could never fire and a result reporting infinite savings always passed. - Unreleased
+- Fix: multiline TOML strings are now block-atomic at segmentation — a blank line or a shape change inside a triple-quoted span no longer splits it into separate blocks. Selection is block-atomic, so a split span could keep the opener alone (an unterminated string that swallows the rest of the extract) or bare body lines no TOML parser accepts. The scan tracks the open string delimiter across lines; quotes inside trailing comments or quoted literals are text, and an even count on one line opens and closes there. - Unreleased
 - Fix: the plan dataclasses' nonnegative guards accepted NaN — ``nan < 0`` is False, so a NaN ``n_eff``, ``tokens`` or ``growth_tokens_per_step`` slipped through and poisoned totals downstream; the checks now reject NaN alongside negatives. - Unreleased
 - Fix: a `[name.sub]` table under a `[[name]]` array now attaches to the last element for the whole document, as TOML requires — an intervening `[other]` header no longer drops the attachment and a deeper `[name.tls]` no longer absorbs the next sibling. `[[a.b]]` nested arrays attach under the last `[[a]]` element, and their own `[a.b.c]` subtables keep the full element scope (`a\x1f1\x1fa.b\x1f1\x1fc`) instead of colliding with a top-level `[[a.b]]`'s same-named subtable. - Unreleased
 
@@ -697,3 +697,4 @@ affected by the fixes below is unchanged.
 [1.1.1]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/0xWhiteMage/tameru-compaction-system/compare/v0.10.0...v1.1.0
 - fix(engine): TOML multiline masking now honors backslash-escape parity — an even run of backslashes before closing triple quotes no longer swallows the closer (and literal strings never escape), so lines after such a string are correctly classified as outside it during supersession restore.
+- Fix: `min_savings_ratio` rejects non-numeric types with a TypeError naming the option
