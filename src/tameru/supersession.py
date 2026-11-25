@@ -4,6 +4,7 @@ compress_context (which consumes this module), so no import cycles.
 """
 from __future__ import annotations
 
+import bisect
 import re
 from typing import Any
 
@@ -184,25 +185,22 @@ def _advance(state: list, line: str) -> str | None:
             # on log text too, where a header name can hold ANY character
             # (including ``\x1f``), so no string sentinel is collision-proof.
             counts = state[2].setdefault(("\x1fc",), {})
-            # The descendant index maps an array name to every array
-            # registered with it as a dotted prefix, so invalidating one
-            # element's nested arrays costs the descendants, not a rescan
-            # of every active path — array-heavy dumps stay linear.
-            kids = state[2].setdefault(("\x1fkids",), {})
-            doomed = kids.pop(name, set())
-            for key in doomed:
+            # The name registry is one sorted list: dotted descendants of a
+            # name sort into one contiguous range, so invalidating one
+            # element's nested arrays bisects the range and drops it — no
+            # rescan of every active path per header, and no per-prefix
+            # index memory (a deep chain otherwise amplifies input memory
+            # by its depth). Insertion is a bounded memmove.
+            registry = state[2].setdefault(("\x1freg",), [])
+            prefix = name + "."
+            lo = bisect.bisect_left(registry, prefix)
+            hi = lo
+            while hi < len(registry) and registry[hi].startswith(prefix):
+                hi += 1
+            for key in registry[lo:hi]:
                 state[2].pop(key, None)
-                kids.pop(key, None)
-            for key in doomed:
-                # A surviving prefix of a doomed name (invalidating ``a.b``
-                # while ``[[a]]`` lives on) still lists it — drop the stale
-                # membership, walking only the key's own dotted chain.
-                root = key
-                while "." in root:
-                    root = root.rsplit(".", 1)[0]
-                    members = kids.get(root)
-                    if members is not None:
-                        members.discard(key)
+            if hi > lo:
+                registry[lo:hi] = []
             count = counts.get(name, 0) + 1
             counts[name] = count
             scope = f"{name}\x1f{count}"
@@ -224,10 +222,9 @@ def _advance(state: list, line: str) -> str | None:
             # the scope is what ``[name.sub]`` prefixes itself with when it
             # attaches under the last element.
             state[2][name] = (count, scope)
-            root = name
-            while "." in root:
-                root = root.rsplit(".", 1)[0]
-                kids.setdefault(root, set()).add(name)
+            at = bisect.bisect_left(registry, name)
+            if at >= len(registry) or registry[at] != name:
+                registry.insert(at, name)
         else:
             # ``[name.sub]`` always attaches to the LAST ``[[name]]``
             # element — TOML keeps absorbing ``name.*`` tables for the
