@@ -1984,19 +1984,91 @@ def _restored_block(
         # delimiters it mentions never open a new string. The comment cut is
         # computed once, after the first close on the line.
         cut: int | None = None
-        for m in re.finditer(r'"""|\'\'\'', code):
-            if cut is not None and m.start() >= cut:
+        pos = 0
+        while (m := re.search(r'"""|\'\'\'', code[pos:])) is not None:
+            m_start = pos + m.start()
+            m_end = pos + m.end()
+            if cut is not None and m_start >= cut:
                 break
-            if m.group(0) == '"""' and not inside_literal and not _odd_backslashes(code, m.start()):
+            if m.group(0) == '"""' and _odd_backslashes(code, m_start):
+                # ``\""""`` is an escaped quote then a REAL closer — skip the
+                # escaped quote only, so the ``"""`` after it can still match.
+                pos = m_start + 1
+                continue
+            if m.group(0) == '"""' and not inside_literal:
                 inside_basic = not inside_basic
                 if not inside_basic and cut is None:
-                    cut = m.end() + len(_toml_code_part(code[m.end():]))
+                    cut = m_end + len(_toml_code_part(code[m_end:]))
             elif m.group(0) == "'''" and not inside_basic:
                 inside_literal = not inside_literal
 
                 if not inside_literal and cut is None:
-                    cut = m.end() + len(_toml_code_part(code[m.end():]))
 
+                    cut = m_end + len(_toml_code_part(code[m_end:]))
+            pos = m_end
+
+    # A restored ``k = "\"\" ..."`` opener without the value's body leaves an
+    # unterminated string that swallows every emitted line after it — the
+    # whole extract stops parsing. The opener restores its continuation
+    # lines verbatim (they are its own content), and a continuation line on
+    # its own can never be a valid TOML statement: it joins a surviving
+    # opener's body or is skipped. Replay triple-quote state over the
+    # original line list — ``oi`` keeps only a repeated line's LAST index,
+    # so two strings that share a closing line would collapse into one span.
+    openers: dict[int, int] = {}      # opener idx -> closer idx
+    body_of: dict[int, list[str]] = {}  # opener idx -> continuation lines
+    cont_of: dict[int, int] = {}      # continuation idx -> opener idx
+    enclosing: dict[int, str] = {}    # idx -> last UNQUOTED header
+    replay = (
+        enumerate(orig_lines)
+        if orig_lines is not None
+        else ((oidx, ol) for ol, oidx in sorted(oi.items(), key=lambda kv: kv[1]))
+    )
+    inside_basic = inside_literal = False
+    pending: tuple[int, str] | None = None
+    pending_body: list[str] = []
+    close_kind: dict[int, str] = {}   # opener idx -> its delimiter
+    cur_hdr = ""
+    for oidx, ol in replay:
+        enclosing[oidx] = cur_hdr
+        if pending is not None:
+            pending_body.append(ol)
+            pend_code = ol
+            if (
+                (inside_literal and _UNESCAPED_TRIPLE_SQ.search(pend_code))
+                or (inside_basic and _UNESCAPED_TRIPLE_DQ.search(pend_code))
+            ):
+                openers[pending[0]] = oidx
+                body_of[pending[0]] = pending_body
+                for cidx in range(pending[0] + 1, oidx + 1):
+                    cont_of[cidx] = pending[0]
+                pending = None
+                pending_body = []
+                inside_basic = inside_literal = False
+            continue
+        ins = inside_basic or inside_literal
+        if ins:
+            code = ol
+        else:
+            code = _quote_aware_code_part(ol)
+        if not ins:
+            if header_of.get(ol) == ol:
+                cur_hdr = ol
+                enclosing[oidx] = cur_hdr
+            if len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2 or len(
+                _UNESCAPED_TRIPLE_SQ.findall(code)
+            ) % 2:
+                pending = (oidx, ol)
+                dq = len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2
+                sq = len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2
+                inside_basic = bool(dq)
+                inside_literal = not inside_basic and bool(sq)
+                close_kind[oidx] = "'''" if inside_literal else '"""'
+                continue
+        if not inside_literal and len(_UNESCAPED_TRIPLE_DQ.findall(code)) % 2:
+            inside_basic = not inside_basic
+        if not inside_basic and len(_UNESCAPED_TRIPLE_SQ.findall(code)) % 2:
+            inside_literal = not inside_literal
     insert_after: dict[int, list[str]] = {}
     insert_before: dict[int, list[str]] = {}
     appended: list[str] = []
@@ -2290,7 +2362,7 @@ def _triple_quoted_lines(text: str) -> set[str]:
         # ``"""`` that follows it in the value (``x = 'has # a """'``) and
         # leave the string opener uncounted.
         blank = lambda m: " " * len(m.group(0))
-        scrubbed = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, ln)
+        scrubbed, _ = _blank_same_line_triples(ln)
         tri_runs = [
             (m3.start(), m3.end()) for m3 in re.finditer(r'"""|\'\'\'', scrubbed)
         ]
@@ -2323,13 +2395,19 @@ def _triple_quoted_lines(text: str) -> set[str]:
         # first would mis-track the open kind and mask past the real
         # closer. A ``\'\'\'`` run always toggles (TOML literals do not
         # escape); a ``\"\"\"`` run toggles only when unescaped.
-        for m in re.finditer(r'"""|\'\'\'', code):
-            if m.group(0) == '"""' and _odd_backslashes(code, m.start()):
+        pos = 0
+        while (m := re.search(r'"""|\'\'\'', code[pos:])) is not None:
+            m_start = pos + m.start()
+            if m.group(0) == '"""' and _odd_backslashes(code, m_start):
+                # an escaped quote may be followed by the real closer — retry
+                # one char in, so ``\""""`` still closes.
+                pos = m_start + 1
                 continue
             if inside is None:
                 inside = m.group(0)
             elif m.group(0) == inside:
                 inside = None
+            pos = pos + m.end()
         if inside is not None:
             masked.add(ln)
     return masked

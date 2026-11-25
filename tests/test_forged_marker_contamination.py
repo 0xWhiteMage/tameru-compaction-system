@@ -722,4 +722,32 @@ def test_the_string_mask_also_closes_on_a_post_escape_triple():
     esc = chr(92)
     text = 'x = """a' + esc + esc + '"""\nafter_v = 2'
     assert "after_v = 2" not in cc._triple_quoted_lines(text)
+<<<<<<< HEAD
 >>>>>>> 72f3941 (fix(engine): an escaped backslash no longer hides a triple closer)
+||||||| parent of d15bc76 (fix(engine): a closer right after an escaped quote is no longer eaten)
+=======
+
+
+def test_an_escaped_quote_before_the_closer_does_not_hide_it():
+    # ``\""""`` is an escaped quote then a REAL ``"""`` closer — the regex
+    # matched ``"""`` on the escaped quote, the parity check rejected it,
+    # and the consumed match ate two of the closer's quotes, so the closer
+    # was never seen: the header after it read as string content.
+    import tomllib
+    from tameru import compress_context as cc
+    esc = chr(92)
+    after = "x = \"\"\"" + "\nbody" + esc + '""""' + "\n[other]\nkeep_v = 1"
+    tomllib.loads(after + "\n")  # sanity: the doc itself parses
+    r = cc._restored_block(
+        after, ["drop_v = 2"], {"drop_v = 2": "[other]"},
+        {"drop_v = 2": 4})
+    assert r.split("\n")[-1] == "drop_v = 2"
+    assert "[other]" in r
+
+
+def test_the_string_mask_counts_a_closer_after_an_escaped_quote():
+    from tameru import compress_context as cc
+    esc = chr(92)
+    text = 'x = """a' + esc + '""""' + '\nafter_v = 2'
+    assert "after_v = 2" not in cc._triple_quoted_lines(text)
+>>>>>>> d15bc76 (fix(engine): a closer right after an escaped quote is no longer eaten)
