@@ -172,7 +172,21 @@ def _advance(state: list, line: str) -> str | None:
         else:
             name = ini if ini[:1] in "\"'" else ini.casefold()
         if line.lstrip().startswith("[["):
-            count = state[2].get(name, (0, ""))[0] + 1
+            # A new element ends the previous one: array registrations
+            # nested under it (``a.arr`` and deeper) belonged to that
+            # element, so they must not capture paths below the new one —
+            # ``[a.arr.x]`` after a fresh ``[[a]]`` is a plain table of the
+            # NEW element in TOML, never part of the old element's array.
+            # Numbering is continuous per array path across the document —
+            # it survives the invalidation below in a control-keyed side
+            # table (a TOML name cannot hold ``\x1f``) so the second
+            # element's first ``[[a.b]]`` is still the array's entry 2.
+            counts = state[2].setdefault("\x1fc", {})
+            prefix = name + "."
+            for key in [k for k in state[2] if k.startswith(prefix)]:
+                del state[2][key]
+            count = counts.get(name, 0) + 1
+            counts[name] = count
             scope = f"{name}\x1f{count}"
             root = name
             attach = None

@@ -508,3 +508,18 @@ def test_nested_array_subtable_keeps_the_whole_element_scope():
     assert scopes["k = 3"][0] == "a\x1f1\x1fa.b\x1f2"
     top = supersession._document_scopes("[[a.b]]\n[a.b.c]\nk = 9")
     assert top["k = 9"][0] == "a.b\x1f1\x1fc"
+
+
+def test_a_new_array_element_does_not_inherit_the_previous_elements_nested_arrays():
+    # A plain descendant path below a fresh ``[[a]]`` element belongs to
+    # that element in TOML — the nested array registrations of the
+    # previous element must not capture it, or ``v`` and a same-named
+    # setting under the old element read as reassignments.
+    doc = "[[a]]\nx = 1\n[[a.arr]]\nz = 1\n[[a]]\nw = 2\n[a.arr.x]\nv = 3"
+    scopes = supersession._document_scopes(doc)
+    assert scopes["v = 3"][0].startswith("a\x1f2\x1f"), scopes["v = 3"][0]
+    # continuous numbering survives the invalidation: the second element's
+    # first [[a.arr]] is still the array's entry 2
+    doc2 = "[[a]]\nx = 1\n[[a.arr]]\ny = 2\n[[a]]\nx = 3\n[[a.arr]]\ny = 4"
+    scopes2 = supersession._document_scopes(doc2)
+    assert scopes2["y = 4"][0] == "a\x1f2\x1fa.arr\x1f2"
