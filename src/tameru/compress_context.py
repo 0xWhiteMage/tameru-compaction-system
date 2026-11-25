@@ -1827,8 +1827,19 @@ def _advance_multiline_state(code: str, state: str | None) -> str | None:
                 and code.startswith(state, i)
                 and (state == "'''" or not _odd_backslashes(code, i))
             ):
+                quote = state[0]
                 state = None
                 i += 3
+                # TOML lets one or two content quotes sit right against the
+                # closing delimiter (``"""say "hi"""""``); they are string
+                # content, not the start of fresh code — consuming them keeps
+                # a trailing lone quote from opening a phantom single-line
+                # string that swallows a real multiline opener later on the
+                # line.
+                extra = 0
+                while i < n and code[i] == quote and extra < 2:
+                    i += 1
+                    extra += 1
                 continue
             i += 1
             continue

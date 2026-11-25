@@ -659,3 +659,14 @@ def test_a_triple_in_the_closing_lines_comment_opens_nothing():
     lines = ["[tbl0]", "ml = " + DQ, "body", DQ + " # done " + DQ, "key = 1", "[tbl1]", "x = 2"]
     blocks = cc.segment_blocks(lines)
     assert blocks[-1]["start"] >= 5, blocks  # [tbl1] starts its own block
+
+
+def test_a_content_quote_adjacent_to_the_close_opens_no_phantom_string():
+    'TOML lets one or two content quotes sit right against the closing delimiter. The leftover quote must not lex as a fresh single-line string — it would consume the first quote of a real multiline opener later on the line (an array of multiline elements), inverting the open state for the rest of the document.'
+    lines = ["arr = [" + DQ + "a" + DQ + '", ' + DQ, "body", DQ + "]", "next = 1"]
+    st = None
+    states = []
+    for ln in lines:
+        st = cc._advance_multiline_state(ln, st)
+        states.append(st)
+    assert states == [DQ, DQ, None, None], states
