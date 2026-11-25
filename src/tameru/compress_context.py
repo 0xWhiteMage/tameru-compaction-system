@@ -4074,6 +4074,8 @@ def unwrap_tool_payload(text: str, min_field_chars: int = 200) -> ToolPayload:
     A recognized report document (SARIF, notebook, GraphQL) is NOT a tool
     envelope even when it carries a long ``content``/``output`` property.
     """
+    if not isinstance(text, str):
+        raise TypeError(f"text must be str, got {type(text).__name__}")
     unwrapped = ToolPayload(inner=text, field=None, meta={}, wrapped=False)
     if not isinstance(text, str):
         return unwrapped
@@ -4109,6 +4111,10 @@ def rewrap_tool_payload(payload: ToolPayload, new_inner: str) -> str:
     separators, so the result is one line of JSON that Hermes' own
     ``"exit_code"\\s*:\\s*N`` matchers still read.
     """
+    if not isinstance(payload, ToolPayload):
+        raise TypeError(f"payload must be ToolPayload, got {type(payload).__name__}")
+    if not isinstance(new_inner, str):
+        raise TypeError(f"new_inner must be str, got {type(new_inner).__name__}")
     if not payload.wrapped or payload.field is None:
         return new_inner
     out: dict[str, Any] = {}
