@@ -4145,8 +4145,8 @@ _HINT_ROUTES = {
 _GUTTER_RE = _AGENT_GUTTER_RE  # `N\t` (cat -n), `N|` (Hermes read_file), `N: `
 
 
-def _marker_tuple(markers: Iterable[str] | str | None) -> tuple[str, ...]:
-    """Materialise ``recursion_markers`` once: a bare string is ONE marker (not
+def _marker_tuple(markers: Iterable[str] | str | None, name: str = "recursion_markers") -> tuple[str, ...]:
+    """Materialise a marker option once: a bare string is ONE marker (not
     a set of characters), non-strings and empty strings are dropped (an empty
     marker would match every line)."""
     if not markers:
@@ -4159,7 +4159,7 @@ def _marker_tuple(markers: Iterable[str] | str | None) -> tuple[str, ...]:
         # A scalar (``recursion_markers=42``) is not an iterable — name the
         # option in the error instead of bubbling a bare TypeError up.
         raise TypeError(
-            f"recursion_markers must be an iterable of str, got {type(markers).__name__}"
+            f"{name} must be an iterable of str, got {type(markers).__name__}"
         ) from None
 
 
@@ -11741,7 +11741,7 @@ def _compress_context_impl(
     code_hint = content_hint in _CODE_HINTS
     no_table = content_hint in _NO_TABLE_HINTS
     recursion_markers = _marker_tuple(recursion_markers)  # a generator is read once
-    artifact_markers = _marker_tuple(artifact_markers)
+    artifact_markers = _marker_tuple(artifact_markers, "artifact_markers")
     query, query_as_given, derived_terms, anchor_lines, chosen_probe = _resolve_objective(
         ambiguity_fail_open=ambiguity_fail_open, anchor_errors=anchor_errors,
         budget_ratio=budget_ratio, caller_text=caller_text, ccr=ccr, ccr_dir=ccr_dir,
