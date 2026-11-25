@@ -2417,7 +2417,7 @@ def _triple_quoted_lines(text: str) -> set[str]:
             (m3.start(), m3.end()) for m3 in re.finditer(r'"""|\'\'\'', scrubbed)
         ]
 
-        lit_ends: list[int] = []
+        lit_spans: list[tuple[int, int]] = []
 
         def _blank_literal(m):
             s, e = m.span()
@@ -2432,11 +2432,19 @@ def _triple_quoted_lines(text: str) -> set[str]:
                 s < te and e > ts for ts, te in tri_runs
             ):
                 return " " * (e - s)
-            lit_ends.append(e - 1)
+            lit_spans.append((s, e))
             return m.group(0)
 
         scrubbed = _SINGLE_QUOTED_RE.sub(_blank_literal, scrubbed)
-        m = re.search(r"[#;]", scrubbed)
+        lit_ends = [e - 1 for _, e in lit_spans]
+        m = next(
+            (
+                mm
+                for mm in re.finditer(r"[#;]", scrubbed)
+                if not any(a <= mm.start() < b for a, b in lit_spans)
+            ),
+            None,
+        )
         cut = m.start() if m is not None else len(scrubbed)
         # A ``'``/``"`` left unblanked never closed: a ``"""`` after it is
         # inside that literal, not an opener (``x = 'a # b """`` unclosed), so cut
