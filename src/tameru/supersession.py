@@ -179,12 +179,30 @@ def _advance(state: list, line: str) -> str | None:
             # NEW element in TOML, never part of the old element's array.
             # Numbering is continuous per array path across the document —
             # it survives the invalidation below in a control-keyed side
-            # table (a TOML name cannot hold ``\x1f``) so the second
-            # element's first ``[[a.b]]`` is still the array's entry 2.
-            counts = state[2].setdefault("\x1fc", {})
-            prefix = name + "."
-            for key in [k for k in state[2] if k.startswith(prefix)]:
-                del state[2][key]
+            # table so the second element's first ``[[a.b]]`` is still the
+            # array's entry 2. The side tables key on tuples: this pass runs
+            # on log text too, where a header name can hold ANY character
+            # (including ``\x1f``), so no string sentinel is collision-proof.
+            counts = state[2].setdefault(("\x1fc",), {})
+            # The descendant index maps an array name to every array
+            # registered with it as a dotted prefix, so invalidating one
+            # element's nested arrays costs the descendants, not a rescan
+            # of every active path — array-heavy dumps stay linear.
+            kids = state[2].setdefault(("\x1fkids",), {})
+            doomed = kids.pop(name, set())
+            for key in doomed:
+                state[2].pop(key, None)
+                kids.pop(key, None)
+            for key in doomed:
+                # A surviving prefix of a doomed name (invalidating ``a.b``
+                # while ``[[a]]`` lives on) still lists it — drop the stale
+                # membership, walking only the key's own dotted chain.
+                root = key
+                while "." in root:
+                    root = root.rsplit(".", 1)[0]
+                    members = kids.get(root)
+                    if members is not None:
+                        members.discard(key)
             count = counts.get(name, 0) + 1
             counts[name] = count
             scope = f"{name}\x1f{count}"
@@ -206,6 +224,10 @@ def _advance(state: list, line: str) -> str | None:
             # the scope is what ``[name.sub]`` prefixes itself with when it
             # attaches under the last element.
             state[2][name] = (count, scope)
+            root = name
+            while "." in root:
+                root = root.rsplit(".", 1)[0]
+                kids.setdefault(root, set()).add(name)
         else:
             # ``[name.sub]`` always attaches to the LAST ``[[name]]``
             # element — TOML keeps absorbing ``name.*`` tables for the

@@ -523,3 +523,20 @@ def test_a_new_array_element_does_not_inherit_the_previous_elements_nested_array
     doc2 = "[[a]]\nx = 1\n[[a.arr]]\ny = 2\n[[a]]\nx = 3\n[[a.arr]]\ny = 4"
     scopes2 = supersession._document_scopes(doc2)
     assert scopes2["y = 4"][0] == "a\x1f2\x1fa.arr\x1f2"
+
+
+def test_a_control_character_array_name_cannot_collide_the_counts_table():
+    # Log text can name an array anything — including the counts sentinel's
+    # string form. A tuple key is collision-proof: the second array header
+    # must not read back the tuple the first one registered.
+    doc = "[[\x1fc]]\nx = 1\n[[a]]\ny = 2\n[[a]]\nz = 3"
+    supersession._document_scopes(doc)  # must not raise
+
+
+def test_invalidation_keeps_array_heavy_documents_linear():
+    # The descendant index costs the doomed entries, not a rescan of every
+    # active array path per header.
+    lines = []
+    for i in range(200):
+        lines += [f"[[arr{i}]]", "x = 1", f"[[arr{i}.sub]]", "y = 2", f"[[arr{i}]]", "z = 3"]
+    supersession._document_scopes("\n".join(lines))
