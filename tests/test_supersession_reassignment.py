@@ -495,3 +495,16 @@ def test_nested_array_attaches_under_the_parent_element():
     scopes = supersession._document_scopes(doc)
     assert scopes["y = 2"][0] == "a\x1f1\x1fa.b\x1f1"
     assert scopes["y = 4"][0] == "a\x1f2\x1fa.b\x1f2"
+
+
+def test_nested_array_subtable_keeps_the_whole_element_scope():
+    # ``[a.b.c]`` under a nested ``[[a.b]]`` element prefixes with that
+    # element's full scope — a top-level ``[[a.b]]``'s own ``[a.b.c]`` is a
+    # different table and can never take its place.
+    doc = "[[a]]\n[[a.b]]\nk = 1\n[a.b.c]\nk = 2\n[[a.b]]\nk = 3"
+    scopes = supersession._document_scopes(doc)
+    assert scopes["k = 1"][0] == "a\x1f1\x1fa.b\x1f1"
+    assert scopes["k = 2"][0] == "a\x1f1\x1fa.b\x1f1\x1fc"
+    assert scopes["k = 3"][0] == "a\x1f1\x1fa.b\x1f2"
+    top = supersession._document_scopes("[[a.b]]\n[a.b.c]\nk = 9")
+    assert top["k = 9"][0] == "a.b\x1f1\x1fc"

@@ -172,8 +172,8 @@ def _advance(state: list, line: str) -> str | None:
         else:
             name = ini if ini[:1] in "\"'" else ini.casefold()
         if line.lstrip().startswith("[["):
-            state[2][name] = state[2].get(name, 0) + 1
-            scope = f"{name}\x1f{state[2][name]}"
+            count = state[2].get(name, (0, ""))[0] + 1
+            scope = f"{name}\x1f{count}"
             root = name
             attach = None
             while "." in root:
@@ -182,9 +182,16 @@ def _advance(state: list, line: str) -> str | None:
                     attach = root
                     break
             if attach is not None:
-                # ``[[a.b]]`` is an array under the last ``[[a]]`` element.
-                scope = f"{attach}\x1f{state[2][attach]}\x1f{scope}"
+                # ``[[a.b]]`` is an array under the last ``[[a]]`` element —
+                # the parent's whole element scope prefixes it, so a nested
+                # array can never collide with a top-level one of the same
+                # name (``a\x1f1\x1fa.b\x1f1`` vs a bare ``a.b\x1f1``).
+                scope = f"{state[2][attach][1]}\x1f{scope}"
             state[0] = scope
+            # Each entry keeps its own index AND its full element scope —
+            # the scope is what ``[name.sub]`` prefixes itself with when it
+            # attaches under the last element.
+            state[2][name] = (count, scope)
         else:
             # ``[name.sub]`` always attaches to the LAST ``[[name]]``
             # element — TOML keeps absorbing ``name.*`` tables for the
@@ -192,7 +199,9 @@ def _advance(state: list, line: str) -> str | None:
             # (or a deeper ``[name.tls]`` already under the element) must
             # not break the attachment. The longest prefix that is a
             # tracked array root wins, so ``[a.b.c]`` under ``[[a.b]]``
-            # attaches to the ``a.b`` element too.
+            # attaches to the ``a.b`` element too — prefixing with that
+            # element's full scope (a nested ``a.b`` under ``[[a]]`` is a
+            # different table from a top-level ``[[a.b]]``).
             root = name
             attach = None
             while "." in root:
@@ -201,7 +210,7 @@ def _advance(state: list, line: str) -> str | None:
                     attach = root
                     break
             if attach is not None:
-                state[0] = (f"{attach}\x1f{state[2][attach]}"
+                state[0] = (f"{state[2][attach][1]}"
                             f"\x1f{name[len(attach) + 1:]}")
             else:
                 state[0] = name
