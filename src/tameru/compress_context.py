@@ -1832,14 +1832,18 @@ def _advance_multiline_state(code: str, state: str | None) -> str | None:
                 i += 3
                 # TOML lets one or two content quotes sit right against the
                 # closing delimiter (``"""say "hi"""""``); they are string
-                # content, not the start of fresh code — consuming them keeps
-                # a trailing lone quote from opening a phantom single-line
-                # string that swallows a real multiline opener later on the
-                # line.
+                # content, not the start of fresh code. The run tells the two
+                # grammars apart: in TOML a value's close can only be
+                # followed by ``,`` ``]`` ``}`` a comment or the line end, so
+                # trailing quotes are content only when the maximal run is
+                # five or fewer AND such a follower comes next — otherwise
+                # (Python's adjacent-literal concatenation, where the next
+                # quote opens a new string) they are fresh code.
                 extra = 0
-                while i < n and code[i] == quote and extra < 2:
-                    i += 1
+                while i + extra < n and code[i + extra] == quote:
                     extra += 1
+                if extra <= 2 and (i + extra >= n or code[i + extra] in ",]}#; \t"):
+                    i += extra
                 continue
             i += 1
             continue

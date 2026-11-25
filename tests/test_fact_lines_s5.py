@@ -670,3 +670,12 @@ def test_a_content_quote_adjacent_to_the_close_opens_no_phantom_string():
         st = cc._advance_multiline_state(ln, st)
         states.append(st)
     assert states == [DQ, DQ, None, None], states
+
+
+def test_python_adjacent_concatenation_does_not_eat_the_next_strings_opener():
+    'Python adjacent-literal concatenation puts a new strings opening quote right against the triple closer. That quote is fresh code — in TOML a close can only be followed by a comma, bracket, comment or line end, so the content-quote consumption must not fire for other followers.'
+    line = "x = " + DQ + "x" + DQ + '"y" ' + DQ
+    assert cc._advance_multiline_state(line, None) == DQ
+    # TOML followers still consume the content quote
+    line2 = "arr = [" + DQ + "a" + DQ + '", ' + DQ
+    assert cc._advance_multiline_state(line2, None) == DQ
