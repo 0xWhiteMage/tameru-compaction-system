@@ -2529,10 +2529,18 @@ def _triple_quoted_lines(text: str) -> set[str]:
             tail = scrubbed[: m.start() if m else len(scrubbed)]
             while (m2 := re.search(r'"""|\'\'\'', tail[pos:])) is not None:
                 m_start = pos + m2.start()
-                if m2.group(0) == '"""' and _odd_backslashes(tail, m_start):
+                kind = m2.group(0)
+                if kind == '"""' and _odd_backslashes(tail, m_start):
                     pos = m_start + 1
                     continue
-                if m2.group(0) == inside:
+                if inside is None:
+                    if any(a <= m_start < b for a, b in lit_spans):
+                        # a ``"""``/``'''`` a kept literal covers is content,
+                        # not an opener — same guard as the main scan
+                        pos = m_start + 1
+                        continue
+                    inside = kind
+                elif kind == inside:
                     inside = None
                 pos = pos + m2.end()
         if inside is not None:
