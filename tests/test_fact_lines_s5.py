@@ -652,3 +652,10 @@ def test_segmentation_does_not_split_settings_off_the_span_block():
     lines = ["[tbl0]", "ml = " + DQ, "body", DQ, "keyhit = 1"]
     blocks = cc.segment_blocks(lines)
     assert blocks[0]["start"] == 0 and blocks[0]["end"] == 4
+
+
+def test_a_triple_in_the_closing_lines_comment_opens_nothing():
+    'A multiline closer can carry a trailing comment, and triple quotes inside it are comment text. Treating one as an opener leaves the scan inside a phantom string, so every later table glues into the same block and pinning one setting can block compression of the document.'
+    lines = ["[tbl0]", "ml = " + DQ, "body", DQ + " # done " + DQ, "key = 1", "[tbl1]", "x = 2"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[-1]["start"] >= 5, blocks  # [tbl1] starts its own block

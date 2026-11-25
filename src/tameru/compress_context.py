@@ -1814,15 +1814,51 @@ def _advance_multiline_state(code: str, state: str | None) -> str | None:
     (a same-line triple of the other kind after the opener is literal
     content, not a competing opener); inside one only its own delimiter
     closes it; and the remainder after a close is fresh code that may
-    open another string on the same line."""
-    dq = _triple_close_positions(code, '"""')
-    sq = _triple_close_positions(code, "'''")
-    events = sorted([(pos, '"""') for pos in dq] + [(pos, "'''") for pos in sq])
-    for _, kind in events:
-        if state is None:
-            state = kind
-        elif kind == state:
-            state = None
+    open another string on the same line. In fresh code a ``#``/``;``
+    starts a comment — triples inside it are text, never delimiters —
+    and single-line quoted literals are skipped, so their quotes open
+    nothing."""
+    i = 0
+    n = len(code)
+    while i < n:
+        if state is not None:
+            if (
+                i + 3 <= n
+                and code.startswith(state, i)
+                and (state == "'''" or not _odd_backslashes(code, i))
+            ):
+                state = None
+                i += 3
+                continue
+            i += 1
+            continue
+        ch = code[i]
+        if ch in "#;":
+            break
+        if ch == '"' and i + 3 <= n and code.startswith('"""', i):
+            if not _odd_backslashes(code, i):
+                state = '"""'
+                i += 3
+                continue
+            i += 1
+            continue
+        if ch == "'" and i + 3 <= n and code.startswith("'''", i):
+            state = "'''"
+            i += 3
+            continue
+        if ch == '"':
+            i += 1
+            while i < n and code[i] != '"':
+                i += 2 if code[i] == "\\" else 1
+            i += 1
+            continue
+        if ch == "'":
+            i += 1
+            while i < n and code[i] != "'":
+                i += 1
+            i += 1
+            continue
+        i += 1
     return state
 
 
