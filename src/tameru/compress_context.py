@@ -2646,7 +2646,16 @@ def _restored_block(
     present = {
         l for i, l in enumerate(after_lines) if not in_string[i]
     }
+    seen: set[str] = set()
     for ln in lines:
+        if ln in seen:
+            # Two protection pools can hand up the same line (a fact that
+            # is also an outcome line) — identical text emits once. Dedupe
+            # on the line itself, not the resolved source: two distinct
+            # originals bound to different text must both restore even
+            # when _resolve maps them to the same line.
+            continue
+        seen.add(ln)
         orig = _resolve(ln)
         if orig in present:
             # Already in the output — surviving text, a duplicate entry in
