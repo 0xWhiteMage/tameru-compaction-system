@@ -592,8 +592,6 @@ def test_secret_body_lines_are_never_pulled_back():
     # ...while the rest of the value still restores whole.
     tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
     assert "normal body" in tomllib.loads(out)["x"]["v"]
-
-
 def test_distinct_array_entries_restore_under_their_own_header():
     """Lines from different ``[[deps]]`` entries must not merge under one
     header — ``lib`` under two entries is a duplicate key, i.e. invalid TOML."""
@@ -1237,3 +1235,94 @@ def test_a_header_text_repeated_in_string_content_defers_the_close():
     parsed = tomllib.loads("\n".join(out))
     assert parsed["tbl1"]["key"] == 1
     assert "[tbl1]" in parsed["tbl0"]["ml"]  # the content copy stays string body
+def test_segmentation_keeps_a_multiline_string_span_in_one_block():
+    """Selection is block-atomic, so a multiline string split across blocks
+    can emit a partial span: the opener alone is an unterminated string that
+    swallows the rest of the extract, and bare body lines are not valid TOML
+    statements. Blank lines and shape changes inside the span must not split
+    the block — the same contract fences already have."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    lines = (
+        'ml = """\nbody alpha filler\n\nbody beta with blank line above\n'
+        '"""\n[sec1]\nkey2 = "value2 filler filler filler"'
+    ).split("\n")
+    blocks = cc.segment_blocks(lines)
+    span = [b for b in blocks if 'ml = """' in b["text"]]
+    assert len(span) == 1
+    assert '"""' in span[0]["text"].split("\n")[-1] or span[0]["text"].count('"""') >= 2
+    assert "body beta" in span[0]["text"]
+
+
+def test_a_multiline_opener_never_emits_without_its_span():
+    """End to end: at a tight budget the whole span rides its one block —
+    the extract never strands the opener as an unterminated string."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    doc = (
+        'ml = """\nmlbody0 filler filler filler filler filler\n'
+        'mlbody1 filler filler filler filler filler\n"""\n'
+        '[sec1]\nkey0 = "value0 filler filler filler filler filler filler"\n'
+        'key2 = "value2 filler filler filler filler filler filler"\n'
+        '[sec2]\nkey0 = "value0 filler filler filler filler filler filler"\n'
+        'key2 = "value2 filler filler filler filler filler filler"\n'
+        'ml = """\nmlbody0 filler filler filler filler filler\n'
+        'mlbody2 filler filler filler filler filler\n"""'
+    )
+    r = cc.compress_context(doc, "value2", budget_ratio=0.05, **OPTS)
+    txt = r.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        ln for ln in txt.split("\n")
+        if not ln.startswith(("[§", "[…", "[×", "[last")))
+    if 'ml = """' in cleaned:
+        tomllib.loads(cleaned)  # raises when an opener is stranded
+
+
+DQ = chr(34) * 3
+SQ = chr(39) * 3
+
+
+def test_segmentation_tracks_the_first_triple_kind_on_the_line():
+    'A triple-single-quoted value whose opening line also holds a double-quote triple opens a LITERAL string: the first triple by position wins and the other kind is content. Tracking the double quotes instead closed the block early at the next body triple, splitting the span.'
+    lines = ["x = " + SQ + "has " + DQ + " embedded", "body " + DQ + " line", "more", SQ, "next = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] >= 3
+
+
+def test_segmentation_sees_a_second_opener_on_the_closing_line():
+    'An array element can close one multiline string and open another on the same line. Missing the reopen ends the string tracking early, so the body lines of the second string become bare code lines no TOML parser accepts.'
+    lines = ["arr = [" + DQ + "a" + DQ + ", " + DQ, "body", DQ + "]", "next = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] >= 2
+
+
+def test_segmentation_does_not_split_settings_off_the_span_block():
+    'The block holding a multiline span is not closed at the end of the string: trailing settings keep gluing to it, so a tight budget cannot keep a setting while dropping the table header the span block carries, and the ownership of the setting never changes.'
+    lines = ["[tbl0]", "ml = " + DQ, "body", DQ, "keyhit = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] == 4
+
+
+def test_a_triple_in_the_closing_lines_comment_opens_nothing():
+    'A multiline closer can carry a trailing comment, and triple quotes inside it are comment text. Treating one as an opener leaves the scan inside a phantom string, so every later table glues into the same block and pinning one setting can block compression of the document.'
+    lines = ["[tbl0]", "ml = " + DQ, "body", DQ + " # done " + DQ, "key = 1", "[tbl1]", "x = 2"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[-1]["start"] >= 5, blocks  # [tbl1] starts its own block
+
+
+def test_a_content_quote_adjacent_to_the_close_opens_no_phantom_string():
+    'TOML lets one or two content quotes sit right against the closing delimiter. The leftover quote must not lex as a fresh single-line string — it would consume the first quote of a real multiline opener later on the line (an array of multiline elements), inverting the open state for the rest of the document.'
+    lines = ["arr = [" + DQ + "a" + DQ + '", ' + DQ, "body", DQ + "]", "next = 1"]
+    st = None
+    states = []
+    for ln in lines:
+        st = cc._advance_multiline_state(ln, st)
+        states.append(st)
+    assert states == [DQ, DQ, None, None], states
+
+
+def test_python_adjacent_concatenation_does_not_eat_the_next_strings_opener():
+    'Python adjacent-literal concatenation puts a new strings opening quote right against the triple closer. That quote is fresh code — in TOML a close can only be followed by a comma, bracket, comment or line end, so the content-quote consumption must not fire for other followers.'
+    line = "x = " + DQ + "x" + DQ + '"y" ' + DQ
+    assert cc._advance_multiline_state(line, None) == DQ
+    # TOML followers still consume the content quote
+    line2 = "arr = [" + DQ + "a" + DQ + '", ' + DQ
+    assert cc._advance_multiline_state(line2, None) == DQ
