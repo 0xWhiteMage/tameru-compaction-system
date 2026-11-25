@@ -1208,32 +1208,18 @@ def _error_protected_set(lines: list[str]) -> set[int]:
     return {i for i, ln in enumerate(lines) if ln in frozenset(prot)} if prot else set()
 
 
-# 1.10.0 (E12): the protected outcome/landmark lines of the caller's original text —
-# the same exemption contract as ``_ERR_PROTECTED`` (a destructive selector
-# pre-filter or adapter must not delete outcome evidence), populated from
-# ``_outcome_lines`` once per call and consulted through ``_outcome_protected_set``.
+# 1.10.0 (E12): the protected outcome/landmark lines of the caller's original text,
+# populated from ``_outcome_lines`` once per call. The budget-bounded restores
+# (``_restore_facts`` / ``_restore_fact_lines``) consult it to re-add whatever a
+# stage deleted — the verbatim stage exemptions were dropped (floor-only
+# calibration): a protected line inside a repeated stream or table broke the
+# fold around it and the retention cost compounded past the host's compaction
+# threshold, while the floor re-adds the same bytes without breaking folds.
 _OUTCOME_PROTECTED: "contextvars.ContextVar" = contextvars.ContextVar(
     "tameru_outcome_protected", default=frozenset()
 )
 
 
-def _outcome_protected_set(lines: list[str]) -> set[int]:
-    """Indices of ``lines`` that are protected outcome/landmark lines.
-
-    E13: only a text unique in ``lines`` gets the verbatim exemption. A
-    repeated protected text is carried by the fold's ``[×N]`` / ``[last]``
-    marker (same bytes, so substring retention holds) and a stage that
-    deletes every copy still restores it through ``_OUTCOME_PROTECTED`` —
-    exempting all 20 identical table headers was pure cost.
-    """
-    prot = _OUTCOME_PROTECTED.get()
-    if not prot:
-        return set()
-    counts: dict[str, int] = {}
-    for ln in lines:
-        if ln in prot:
-            counts[ln] = counts.get(ln, 0) + 1
-    return {i for i, ln in enumerate(lines) if ln in prot and counts[ln] == 1}
 _FRAME_HIT_SLOTS = 1
 _STRUCT_COLLAPSE_MIN = 12  # structural (query-less) pass: templates seen fewer times stay verbatim
 _FRAME_START_RE = re.compile(r"^\s*(?:at\s+\S|File\s+\"|from\s+\S+:\d+|#\d+\s+\S+\(\d+\):|#\d+\s+\{main\})")
@@ -3305,7 +3291,7 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
 
     # 1.10.0 (S5): indices into `lines` of the protected fact lines — they never fold (below).
     # The memoised fingerprint() is shared so each line is still fingerprinted once.
-    fact_protected_src = _fact_protected_set(lines, fingerprint) | _outcome_protected_set(lines)
+    fact_protected_src = _fact_protected_set(lines, fingerprint)
     # First pass: drop progress bars but remember whether we saw any. A
     # protected line is exempt — a "%" column in a landmark row (nodetool's
     # Owns%, an mtr hop's loss%) reads as a bar to the shape check but is the
@@ -3374,6 +3360,13 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
     exemplar_idx: dict[str, int] = {}
     protected_out_indices: set[int] = set()  # E12: verbatim out slots the count pass must not rewrite
     last_seen: dict[str, str] = {}  # v1.4.0 (E10): last instance of each template
+    # Floor-only calibration: a protected instance inside a collapsing run is
+    # not pinned outside the fold (that broke the fold open); instead it
+    # becomes the exemplar text at count-attach time — zero extra lines, and
+    # the decision-relevant instance (the account a failure hit, the rare
+    # variant) is the one the fold shows.
+    prot_texts = frozenset(_ERR_PROTECTED.get()) | _OUTCOME_PROTECTED.get()
+    protected_inst: dict[str, str] = {}
 
     short_counts: dict[str, int] = {}
     for line in kept_lines:
@@ -3419,6 +3412,8 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
             if fp in exemplar_idx:
                 seen[fp] += 1
                 last_seen[fp] = line
+                if prot_texts and line in prot_texts and fp not in protected_inst:
+                    protected_inst[fp] = line
                 i += 1
                 continue
             exemplar_idx[fp] = len(out)
@@ -3442,10 +3437,14 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
         fp = fingerprint(ln)
         cnt = seen.get(fp, 1) if fp else 1
         if fp and cnt > 1 and not ln.lstrip().startswith("[\u00d7"):
-            counted_out.append(f"[\u00d7{cnt}] {ln}")
-            counted_src.append(out_src[idx])
+            pin = protected_inst.get(fp)
+            # Substitute only when the protected instance would otherwise vanish:
+            # if it already survives as the first or last instance, keep those.
             last = last_seen.get(fp)
-            if cnt >= 3 and last is not None and last != ln:
+            exemplar_text = pin if pin and pin != ln and pin != last else ln
+            counted_out.append(f"[\u00d7{cnt}] {exemplar_text}")
+            counted_src.append(out_src[idx])
+            if cnt >= 3 and last is not None and last != exemplar_text:
                 counted_out.append(f"[last] {last}")
                 counted_src.append(out_src[idx])
         else:
@@ -3838,7 +3837,6 @@ def preprocess_csv(
     # 1.10.0 (S5, E6): neither is a protected error exemplar.
     fact_protected = (
         _fact_protected_set(lines) | _error_protected_set(lines)
-        | _outcome_protected_set(lines)
     )
     kept = [lines[0]]
     flags = [False] * len(lines)
@@ -3892,7 +3890,6 @@ def preprocess_flat_records(text: str, query: str) -> str:
     # 1.10.0 (S5, E6): so does a protected error exemplar.
     fact_protected = (
         _fact_protected_set(lines) | _error_protected_set(lines)
-        | _outcome_protected_set(lines)
     )
     kept = [
         line
@@ -4009,7 +4006,6 @@ def preprocess_filler_comments(text: str, query: str) -> str:
     lines = text.split("\n")
     fact_protected = (
         _fact_protected_set(lines) | _error_protected_set(lines)
-        | _outcome_protected_set(lines)
     )
     kept = [
         ln
@@ -4280,7 +4276,7 @@ def _fold_repeated_sentences(lines: list[str]) -> list[str]:
     sentence splitter. Lossless apart from exact whitespace between copies.
     """
     folded: list[str] = []
-    fact_protected = _fact_protected_set(lines) | _outcome_protected_set(lines)
+    fact_protected = _fact_protected_set(lines)
     for index, line in enumerate(lines):
         t = " ".join(line.split())
         if index not in fact_protected and len(t) >= _REPEAT_LINE_MIN_CHARS:
@@ -11953,9 +11949,13 @@ def _compress_context_impl(
     _ERR_PROTECTED.set(tuple(
         _protected_error_exemplars(protected_source)
     ))
-    # 1.10.0 (E12): outcome/landmark lines get the same stage exemption — the
-    # selector pre-filters, flat-records, filler-comments and log folds below
-    # consult ``_outcome_protected_set`` and keep a protected line verbatim.
+    # 1.10.0 (E12, floor-only calibration): outcome/landmark lines are carried
+    # by the budget-bounded restores (``_restore_facts`` / ``_restore_fact_lines``)
+    # only. The verbatim stage exemptions were dropped: a protected line inside
+    # a repeated stream or table breaks the fold around it, and the retention
+    # cost compounds past the host's compaction threshold (the oncall replay
+    # flipped 1 -> 2 compactions, cost +2.8% over stock); the floor re-adds the
+    # same bytes at line granularity without breaking folds.
     _OUTCOME_PROTECTED.set(frozenset(f[3] for f in outcome_lines))
     industrial, degraded, payload_industrial = _industrial_preflight(
         adapter_gap=adapter_gap, analysis_text=analysis_text,
@@ -12216,6 +12216,12 @@ def _compress_context_impl(
     # the existing rule.
     if not fail_open and (fact_lines or break_lines or outcome_lines):
         line_set = set(lines)
+        # Floor-only calibration: an outcome line a template fold carries as
+        # its exemplar text survives preprocessing (substring retention — the
+        # count attach rewrites the line, so exact membership never matches).
+        # The gate's safety purpose is unaffected: the scan never protects
+        # secret or injection shapes, and ``_is_trust_risk_line`` still vetoes.
+        joined_lines = "\n".join(lines)
         floor_facts = [
             f for f in fact_lines
             if f[3] in line_set and not _is_trust_risk_line(f[3])
@@ -12228,7 +12234,7 @@ def _compress_context_impl(
         floor_seen.update(f[3] for f in floor_pool)
         floor_pool += [
             f for f in outcome_lines
-            if f[3] in line_set and f[3] not in floor_seen
+            if (f[3] in line_set or f[3] in joined_lines) and f[3] not in floor_seen
         ]
         if floor_pool:
             budget_chars = int(budget_ratio * len(caller_text)) if budget_ratio else None
