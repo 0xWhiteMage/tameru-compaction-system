@@ -1860,10 +1860,18 @@ def _blank_same_line_triples(ln: str) -> tuple[str, list[tuple[int, int]]]:
     unpaired = [(s, s + 3) for qs in waiting.values() for s in qs]
     if not spans:
         return ln, unpaired
-    spans.sort()
+    # An opposite-kind pair inside an open string nests INSIDE its span —
+    # walking raw spans rewinds past the outer end and re-emits the tail,
+    # exposing the real closer. Merge overlapping spans first.
+    merged: list[list[int]] = []
+    for s, e in sorted(spans):
+        if merged and s < merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
     parts: list[str] = []
     pos = 0
-    for s, e in spans:
+    for s, e in merged:
         parts.append(ln[pos:s])
         parts.append(" " * (e - s))
         pos = e

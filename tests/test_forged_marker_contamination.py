@@ -750,4 +750,25 @@ def test_the_string_mask_counts_a_closer_after_an_escaped_quote():
     esc = chr(92)
     text = 'x = """a' + esc + '""""' + '\nafter_v = 2'
     assert "after_v = 2" not in cc._triple_quoted_lines(text)
+<<<<<<< HEAD
 >>>>>>> d15bc76 (fix(engine): a closer right after an escaped quote is no longer eaten)
+||||||| parent of d9ec91a (fix(engine): nested same-line triple spans no longer expose the outer closer)
+=======
+
+
+def test_same_line_triple_holding_an_opposite_pair_blanks_wholesale():
+    """``x = \"\"\"a'''b'''c\"\"\"`` is ONE closed string: the nested ``'''`` pair
+    must not rewind the blanking and re-expose the real ``\"\"\"`` closer —
+    an exposed closer opens the mask on live lines after it."""
+    from tameru.compress_context import _blank_same_line_triples
+    ln = 'x = """a\'\'\'b\'\'\'c"""'
+    scrubbed, unpaired = _blank_same_line_triples(ln)
+    assert scrubbed == "x = " + " " * (len(ln) - 4)
+    assert '"""' not in scrubbed and "'''" not in scrubbed
+    assert unpaired == []
+    # Mirror image.
+    ln2 = "x = '''a\"\"\"b\"\"\"c'''"
+    s2, u2 = _blank_same_line_triples(ln2)
+    assert '"""' not in s2 and "'''" not in s2
+    assert u2 == []
+>>>>>>> d9ec91a (fix(engine): nested same-line triple spans no longer expose the outer closer)
