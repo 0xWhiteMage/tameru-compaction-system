@@ -1956,9 +1956,14 @@ def _quote_aware_code_part(ln: str) -> str:
         # A literal that swallowed a run whole ('a """') is blanked; a bare
         # ""/'' match only overlapping the run's own quotes IS the opener.
         # A "literal" starting INSIDE a run (``"""ba'''"`` matches ``"ba'''"``)
-        # is part of the run, not a literal — keep it or the run's quotes go.
+        # is part of the run, not a literal — keep only the run's own quote
+        # chars; its content stays blanked so a ``"""`` inside it never reads
+        # as a live delimiter (``x = '''x"""'`` keeps ``'''``, hides ``"""``).
         if any(ts < s < te for ts, te in tri_runs):
-            return m.group(0)
+            return "".join(
+                c if any(ts <= s + i < te for ts, te in tri_runs) else " "
+                for i, c in enumerate(m.group(0))
+            )
         if any(s <= ts and e >= te for ts, te in tri_runs) or not any(
             s < te and e > ts for ts, te in tri_runs
         ):
@@ -2425,9 +2430,14 @@ def _triple_quoted_lines(text: str) -> set[str]:
             # ``'a """'``) is blanked; a bare ``""``/``''`` match that only
             # overlaps the run's own quotes (``x = 'a' """``) is the opener
             # and must survive. A "literal" starting INSIDE a run (its first
-            # quote is the run's last) keeps its text too.
+            # quote is the run's last) is part of the run — keep only the
+            # run's own quote chars; blanking the rest hides stray
+            # delimiters its content may hold (``x = '''x"""'``).
             if any(ts < s < te for ts, te in tri_runs):
-                return m.group(0)
+                return "".join(
+                    c if any(ts <= s + i < te for ts, te in tri_runs) else " "
+                    for i, c in enumerate(m.group(0))
+                )
             if any(s <= ts and e >= te for ts, te in tri_runs) or not any(
                 s < te and e > ts for ts, te in tri_runs
             ):
