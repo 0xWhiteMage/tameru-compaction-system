@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Fix: a non-iterable `artifact_markers` option names itself in the `TypeError` instead of `recursion_markers`.
 - Fix: `brief_context` validates `budget_chars` — a non-numeric value raises `TypeError`, a non-positive or non-finite value raises `ValueError`, and `yaml_requires_original` tolerates `None` instead of raising `TypeError`.
+- Fix: outcome/landmark protection flows through the budget-bounded restores only; the verbatim stage exemptions are dropped because one protected line inside a repeated stream or table broke the fold around it and the retention cost compounded past host compaction thresholds. Detection classes, the scan and the selection floor are unchanged.
 - Fix: the worker protocol's `min_savings_ratio` range is exclusive at 1.0 — a wire value of `1` fails validation as `bad_min_savings_ratio` instead of reaching the engine as a `ValueError`.
 - Performance: merge same-answer per-line probes into single compiled alternations — the five "log" patterns and two "chat" patterns in `classify_line`, and the failure-context and furniture guards in `_outcome_lines_scan`, which now computes each line's error flag once. Output is byte-identical. (#14)
 - Security: bound configured pin regex structure and aggregate search cost before searching tool output. Unsafe or invalid pin patterns preserve the full original input; bounded safe patterns retain their matching behavior.
