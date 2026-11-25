@@ -304,6 +304,15 @@ def _token_units_gen(text: str):
     """Yield the units ``token_units`` returns, without materializing the list (S7)."""
     run: list[str] = []
     run_script: str | None = None
+    # A joiner with no run to extend is still a logical unit — the tokenizer's
+    # contract covers every non-separator char, so ``-abc`` must not read as
+    # ``abc``. But a divider like ``----------`` is ONE unit, not ten: the
+    # estimator already prices long punctuation runs separately, and charging a
+    # unit per hyphen would double-count the run. ADJACENT joiners share the
+    # group; a separator between them (``- - -``) starts a new unit, matching
+    # the estimator's per-run charge.
+    pending_joiners: list[list[str]] = []
+    joiner_open = False
 
     def flush() -> str | None:
         nonlocal run_script
@@ -312,17 +321,32 @@ def _token_units_gen(text: str):
         run_script = None
         return unit
 
+    def drain_joiners():
+        for group in pending_joiners:
+            yield "".join(group)
+        pending_joiners.clear()
+
+    def _hold_joiner(cluster: str) -> None:
+        nonlocal joiner_open
+        if joiner_open:
+            pending_joiners[-1].append(cluster)
+        else:
+            pending_joiners.append([cluster])
+        joiner_open = True
+
     ascii_class = _ASCII_TOKEN_CLASS
     for cluster in iter_graphemes(matching_shadow(text)):
         # Perf (v1.5.0): a one-character ASCII cluster (nearly every cluster of
         # mixed text) is decided from a table; the general path below gives the
         # same answer for it.
+        lone_joiner = False
         if len(cluster) == 1 and cluster < "\x80":
             kind = ascii_class[ord(cluster)]
             if kind == 1:
                 if run and run_script and run_script != "latin":
                     unit = flush()
                     if unit is not None:
+                        yield from drain_joiners()
                         yield unit
                 run.append(cluster)
                 run_script = run_script or "latin"
@@ -330,15 +354,22 @@ def _token_units_gen(text: str):
                 run.append(cluster)
             elif kind == 3 and run:
                 run.append(cluster)
+            elif kind == 3:
+                _hold_joiner(cluster)
+                lone_joiner = True
             else:
                 unit = flush()
                 if unit is not None:
+                    yield from drain_joiners()
                     yield unit
+            joiner_open = joiner_open and lone_joiner
             continue
         if not cluster or cluster.isspace():
             unit = flush()
             if unit is not None:
+                yield from drain_joiners()
                 yield unit
+            joiner_open = False
             continue
         representative = _representative(cluster)
         category = unicodedata.category(representative) if representative else ""
@@ -346,26 +377,39 @@ def _token_units_gen(text: str):
         if category[:1] in {"L", "N", "M"}:
             if script in _NO_SPACE_SCRIPTS:
                 unit = flush()
+                yield from drain_joiners()
                 if unit is not None:
                     yield unit
                 yield cluster
+                joiner_open = False
                 continue
             if run and script and run_script and script != run_script:
                 unit = flush()
                 if unit is not None:
+                    yield from drain_joiners()
                     yield unit
             run.append(cluster)
             run_script = run_script or script
+            joiner_open = False
             continue
-        if all(char in _WORD_JOINERS for char in cluster) and run:
+        all_joiners = all(char in _WORD_JOINERS for char in cluster)
+        if all_joiners and run:
             run.append(cluster)
+            joiner_open = False
             continue
         unit = flush()
+        yield from drain_joiners()
         if unit is not None:
             yield unit
-        if any(unicodedata.category(char) == "So" for char in cluster):
-            yield cluster
+        if all_joiners:
+            _hold_joiner(cluster)
+            joiner_open = True
+        else:
+            joiner_open = False
+            if any(unicodedata.category(char) == "So" for char in cluster):
+                yield cluster
     unit = flush()
+    yield from drain_joiners()
     if unit is not None:
         yield unit
 
