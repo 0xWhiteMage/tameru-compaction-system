@@ -1797,23 +1797,30 @@ def _blank_same_line_triples(ln: str) -> tuple[str, list[tuple[int, int]]]:
         if m.group(0) == "'''" or not _odd_backslashes(ln, m.start())
     ]
     spans: list[tuple[int, int]] = []
-    unpaired: list[tuple[int, int]] = []
-    i = 0
-    while i < len(runs):
-        s, q = runs[i]
-        j = i + 1
-        while j < len(runs) and runs[j][1] != q:
-            j += 1
-        if j < len(runs):
-            spans.append((s, runs[j][0] + 3))
-            i = j + 1
+    waiting: dict[str, list[int]] = {}
+    for s, q in runs:
+        if waiting.get(q):
+            s0 = waiting[q].pop()
+            if not waiting[q]:
+                del waiting[q]
+            spans.append((s0, s + 3))
+            # An opposite-kind run inside the closed span is string
+            # content — ``'''a"""'''`` holds no real ``"""`` opener.
+            other = "'''" if q == '"""' else '"""'
+            if other in waiting:
+                waiting[other] = [p for p in waiting[other] if not s0 <= p <= s]
+                if not waiting[other]:
+                    del waiting[other]
         else:
-            unpaired.append((s, s + 3))
-            i += 1
-    scrubbed = ln
-    for s, e in reversed(spans):
-        scrubbed = scrubbed[:s] + " " * (e - s) + scrubbed[e:]
-    return scrubbed, unpaired
+            waiting.setdefault(q, []).append(s)
+    unpaired = [(s, s + 3) for qs in waiting.values() for s in qs]
+    if not spans:
+        return ln, unpaired
+    chars = list(ln)
+    for s, e in spans:
+        for p in range(s, e):
+            chars[p] = " "
+    return "".join(chars), unpaired
 _SINGLE_QUOTED_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'[^\']*\'')
 
 
