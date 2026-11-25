@@ -627,3 +627,28 @@ def test_a_multiline_opener_never_emits_without_its_span():
         if not ln.startswith(("[§", "[…", "[×", "[last")))
     if 'ml = """' in cleaned:
         tomllib.loads(cleaned)  # raises when an opener is stranded
+
+
+DQ = chr(34) * 3
+SQ = chr(39) * 3
+
+
+def test_segmentation_tracks_the_first_triple_kind_on_the_line():
+    'A triple-single-quoted value whose opening line also holds a double-quote triple opens a LITERAL string: the first triple by position wins and the other kind is content. Tracking the double quotes instead closed the block early at the next body triple, splitting the span.'
+    lines = ["x = " + SQ + "has " + DQ + " embedded", "body " + DQ + " line", "more", SQ, "next = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] >= 3
+
+
+def test_segmentation_sees_a_second_opener_on_the_closing_line():
+    'An array element can close one multiline string and open another on the same line. Missing the reopen ends the string tracking early, so the body lines of the second string become bare code lines no TOML parser accepts.'
+    lines = ["arr = [" + DQ + "a" + DQ + ", " + DQ, "body", DQ + "]", "next = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] >= 2
+
+
+def test_segmentation_does_not_split_settings_off_the_span_block():
+    'The block holding a multiline span is not closed at the end of the string: trailing settings keep gluing to it, so a tight budget cannot keep a setting while dropping the table header the span block carries, and the ownership of the setting never changes.'
+    lines = ["[tbl0]", "ml = " + DQ, "body", DQ, "keyhit = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] == 4

@@ -1806,6 +1806,26 @@ def _unescaped_triple_count(line: str, delim: str) -> int:
 
 def _has_unescaped_triple(line: str, delim: str) -> bool:
     return bool(_triple_close_positions(line, delim))
+
+
+def _advance_multiline_state(code: str, state: str | None) -> str | None:
+    """Advance TOML multiline-string state across one line, position
+    ordered. The first unescaped triple of either kind opens the string
+    (a same-line triple of the other kind after the opener is literal
+    content, not a competing opener); inside one only its own delimiter
+    closes it; and the remainder after a close is fresh code that may
+    open another string on the same line."""
+    dq = _triple_close_positions(code, '"""')
+    sq = _triple_close_positions(code, "'''")
+    events = sorted([(pos, '"""') for pos in dq] + [(pos, "'''") for pos in sq])
+    for _, kind in events:
+        if state is None:
+            state = kind
+        elif kind == state:
+            state = None
+    return state
+
+
 _TRIPLE_RUN_RE = re.compile(r'"""|\'\'\'')
 
 
@@ -4714,10 +4734,12 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
             # blank line or a shape change must not split the block, because
             # selection is block-atomic: a partial span emits an unterminated
             # opener or bare body lines, and no TOML parser accepts either.
+            # The block is NOT closed at the closer: trailing settings keep
+            # gluing to the span's block exactly as they did before strings
+            # were tracked, so a tight budget cannot keep a setting while
+            # dropping the table header the span block carries.
             tokens += line_toks
-            if _has_unescaped_triple(line, in_string):
-                close(i)
-                in_string = None
+            in_string = _advance_multiline_state(line, in_string)
             prev_type = kind
             continue
         if kind == "fence":
@@ -4767,10 +4789,7 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
         # literal are text, and an even count opens and closes on the line.
         if in_string is None:
             code = _quote_aware_code_part(line)
-            if _unescaped_triple_count(code, '"""') % 2:
-                in_string = '"""'
-            elif _unescaped_triple_count(code, "'''") % 2:
-                in_string = "'''"
+            in_string = _advance_multiline_state(code, None)
         prev_type = kind
     close(len(lines) - 1)
     return blocks
