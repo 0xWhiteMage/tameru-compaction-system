@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
+- Fix: an escaped backslash no longer hides a triple-quote closer — ``\\`` followed by ``"""`` is a literal backslash plus a real delimiter, but the single-character ``(?<!\\)`` lookbehind rejected it, so the mask stayed open past the close: the next section header read as string content and a dropped setting restored under the wrong table. Both the restore walk and the example mask now check backslash-run parity.
 - Fix: the triple-quote mask counted a ``"""`` that followed a ``#`` or ``;`` inside a quoted literal as a comment — never seeing the real opener — so the string's body read as live settings and every line after its closer was swallowed as inside-string text. Quote spans are blanked before looking for the comment tail, so only a bare ``#``/``;`` starts a comment. The restore walk applies the same rule after a string closes mid-line: a ``#``/``;`` comment in the closer's tail (``''' # note """``) hides the delimiters it mentions, so the next section header stays real code and dropped lines restore under it. - Unreleased
 
 - Fix: `check_host_rules.py` missed `from urllib import request`-style imports — the `ImportFrom` visitor only checked the parent package (`urllib`), which is not a listed network module, so the submodule it actually binds (`urllib.request`) slipped past the network gate. Each imported name is now also checked as a module path (`urllib.request`, `asyncio.streams`, ...).

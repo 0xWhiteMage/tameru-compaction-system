@@ -693,4 +693,33 @@ def test_a_comment_after_a_string_close_does_not_reopen_the_mask():
         {"drop_v = 2": 5})
     assert r.split("\n")[-1] == "drop_v = 2"
     assert "[real_header]" in r
+<<<<<<< HEAD
 >>>>>>> 21faa1b (fix(engine): a comment after a string close hides the delimiters it mentions)
+||||||| parent of 72f3941 (fix(engine): an escaped backslash no longer hides a triple closer)
+=======
+
+
+def test_an_escaped_backslash_does_not_hide_a_triple_closer():
+    # ``\\"""`` is an escaped backslash then a REAL ``"""`` closer — a
+    # single-char ``(?<!\\)`` lookbehind rejects it, so the mask stays open
+    # and the following header is skipped: a dropped ``[other]`` line would
+    # restore under the wrong table. tomllib closes the string.
+    import tomllib
+    from tameru import compress_context as cc
+    esc = chr(92)
+    after = "x = \"\"\"" + esc + esc + '"""' + "\n[other]\nkeep_v = 1"
+    tomllib.loads(after + "\n")  # sanity: the doc itself parses
+    r = cc._restored_block(
+        after, ["drop_v = 2"], {"drop_v = 2": "[other]"},
+        {"drop_v = 2": 3})
+    assert r.split("\n")[-1] == "drop_v = 2"
+    assert "[other]" in r
+
+
+def test_the_string_mask_also_closes_on_a_post_escape_triple():
+    # Same ``\\"""`` in ``_triple_quoted_lines``: the closer must count.
+    from tameru import compress_context as cc
+    esc = chr(92)
+    text = 'x = """a' + esc + esc + '"""\nafter_v = 2'
+    assert "after_v = 2" not in cc._triple_quoted_lines(text)
+>>>>>>> 72f3941 (fix(engine): an escaped backslash no longer hides a triple closer)

@@ -1791,6 +1791,19 @@ def _missing_in_original_order(missing: list[tuple[int, int, str]]) -> list[str]
 
 _SECTION_HEAD_RE = re.compile(r"^\s*\[")
 
+def _odd_backslashes(s: str, i: int) -> bool:
+    """``s[i]`` is escaped — preceded by an odd run of backslashes.
+
+    ``\\`` + a triple quote is an escaped backslash then a REAL delimiter;
+    a single-char ``(?<!\\)`` lookbehind wrongly rejects it."""
+    n = 0
+    j = i - 1
+    while j >= 0 and s[j] == "\\":
+        n += 1
+        j -= 1
+    return n % 2 == 1
+
+
 _UNESCAPED_TRIPLE_DQ = re.compile(r'(?<!\\)"""')
 _UNESCAPED_TRIPLE_SQ = re.compile(r"(?<!\\)'''")
 
@@ -1971,10 +1984,10 @@ def _restored_block(
         # delimiters it mentions never open a new string. The comment cut is
         # computed once, after the first close on the line.
         cut: int | None = None
-        for m in re.finditer(r'(?<!\\)"""|(?<!\\)\'\'\'', code):
+        for m in re.finditer(r'"""|\'\'\'', code):
             if cut is not None and m.start() >= cut:
                 break
-            if m.group(0) == '"""' and not inside_literal:
+            if m.group(0) == '"""' and not inside_literal and not _odd_backslashes(code, m.start()):
                 inside_basic = not inside_basic
                 if not inside_basic and cut is None:
                     cut = m.end() + len(_toml_code_part(code[m.end():]))
@@ -2310,7 +2323,9 @@ def _triple_quoted_lines(text: str) -> set[str]:
         # first would mis-track the open kind and mask past the real
         # closer. A ``\'\'\'`` run always toggles (TOML literals do not
         # escape); a ``\"\"\"`` run toggles only when unescaped.
-        for m in re.finditer(r'(?<!\\)"""|\'\'\'', code):
+        for m in re.finditer(r'"""|\'\'\'', code):
+            if m.group(0) == '"""' and _odd_backslashes(code, m.start()):
+                continue
             if inside is None:
                 inside = m.group(0)
             elif m.group(0) == inside:
