@@ -52,6 +52,17 @@ def test_cli_limits_default_to_industrial_limits():
     assert custom.max_record_chars == 42
 
 
+@pytest.mark.parametrize("bad", ["/nonexistent-tameru-input", "/tmp"])
+def test_cli_unreadable_context_file_errors_cleanly(bad):
+    done = _run_cli(
+        "from tameru.cli import main; raise SystemExit(main())",
+        [bad, "question"],
+    )
+    assert done.returncode == 2, done.stderr
+    assert "cannot read" in done.stderr
+    assert "Traceback" not in done.stderr
+
+
 def test_cli_compresses_stdin():
     done = _run_cli(
         "from tameru.cli import main; raise SystemExit(main())",
