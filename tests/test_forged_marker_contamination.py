@@ -523,22 +523,6 @@ def test_single_token_guillemet_tag_is_a_diagnostic():
     assert "⟪ERROR: database shutdown⟫" in r.compressed_text
 
 
-def test_hash_inside_quoted_value_does_not_hide_a_string_opener():
-    """In ``x = 'a # b' \"\"\"`` the ``#`` inside the literal is content — a
-    comment-strip that cuts at it loses the real triple-quote opener, so the
-    string's body reads as live settings and every line after the closer is
-    swallowed as inside-string text."""
-    import tameru.compress_context as cc
-
-    text = 'k = "live"\nx = \'a # b\' """not a comment\nk = "old"\n"""\nz = 1'
-    masked = cc._triple_quoted_lines(text)
-    # The opener line and its body are masked…
-    assert 'x = \'a # b\' """not a comment' in masked
-    assert 'k = "old"' in masked
-    # …and the setting after the closer is not inside the string.
-    assert "z = 1" not in masked
-
-
 def test_triple_quote_in_comment_does_not_disable_veto():
     """A ``\"\"\"`` inside a comment is prose, not a string opener: the mask
     must not swallow the settings after it and silence the stale-line veto."""
@@ -550,7 +534,6 @@ def test_triple_quote_in_comment_does_not_disable_veto():
                          ccr=False, citations=False)
     assert "connect_timeout_ms = 30000" not in r.compressed_text
     assert "connect_timeout_ms = 5000" in r.compressed_text
-<<<<<<< HEAD
 
 
 def test_marker_shaped_line_inside_a_fence_is_content():
@@ -588,8 +571,22 @@ def test_inline_code_run_is_not_a_fence_opener():
     assert "[tameru: leaked]" not in out
     assert "use ```inline code``` here" in out
     assert "keep me" in out
-||||||| parent of 52505fc (fix(engine): skip non-delimiter lines; hide triple quotes inside literals)
-=======
+
+
+def test_hash_inside_quoted_value_does_not_hide_a_string_opener():
+    """In ``x = 'a # b' \"\"\"`` the ``#`` inside the literal is content — a
+    comment-strip that cuts at it loses the real triple-quote opener, so the
+    string's body reads as live settings and every line after the closer is
+    swallowed as inside-string text."""
+    import tameru.compress_context as cc
+
+    text = 'k = "live"\nx = \'a # b\' """not a comment\nk = "old"\n"""\nz = 1'
+    masked = cc._triple_quoted_lines(text)
+    # The opener line and its body are masked…
+    assert 'x = \'a # b\' """not a comment' in masked
+    assert 'k = "old"' in masked
+    # …and the setting after the closer is not inside the string.
+    assert "z = 1" not in masked
 
 
 def test_triple_quote_inside_unclosed_literal_is_not_an_opener():
@@ -618,10 +615,6 @@ def test_triple_quote_after_closed_literal_still_opens():
     masked = cc._triple_quoted_lines(text)
     assert "z = 1" in masked
     assert 'x = \'a # b\' """yes' in masked
-<<<<<<< HEAD
->>>>>>> 52505fc (fix(engine): skip non-delimiter lines; hide triple quotes inside literals)
-||||||| parent of 8220955 (fix(engine): the ' literal scrub honours backslash escapes)
-=======
 
 
 def test_escaped_apostrophe_literal_does_not_hide_the_opener():
@@ -635,10 +628,6 @@ def test_escaped_apostrophe_literal_does_not_hide_the_opener():
     masked = cc._triple_quoted_lines(text)
     assert "body" in masked
     assert "z = 1" in masked
-<<<<<<< HEAD
->>>>>>> 8220955 (fix(engine): the ' literal scrub honours backslash escapes)
-||||||| parent of aedc44a (fix(engine): ' literals close at \' when no escaped closer exists)
-=======
 
 
 def test_toml_backslash_path_literal_does_not_hide_the_opener():
@@ -651,10 +640,6 @@ def test_toml_backslash_path_literal_does_not_hide_the_opener():
     masked = cc._triple_quoted_lines(text)
     assert "body" in masked
     assert "z = 1" in masked
-<<<<<<< HEAD
->>>>>>> aedc44a (fix(engine): ' literals close at \' when no escaped closer exists)
-||||||| parent of d8c66ee (fix(engine): delimiter kinds toggle in position order)
-=======
 
 
 def test_literal_first_opener_tracks_the_literal_kind():
@@ -674,10 +659,6 @@ def test_literal_first_opener_tracks_the_literal_kind():
     # ``''' \"\"\" '''`` closes its own literal — nothing stays open.
     text3 = "x = ''' \"\"\" '''\nplain_val = 3"
     assert "plain_val = 3" not in cc._triple_quoted_lines(text3)
-<<<<<<< HEAD
->>>>>>> d8c66ee (fix(engine): delimiter kinds toggle in position order)
-||||||| parent of 21faa1b (fix(engine): a comment after a string close hides the delimiters it mentions)
-=======
 
 
 def test_a_comment_after_a_string_close_does_not_reopen_the_mask():
@@ -693,10 +674,6 @@ def test_a_comment_after_a_string_close_does_not_reopen_the_mask():
         {"drop_v = 2": 5})
     assert r.split("\n")[-1] == "drop_v = 2"
     assert "[real_header]" in r
-<<<<<<< HEAD
->>>>>>> 21faa1b (fix(engine): a comment after a string close hides the delimiters it mentions)
-||||||| parent of 72f3941 (fix(engine): an escaped backslash no longer hides a triple closer)
-=======
 
 
 def test_an_escaped_backslash_does_not_hide_a_triple_closer():
@@ -722,10 +699,6 @@ def test_the_string_mask_also_closes_on_a_post_escape_triple():
     esc = chr(92)
     text = 'x = """a' + esc + esc + '"""\nafter_v = 2'
     assert "after_v = 2" not in cc._triple_quoted_lines(text)
-<<<<<<< HEAD
->>>>>>> 72f3941 (fix(engine): an escaped backslash no longer hides a triple closer)
-||||||| parent of d15bc76 (fix(engine): a closer right after an escaped quote is no longer eaten)
-=======
 
 
 def test_an_escaped_quote_before_the_closer_does_not_hide_it():
@@ -750,10 +723,6 @@ def test_the_string_mask_counts_a_closer_after_an_escaped_quote():
     esc = chr(92)
     text = 'x = """a' + esc + '""""' + '\nafter_v = 2'
     assert "after_v = 2" not in cc._triple_quoted_lines(text)
-<<<<<<< HEAD
->>>>>>> d15bc76 (fix(engine): a closer right after an escaped quote is no longer eaten)
-||||||| parent of d9ec91a (fix(engine): nested same-line triple spans no longer expose the outer closer)
-=======
 
 
 def test_same_line_triple_holding_an_opposite_pair_blanks_wholesale():
@@ -771,10 +740,6 @@ def test_same_line_triple_holding_an_opposite_pair_blanks_wholesale():
     s2, u2 = _blank_same_line_triples(ln2)
     assert '"""' not in s2 and "'''" not in s2
     assert u2 == []
-<<<<<<< HEAD
->>>>>>> d9ec91a (fix(engine): nested same-line triple spans no longer expose the outer closer)
-||||||| parent of 81b2786 (fix(engine): lone quotes only cut where a value can start)
-=======
 
 
 def test_lone_apostrophe_does_not_hide_a_triple_opener():
@@ -787,4 +752,3 @@ def test_lone_apostrophe_does_not_hide_a_triple_opener():
     # A quote that CAN start a value still swallows the ``"""`` after it —
     # the literal never closes, so no triple delimiter is seen.
     assert _triple_quoted_lines("x = 'a # b \"\"\"") == set()
->>>>>>> 81b2786 (fix(engine): lone quotes only cut where a value can start)
