@@ -245,8 +245,12 @@ def _triple_state(open_kind: str | None, line: str) -> str | None:
         s = m.start()
         pos = m.end()
         if lit is not None:
-            if k == lit and not _odd_backslashes(line, s):
+            if k[0] == lit and not _odd_backslashes(line, s):
+                # The run's first quote closes the literal — ``'t''''`` is
+                # ``'t'`` then ``'''`` — so retry one char in and let the
+                # leftover quotes form a real ``'''``/``"""`` delimiter.
                 lit = None
+                pos = s + 1
             continue
         if k in ("'", '"'):
             # A quote inside an open multiline string is content; outside

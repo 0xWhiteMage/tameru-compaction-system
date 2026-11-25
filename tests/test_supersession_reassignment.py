@@ -784,3 +784,15 @@ def test_triple_state_delimiter_inside_comment_is_text():
     # But once the string is open a `#` is content, not a comment.
     assert _triple_state(None, "x = a = 1''' # '''") is None
     assert _triple_state('"""', 'a # b """ c') is None
+
+
+def test_triple_state_run_closes_a_single_literal_first():
+    """``'t''''`` is ``'t'`` + ``'''``: inside a ``'`` literal a ``'''`` run's
+    first quote is the literal's closer, not a swallowed token — the leftover
+    quotes still form the delimiter."""
+    from tameru.supersession import _triple_state
+    assert _triple_state(None, "x = 't''''x = 1") == "'''"
+    assert _triple_state(None, 'x = "t""""x = 1') == '"""'
+    # A run of the other quote kind stays literal content.
+    assert _triple_state(None, "x = 'a'''b'''") == "'''"
+    assert _triple_state(None, "x = 'a\"b'") is None
