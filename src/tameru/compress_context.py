@@ -1805,7 +1805,12 @@ def _triple_close_positions(line: str, delim: str) -> list[int]:
     while i >= 0:
         if delim == "'''" or not _odd_backslashes(line, i):
             out.append(i)
-        i = line.find(delim, i + 3)
+            i = line.find(delim, i + 3)
+        else:
+            # Escaped: step one quote so an adjacent real closer — the
+            # ``\\"`` of ``\\"`` immediately followed by the closing run —
+            # is not skipped over.
+            i = line.find(delim, i + 1)
     return out
 
 

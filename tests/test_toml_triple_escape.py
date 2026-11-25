@@ -28,3 +28,9 @@ def test_content_after_masked_string_not_treated_as_inside():
     out = compress_context("\n".join(parts), "target_key", ccr=False, citations=False)
     assert not out.fail_open
     assert "target_key = needed" in out.compressed_text
+
+
+def test_escaped_quote_before_closer_not_skipped():
+    # \" is an escaped quote; the immediately following triple still closes.
+    line = 'x = ' + DQ + 'a' + chr(92) + chr(34) + DQ
+    assert _triple_close_positions(line, DQ) == [4, 10]
