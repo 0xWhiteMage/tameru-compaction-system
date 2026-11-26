@@ -439,6 +439,17 @@ def test_huge_sample_measures_folded_blocks_before_trimming_edges(monkeypatch):
     assert "tl030=v" in sample
 
 
+def test_huge_sample_blocks_match_recursive_newline_normalization():
+    # Bare carriage returns are separate rows in the recursive pass even though
+    # the sampler's raw LF split keeps them inside one line. Measure that same
+    # normalized shape before deciding whether dense records fit.
+    import tameru.compress_context as cc
+
+    sample = "\r".join(f"row{i:03d}=value" for i in range(30))
+    recursive = tuple(cc._norm_newlines(sample).split("\n"))
+    assert len(cc._huge_sample_blocks(sample)) == len(cc._segment_blocks_memo(recursive))
+
+
 def test_huge_multiline_control_disables_offset_based_edge_trimming(monkeypatch):
     # A newline inside an OSC title is control payload, not a caller row. Once
     # ANSI-free block spans no longer index raw rows, the sampler must not use

@@ -14437,6 +14437,7 @@ def _evenly_spaced(items: list[Any], target: int) -> list[Any]:
 def _huge_sample_blocks(sample: str) -> list[dict[str, Any]]:
     """Blocks the recursive pass will segment for ``sample`` (0/1 line-based record shapes included)."""
     measured = strip_ansi(sample) if "\x1b" in sample else sample
+    measured = _norm_newlines(measured)
     return _segment_blocks_memo(tuple(measured.split("\n")))
 
 
@@ -14776,7 +14777,7 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     blocks = len(segmented)
     if blocks <= max_blocks:
         return sample
-    measured = strip_ansi(sample) if "\x1b" in sample else sample
+    measured = _norm_newlines(strip_ansi(sample) if "\x1b" in sample else sample)
     if measured.count("\n") != sample.count("\n"):
         # A newline inside a terminal control string is not a caller row, so
         # ANSI-free block spans no longer index raw rows. Return the untrimmed
