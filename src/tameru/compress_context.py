@@ -14807,10 +14807,11 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
             1 for block in segmented
             if min(int(block["end"]), base_line + len(errs) - 1) >= max(int(block["start"]), base_line)
         )
-        keep_blocks = max(0, error_blocks - over)
-        if keep_blocks == error_blocks:
-            keep_blocks -= 1
-        errs = _thin_errors_by_block_coverage(errs, segmented, base_line, keep_blocks)
+        keep_blocks = max(1, error_blocks - over) if error_blocks else 0
+        thinned = _thin_errors_by_block_coverage(errs, segmented, base_line, keep_blocks)
+        if thinned == errs:
+            break
+        errs = thinned
         sample = _join_huge_sample(head, errs, tail)
         segmented = _huge_sample_blocks(sample)
         blocks = len(segmented)

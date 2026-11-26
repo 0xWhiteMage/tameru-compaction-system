@@ -533,6 +533,19 @@ def test_huge_blockaware_trim_skips_unremovable_anchor_blocks():
     assert tail_out == tail
 
 
+def test_huge_tight_block_cap_keeps_middle_error_evidence():
+    # When opening/error/closing evidence cannot all fit, the sample may stay
+    # oversized and fail open, but block fitting must not succeed after erasing
+    # every middle error it sampled.
+    from tameru.compress_context import _HUGE_CHARS, _HUGE_EDGE_CHARS, _huge_sample
+
+    errors = "\n".join(f"error {index}" for index in range(2_000))
+    filler = "f" * _HUGE_CHARS
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + errors + "\n" + filler + "\n" + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big, max_blocks=3, max_lines=250_000)
+    assert any(line.startswith("error ") for line in sample.splitlines())
+
+
 def test_huge_dense_edges_converge_without_repeated_segmentation(monkeypatch):
     # Blank-separated edge rows need several rows per block removal. Measuring
     # that density must converge in a few passes, not one row per excess block.
