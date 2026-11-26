@@ -14436,7 +14436,9 @@ def _evenly_spaced(items: list[Any], target: int) -> list[Any]:
 
 def _huge_sample_blocks(sample: str) -> list[dict[str, Any]]:
     """Blocks the recursive pass will segment for ``sample`` (0/1 line-based record shapes included)."""
-    return _segment_blocks_memo(tuple(sample.split("\n")))
+    measured = strip_ansi(sample) if "\x1b" in sample else sample
+    measured = _norm_newlines(measured)
+    return _segment_blocks_memo(tuple(measured.split("\n")))
 
 
 def _huge_error_base_line(sample: str, head: str, errs: list[str]) -> int:
@@ -14501,14 +14503,14 @@ def _lf_lines_keepends(text: str) -> list[str]:
 
 def _first_nonblank_index(lines: list[str]) -> int:
     for index, line in enumerate(lines):
-        if line.strip():
+        if strip_ansi(line).strip():
             return index
     return 0
 
 
 def _last_nonblank_index(lines: list[str]) -> int:
     for index in range(len(lines) - 1, -1, -1):
-        if lines[index].strip():
+        if strip_ansi(lines[index]).strip():
             return index
     return max(0, len(lines) - 1)
 
@@ -14767,6 +14769,23 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     # reservation, dense edge records can consume the whole ceiling and erase
     # every error the middle sample was meant to carry.
     if len(sample.split("\n")) <= max_blocks:
+        return sample
+    # Measure the folded full sample before sacrificing edge rows. Middle
+    # diagnostics can change record-shape detection and fold dense edge rows
+    # below the ceiling even when the edges alone measure as separate records.
+    segmented = _huge_sample_blocks(sample)
+    blocks = len(segmented)
+    if blocks <= max_blocks:
+        return sample
+    measured = _norm_newlines(strip_ansi(sample) if "\x1b" in sample else sample)
+    has_bare_cr = "\r" in sample and "\r" in sample.replace("\r\n", "")
+    if measured.count("\n") != sample.count("\n") or has_bare_cr:
+        # A newline inside a terminal control string is not a caller row, and a
+        # bare carriage return becomes a row only after normalization. Either
+        # transformation can desynchronize ANSI-free block spans from raw rows,
+        # even when opposite shifts cancel in the total count. Return the
+        # untrimmed sample: the recursive pass measures the same visible shape
+        # and either compresses it or fails open, but never miscuts rows.
         return sample
     err_reserve = min(len(errs), max(1, max_blocks // 4)) if errs and max_blocks >= 4 else 0
     # ``base_sample`` already carries the edge-joining separator. Reintroducing a

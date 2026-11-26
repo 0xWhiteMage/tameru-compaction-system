@@ -409,6 +409,79 @@ def test_huge_tail_line_trim_skips_the_terminal_empty_field():
     assert _thin_text_lines("closing diagnosis\n\n\n", 1, from_end=True) == "closing diagnosis"
 
 
+def test_huge_sample_block_cap_matches_the_recursive_ansi_free_shape(monkeypatch):
+    # Colour bytes can hide key=value record shape from the sampler. The
+    # recursive pass strips them before segmentation, so the sampler must
+    # measure that same shape instead of approving a sample that will fail open.
+    import tameru.compress_context as cc
+
+    head = "".join(f"\x1b[31meh{i:03d}=v\x1b[0m\n" for i in range(60))
+    tail = "".join(f"\x1b[32mtl{i:03d}=v\x1b[0m\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", len(head))
+    sample = cc._huge_sample(head + "ordinary filler\n" + tail, max_blocks=15, max_lines=10_000)
+    assert len(cc._huge_sample_blocks(sample)) <= 15
+    assert len(cc._huge_sample_blocks(cc.strip_ansi(sample))) <= 15
+
+
+def test_huge_sample_measures_folded_blocks_before_trimming_edges(monkeypatch):
+    # Dense record rows can fold below the block cap once middle log rows change
+    # the sample's shape. Trimming the fixed edges before measuring that folded
+    # shape discards query evidence the recursive pass could have kept.
+    import tameru.compress_context as cc
+
+    head = "".join(f"eh{i:03d}=v\n" for i in range(60))
+    tail = "".join(f"tl{i:03d}=v\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", len(head))
+    errs = [f"ERROR diagnostic {i} happened while worker continued processing" for i in range(10)]
+    text = head + "\n".join(errs) + "\n" + tail
+    sample = cc._huge_sample(text, max_blocks=15, max_lines=10_000)
+    assert "eh030=v" in sample
+    assert "tl030=v" in sample
+
+
+def test_huge_sample_blocks_match_recursive_newline_normalization():
+    # Bare carriage returns are separate rows in the recursive pass even though
+    # the sampler's raw LF split keeps them inside one line. Measure that same
+    # normalized shape before deciding whether dense records fit.
+    import tameru.compress_context as cc
+
+    sample = "\r".join(f"row{i:03d}=value" for i in range(30))
+    recursive = tuple(cc._norm_newlines(sample).split("\n"))
+    assert len(cc._huge_sample_blocks(sample)) == len(cc._segment_blocks_memo(recursive))
+
+
+def test_huge_multiline_control_disables_offset_based_edge_trimming(monkeypatch):
+    # A newline inside an OSC title is control payload, not a caller row. Once
+    # ANSI-free block spans no longer index raw rows, the sampler must not use
+    # those spans to cut visible edge records.
+    import tameru.compress_context as cc
+
+    rows = "".join(f"\x1b[31meh{i:03d}=v\x1b[0m\n" for i in range(60))
+    osc = "\x1b]0;window\ntitle\x07"
+    head = (osc + rows)[:1020]
+    tail = "".join(f"\x1b[32mtl{i:03d}=v\x1b[0m\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", 1020)
+    sample = cc._huge_sample(head + "ordinary filler\n" + tail, max_blocks=15, max_lines=10_000)
+    assert "eh030=v" in sample
+    assert "tl030=v" in sample
+
+
+def test_huge_competing_control_shifts_still_disable_edge_trimming(monkeypatch):
+    # A stripped OSC newline and a normalized bare carriage return can cancel in
+    # a naive row-count comparison while moving different block boundaries.
+    # Offset-based trimming is unsafe for the whole sample in that state.
+    import tameru.compress_context as cc
+
+    rows = "".join(f"\x1b[31meh{i:03d}=v\x1b[0m\n" for i in range(60))
+    osc = "\x1b]0;window\ntitle\x07"
+    head = ((osc + rows)[:1020]).replace("eh010=v", "eh009=v\reh010=v", 1)
+    tail = "".join(f"\x1b[32mtl{i:03d}=v\x1b[0m\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", 1020)
+    sample = cc._huge_sample(head + "ordinary filler\n" + tail, max_blocks=15, max_lines=10_000)
+    assert "eh030=v" in sample
+    assert "tl030=v" in sample
+
+
 def test_huge_error_sample_respects_record_block_limit():
     # Key/value-shaped rows are one block per line in the recursive pass. Packing
     # the byte budget full of them must not turn the sample into a block-limit
@@ -520,19 +593,20 @@ def test_huge_uneven_edges_share_the_line_budget():
 
 
 def test_huge_edge_trim_preserves_nonblank_closing_anchor():
-    # Blank tail padding is not caller evidence. It must not become the sole
-    # surviving "anchor" while the closing diagnostic is trimmed away.
+    # Blank or ANSI-only tail padding is not caller evidence. It must not become
+    # the sole surviving "anchor" while the closing diagnostic is trimmed away.
     from tameru.compress_context import _trim_huge_edges, _trim_huge_edges_by_counts
 
     head = "opening fact\n"
-    tail = "closing diagnostic\n\n"
-    for trim in (
-        lambda h, t: _trim_huge_edges(h, t, 10),
-        lambda h, t: _trim_huge_edges_by_counts(h, t, 0, 10),
-    ):
-        head_out, tail_out = trim(head, tail)
-        assert "opening fact" in head_out
-        assert "closing diagnostic" in tail_out
+    for padding in ("\n", "\x1b[31m\x1b[0m\n"):
+        tail = "closing diagnostic\n" + padding
+        for trim in (
+            lambda h, t: _trim_huge_edges(h, t, 10),
+            lambda h, t: _trim_huge_edges_by_counts(h, t, 0, 10),
+        ):
+            head_out, tail_out = trim(head, tail)
+            assert "opening fact" in head_out
+            assert "closing diagnostic" in tail_out
 
 
 def test_huge_blockaware_trim_skips_unremovable_anchor_blocks():
