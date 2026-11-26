@@ -637,6 +637,80 @@ def test_huge_tight_block_cap_keeps_middle_error_evidence():
     assert any(line.startswith("error ") for line in sample.splitlines())
 
 
+def test_huge_short_multiline_log_groups_reuse_the_empty_middle_measurement(monkeypatch):
+    # With no sampled middle errors, the edge-only base sample is byte-identical
+    # to the full sample. Measuring both spellings separately rebuilds the same
+    # dense block rows even when the segmentation memo hits.
+    import tameru.compress_context as cc
+
+    unit = "OK\nreceived\nprocessed\n\n"
+    big = unit * (cc._HUGE_CHARS // len(unit) + 1)
+    original = cc._segment_blocks_memo
+    calls = []
+
+    def counting(lines):
+        calls.append(len(lines))
+        return original(lines)
+
+    monkeypatch.setattr(cc, "_segment_blocks_memo", counting)
+    sample = cc._huge_sample(big, max_blocks=20_000, max_lines=250_000)
+    assert len(calls) <= 2
+    assert len(cc.segment_blocks(sample.split("\n"))) <= 20_000
+
+
+def test_chunked_segmentation_reuses_repeated_short_row_scans(monkeypatch):
+    # Dense multiline logs repeat a few short rows thousands of times. Row
+    # classification is a pure function of that row, so one pass must not pay
+    # the regex scan for every occurrence.
+    import tameru.compress_context as cc
+
+    rows = ["OK", "received", "processed", ""]
+    original = cc.classify_line
+    original_tokens = cc.estimate_tokens
+    original_code_part = cc._quote_aware_code_part
+    calls = []
+    token_calls = []
+    code_part_calls = []
+
+    def counting(line):
+        calls.append(line)
+        return original(line)
+
+    def counting_tokens(line):
+        token_calls.append(line)
+        return original_tokens(line)
+
+    def counting_code_part(line):
+        code_part_calls.append(line)
+        return original_code_part(line)
+
+    monkeypatch.setattr(cc, "classify_line", counting)
+    monkeypatch.setattr(cc, "estimate_tokens", counting_tokens)
+    monkeypatch.setattr(cc, "_quote_aware_code_part", counting_code_part)
+    cc._segment_blocks_chunked(rows * 1_000)
+    assert len(calls) <= len(rows)
+    assert len(token_calls) <= len(rows)
+    assert len(code_part_calls) <= len(rows)
+
+
+def test_forged_marker_neutralization_skips_plain_rows(monkeypatch):
+    # Dense logs usually carry neither fence characters nor bracketed markers;
+    # their neutralization pass must not run every marker regex on every row.
+    import tameru.compress_context as cc
+
+    class CountingPattern:
+        calls = 0
+
+        def sub(self, replacement, text):
+            self.calls += 1
+            return text
+
+    pattern = CountingPattern()
+    monkeypatch.setattr(cc, "_FORGED_SPAN_RES", (pattern,))
+    assert cc._neutralize_forged_markers("OK\nreceived\nprocessed") == "OK\nreceived\nprocessed"
+    assert pattern.calls == 0
+
+
 def test_huge_dense_edges_converge_without_repeated_segmentation(monkeypatch):
     # Blank-separated edge rows need several rows per block removal. Measuring
     # that density must converge in a few passes, not one row per excess block.
