@@ -14422,21 +14422,67 @@ def redact_secrets_in(text: str) -> str:
     return text
 
 
-def _evenly_spaced(lines: list[str], target: int) -> list[str]:
-    """Up to ``target`` lines spread across the input, endpoints included."""
-    count = len(lines)
+def _evenly_spaced(items: list[Any], target: int) -> list[Any]:
+    """Up to ``target`` items spread across the input, endpoints included."""
+    count = len(items)
     if target >= count:
-        return list(lines)
+        return list(items)
     if target <= 0:
         return []
     if target == 1:
-        return [lines[0]]
-    return [lines[i * (count - 1) // (target - 1)] for i in range(target)]
+        return [items[0]]
+    return [items[i * (count - 1) // (target - 1)] for i in range(target)]
 
 
-def _huge_sample_block_count(sample: str) -> int:
+def _huge_sample_blocks(sample: str) -> list[dict[str, Any]]:
     """Blocks the recursive pass will segment for ``sample`` (0/1 line-based record shapes included)."""
-    return len(_segment_blocks_memo(tuple(sample.split("\n"))))
+    return _segment_blocks_memo(tuple(sample.split("\n")))
+
+
+def _huge_error_base_line(sample: str, head: str, errs: list[str]) -> int:
+    """Zero-based line index of the first middle error inside ``sample``."""
+    if not errs:
+        return 0
+    prefix = len(head) + len("\n[...]\n") if head else 0
+    return sample[:prefix].count("\n")
+
+
+def _thin_errors_by_block_coverage(
+    errs: list[str], blocks: list[dict[str, Any]], base_line: int, blocks_to_keep: int,
+) -> list[str]:
+    """Keep whole error-carrying blocks, spread first-to-last.
+
+    Block selection is atomic in the recursive pass. Removing single rows evenly
+    from a ten-row block can leave every block alive; removing whole blocks is
+    the least thinning that reliably reduces the measured block count."""
+    if not errs:
+        return list(errs)
+    error_end = base_line + len(errs) - 1
+    spans: list[tuple[int, int]] = []
+    for block in blocks:
+        start = max(int(block["start"]), base_line)
+        end = min(int(block["end"]), error_end)
+        if start <= end:
+            spans.append((start - base_line, end - base_line))
+    if blocks_to_keep >= len(spans):
+        return list(errs)
+    if blocks_to_keep <= 0:
+        return []
+    keep = [False] * len(errs)
+    for start, end in _evenly_spaced(spans, blocks_to_keep):
+        for index in range(start, end + 1):
+            keep[index] = True
+    return [line for index, line in enumerate(errs) if keep[index]]
+
+
+def _scaled_huge_line_removal(line_count: int, block_count: int, over_blocks: int) -> int:
+    """Estimate complete rows needed for ``over_blocks`` from the measured density."""
+    if over_blocks <= 0:
+        return 0
+    if block_count <= 0:
+        return over_blocks + 1
+    density = max(1, math.ceil(line_count / block_count))
+    return over_blocks * density + 1
 
 
 def _join_huge_sample(head: str, errs: list[str], tail: str) -> str:
@@ -14475,6 +14521,85 @@ def _trim_huge_edges(head: str, tail: str, lines_to_remove: int) -> tuple[str, s
     head_keep = len(head_lines) - head_remove
     tail_keep = len(tail_lines) - tail_remove
     return "".join(head_lines[:head_keep]), "".join(tail_lines[len(tail_lines) - tail_keep:])
+
+
+def _trim_huge_edges_by_counts(
+    head: str, tail: str, head_remove: int, tail_remove: int,
+) -> tuple[str, str]:
+    head_lines = _lf_lines_keepends(head)
+    tail_lines = _lf_lines_keepends(tail)
+    # Never thin either nonempty edge away entirely; an impossible ceiling
+    # fails open rather than silently losing the opening or closing context.
+    head_capacity = max(0, len(head_lines) - 1)
+    tail_capacity = max(0, len(tail_lines) - 1)
+    head_remove = min(head_capacity, max(0, head_remove))
+    tail_remove = min(tail_capacity, max(0, tail_remove))
+    head_keep = len(head_lines) - head_remove
+    tail_keep = len(tail_lines) - tail_remove
+    return "".join(head_lines[:head_keep]), "".join(tail_lines[len(tail_lines) - tail_keep:])
+
+
+def _edge_block_costs(
+    blocks: list[dict[str, Any]], start_line: int, end_line: int, *, inner_end: bool,
+) -> list[int]:
+    """Cumulative row costs for removing complete blocks from one edge's inner end."""
+    costs: list[int] = []
+    ordered = reversed(blocks) if inner_end else iter(blocks)
+    for block in ordered:
+        start = int(block["start"])
+        end = int(block["end"])
+        if start < start_line or end > end_line:
+            continue
+        if inner_end:
+            cost = end_line - start + 1
+        else:
+            cost = end - start_line + 1
+        if cost > 0 and (not costs or cost > costs[-1]):
+            costs.append(cost)
+    return costs
+
+
+def _cost_for_blocks(costs: list[int], count: int) -> int:
+    if count <= 0 or not costs:
+        return 0
+    return costs[min(count, len(costs)) - 1]
+
+
+def _trim_huge_edges_blockaware(
+    sample: str, head: str, tail: str, blocks: list[dict[str, Any]], over_blocks: int,
+) -> tuple[str, str] | None:
+    """Trim complete inner edge blocks when their line spans are measurable.
+
+    Returns ``None`` when a seam-crossing shape makes the mapping uncertain; the
+    caller falls back to density-scaled complete-line trimming."""
+    if over_blocks <= 0 or not (head or tail):
+        return head, tail
+    total_lines = _line_count(sample)
+    if total_lines <= 0:
+        return None
+    if head:
+        head_end = head.count("\n") - (1 if head.endswith("\n") else 0)
+    else:
+        head_end = -1
+    tail_start = sample[:len(sample) - len(tail)].count("\n") if tail else 0
+    if tail_start >= total_lines:
+        return None
+    tail_end = total_lines - 1
+    head_costs = _edge_block_costs(blocks, 0, head_end, inner_end=True) if head else []
+    tail_costs = _edge_block_costs(blocks, tail_start, tail_end, inner_end=False) if tail else []
+    if not head_costs and not tail_costs:
+        return None
+    head_blocks = len(head_costs)
+    tail_blocks = len(tail_costs)
+    total_blocks = head_blocks + tail_blocks
+    head_take = min(head_blocks, over_blocks * head_blocks // total_blocks)
+    tail_take = min(tail_blocks, over_blocks - head_take)
+    head_take = min(head_blocks, over_blocks - tail_take)
+    head_remove = _cost_for_blocks(head_costs, head_take)
+    tail_remove = _cost_for_blocks(tail_costs, tail_take)
+    if head_remove <= 0 and tail_remove <= 0:
+        return None
+    return _trim_huge_edges_by_counts(head, tail, head_remove, tail_remove)
 
 
 def _line_count(text: str) -> int:
@@ -14621,41 +14746,67 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     err_reserve = min(len(errs), max(1, max_blocks // 4)) if errs and max_blocks >= 4 else 0
     edge_budget = max(1, max_blocks - err_reserve)
     base_sample = _join_huge_sample(head, [], tail)
-    base_blocks = _huge_sample_block_count(base_sample)
+    base_segmented = _huge_sample_blocks(base_sample)
+    base_blocks = len(base_segmented)
     for _ in range(8):
         if base_blocks <= edge_budget or (not head and not tail):
             break
-        head, tail = _trim_huge_edges(head, tail, base_blocks - edge_budget + 1)
+        over = base_blocks - edge_budget
+        trimmed = _trim_huge_edges_blockaware(base_sample, head, tail, base_segmented, over)
+        if trimmed is None:
+            head, tail = _trim_huge_edges(
+                head, tail,
+                _scaled_huge_line_removal(_line_count(base_sample), base_blocks, over),
+            )
+        else:
+            head, tail = trimmed
         base_sample = _join_huge_sample(head, [], tail)
-        base_blocks = _huge_sample_block_count(base_sample)
+        base_segmented = _huge_sample_blocks(base_sample)
+        base_blocks = len(base_segmented)
 
     # Measure the full sample before spending any error rows. In prose-like logs
     # several errors can share one block, so a one-block-per-row allowance would
     # thin rows that already fit; the reconciliation below removes only measured
     # overflow while preserving endpoint coverage.
     sample = _join_huge_sample(head, errs, tail)
-    blocks = _huge_sample_block_count(sample)
+    segmented = _huge_sample_blocks(sample)
+    blocks = len(segmented)
     for _ in range(8):
         over = blocks - max_blocks
         if over <= 0:
             return sample
         if not errs:
             break
-        target = max(0, len(errs) - over)
-        if target == len(errs):
-            target -= 1
-        errs = _evenly_spaced(errs, target)
+        base_line = _huge_error_base_line(sample, head, errs)
+        error_blocks = sum(
+            1 for block in segmented
+            if min(int(block["end"]), base_line + len(errs) - 1) >= max(int(block["start"]), base_line)
+        )
+        keep_blocks = max(0, error_blocks - over)
+        if keep_blocks == error_blocks:
+            keep_blocks -= 1
+        errs = _thin_errors_by_block_coverage(errs, segmented, base_line, keep_blocks)
         sample = _join_huge_sample(head, errs, tail)
-        blocks = _huge_sample_block_count(sample)
+        segmented = _huge_sample_blocks(sample)
+        blocks = len(segmented)
     # Dense one-line records in either edge can exceed the ceiling even with no
     # middle errors. Shrink both edge slices toward the middle join while keeping
     # them byte-exact prefixes/suffixes of the caller's text.
     for _ in range(8):
         if blocks <= max_blocks or (not head and not tail):
             break
-        head, tail = _trim_huge_edges(head, tail, blocks - max_blocks + 1)
+        over = blocks - max_blocks
+        trimmed = _trim_huge_edges_blockaware(sample, head, tail, segmented, over)
+        if trimmed is None:
+            head, tail = _trim_huge_edges(
+                head, tail,
+                _scaled_huge_line_removal(_line_count(sample), blocks, over),
+            )
+        else:
+            head, tail = trimmed
         sample = _join_huge_sample(head, errs, tail)
-        blocks = _huge_sample_block_count(sample)
+        segmented = _huge_sample_blocks(sample)
+        blocks = len(segmented)
     return sample
 
 

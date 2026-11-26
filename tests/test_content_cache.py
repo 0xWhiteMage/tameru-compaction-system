@@ -502,6 +502,53 @@ def test_huge_uneven_edges_share_the_line_budget():
     assert sample.endswith(tail)
 
 
+def test_huge_dense_edges_converge_without_repeated_segmentation(monkeypatch):
+    # Blank-separated edge rows need several rows per block removal. Measuring
+    # that density must converge in a few passes, not one row per excess block.
+    import tameru.compress_context as cc
+
+    unit = "edge row\n" + "\n" * 7
+    head = (unit * (cc._HUGE_EDGE_CHARS // len(unit) + 2))[:cc._HUGE_EDGE_CHARS]
+    count = (cc._HUGE_CHARS - 2 * len(head)) // 16 + 1_000
+    middle = "".join(f"error failure {index}\n" for index in range(count))
+    big = head + "\n" + middle + head
+    original = cc._huge_sample_blocks
+    calls = []
+
+    def counting(sample):
+        calls.append(len(sample))
+        return original(sample)
+
+    monkeypatch.setattr(cc, "_huge_sample_blocks", counting)
+    sample = cc._huge_sample(big, max_blocks=20_000)
+    assert len(calls) <= 4
+    assert len(cc.segment_blocks(sample.split("\n"))) <= 20_000
+
+
+def test_huge_grouped_error_blocks_thin_whole_blocks(monkeypatch):
+    # Ten short errors can share one recursive block. Removing single rows from
+    # every block cannot satisfy the block ceiling; whole blocks are thinned
+    # instead, with the first and last error-carrying blocks retained.
+    import tameru.compress_context as cc
+
+    errors = "\n".join(f"error {index}" for index in range(20_000))
+    filler = "f" * cc._HUGE_CHARS
+    big = "x" * cc._HUGE_EDGE_CHARS + "\n" + errors + "\n" + filler + "\n" + "y" * cc._HUGE_EDGE_CHARS
+    original = cc._huge_sample_blocks
+    calls = []
+
+    def counting(sample):
+        calls.append(len(sample))
+        return original(sample)
+
+    monkeypatch.setattr(cc, "_huge_sample_blocks", counting)
+    sample = cc._huge_sample(big, max_blocks=1_000, max_lines=250_000)
+    assert len(cc.segment_blocks(sample.split("\n"))) <= 1_000
+    assert len(calls) <= 4
+    assert "error 0" in sample
+    assert "error 19999" in sample
+
+
 def test_huge_one_line_tool_json_does_not_recurse():
     # Terminal envelopes carry an ``error`` key, so one long JSON line both
     # matches the error sampler and used to reproduce as an over-threshold sample.
