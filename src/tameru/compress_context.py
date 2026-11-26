@@ -14407,10 +14407,24 @@ def _huge_sample(text: str) -> str:
             errs = strided
         else:
             # A skewed mix can align the stride with mostly long lines. Fall back
-            # to the slot count those longest lines can occupy, spread across the
-            # whole stream, so coverage survives without exceeding the byte budget.
+            # to contiguous coverage slots sized so even a longest allowed line
+            # fits. Pack each slot against its own byte allowance rather than
+            # keeping only one line there: short errors use the budget, while the
+            # per-slot caps preserve coverage and keep the total byte-bounded.
             slots = max(1, _HUGE_ERR_CHARS // (_HUGE_ERR_LINE_CHARS + 1))
-            errs = errs[::max(1, math.ceil(len(errs) / slots))]
+            allowance, extra = divmod(_HUGE_ERR_CHARS, slots)
+            count = len(errs)
+            packed: list[str] = []
+            for slot in range(slots):
+                local = allowance + (1 if slot < extra else 0)
+                start = count * slot // slots
+                end = count * (slot + 1) // slots
+                for line in errs[start:end]:
+                    cost = len(line) + 1
+                    if cost <= local:
+                        packed.append(line)
+                        local -= cost
+            errs = packed
     mid = "\n".join(errs)
     # Join with "[...]" (three ASCII dots), never "[…]": the unicode-ellipsis shape
     # is what the forged-marker defense rewrites, so joining with it either emitted

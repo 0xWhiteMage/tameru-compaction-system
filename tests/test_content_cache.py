@@ -236,6 +236,36 @@ def test_huge_error_line_sample_stays_bounded():
     assert "ERROR core failure: disk quota exceeded" not in sample
 
 
+def test_huge_error_sample_packs_short_lines():
+    # A stride that lands on long lines must not fall back to one error per
+    # coverage slot when thousands of short errors fit in the byte budget.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample
+
+    line = "ERROR short failure"
+    count = 14_000
+    assert (len(line) + 1) * count > _HUGE_ERR_CHARS
+    middle = (line + "\n") * count
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + middle + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big)
+    assert sample.count(line) > 10_000
+    assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
+
+
+def test_huge_error_sample_skew_stays_byte_bounded():
+    # Mixed short and near-cap lines still keep long-line coverage, while the
+    # packed error sample remains inside its byte budget.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample
+
+    long = "ERROR " + "l" * 4000
+    short = "ERROR short failure"
+    pair = long + "\n" + short + "\n"
+    assert len(pair) * 70 > _HUGE_ERR_CHARS
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + pair * 70 + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big)
+    assert long in sample
+    assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
+
+
 def test_huge_one_line_tool_json_does_not_recurse():
     # Terminal envelopes carry an ``error`` key, so one long JSON line both
     # matches the error sampler and used to reproduce as an over-threshold sample.
