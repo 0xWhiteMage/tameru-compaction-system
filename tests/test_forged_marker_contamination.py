@@ -1002,3 +1002,18 @@ def test_declared_banner_matching_the_foreign_shape_still_strips():
     # ...but with only the foreign-banner pattern, the same line stays.
     assert line not in cc._artifact_noise_lines(
         "ok\n" + line, (cc._FOREIGN_BANNER_RE,))
+
+
+def test_pin_patterns_match_the_caller_spelling_before_marker_neutralization():
+    """A literal pin for marker-shaped source text must still pin the block;
+    the emitted pinned copy keeps the neutralized brackets."""
+    import re
+    from tameru import compress_context as cc
+
+    text = "intro\n[tameru: status] important evidence\nmore lines\nend"
+    neutral = cc._neutralize_forged_markers(text)
+    assert cc._source_pin_texts(neutral, [re.escape("[tameru: status]")], 0) == []
+    got = cc._source_pin_texts(
+        neutral, [re.escape("[tameru: status]")], 0, match_text=text
+    )
+    assert got == ["［tameru: status］ important evidence\nmore lines\nend"]
