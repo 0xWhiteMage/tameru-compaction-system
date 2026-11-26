@@ -1157,6 +1157,20 @@ def test_bare_carriage_returns_still_use_the_normalized_pin_view():
     ]
 
 
+def test_bare_carriage_return_normalization_preserves_regex_escape_tokens():
+    from tameru import compress_context as cc
+
+    # ``\\r`` in this regex is an escaped backslash followed by the letter
+    # ``r`` (a Windows path ending in ``\r``), not a carriage return.
+    path = r"C:\r"
+    raw = path + "\r\rnoise"
+    rendered = path + "\n\nnoise"
+    assert cc._source_pin_texts(rendered, [r"C:\\r$"], 0, match_text=raw) == [path]
+
+    assert cc._newline_normalized_pin_pattern(r"C:\\r$") == r"C:\\r$"
+    assert cc._newline_normalized_pin_pattern(r"one\r\ntwo") == r"one\ntwo"
+
+
 def test_broad_distinct_pins_do_not_scan_every_pin_for_every_block():
     import re
     import time

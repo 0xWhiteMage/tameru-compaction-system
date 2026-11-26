@@ -774,6 +774,48 @@ def _norm_newlines(text: str) -> str:
     return str(text or "").replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _newline_normalized_pin_pattern(pattern: str) -> str:
+    """``pattern`` with its carriage-return newline spellings normalized.
+
+    The substitution scans regex escape tokens rather than replacing bytes: an escaped
+    backslash keeps a following ``r`` ordinary, and one CRLF spelling collapses to one LF.
+    ``re.escape`` writes control characters as a backslash plus the literal character,
+    so both ``\r`` and backslash+CR are carriage-return tokens.
+    """
+    out: list[str] = []
+    i = 0
+
+    def lf_token_len(pos: int) -> int:
+        if pattern.startswith("\\n", pos) or pattern.startswith("\\" + "\n", pos):
+            return 2
+        return 1 if pattern.startswith("\n", pos) else 0
+
+    while i < len(pattern):
+        cr_len = 0
+        if pattern[i] == "\\" and i + 1 < len(pattern):
+            token = pattern[i : i + 2]
+            if token == "\\\\":
+                out.append(token)
+                i += 2
+                continue
+            if token == "\\r" or token[1] == "\r":
+                cr_len = 2
+        elif pattern[i] == "\r":
+            cr_len = 1
+        if cr_len:
+            next_i = i + cr_len
+            lf_len = lf_token_len(next_i)
+            out.append("\\n")
+            i = next_i + lf_len if lf_len else next_i
+        elif pattern[i] == "\\" and i + 1 < len(pattern):
+            out.append(pattern[i : i + 2])
+            i += 2
+        else:
+            out.append(pattern[i])
+            i += 1
+    return "".join(out)
+
+
 _CL_HEADING_RE = re.compile(r"^#{1,6}\s+")
 _CL_FENCE_RE = re.compile(r"^(```|~~~)")
 _CL_TRACE_RE = re.compile(
@@ -6541,18 +6583,24 @@ def _source_pin_texts(
         # line count. A bare CR is itself a newline after normalization, so the
         # raw view can be unalignable while the normalized view still matches.
         match_views = [(match_lines, expressions)]
+        raw_aligned = len(match_lines) == len(work_lines)
         normalized_match = _norm_newlines(match_text)
         if normalized_match != match_text:
-            # A pin copied with the payload's line ending may name ``\r``
-            # explicitly. Normalization turns that line ending into ``\n`` in
-            # the rendered view, so evaluate an equivalently normalized pattern
-            # there too. This is a regex escape substitution, not a rewrite of
-            # the caller's pattern for the raw view.
-            normalized_patterns = [
-                pattern.replace("\\r", "\\n").replace("\r", "\n")
-                for pattern in (patterns or [])
-            ]
-            normalized_expressions = compile_pin_patterns(normalized_patterns)
+            if raw_aligned:
+                # CRLF payloads already match their raw spelling. Use the
+                # caller's regex unchanged here; LF-authored pins can still
+                # match this normalized view, while CR-authored pins were
+                # already handled by the raw view.
+                normalized_expressions = expressions
+            else:
+                # A bare CR is itself a newline after normalization, so only
+                # this view can align. Translate newline tokens with regex
+                # tokenization rather than rewriting bytes: an escaped
+                # backslash keeps a following ``r`` ordinary, and one CRLF
+                # spelling collapses to one LF.
+                normalized_expressions = compile_pin_patterns([
+                    _newline_normalized_pin_pattern(pattern) for pattern in (patterns or [])
+                ])
             if normalized_expressions is not None:
                 match_views.append((normalized_match.split('\n'), normalized_expressions))
         aligned_views = [
@@ -12711,7 +12759,7 @@ def _apply_pins(
         # once: a containing block must start the pinned source block at one of
         # its own line boundaries, and a broad pin must not multiply every
         # scored block by every pinned block.
-        pinned_texts = _PINNED_BLOCK_TEXTS.get()
+        pinned_texts = tuple(dict.fromkeys(_PINNED_BLOCK_TEXTS.get()))
         exact_pinned_texts = set(pinned_texts)
         by_first_line: dict[str, list[str]] = {}
         for part in pinned_texts:
