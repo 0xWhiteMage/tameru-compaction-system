@@ -241,14 +241,52 @@ def test_huge_error_sample_packs_short_lines():
     # coverage slot when thousands of short errors fit in the byte budget.
     from tameru.compress_context import _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample
 
+    count = 14_000
+    lines = [f"ERROR short failure {i}" for i in range(count)]
+    assert sum(len(line) + 1 for line in lines) > _HUGE_ERR_CHARS
+    middle = "\n".join(lines) + "\n"
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + middle + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big)
+    assert sum(line in sample for line in lines) > 10_000
+    assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
+
+
+def test_huge_error_sample_deduplicates_exact_repeats():
+    # Thousands of byte-identical errors carry the same diagnostic once. The
+    # recursive pass can fold repetition, but scoring thousands of copies first
+    # can exceed a host's trigger-time deadline.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample
+
     line = "ERROR short failure"
     count = 14_000
     assert (len(line) + 1) * count > _HUGE_ERR_CHARS
     middle = (line + "\n") * count
     big = "x" * _HUGE_EDGE_CHARS + "\n" + middle + "y" * _HUGE_EDGE_CHARS
     sample = _huge_sample(big)
-    assert sample.count(line) > 10_000
+    assert sample.count(line) == 1
     assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
+
+
+def test_huge_sample_stays_under_the_recursive_line_limit():
+    # Short edge rows can approach the recursive line cap before any sampled
+    # errors are added. The sampler spends only the remaining rows on errors
+    # and thins the edges when they alone cannot fit.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _huge_sample
+
+    edge = ("x\n" * _HUGE_EDGE_CHARS)[:_HUGE_EDGE_CHARS]
+    filler = "ordinary filler text without an error marker\n" * 22_000
+    big = edge + filler + edge
+    sample = _huge_sample(big, max_lines=1_000)
+    assert sample.count("\n") + 1 <= 1_000
+
+    edge_row = "x" * 1023 + "\n"
+    edge = edge_row * (_HUGE_EDGE_CHARS // len(edge_row))
+    errors = [f"ERROR distinct failure {i}" for i in range(1_000)]
+    big = edge + filler + "\n".join(errors) + "\n" + edge
+    sample = _huge_sample(big, max_lines=1_000)
+    assert sample.count("\n") + 1 <= 1_000
+    assert sum(line in sample for line in errors) < len(errors)
+    assert any(line in sample for line in errors)
 
 
 def test_huge_error_sample_skew_stays_byte_bounded():
@@ -294,11 +332,14 @@ def test_huge_error_sample_respects_record_block_limit():
     )
     from tameru.industrial import IndustrialLimits
 
-    line = "error=value"
-    count = _HUGE_ERR_CHARS // (len(line) + 1) + 1_000
-    big = "x" * _HUGE_EDGE_CHARS + "\n" + (line + "\n") * count + "y" * _HUGE_EDGE_CHARS
+    # Rows are distinct: exact-duplicate thinning is a separate contract (it
+    # collapses byte-identical repeats), while this test exercises the block
+    # budget on rows that each carry their own bytes.
+    count = 25_000
+    big = ("x" * _HUGE_EDGE_CHARS + "\n"
+           + "".join(f"error=value{i}\n" for i in range(count)) + "y" * _HUGE_EDGE_CHARS)
     sample = _huge_sample(big)
-    assert sample.count(line) > 10_000
+    assert sample.count("error=value") > 10_000
     assert len(segment_blocks(sample.split("\n"))) <= IndustrialLimits().max_blocks
     custom = _huge_sample(big, max_blocks=1_000)
     assert len(segment_blocks(custom.split("\n"))) <= 1_000
