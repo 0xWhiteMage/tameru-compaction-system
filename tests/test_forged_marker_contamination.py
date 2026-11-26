@@ -1053,11 +1053,11 @@ def test_apply_pins_matches_the_caller_spelling_of_neutralized_markers():
     from tameru import compress_context as cc
 
     blocks = [{"id": 0, "text": "［tameru: status］ important evidence", "score": 0.0}]
-    token = cc._PINNED_LINES.set(frozenset({blocks[0]["text"]}))
+    token = cc._PINNED_BLOCK_TEXTS.set((blocks[0]["text"],))
     try:
         cc._apply_pins(pin_patterns=[re.escape("[tameru: status]")], pin_recent=0, scored=blocks)
     finally:
-        cc._PINNED_LINES.reset(token)
+        cc._PINNED_BLOCK_TEXTS.reset(token)
     assert blocks[0]["pinned"] is True
 
     unrelated = [{"id": 0, "text": "［tameru: status］ important evidence", "score": 0.0}]
@@ -1082,7 +1082,38 @@ def test_wrapped_payload_pins_are_normalized_to_the_rendered_line_endings(monkey
 
     monkeypatch.setattr(cc, "_source_pin_texts", capture)
     cc.compress_context(envelope, "routine", pin_patterns=[re.escape("café important evidence")], ccr=False, citations=False)
-    assert "\r" not in seen["text"] and "\r" not in seen["match_text"]
+    assert "\r" not in seen["text"]
+
+
+def test_crlf_payload_pins_match_raw_or_normalized_caller_spellings():
+    import re
+    from tameru import compress_context as cc
+
+    raw = "pinned evidence\r\nnoise one\r\nnoise two"
+    rendered = "pinned evidence\nnoise one\nnoise two"
+    for spelling in ("pinned evidence", "pinned evidence\r"):
+        assert cc._source_pin_texts(
+            rendered, [re.escape(spelling)], 0, match_text=raw
+        ) == [rendered]
+
+
+def test_a_shared_line_does_not_pin_an_unrelated_block():
+    import re
+    from tameru import compress_context as cc
+
+    pinned_text = "unique policy marker\nshared traceback line"
+    unrelated_text = "shared traceback line\nunrelated noise"
+    scored = [
+        {"id": 0, "text": pinned_text, "score": 0.0},
+        {"id": 1, "text": unrelated_text, "score": 0.0},
+    ]
+    token = cc._PINNED_BLOCK_TEXTS.set((pinned_text,))
+    try:
+        cc._apply_pins(pin_patterns=[re.escape("unique policy marker")], pin_recent=0, scored=scored)
+    finally:
+        cc._PINNED_BLOCK_TEXTS.reset(token)
+    assert scored[0]["pinned"] is True
+    assert "pinned" not in scored[1]
 
 
 def test_json_payload_pins_match_the_decoded_caller_text(monkeypatch):

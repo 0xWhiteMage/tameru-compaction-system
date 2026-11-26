@@ -1252,6 +1252,10 @@ _FRAME_FOLD_MIN = 5
 # structural pass, build-noise counting, built-in anchors and the early exit are OFF: the pinned ORIGINAL blocks must come
 # back verbatim (the pinned-source cost gate), and folding moves block boundaries. Never read inside memoised functions.
 _PINNED_LINES: "contextvars.ContextVar[frozenset]" = contextvars.ContextVar("tameru_pinned_lines", default=frozenset())
+# Whole neutralized source blocks for the same pins. Selection uses this
+# block-shaped view: individual lines repeat across unrelated tracebacks and
+# log records, so line membership alone cannot identify the pinned block.
+_PINNED_BLOCK_TEXTS: "contextvars.ContextVar[tuple]" = contextvars.ContextVar("tameru_pinned_block_texts", default=())
 # 1.10.0 (S5, E4): set to the CALL's fact-density by ``_compress_context_impl`` and restored by
 # ``compress_context``. A fact-dense original keeps the S5 machinery off for the whole call, so
 # no stage may re-enable it on a sparser intermediate text. Read by ``_fact_protected_set`` and
@@ -6532,12 +6536,22 @@ def _source_pin_texts(
             # an ASCII bracketed line no longer reads as a JSON/INI opener), so
             # block ids need not denote the same line span in the two walks.
             # Match the caller spelling by source line, then conservatively pin
-            # every working block intersecting one of those lines.
+            # every working block intersecting one of those lines. A wrapped
+            # payload's CRLF is normalized before rendering; accept both the
+            # caller's raw spelling and the rendered LF spelling without
+            # treating either as a different logical line.
             pinned_lines = [False] * len(match_lines)
-            for block in _segment_blocks_memo(match_lines):
-                if any(expr.search(block['text']) for expr in expressions):
-                    for ln in range(block['start'], block['end'] + 1):
-                        pinned_lines[ln] = True
+            match_views = [match_lines]
+            normalized_match = _norm_newlines(match_text)
+            if normalized_match != match_text:
+                normalized_lines = normalized_match.split('\n')
+                if len(normalized_lines) == len(work_lines):
+                    match_views.append(normalized_lines)
+            for view_lines in match_views:
+                for block in _segment_blocks_memo(view_lines):
+                    if any(expr.search(block['text']) for expr in expressions):
+                        for ln in range(block['start'], block['end'] + 1):
+                            pinned_lines[ln] = True
             pinned = {
                 block['id'] for block in blocks
                 if any(pinned_lines[block['start'] : block['end'] + 1])
@@ -12677,15 +12691,17 @@ def _apply_pins(
         _pin_res = compile_pin_patterns(pin_patterns)
         for b in scored:
             text = b["text"]
-            # Neutralized pinned lines are recorded exactly; inverse-normalizing
-            # arbitrary fullwidth caller text here would make an ASCII pin match
-            # text it never matched in the source.
-            pinned_lines = _PINNED_LINES.get()
-            pinned_line_hit = bool(pinned_lines) and any(
-                line in pinned_lines or strip_ansi(line) in pinned_lines
-                for line in text.split("\n")
+            # Match the whole neutralized pinned source block (or a larger
+            # block that contains it intact). Individual lines repeat across
+            # unrelated tracebacks and log records, so line membership alone
+            # over-pins; inverse-normalizing arbitrary fullwidth caller text
+            # would likewise make an ASCII pin match text it never matched.
+            pinned_texts = _PINNED_BLOCK_TEXTS.get()
+            pinned_block_hit = any(
+                part == text or (len(part) < len(text) and part in text)
+                for part in pinned_texts
             )
-            if _pin_res is None or pinned_line_hit or any(rx.search(text) for rx in _pin_res):
+            if _pin_res is None or pinned_block_hit or any(rx.search(text) for rx in _pin_res):
                 b["score"] = max(b["score"], 999.0)
                 b["pinned"] = True
 
@@ -13845,7 +13861,7 @@ def _compress_context_impl(
     # Pin texts compare against the neutralized decoded payload — the shape the
     # renderer emits — while the patterns match the caller-visible decoded
     # spelling, never the JSON serialization or the already-neutralized copy.
-    pin_match_text = _norm_newlines(protected_payload.inner)
+    pin_match_text = protected_payload.inner
     if artifact_contaminated:
         pin_match_text = _strip_artifact_noise(pin_match_text, noise_res)
     source_pin_texts = _source_pin_texts(
@@ -13856,6 +13872,7 @@ def _compress_context_impl(
         form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
         for form in (ln, strip_ansi(ln))
     ))
+    _PINNED_BLOCK_TEXTS.set(tuple(source_pin_texts))
     industrial_text = industrial.text if industrial.applied else caller_text
     text = strip_ansi(_norm_newlines(industrial_text))
     # v1.4.0 (G9): keep the wrapper's scalar metadata (exit_code, error,
