@@ -13900,7 +13900,10 @@ def _compress_context_impl(
     # marker that the decode later reveals as fenced — and the floors would
     # then restore a fullwidth copy beside the working text's verbatim one.
     pin_payload = unwrap_tool_payload(caller_text)
-    protected_payload = unwrap_tool_payload(_norm_newlines(caller_text))
+    # Normalize plain caller text only after control bytes are gone: a CR and
+    # LF separated by ANSI are one caller-visible line ending, while early
+    # normalization invents a blank row stripping cannot rejoin.
+    protected_payload = unwrap_tool_payload(caller_text)
     if (
         not protected_payload.wrapped
         and artifact_contaminated

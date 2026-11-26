@@ -1362,6 +1362,33 @@ def test_ansi_reset_inside_crlf_keeps_visible_pins_aligned():
     assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=raw)
 
 
+def test_plain_payload_protection_normalizes_after_ansi_stripping(monkeypatch):
+    import re
+    from tameru import compress_context as cc
+
+    pin = "ERROR pinned"
+    raw = (
+        '[tasks]\nnote = """\nbefore\r\x1b[0m\n'
+        'middle ERR\x1b[31mOR pinned\x1b[0m\nafter\n"""\n'
+    )
+    seen = {}
+    real = cc._source_pin_texts
+
+    def capture(text, patterns, recent, **kwargs):
+        seen["text"] = text
+        return real(text, patterns, recent, **kwargs)
+
+    monkeypatch.setattr(cc, "_source_pin_texts", capture)
+    cc.compress_context(
+        raw, "noise", pin_patterns=[re.escape(pin)], ccr=False, citations=False
+    )
+    assert "\nbefore\nmiddle ERROR pinned\n" in seen["text"]
+    assert "\nbefore\n\nmiddle ERROR pinned\n" not in seen["text"]
+    assert real(seen["text"], [re.escape(pin)], 0, match_text=raw) == [
+        '[tasks]\nnote = """\nbefore\nmiddle ERROR pinned\nafter\n"""'
+    ]
+
+
 def test_inline_mentions_do_not_count_as_repeated_pinned_blocks():
     from tameru.compress_context import _count_pin_block_occurrences
 
