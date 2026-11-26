@@ -1177,6 +1177,51 @@ def test_pinned_block_text_context_is_not_retained_after_a_call():
     assert cc._PINNED_BLOCK_TEXTS.get() == ()
 
 
+def test_block_anchored_pin_matches_a_later_source_block():
+    from tameru import compress_context as cc
+
+    text = "intro\n\n## Target\nsecret evidence\n\n" + "noise\n" * 40
+    assert cc._source_pin_texts(text, [r"^## Target"], 0, match_text=text) == [
+        "## Target\nsecret evidence"
+    ]
+
+
+def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):
+    import re
+    from tameru import compress_context as cc
+
+    raw = "pin one\r\npin two\r\n" + "noise line with ordinary words\r\n" * 80
+    seen = {}
+    real = cc._source_pin_texts
+
+    def capture(text, patterns, recent, **kwargs):
+        seen.update(kwargs)
+        return real(text, patterns, recent, **kwargs)
+
+    monkeypatch.setattr(cc, "_source_pin_texts", capture)
+    cc.compress_context(
+        raw, "noise", pin_patterns=[re.escape("pin one\r\npin two")], ccr=False, citations=False
+    )
+    assert "pin one\r\npin two" in seen["match_text"]
+
+
+def test_wrapped_crlf_pins_do_not_fail_open_from_line_endings():
+    import json
+    import re
+    from tameru import compress_context as cc
+
+    inner = "pin one\r\npin two\r\n" + "".join(
+        f"noise line {i} with ordinary words\r\n" for i in range(200)
+    )
+    envelope = json.dumps({"content": inner, "exit_code": 0})
+    result = cc.compress_context(
+        envelope, "noise", pin_patterns=[re.escape("pin one\r\npin two")],
+        ccr=False, citations=False,
+    )
+    assert not result.fail_open
+    assert "pin one" in result.compressed_text
+
+
 def test_broad_distinct_pins_do_not_scan_every_pin_for_every_block():
     import re
     import time

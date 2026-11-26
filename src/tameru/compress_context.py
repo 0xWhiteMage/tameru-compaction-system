@@ -6549,6 +6549,9 @@ def _source_pin_texts(
         normalized_match = _norm_newlines(match_text)
         if normalized_match != match_text:
             match_views.append(normalized_match)
+        search_expressions = tuple(
+            re.compile(expr.pattern, expr.flags | re.MULTILINE) for expr in expressions
+        )
         pinned_lines = [False] * len(work_lines)
         unpinned = len(work_lines)
         for view_text in match_views:
@@ -6557,7 +6560,7 @@ def _source_pin_texts(
                 starts.append(newline.end())
             if len(starts) != len(work_lines):
                 continue
-            for expr in expressions:
+            for expr in search_expressions:
                 for match in expr.finditer(view_text):
                     start, end = match.span()
                     first = bisect.bisect_right(starts, start) - 1
@@ -13825,6 +13828,7 @@ def _compress_context_impl(
     # see fences still escaped inside the JSON string, so it would rewrite a
     # marker that the decode later reveals as fenced — and the floors would
     # then restore a fullwidth copy beside the working text's verbatim one.
+    pin_payload = unwrap_tool_payload(caller_text)
     protected_payload = unwrap_tool_payload(_norm_newlines(caller_text))
     if (
         not protected_payload.wrapped
@@ -13834,6 +13838,7 @@ def _compress_context_impl(
         # The same leading-marker case as the working text: the protected
         # view is the envelope's decoded body, not the serialized wrapper —
         # otherwise _restore_facts could splice raw JSON back into a log.
+        pin_payload = unwrap_tool_payload(analysis_text)
         protected_payload = unwrap_tool_payload(analysis_text)
     protected_source = protected_payload.inner
     if artifact_contaminated:
@@ -13891,7 +13896,7 @@ def _compress_context_impl(
     # Pin texts compare against the neutralized decoded payload — the shape the
     # renderer emits — while the patterns match the caller-visible decoded
     # spelling, never the JSON serialization or the already-neutralized copy.
-    pin_match_text = protected_payload.inner
+    pin_match_text = pin_payload.inner
     if artifact_contaminated:
         pin_match_text = _strip_artifact_noise(pin_match_text, noise_res)
     source_pin_texts = _source_pin_texts(
@@ -13933,7 +13938,7 @@ def _compress_context_impl(
                     requested_mode=requested_mode,
                 )
             tool_payload = cleaned_payload
-    text = tool_payload.inner
+    text = _norm_newlines(tool_payload.inner)
     if payload_industrial is not None and payload_industrial.applied:
         text = payload_industrial.text
     if artifact_contaminated:
