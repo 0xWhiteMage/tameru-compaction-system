@@ -409,6 +409,20 @@ def test_huge_tail_line_trim_skips_the_terminal_empty_field():
     assert _thin_text_lines("closing diagnosis\n\n\n", 1, from_end=True) == "closing diagnosis"
 
 
+def test_huge_sample_block_cap_matches_the_recursive_ansi_free_shape(monkeypatch):
+    # Colour bytes can hide key=value record shape from the sampler. The
+    # recursive pass strips them before segmentation, so the sampler must
+    # measure that same shape instead of approving a sample that will fail open.
+    import tameru.compress_context as cc
+
+    head = "".join(f"\x1b[31meh{i:03d}=v\x1b[0m\n" for i in range(60))
+    tail = "".join(f"\x1b[32mtl{i:03d}=v\x1b[0m\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", len(head))
+    sample = cc._huge_sample(head + "ordinary filler\n" + tail, max_blocks=15, max_lines=10_000)
+    assert len(cc._huge_sample_blocks(sample)) <= 15
+    assert len(cc._huge_sample_blocks(cc.strip_ansi(sample))) <= 15
+
+
 def test_huge_error_sample_respects_record_block_limit():
     # Key/value-shaped rows are one block per line in the recursive pass. Packing
     # the byte budget full of them must not turn the sample into a block-limit
@@ -503,19 +517,20 @@ def test_huge_uneven_edges_share_the_line_budget():
 
 
 def test_huge_edge_trim_preserves_nonblank_closing_anchor():
-    # Blank tail padding is not caller evidence. It must not become the sole
-    # surviving "anchor" while the closing diagnostic is trimmed away.
+    # Blank or ANSI-only tail padding is not caller evidence. It must not become
+    # the sole surviving "anchor" while the closing diagnostic is trimmed away.
     from tameru.compress_context import _trim_huge_edges, _trim_huge_edges_by_counts
 
     head = "opening fact\n"
-    tail = "closing diagnostic\n\n"
-    for trim in (
-        lambda h, t: _trim_huge_edges(h, t, 10),
-        lambda h, t: _trim_huge_edges_by_counts(h, t, 0, 10),
-    ):
-        head_out, tail_out = trim(head, tail)
-        assert "opening fact" in head_out
-        assert "closing diagnostic" in tail_out
+    for padding in ("\n", "\x1b[31m\x1b[0m\n"):
+        tail = "closing diagnostic\n" + padding
+        for trim in (
+            lambda h, t: _trim_huge_edges(h, t, 10),
+            lambda h, t: _trim_huge_edges_by_counts(h, t, 0, 10),
+        ):
+            head_out, tail_out = trim(head, tail)
+            assert "opening fact" in head_out
+            assert "closing diagnostic" in tail_out
 
 
 def test_huge_blockaware_trim_skips_unremovable_anchor_blocks():

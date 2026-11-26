@@ -14436,7 +14436,8 @@ def _evenly_spaced(items: list[Any], target: int) -> list[Any]:
 
 def _huge_sample_blocks(sample: str) -> list[dict[str, Any]]:
     """Blocks the recursive pass will segment for ``sample`` (0/1 line-based record shapes included)."""
-    return _segment_blocks_memo(tuple(sample.split("\n")))
+    measured = strip_ansi(sample) if "\x1b" in sample else sample
+    return _segment_blocks_memo(tuple(measured.split("\n")))
 
 
 def _huge_error_base_line(sample: str, head: str, errs: list[str]) -> int:
@@ -14501,14 +14502,14 @@ def _lf_lines_keepends(text: str) -> list[str]:
 
 def _first_nonblank_index(lines: list[str]) -> int:
     for index, line in enumerate(lines):
-        if line.strip():
+        if strip_ansi(line).strip():
             return index
     return 0
 
 
 def _last_nonblank_index(lines: list[str]) -> int:
     for index in range(len(lines) - 1, -1, -1):
-        if lines[index].strip():
+        if strip_ansi(lines[index]).strip():
             return index
     return max(0, len(lines) - 1)
 
