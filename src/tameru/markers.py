@@ -25,6 +25,8 @@ REDACTED_MARKER = "[tameru:redacted]"  # inserted by compress_context(redact_sec
 
 ENGINE_MARKERS: list[tuple[str, "re.Pattern[str]", str]] = [
     # name, regex, emitting source location
+    ("sample_join", re.compile(r"^\[\.\.\.\]$"),
+     "compress_context.py _huge_sample join line (sampling discontinuity in >2M inputs)"),
     ("gap", re.compile(r"^\[…\]$"),
      "compress_context.py:4161 _render gap marker (citations=False, gap_marker=None)"),
     ("gap_chars", re.compile(r"^\[… \d+ chars omitted …\]$"),
