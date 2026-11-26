@@ -1261,6 +1261,16 @@ def test_wrapped_colored_pinned_blocks_compare_in_the_rendered_spelling():
     assert "\x1b" not in result.compressed_text
 
 
+def test_canceled_osc_sequences_do_not_swallow_visible_log_lines():
+    """CAN/SUB abort an OSC control string; a later BEL is terminal input,
+    not proof that the intervening caller-visible lines were control bytes."""
+    from tameru.compress_context import strip_ansi
+
+    for cancel in ("\x18", "\x1a"):
+        raw = "\x1b]0;aborted" + cancel + "\nERROR visible\n\x07after"
+        assert "ERROR visible" in strip_ansi(raw)
+
+
 def test_pin_patterns_match_hyperlink_and_truecolor_visible_spelling():
     """OSC hyperlinks and colon-separated truecolor are terminal control
     bytes too: stripping them exposes the same visible phrase the pin names."""
