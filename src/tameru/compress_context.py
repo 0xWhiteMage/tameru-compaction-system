@@ -14464,9 +14464,14 @@ def _trim_huge_edges(head: str, tail: str, lines_to_remove: int) -> tuple[str, s
     remove = min(lines_to_remove, max(0, len(head_lines) + len(tail_lines) - 1))
     if remove <= 0:
         return head, tail
-    head_remove = min(len(head_lines), remove // 2)
-    tail_remove = min(len(tail_lines), remove - head_remove)
-    head_remove = min(len(head_lines), remove - tail_remove)
+    # Never thin either nonempty edge away entirely. If the ceiling cannot
+    # carry even one anchor row from each side, the oversized sample fails open
+    # instead of silently losing the opening or closing context.
+    head_capacity = max(0, len(head_lines) - 1)
+    tail_capacity = max(0, len(tail_lines) - 1)
+    head_remove = min(head_capacity, remove // 2)
+    tail_remove = min(tail_capacity, remove - head_remove)
+    head_remove = min(head_capacity, remove - tail_remove)
     head_keep = len(head_lines) - head_remove
     tail_keep = len(tail_lines) - tail_remove
     return "".join(head_lines[:head_keep]), "".join(tail_lines[len(tail_lines) - tail_keep:])
@@ -14489,12 +14494,17 @@ def _thin_lines_evenly(lines: list[str], max_lines: int) -> list[str]:
     return [lines[(index * last) // slots] for index in range(max_lines)]
 
 
-def _thin_text_lines(text: str, max_lines: int) -> str:
+def _thin_text_lines(text: str, max_lines: int, *, from_end: bool = False) -> str:
     if not text or max_lines <= 0:
         return ""
     if _line_count(text) <= max_lines:
         return text
-    return "\n".join(_thin_lines_evenly(text.split("\n"), max_lines))
+    lines = text.split("\n")
+    if len(lines) <= max_lines:
+        return text
+    kept = lines[-max_lines:] if from_end else lines[:max_lines]
+    return "\n".join(kept)
+
 
 def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None = None) -> str:
     """Streaming head/tail + error-line sample for inputs over ``_HUGE_CHARS`` (S7).
@@ -14563,18 +14573,24 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     )
     edge_budget = max(0, resolved_max_lines - seam_reserve - err_line_reserve)
     if _line_count(head) + _line_count(tail) > edge_budget:
-        if head and tail:
-            head_lines = _line_count(head)
-            tail_lines = _line_count(tail)
-            head_budget = min(head_lines, edge_budget // 2)
-            tail_budget = min(tail_lines, edge_budget - head_budget)
-            head_budget = min(head_lines, edge_budget - tail_budget)
-        elif head:
-            head_budget, tail_budget = edge_budget, 0
+        if head and tail and edge_budget < 2:
+            # Too few rows remain to retain one opening and one closing anchor.
+            # Leave the edges oversized so the recursive pass fails open instead
+            # of silently discarding one end of the caller's log.
+            pass
         else:
-            head_budget, tail_budget = 0, edge_budget
-        head = _thin_text_lines(head, head_budget)
-        tail = _thin_text_lines(tail, tail_budget)
+            if head and tail:
+                head_lines = _line_count(head)
+                tail_lines = _line_count(tail)
+                head_budget = min(head_lines, edge_budget // 2)
+                tail_budget = min(tail_lines, edge_budget - head_budget)
+                head_budget = min(head_lines, edge_budget - tail_budget)
+            elif head:
+                head_budget, tail_budget = edge_budget, 0
+            else:
+                head_budget, tail_budget = 0, edge_budget
+            head = _thin_text_lines(head, head_budget)
+            tail = _thin_text_lines(tail, tail_budget, from_end=True)
     error_line_budget = max(
         0, resolved_max_lines - seam_reserve - _line_count(head) - _line_count(tail)
     )
@@ -14775,9 +14791,31 @@ def compress_context(
                 keep_ratio=1.0, fail_open=True, reasons=["too_large"],
                 confidence=0.0, confidence_basis="none", query_specific=q_specific,
             )
+        if pin_patterns or pin_recent:
+            # The streaming sample does not know the original's block boundaries,
+            # so it cannot prove that a caller-pinned block reached the recursive
+            # pass intact. Pins are a hard caller floor: preserve the original
+            # rather than let the sampled pin-loss check approve a sample in
+            # which the pinned block never appeared.
+            est = _estimate_tokens(full_text)
+            return CompressResult(
+                compressed_text=full_text, original_tokens=est, kept_tokens=est,
+                tokens_saved_pct=0.0, policy_name="huge-pinned", mode=mode,
+                keep_ratio=1.0, fail_open=True, reasons=["huge_pinned_input"],
+                confidence=0.0, confidence_basis="none", query_specific=q_specific,
+            )
         sample = _huge_sample(
             full_text, max_blocks=(limits or IndustrialLimits()).max_blocks,
             max_lines=(limits or IndustrialLimits()).max_lines)
+        if not strip_ansi(sample).strip():
+            est = _estimate_tokens(full_text)
+            return CompressResult(
+                compressed_text=full_text, original_tokens=est, kept_tokens=est,
+                tokens_saved_pct=0.0, policy_name="huge-sample-empty", mode=mode,
+                keep_ratio=1.0, fail_open=True,
+                reasons=["huge_sample_empty", "huge_sampled"],
+                confidence=0.0, confidence_basis="none", query_specific=q_specific,
+            )
         res = compress_context(
             sample, query, mode=mode, budget_ratio=budget_ratio, ccr=ccr,
             cache_prefix=cache_prefix, citations=citations, ccr_dir=ccr_dir,
