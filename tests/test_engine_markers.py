@@ -10,6 +10,7 @@ from tameru import markers
 from tameru.markers import ENGINE_MARKERS, PREFIX_MARKERS, marker_name
 
 SAMPLES = {
+    "sample_join": "[...]",
     "gap": "[…]",
     "gap_chars": "[… 120 chars omitted …]",
     "gap_generic": "[… 4 hunks omitted …]",
