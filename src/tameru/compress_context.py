@@ -111,6 +111,10 @@ _HUGE_CHARS = 2_000_000
 _HUGE_MAX_CHARS = 8_000_000
 _HUGE_EDGE_CHARS = 393_216
 _HUGE_ERR_CHARS = 262_144
+# One matching line can itself be a megabyte-scale minified/JSON record. Keep a
+# bounded window around its first error marker so the sample cannot remain over
+# the huge-input threshold and recurse into itself without progress.
+_HUGE_ERR_LINE_CHARS = 4_096
 _HUGE_ERR_MARKERS = (
     "error", "traceback", "exception", "errno", "denied",
     "failed", "fatal", "panic", "stderr", "assert",
@@ -14381,6 +14385,25 @@ def redact_secrets_in(text: str) -> str:
     return text
 
 
+def _huge_error_excerpt(line: str) -> str:
+    """Bound one error-matching line while keeping its first marker visible."""
+    if len(line) <= _HUGE_ERR_LINE_CHARS:
+        return line
+    low = line.lower()
+    matches = [
+        (pos, len(mark))
+        for mark in _HUGE_ERR_MARKERS
+        if (pos := low.find(mark)) >= 0
+    ]
+    if not matches:
+        return line[:_HUGE_ERR_LINE_CHARS]
+    pos, mark_len = min(matches)
+    start = max(0, pos - (_HUGE_ERR_LINE_CHARS - mark_len) // 2)
+    end = min(len(line), start + _HUGE_ERR_LINE_CHARS)
+    start = max(0, end - _HUGE_ERR_LINE_CHARS)
+    return line[start:end]
+
+
 def _huge_sample(text: str) -> str:
     """Streaming head/tail + error-line sample for inputs over ``_HUGE_CHARS`` (S7).
 
@@ -14393,8 +14416,9 @@ def _huge_sample(text: str) -> str:
     for line in text[edge:len(text) - edge].splitlines():
         low = line.lower()
         if any(mark in low for mark in _HUGE_ERR_MARKERS):
-            errs.append(line)
-            total += len(line) + 1
+            excerpt = _huge_error_excerpt(line)
+            errs.append(excerpt)
+            total += len(excerpt) + 1
     if total > _HUGE_ERR_CHARS and errs:
         step = max(1, round(total / _HUGE_ERR_CHARS))
         errs = errs[::step]
