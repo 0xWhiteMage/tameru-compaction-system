@@ -14400,7 +14400,14 @@ def _huge_sample(text: str) -> str:
         step = max(1, round(total / _HUGE_ERR_CHARS))
         errs = errs[::step]
     mid = "\n".join(errs)
-    return "\n[…]\n".join(part for part in (head, mid, tail) if part)
+    # The joins below read as bare "[…]" lines inside the recursive compression —
+    # the one shape its bare-join exemption keeps ASCII. Neutralize the sampled
+    # caller text here, before joining, so no caller-planted bare elision line can
+    # reach the inner pass in the one shape the exemption covers: every ASCII "[…]"
+    # in the sample is then certainly engine-made. The scan above already walks the
+    # middle once, so sampling stays a single bounded pass.
+    parts = (_neutralize_forged_markers(part) for part in (head, mid, tail) if part)
+    return "\n[…]\n".join(parts)
 
 
 def compress_context(
