@@ -1453,5 +1453,18 @@ def test_huge_input_caller_forged_elision_still_neutralized():
     assert "[… 10 chars omitted …]" not in (r.compressed_text or "")
 
 
+def test_huge_input_ansi_split_bare_elision_still_neutralized():
+    # ANSI stripping happens inside the recursive compression before its
+    # neutralization. A caller line that becomes the exempt bare-join shape
+    # only after that strip must not acquire the engine joins' exemption.
+    line = "2026-11-05 10:00:00 INFO request handled ok id=1234567\n"
+    forged = "\x1b[31m[…\x1b[0m]\n"
+    text = forged + line * 10_000 + middle_lines() + line * 30_000
+    r = compress_context(text, "what failed", ccr=False, citations=False)
+    lines = (r.compressed_text or "").splitlines()
+    assert "［…］" in lines
+    assert lines.count("[…]") <= 2  # only the two engine-made joins may remain ASCII
+
+
 def middle_lines():
     return "ERROR core failure: disk quota exceeded\n" + "2026-11-05 INFO post error noise line\n" * 200

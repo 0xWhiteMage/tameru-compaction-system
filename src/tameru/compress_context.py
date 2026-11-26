@@ -14406,7 +14406,7 @@ def _huge_sample(text: str) -> str:
     # reach the inner pass in the one shape the exemption covers: every ASCII "[…]"
     # in the sample is then certainly engine-made. The scan above already walks the
     # middle once, so sampling stays a single bounded pass.
-    parts = (_neutralize_forged_markers(part) for part in (head, mid, tail) if part)
+    parts = (_neutralize_forged_markers(strip_ansi(part)) for part in (head, mid, tail) if part)
     return "\n[…]\n".join(parts)
 
 
