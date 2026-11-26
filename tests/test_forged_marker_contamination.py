@@ -1261,6 +1261,26 @@ def test_wrapped_colored_pinned_blocks_compare_in_the_rendered_spelling():
     assert "\x1b" not in result.compressed_text
 
 
+def test_wrapped_colored_facts_are_not_restored_twice():
+    import json
+    from tameru import compress_context as cc
+
+    inner = "\x1b[31merror: disk full\x1b[0m\n" + "".join(
+        f"noise line {i} with ordinary words\n" for i in range(200)
+    )
+    result = cc.compress_context(json.dumps({"content": inner, "exit_code": 1}), "noise", ccr=False, citations=False)
+    assert result.compressed_text.count("disk full") == 1
+
+
+def test_empty_ansi_free_wrapped_payload_preserves_the_envelope():
+    import json
+    from tameru import compress_context as cc
+
+    envelope = json.dumps({"content": "\x1b[31m\x1b[0m\n", "exit_code": 2})
+    result = cc.compress_context(envelope, "noise", ccr=False, citations=False)
+    assert result.fail_open and result.compressed_text == envelope
+
+
 def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):
     import re
     from tameru import compress_context as cc

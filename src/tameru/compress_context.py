@@ -13850,7 +13850,7 @@ def _compress_context_impl(
     # The decoded body (and the analysis_text fallback) can still carry a
     # marker-shaped span — the floors restore lines verbatim, so they must
     # come from the same marker-free copy the working text uses.
-    protected_source = _neutralize_forged_markers(_norm_newlines(protected_source))
+    protected_source = strip_ansi(_neutralize_forged_markers(_norm_newlines(protected_source)))
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -14003,6 +14003,14 @@ def _compress_context_impl(
     if adapter_info is None or adapter_info.get("name") == "test_output":
         text = _restore_facts(fact_lines, text, before=protected_source)
     if not text.strip():
+        if caller_text.strip():
+            tokens = estimate_tokens(caller_text)
+            return CompressResult(
+                compressed_text=caller_text, original_tokens=tokens, kept_tokens=tokens,
+                tokens_saved_pct=0.0, policy_name="local-fail-open", mode=requested_mode,
+                keep_ratio=1.0, compression_risk="high", confidence=0.0, fail_open=True,
+                reasons=["ANSI-free payload rendered empty; preserving the original tool envelope"],
+            )
         return CompressResult(
             compressed_text="", policy_name="noop", mode=requested_mode
         )
