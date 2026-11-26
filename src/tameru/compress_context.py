@@ -6505,16 +6505,32 @@ def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]
     return tuple(blocks)
 
 
-def _source_pin_texts(text: str, patterns: list[str] | None, recent: int) -> list[str]:
-    """Texts of the original blocks a caller pinned: the caller's floor, which no
-    later reduction or summary may drop."""
+def _source_pin_texts(
+    text: str, patterns: list[str] | None, recent: int, *, match_text: str | None = None
+) -> list[str]:
+    """Neutralized texts of the original blocks a caller pinned: the caller's floor,
+    which no later reduction or summary may drop.
+
+    ``text`` is the working copy whose forged markers were neutralized, while
+    pins are caller-authored patterns and must match the caller-visible
+    ``match_text``. The two walks have the same line and block boundaries
+    (neutralization only rewrites bracket characters), so the returned block
+    stays safe to emit without losing the pin's source spelling.
+    """
     if not patterns and not recent:
         return []
     blocks = _segment_blocks_memo(text.split('\n'))
     expressions = compile_pin_patterns(patterns)
     if expressions is None:
         return [text]
-    pinned = {block['id'] for block in blocks
+    match_blocks = blocks
+    if match_text is not None:
+        candidates = _segment_blocks_memo(match_text.split('\n'))
+        if len(candidates) == len(blocks) and all(
+            candidate['id'] == block['id'] for candidate, block in zip(candidates, blocks)
+        ):
+            match_blocks = candidates
+    pinned = {block['id'] for block in match_blocks
               if any(expr.search(block['text']) for expr in expressions)}
     if recent and blocks:
         pinned.add(blocks[0]['id'])
@@ -13805,7 +13821,8 @@ def _compress_context_impl(
     # marker span inside a pinned block would otherwise read as un-preservable
     # and trip the pin cost gate into returning the whole original.
     source_pin_texts = _source_pin_texts(
-        _neutralize_forged_markers(analysis_text), pin_patterns, pin_recent
+        _neutralize_forged_markers(analysis_text), pin_patterns, pin_recent,
+        match_text=analysis_text,
     )
     _PINNED_LINES.set(frozenset(
         form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
