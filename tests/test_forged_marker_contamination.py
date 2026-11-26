@@ -2,6 +2,11 @@
 compression nor sail through the extract looking like engine structure.
 Marker-DOMINATED input is still a compressed artifact and no-ops."""
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
 from tameru.compress_context import _neutralize_forged_markers, compress_context
 
 
@@ -681,7 +686,6 @@ def test_an_escaped_backslash_does_not_hide_a_triple_closer():
     # single-char ``(?<!\\)`` lookbehind rejects it, so the mask stays open
     # and the following header is skipped: a dropped ``[other]`` line would
     # restore under the wrong table. tomllib closes the string.
-    import tomllib
     from tameru import compress_context as cc
     esc = chr(92)
     after = "x = \"\"\"" + esc + esc + '"""' + "\n[other]\nkeep_v = 1"
@@ -706,7 +710,6 @@ def test_an_escaped_quote_before_the_closer_does_not_hide_it():
     # matched ``"""`` on the escaped quote, the parity check rejected it,
     # and the consumed match ate two of the closer's quotes, so the closer
     # was never seen: the header after it read as string content.
-    import tomllib
     from tameru import compress_context as cc
     esc = chr(92)
     after = "x = \"\"\"" + "\nbody" + esc + '""""' + "\n[other]\nkeep_v = 1"
@@ -758,7 +761,6 @@ def test_literal_opener_with_double_quotes_inside_restores_its_body():
     # ``note = '''it's \"""`` — the literal opens FIRST; the ``"""`` later
     # in the line is its content. Giving ``"""`` priority tracked a basic
     # string, so the replay restored the opener without its body/closer.
-    import tomllib
     from tameru import compress_context as cc
     esc = chr(92)
     after = (
@@ -1053,11 +1055,11 @@ def test_apply_pins_matches_the_caller_spelling_of_neutralized_markers():
     from tameru import compress_context as cc
 
     blocks = [{"id": 0, "text": "［tameru: status］ important evidence", "score": 0.0}]
-    token = cc._PINNED_LINES.set(frozenset({blocks[0]["text"]}))
+    token = cc._PINNED_BLOCK_TEXTS.set((blocks[0]["text"],))
     try:
         cc._apply_pins(pin_patterns=[re.escape("[tameru: status]")], pin_recent=0, scored=blocks)
     finally:
-        cc._PINNED_LINES.reset(token)
+        cc._PINNED_BLOCK_TEXTS.reset(token)
     assert blocks[0]["pinned"] is True
 
     unrelated = [{"id": 0, "text": "［tameru: status］ important evidence", "score": 0.0}]
@@ -1082,7 +1084,38 @@ def test_wrapped_payload_pins_are_normalized_to_the_rendered_line_endings(monkey
 
     monkeypatch.setattr(cc, "_source_pin_texts", capture)
     cc.compress_context(envelope, "routine", pin_patterns=[re.escape("café important evidence")], ccr=False, citations=False)
-    assert "\r" not in seen["text"] and "\r" not in seen["match_text"]
+    assert "\r" not in seen["text"]
+
+
+def test_crlf_payload_pins_match_raw_or_normalized_caller_spellings():
+    import re
+    from tameru import compress_context as cc
+
+    raw = "pinned evidence\r\nnoise one\r\nnoise two"
+    rendered = "pinned evidence\nnoise one\nnoise two"
+    for spelling in ("pinned evidence", "pinned evidence\r"):
+        assert cc._source_pin_texts(
+            rendered, [re.escape(spelling)], 0, match_text=raw
+        ) == [rendered]
+
+
+def test_a_shared_line_does_not_pin_an_unrelated_block():
+    import re
+    from tameru import compress_context as cc
+
+    pinned_text = "unique policy marker\nshared traceback line"
+    unrelated_text = "shared traceback line\nunrelated noise"
+    scored = [
+        {"id": 0, "text": pinned_text, "score": 0.0},
+        {"id": 1, "text": unrelated_text, "score": 0.0},
+    ]
+    token = cc._PINNED_BLOCK_TEXTS.set((pinned_text,))
+    try:
+        cc._apply_pins(pin_patterns=[re.escape("unique policy marker")], pin_recent=0, scored=scored)
+    finally:
+        cc._PINNED_BLOCK_TEXTS.reset(token)
+    assert scored[0]["pinned"] is True
+    assert "pinned" not in scored[1]
 
 
 def test_json_payload_pins_match_the_decoded_caller_text(monkeypatch):
@@ -1108,3 +1141,105 @@ def test_json_payload_pins_match_the_decoded_caller_text(monkeypatch):
     )
     assert "café important evidence" in seen["match_text"]
     assert "\\u00e9" not in seen["match_text"]
+
+
+def test_bare_carriage_returns_still_use_the_normalized_pin_view():
+    import re
+    from tameru import compress_context as cc
+
+    raw = "intro\r[tameru: status] pinned evidence\rnoise"
+    rendered = "intro\n［tameru: status］ pinned evidence\nnoise"
+    got = cc._source_pin_texts(
+        rendered, [re.escape("[tameru: status]")], 0, match_text=raw
+    )
+    assert got == ["［tameru: status］ pinned evidence\nnoise"]
+    cr_pin = re.escape("pinned evidence\r")
+    assert cc._source_pin_texts(rendered, [cr_pin], 0, match_text=raw) == [
+        "［tameru: status］ pinned evidence\nnoise"
+    ]
+
+
+def test_newline_normalization_does_not_invent_dot_matches():
+    from tameru import compress_context as cc
+
+    raw = "first\nsecond\n\nnoise"
+    assert cc._source_pin_texts(raw, [r"first.second"], 0, match_text=raw) == []
+
+
+def test_pinned_block_text_context_is_not_retained_after_a_call():
+    import re
+    from tameru import compress_context as cc
+
+    cc.compress_context(
+        "unique pinned evidence\n" + "noise\n" * 30,
+        "noise", pin_patterns=[re.escape("unique pinned evidence")], ccr=False, citations=False,
+    )
+    assert cc._PINNED_BLOCK_TEXTS.get() == ()
+
+
+def test_pin_regex_anchors_keep_python_semantics():
+    from tameru import compress_context as cc
+
+    text = "intro\n\n## Target\nsecret evidence\n\n" + "noise\n" * 40
+    assert cc._source_pin_texts(text, [r"^## Target"], 0, match_text=text) == []
+    assert cc._source_pin_texts(text, [r"(?m)^## Target"], 0, match_text=text) == [
+        "## Target\nsecret evidence"
+    ]
+    end_anchored = "pending\nnoise\n" * 20 + "pending"
+    assert cc._source_pin_texts(end_anchored, [r"pending$"], 0, match_text=end_anchored) == ["pending"]
+
+
+def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):
+    import re
+    from tameru import compress_context as cc
+
+    raw = "pin one\r\npin two\r\n" + "noise line with ordinary words\r\n" * 80
+    seen = {}
+    real = cc._source_pin_texts
+
+    def capture(text, patterns, recent, **kwargs):
+        seen.update(kwargs)
+        return real(text, patterns, recent, **kwargs)
+
+    monkeypatch.setattr(cc, "_source_pin_texts", capture)
+    cc.compress_context(
+        raw, "noise", pin_patterns=[re.escape("pin one\r\npin two")], ccr=False, citations=False
+    )
+    assert "pin one\r\npin two" in seen["match_text"]
+
+
+def test_wrapped_crlf_pins_do_not_fail_open_from_line_endings():
+    import json
+    import re
+    from tameru import compress_context as cc
+
+    inner = "pin one\r\npin two\r\n" + "".join(
+        f"noise line {i} with ordinary words\r\n" for i in range(200)
+    )
+    envelope = json.dumps({"content": inner, "exit_code": 0})
+    result = cc.compress_context(
+        envelope, "noise", pin_patterns=[re.escape("pin one\r\npin two")],
+        ccr=False, citations=False,
+    )
+    assert not result.fail_open
+    assert "pin one" in result.compressed_text
+
+
+def test_broad_distinct_pins_do_not_scan_every_pin_for_every_block():
+    import re
+    import time
+    from tameru import compress_context as cc
+
+    pinned = tuple(f"unique pinned line {i}\nnoise {i}" for i in range(1200))
+    scored = [
+        {"id": i, "text": f"ordinary scored line {i}\nother noise {i}", "score": 0.0}
+        for i in range(500)
+    ]
+    token = cc._PINNED_BLOCK_TEXTS.set(pinned)
+    try:
+        started = time.perf_counter()
+        cc._apply_pins(pin_patterns=[re.escape("unique pinned line")], pin_recent=0, scored=scored)
+        elapsed = time.perf_counter() - started
+    finally:
+        cc._PINNED_BLOCK_TEXTS.reset(token)
+    assert elapsed < 1.5
