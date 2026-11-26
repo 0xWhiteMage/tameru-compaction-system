@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.10.0]
 - Fix: huge-input compression no longer recurses without progress on one-line tool envelopes or minified logs — an error-matching line larger than the per-line sample bound is skipped rather than clipped, and error-line thinning enforces the sampler budget in bytes, so the sampled pass stays below the huge-input threshold without fabricating partial caller lines. - Unreleased
+- Fix: huge-input error thinning no longer collapses to one line per coverage slot when a stride lands on long lines — contiguous slots are byte-packed, so thousands of short errors can survive while mixed long lines retain coverage. - Unreleased
 - Fix: the huge-sample join line `[...]` is now registered in the engine marker registry — it is engine-emitted structure (a sampling discontinuity in >2M inputs), not caller content, so extractive checkers recognize it instead of flagging a fabrication. - Unreleased
 
 - Fix: huge-input compression no longer emits fullwidth `［…］` elision lines — `_huge_sample` joins its head/middle/tail slices of a >2M input with bare `[…]` lines, but the recursive compression treated them as caller-forged markers and bracket-neutralized them, so the extract carried bytes no input line has and a re-compression could no longer recognize its own gaps. The internal-sample pass now exempts only the bare join lines; a caller-planted marker-shaped line inside real content is still neutralized. - Unreleased
