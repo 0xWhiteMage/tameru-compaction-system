@@ -393,6 +393,29 @@ def test_huge_dense_edges_keep_middle_error_coverage():
     assert sum(line.startswith("error=value") for line in sample.splitlines()) >= 200
 
 
+def test_huge_grouped_errors_are_not_thinned_when_they_fit():
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _huge_sample
+
+    errs = [f"ERROR failure {index} happened" for index in range(2_000)]
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + "\n".join(errs) + "\n" + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big, max_blocks=1_000)
+    assert sum(line.startswith("ERROR failure ") for line in sample.splitlines()) == 2_000
+
+
+def test_huge_uneven_edges_share_the_line_budget():
+    from tameru.compress_context import _HUGE_CHARS, _HUGE_EDGE_CHARS, _huge_sample, _line_count
+
+    edge_line = "edge=" + "e" * 140
+    edge_unit = edge_line + "\n"
+    head = (edge_unit * (_HUGE_EDGE_CHARS // len(edge_unit) + 2))[:_HUGE_EDGE_CHARS]
+    tail = "y" * _HUGE_EDGE_CHARS
+    middle_len = _HUGE_CHARS - len(head) - len(tail) + 1_000
+    middle = ("ERROR failure happened\n" * (middle_len // 23 + 1))[:middle_len]
+    sample = _huge_sample(head + "\n" + middle + tail, max_blocks=1_000, max_lines=1_000)
+    assert sample.count(edge_line) > 371
+    assert sample.endswith(tail)
+
+
 def test_huge_one_line_tool_json_does_not_recurse():
     # Terminal envelopes carry an ``error`` key, so one long JSON line both
     # matches the error sampler and used to reproduce as an over-threshold sample.

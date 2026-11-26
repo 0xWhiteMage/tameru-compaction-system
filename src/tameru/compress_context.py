@@ -14564,8 +14564,11 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     edge_budget = max(0, resolved_max_lines - seam_reserve - err_line_reserve)
     if _line_count(head) + _line_count(tail) > edge_budget:
         if head and tail:
-            head_budget = edge_budget // 2
-            tail_budget = edge_budget - head_budget
+            head_lines = _line_count(head)
+            tail_lines = _line_count(tail)
+            head_budget = min(head_lines, edge_budget // 2)
+            tail_budget = min(tail_lines, edge_budget - head_budget)
+            head_budget = min(head_lines, edge_budget - tail_budget)
         elif head:
             head_budget, tail_budget = edge_budget, 0
         else:
@@ -14605,9 +14608,10 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
         base_sample = _join_huge_sample(head, [], tail)
         base_blocks = _huge_sample_block_count(base_sample)
 
-    available = max(0, max_blocks - base_blocks - (1 if errs else 0))
-    if len(errs) > available:
-        errs = _evenly_spaced(errs, available)
+    # Measure the full sample before spending any error rows. In prose-like logs
+    # several errors can share one block, so a one-block-per-row allowance would
+    # thin rows that already fit; the reconciliation below removes only measured
+    # overflow while preserving endpoint coverage.
     sample = _join_huge_sample(head, errs, tail)
     blocks = _huge_sample_block_count(sample)
     for _ in range(8):
