@@ -12422,7 +12422,11 @@ def _apply_cost_gates(
             savings_gate = True
             kept_tokens = estimate_tokens(compressed)
 
-    source_pin_loss = not fail_open and any(part not in compressed for part in source_pin_texts)
+    pin_occurrences = collections.Counter(source_pin_texts)
+    source_pin_loss = not fail_open and any(
+        compressed.count(part) < occurrences
+        for part, occurrences in pin_occurrences.items()
+    )
     if source_pin_loss:
         compressed = caller_text
         kept = {block['id'] for block in scored}

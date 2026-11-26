@@ -1281,8 +1281,8 @@ def test_pin_patterns_match_hyperlink_and_truecolor_visible_spelling():
 
 def test_pin_patterns_match_the_ansi_free_spelling_the_caller_reads():
     """A colour reset inside a visible phrase must not hide it from a pin:
-    rendering strips the same control bytes, so the pin would otherwise offer
-    no protection while the fold rewrites the repeated source lines."""
+    when every repeated line is pinned the engine must preserve the original
+    or fail open, never silently fold or thin the pinned stream."""
     import re
     from tameru import compress_context as cc
 
@@ -1294,9 +1294,23 @@ def test_pin_patterns_match_the_ansi_free_spelling_the_caller_reads():
     result = cc.compress_context(
         colored, "unrelated question", pin_patterns=[re.escape(pin)], ccr=False, citations=False,
     )
-    assert not result.fail_open
-    assert result.compressed_text.count(pin) > 1
-    assert not result.compressed_text.startswith("[×160]")
+    assert result.fail_open
+    assert result.compressed_text == colored
+
+
+def test_repeated_pinned_blocks_fail_open_when_selection_cannot_keep_every_occurrence():
+    """Each repeated caller-visible block is a separate pinned original block;
+    one surviving copy must not satisfy the occurrences selection dropped."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "INFO worker processed a batch of events ok"
+    repeated = "\n".join([pin] * 160)
+    result = cc.compress_context(
+        repeated, "unrelated question", pin_patterns=[re.escape(pin)], ccr=False, citations=False,
+    )
+    assert result.fail_open
+    assert result.compressed_text == repeated
 
 
 def test_wrapped_colored_facts_are_not_restored_twice():
