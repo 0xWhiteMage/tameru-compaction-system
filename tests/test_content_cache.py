@@ -377,6 +377,22 @@ def test_huge_record_sample_compresses_within_custom_block_limit():
     assert len(res.compressed_text) < len(big)
 
 
+def test_huge_dense_edges_keep_middle_error_coverage():
+    # Edge overflow must not consume the whole block budget: the sampler's byte
+    # budgets give the middle error slice a quarter of the capacity too.
+    from tameru.compress_context import _HUGE_CHARS, _HUGE_EDGE_CHARS, _huge_sample, segment_blocks
+
+    edge_line = "edge=" + "e" * 140
+    edge_unit = edge_line + "\n"
+    head = (edge_unit * (_HUGE_EDGE_CHARS // len(edge_unit) + 2))[:_HUGE_EDGE_CHARS]
+    count = (_HUGE_CHARS - 2 * len(head)) // 18 + 2_000
+    middle = "".join(f"error=value{index:06d}\n" for index in range(count))
+    big = head + "\n" + middle + head
+    sample = _huge_sample(big, max_blocks=1_000, max_lines=1_000)
+    assert len(segment_blocks(sample.split("\n"))) <= 1_000
+    assert sum(line.startswith("error=value") for line in sample.splitlines()) >= 200
+
+
 def test_huge_one_line_tool_json_does_not_recurse():
     # Terminal envelopes carry an ``error`` key, so one long JSON line both
     # matches the error sampler and used to reproduce as an over-threshold sample.
