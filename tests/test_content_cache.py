@@ -198,6 +198,37 @@ def test_huge_item_partial_basis():
     assert elapsed < 2.0 + 13.0  # spec bound is 2s on 8M; Windows CI can sit near 10s under load
 
 
+def test_huge_sample_with_a_tiny_line_cap_fails_open():
+    # A cap too small for seams and coverage slots must not become an empty
+    # successful compression; the caller keeps the original instead.
+    big = "ordinary filler line with several words\n" * 60_000
+    assert len(big) > _HUGE_CHARS
+    for max_lines in (1, 2, 8):
+        res = compress_context(
+            big, "noise", ccr=False, citations=False,
+            limits={"max_lines": max_lines},
+        )
+        assert res.fail_open
+        assert res.compressed_text == big
+
+
+def test_huge_pinned_input_fails_open():
+    # The streaming sampler cannot prove that a pinned original block survived
+    # intact, so an explicit pin is a hard fail-open floor rather than a sampled
+    # best effort.
+    import re
+
+    filler = "2026-11-26T10:00:00Z INFO worker processed request id=abcdefgh status=ok\n"
+    pin = "PINNED diagnostic"
+    big = filler * 22_000 + pin + "\n" + filler * 18_000
+    assert len(big) > _HUGE_CHARS
+    for kwargs in ({"pin_patterns": [re.escape(pin)]}, {"pin_recent": 1}):
+        res = compress_context(big, "worker processed request", ccr=False, citations=False, **kwargs)
+        assert res.fail_open
+        assert res.compressed_text == big
+        assert "huge_pinned_input" in res.reasons
+
+
 def test_too_large_fails_open():
     huge = "x" * (_HUGE_MAX_CHARS + 1)
     res = compress_context(huge, "q")
@@ -241,13 +272,29 @@ def test_huge_error_sample_packs_short_lines():
     # coverage slot when thousands of short errors fit in the byte budget.
     from tameru.compress_context import _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample
 
+    count = 14_000
+    lines = [f"ERROR short failure {i}" for i in range(count)]
+    assert sum(len(line) + 1 for line in lines) > _HUGE_ERR_CHARS
+    middle = "\n".join(lines) + "\n"
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + middle + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big)
+    assert sum(line in sample for line in lines) > 10_000
+    assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
+
+
+def test_huge_error_sample_deduplicates_exact_repeats():
+    # Thousands of byte-identical errors carry the same diagnostic once. The
+    # recursive pass can fold repetition, but scoring thousands of copies first
+    # can exceed a host's trigger-time deadline.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample
+
     line = "ERROR short failure"
     count = 14_000
     assert (len(line) + 1) * count > _HUGE_ERR_CHARS
     middle = (line + "\n") * count
     big = "x" * _HUGE_EDGE_CHARS + "\n" + middle + "y" * _HUGE_EDGE_CHARS
     sample = _huge_sample(big)
-    assert sample.count(line) > 10_000
+    assert sample.count(line) == 1
     assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
 
 
@@ -285,6 +332,19 @@ def test_huge_error_sample_packing_keeps_stride_anchor():
     assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
 
 
+def test_huge_sample_stays_under_the_recursive_line_limit():
+    # Prose-shaped edge rows can remain under the block ceiling while crossing
+    # the line ceiling. The sampler spends removable rows on errors first and
+    # then trims complete edge rows.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _huge_sample
+
+    edge = ("x\n" * _HUGE_EDGE_CHARS)[:_HUGE_EDGE_CHARS]
+    filler = "ordinary filler text without an error marker\n" * 22_000
+    big = edge + filler + edge
+    sample = _huge_sample(big, max_lines=1_000)
+    assert sample.count("\n") + 1 <= 1_000
+
+
 def test_huge_error_sample_respects_record_block_limit():
     # Key/value-shaped rows are one block per line in the recursive pass. Packing
     # the byte budget full of them must not turn the sample into a block-limit
@@ -294,11 +354,11 @@ def test_huge_error_sample_respects_record_block_limit():
     )
     from tameru.industrial import IndustrialLimits
 
-    line = "error=value"
-    count = _HUGE_ERR_CHARS // (len(line) + 1) + 1_000
-    big = "x" * _HUGE_EDGE_CHARS + "\n" + (line + "\n") * count + "y" * _HUGE_EDGE_CHARS
+    count = _HUGE_ERR_CHARS // len("error=value\n") + 1_000
+    lines = [f"error=value{i}" for i in range(count)]
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + "\n".join(lines) + "\n" + "y" * _HUGE_EDGE_CHARS
     sample = _huge_sample(big)
-    assert sample.count(line) > 10_000
+    assert sum(line in sample for line in lines) > 10_000
     assert len(segment_blocks(sample.split("\n"))) <= IndustrialLimits().max_blocks
     custom = _huge_sample(big, max_blocks=1_000)
     assert len(segment_blocks(custom.split("\n"))) <= 1_000

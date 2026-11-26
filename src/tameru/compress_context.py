@@ -14434,6 +14434,10 @@ def _evenly_spaced(lines: list[str], target: int) -> list[str]:
     return [lines[i * (count - 1) // (target - 1)] for i in range(target)]
 
 
+def _line_count(text: str) -> int:
+    return text.count("\n") + (1 if text else 0)
+
+
 def _huge_sample_block_count(sample: str) -> int:
     """Blocks the recursive pass will segment for ``sample`` (0/1 line-based record shapes included)."""
     return len(_segment_blocks_memo(tuple(sample.split("\n"))))
@@ -14472,21 +14476,28 @@ def _trim_huge_edges(head: str, tail: str, lines_to_remove: int) -> tuple[str, s
     return "".join(head_lines[:head_keep]), "".join(tail_lines[len(tail_lines) - tail_keep:])
 
 
-def _huge_sample(text: str, max_blocks: int | None = None) -> str:
+def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None = None) -> str:
     """Streaming head/tail + error-line sample for inputs over ``_HUGE_CHARS`` (S7).
 
     One deterministic pass: fixed-size edges, every middle line matching a cheap
     marker check, thinned evenly to ``_HUGE_ERR_CHARS`` when over budget. The
-    recursive pass still has a block ceiling, so record-shaped samples are
-    thinned to that ceiling as well; bytes alone are not enough when every
-    short line is its own block."""
+    recursive pass still has block and line ceilings, so record-shaped samples are
+    thinned to those ceilings as well; bytes alone are not enough when every
+    short line is its own block. Exact duplicate errors are carried once:
+    another byte-identical copy adds no diagnostic and only costs scoring time."""
     edge = _HUGE_EDGE_CHARS
     head, tail = text[:edge], text[-edge:]
     errs: list[str] = []
+    seen_errs: set[str] = set()
     total = 0
     for line in text[edge:len(text) - edge].splitlines():
         low = line.lower()
-        if len(line) <= _HUGE_ERR_LINE_CHARS and any(mark in low for mark in _HUGE_ERR_MARKERS):
+        if (
+            len(line) <= _HUGE_ERR_LINE_CHARS
+            and any(mark in low for mark in _HUGE_ERR_MARKERS)
+            and line not in seen_errs
+        ):
+            seen_errs.add(line)
             errs.append(line)
             total += len(line) + 1
     if total > _HUGE_ERR_CHARS and errs:
@@ -14528,17 +14539,19 @@ def _huge_sample(text: str, max_blocks: int | None = None) -> str:
     sample = _join_huge_sample(head, errs, tail)
     if max_blocks is None:
         max_blocks = IndustrialLimits().max_blocks
+    if max_lines is None:
+        max_lines = IndustrialLimits().max_lines
     # Blocks never outnumber lines, so the common long-line case skips the extra
     # segmentation pass. When record-shaped lines cross the line count, count the
     # shape the recursive pass will actually segment and thin error lines first;
     # each removal keeps endpoint coverage instead of truncating the log's tail.
-    if len(sample.split("\n")) <= max_blocks:
+    if len(sample.split("\n")) <= max_blocks and _line_count(sample) <= max_lines:
         return sample
     blocks = _huge_sample_block_count(sample)
     for _ in range(8):
         over = blocks - max_blocks
         if over <= 0:
-            return sample
+            break
         if not errs:
             break
         target = max(0, len(errs) - over)
@@ -14556,6 +14569,24 @@ def _huge_sample(text: str, max_blocks: int | None = None) -> str:
         head, tail = _trim_huge_edges(head, tail, blocks - max_blocks + 1)
         sample = _join_huge_sample(head, errs, tail)
         blocks = _huge_sample_block_count(sample)
+    # The block ceiling does not imply the line ceiling: prose-like rows group
+    # several lines in a block. Thin optional error rows first, then complete
+    # edge rows, keeping endpoints rather than truncating only the tail. If the
+    # cap is still impossible the recursive pass fails open with the original.
+    for _ in range(8):
+        over_lines = _line_count(sample) - max_lines
+        if over_lines <= 0:
+            break
+        if errs:
+            target = max(0, len(errs) - over_lines)
+            if target == len(errs):
+                target -= 1
+            errs = _evenly_spaced(errs, target)
+        elif head or tail:
+            head, tail = _trim_huge_edges(head, tail, over_lines + 1)
+        else:
+            break
+        sample = _join_huge_sample(head, errs, tail)
     return sample
 
 
@@ -14696,7 +14727,32 @@ def compress_context(
                 keep_ratio=1.0, fail_open=True, reasons=["too_large"],
                 confidence=0.0, confidence_basis="none", query_specific=q_specific,
             )
-        sample = _huge_sample(full_text, max_blocks=(limits or IndustrialLimits()).max_blocks)
+        if pin_patterns or pin_recent:
+            # The streaming sample does not know the original's block boundaries,
+            # so it cannot prove that a caller-pinned block reached the recursive
+            # pass intact. Pins are a hard caller floor: preserve the original
+            # rather than let the sampled pin-loss check approve a sample in
+            # which the pinned block never appeared.
+            est = _estimate_tokens(full_text)
+            return CompressResult(
+                compressed_text=full_text, original_tokens=est, kept_tokens=est,
+                tokens_saved_pct=0.0, policy_name="huge-pinned", mode=mode,
+                keep_ratio=1.0, fail_open=True, reasons=["huge_pinned_input"],
+                confidence=0.0, confidence_basis="none", query_specific=q_specific,
+            )
+        sample = _huge_sample(
+            full_text, max_blocks=(limits or IndustrialLimits()).max_blocks,
+            max_lines=(limits or IndustrialLimits()).max_lines,
+        )
+        if not sample:
+            est = _estimate_tokens(full_text)
+            return CompressResult(
+                compressed_text=full_text, original_tokens=est, kept_tokens=est,
+                tokens_saved_pct=0.0, policy_name="huge-sample-empty", mode=mode,
+                keep_ratio=1.0, fail_open=True,
+                reasons=["huge_sample_empty", "huge_sampled"],
+                confidence=0.0, confidence_basis="none", query_specific=q_specific,
+            )
         res = compress_context(
             sample, query, mode=mode, budget_ratio=budget_ratio, ccr=ccr,
             cache_prefix=cache_prefix, citations=citations, ccr_dir=ccr_dir,

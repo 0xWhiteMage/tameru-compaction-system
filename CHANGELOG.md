@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
+- Fix: huge-input sampling now carries each byte-identical error line once, respects the recursive line ceiling as well as the block ceiling, fails open rather than returning an empty successful compression at very small line caps, and treats pinned huge inputs as a hard fail-open floor because streaming sampling cannot prove every pinned source block survived intact. - Unreleased
 - Fix: huge-input error packing now respects the recursive compressor's block ceiling — record-shaped short lines (key/value, git-oneline or npm-style rows) are coverage-thinned, and dense edge lines are trimmed as complete byte-exact lines, so a packed sample no longer fails open solely because every short row segments as its own block. - Unreleased
 - Fix: huge-input compression no longer recurses without progress on one-line tool envelopes or minified logs — an error-matching line larger than the per-line sample bound is skipped rather than clipped, and error-line thinning enforces the sampler budget in bytes, so the sampled pass stays below the huge-input threshold without fabricating partial caller lines. - Unreleased
 - Fix: huge-input error thinning no longer collapses to one line per coverage slot when a stride lands on long lines — contiguous slots are byte-packed, so thousands of short errors can survive while mixed long lines retain coverage. - Unreleased
