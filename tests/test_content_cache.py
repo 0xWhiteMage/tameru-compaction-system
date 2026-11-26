@@ -266,6 +266,25 @@ def test_huge_error_sample_skew_stays_byte_bounded():
     assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
 
 
+def test_huge_error_sample_packing_keeps_stride_anchor():
+    # Packing extra short errors must not crowd out the long diagnostic the
+    # original evenly strided fallback selected as that slot's representative.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample
+
+    count = 2_000
+    short = "ERROR " + "s" * 100
+    long = ("ERROR long diagnostic " + "l" * 4000)[:4096]
+    unique = ("ERROR unique_long_diagnostic " + "u" * 4050)[:4096]
+    lines = [long if i % 6 == 0 else short for i in range(count)]
+    lines[96] = unique       # 96 is both an initial stride hit and a fallback anchor
+    assert sum(len(line) + 1 for line in lines) > _HUGE_ERR_CHARS
+    middle = "\n".join(lines) + "\n"
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + middle + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big)
+    assert unique in sample
+    assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
+
+
 def test_huge_one_line_tool_json_does_not_recurse():
     # Terminal envelopes carry an ``error`` key, so one long JSON line both
     # matches the error sampler and used to reproduce as an over-threshold sample.

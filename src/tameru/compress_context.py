@@ -14440,20 +14440,23 @@ def _huge_sample(text: str) -> str:
         if used <= _HUGE_ERR_CHARS:
             errs = strided
         else:
-            # A skewed mix can align the stride with mostly long lines. Fall back
-            # to contiguous coverage slots sized so even a longest allowed line
-            # fits. Pack each slot against its own byte allowance rather than
-            # keeping only one line there: short errors use the budget, while the
-            # per-slot caps preserve coverage and keep the total byte-bounded.
+            # A skewed mix can align the stride with mostly long lines. Keep that
+            # stride's representative in every coverage slot — even a longest
+            # allowed line fits its allowance — then pack later lines around it.
+            # The anchors preserve the old coverage exactly; the packing lets
+            # short errors use the rest of the byte budget.
             slots = max(1, _HUGE_ERR_CHARS // (_HUGE_ERR_LINE_CHARS + 1))
             allowance, extra = divmod(_HUGE_ERR_CHARS, slots)
             count = len(errs)
+            stride = max(1, math.ceil(count / slots))
             packed: list[str] = []
-            for slot in range(slots):
+            for slot, start in enumerate(range(0, count, stride)):
                 local = allowance + (1 if slot < extra else 0)
-                start = count * slot // slots
-                end = count * (slot + 1) // slots
-                for line in errs[start:end]:
+                anchor = errs[start]
+                packed.append(anchor)
+                local -= len(anchor) + 1
+                end = min(count, start + stride)
+                for line in errs[start + 1:end]:
                     cost = len(line) + 1
                     if cost <= local:
                         packed.append(line)
