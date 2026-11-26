@@ -406,6 +406,7 @@ def test_huge_tail_line_trim_skips_the_terminal_empty_field():
     from tameru.compress_context import _thin_text_lines
 
     assert _thin_text_lines("closing diagnosis\n", 1, from_end=True) == "closing diagnosis"
+    assert _thin_text_lines("closing diagnosis\n\n\n", 1, from_end=True) == "closing diagnosis"
 
 
 def test_huge_error_sample_respects_record_block_limit():

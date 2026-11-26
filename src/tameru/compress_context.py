@@ -14502,7 +14502,11 @@ def _thin_text_lines(text: str, max_lines: int, *, from_end: bool = False) -> st
     lines = text.split("\n")
     if len(lines) <= max_lines:
         return text
-    selectable = lines[:-1] if from_end and lines and not lines[-1] else lines
+    selectable = lines
+    if from_end:
+        selectable = list(lines)
+        while selectable and not selectable[-1]:
+            selectable.pop()
     kept = selectable[-max_lines:] if from_end else selectable[:max_lines]
     return "\n".join(kept)
 
