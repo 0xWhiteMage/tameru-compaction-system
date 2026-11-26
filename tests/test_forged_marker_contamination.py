@@ -1050,6 +1050,34 @@ def test_pin_mapping_follows_line_spans_when_neutralization_shifts_blocks(monkey
     assert got == ["intro\n［tameru: status］ pinned"]
 
 
+def test_a_pin_inside_one_caller_block_pins_overlapping_protected_blocks(monkeypatch):
+    """When neutralization splits one caller-visible block, the block-local hit
+    conservatively pins every protected block overlapping that source block."""
+    import re
+    from tameru import compress_context as cc
+
+    original_lines = ["intro", "[tameru: status] pinned", "noise one", "noise two"]
+    neutral_lines = ["intro", "［tameru: status］ pinned", "noise one", "noise two"]
+
+    def blocks(lines):
+        if any("［tameru:" in line for line in lines):
+            return [
+                {"id": 0, "start": 0, "end": 1, "type": "text", "text": "\n".join(lines[:2]), "tokens": 1},
+                {"id": 1, "start": 2, "end": 3, "type": "text", "text": "\n".join(lines[2:]), "tokens": 1},
+            ]
+        return [
+            {"id": 0, "start": 0, "end": 2, "type": "text", "text": "\n".join(lines[:3]), "tokens": 1},
+            {"id": 1, "start": 3, "end": 3, "type": "text", "text": lines[3], "tokens": 1},
+        ]
+
+    monkeypatch.setattr(cc, "_segment_blocks_memo", blocks)
+    got = cc._source_pin_texts(
+        "\n".join(neutral_lines), [re.escape("[tameru: status] pinned\nnoise one")], 0,
+        match_text="\n".join(original_lines),
+    )
+    assert got == ["intro\n［tameru: status］ pinned", "noise one\nnoise two"]
+
+
 def test_apply_pins_matches_the_caller_spelling_of_neutralized_markers():
     import re
     from tameru import compress_context as cc
@@ -1177,16 +1205,80 @@ def test_pinned_block_text_context_is_not_retained_after_a_call():
     assert cc._PINNED_BLOCK_TEXTS.get() == ()
 
 
-def test_pin_regex_anchors_keep_python_semantics():
+def test_pin_regex_anchors_are_block_local():
     from tameru import compress_context as cc
 
     text = "intro\n\n## Target\nsecret evidence\n\n" + "noise\n" * 40
-    assert cc._source_pin_texts(text, [r"^## Target"], 0, match_text=text) == []
+    assert cc._source_pin_texts(text, [r"^## Target"], 0, match_text=text) == [
+        "## Target\nsecret evidence"
+    ]
     assert cc._source_pin_texts(text, [r"(?m)^## Target"], 0, match_text=text) == [
         "## Target\nsecret evidence"
     ]
-    end_anchored = "pending\nnoise\n" * 20 + "pending"
-    assert cc._source_pin_texts(end_anchored, [r"pending$"], 0, match_text=end_anchored) == ["pending"]
+    assert cc._source_pin_texts(text, [r"\A## Target"], 0, match_text=text) == [
+        "## Target\nsecret evidence"
+    ]
+    assert cc._source_pin_texts(text, [r"secret evidence\Z"], 0, match_text=text) == [
+        "## Target\nsecret evidence"
+    ]
+    end_anchored = "pending\n\nnoise\n\npending"
+    assert cc._source_pin_texts(end_anchored, [r"pending$"], 0, match_text=end_anchored) == [
+        "pending", "pending"
+    ]
+    across_blocks = "pin one\n\npin two"
+    assert cc._source_pin_texts(across_blocks, ["pin one\n\npin two"], 0, match_text=across_blocks) == []
+
+
+def test_colored_pinned_blocks_compare_in_the_rendered_spelling():
+    import re
+    from tameru import compress_context as cc
+
+    raw = "\x1b[31m## Target\x1b[0m\nsecret evidence\n\n" + "".join(
+        f"noise line {i} with ordinary words\n" for i in range(200)
+    )
+    result = cc.compress_context(
+        raw, "noise", pin_patterns=[re.escape("secret evidence")], ccr=False, citations=False,
+    )
+    assert not result.fail_open
+    assert "## Target\nsecret evidence" in result.compressed_text
+    assert "\x1b" not in result.compressed_text
+
+
+def test_wrapped_colored_pinned_blocks_compare_in_the_rendered_spelling():
+    import json
+    import re
+    from tameru import compress_context as cc
+
+    inner = "\x1b[31m## Target\x1b[0m\nsecret evidence\n\n" + "".join(
+        f"noise line {i} with ordinary words\n" for i in range(200)
+    )
+    envelope = json.dumps({"content": inner, "exit_code": 0})
+    result = cc.compress_context(
+        envelope, "noise", pin_patterns=[re.escape("secret evidence")], ccr=False, citations=False,
+    )
+    assert not result.fail_open
+    assert "## Target\nsecret evidence" in result.compressed_text
+    assert "\x1b" not in result.compressed_text
+
+
+def test_wrapped_colored_facts_are_not_restored_twice():
+    import json
+    from tameru import compress_context as cc
+
+    inner = "\x1b[31merror: disk full\x1b[0m\n" + "".join(
+        f"noise line {i} with ordinary words\n" for i in range(200)
+    )
+    result = cc.compress_context(json.dumps({"content": inner, "exit_code": 1}), "noise", ccr=False, citations=False)
+    assert result.compressed_text.count("disk full") == 1
+
+
+def test_empty_ansi_free_wrapped_payload_preserves_the_envelope():
+    import json
+    from tameru import compress_context as cc
+
+    envelope = json.dumps({"content": "\x1b[31m\x1b[0m\n", "exit_code": 2})
+    result = cc.compress_context(envelope, "noise", ccr=False, citations=False)
+    assert result.fail_open and result.compressed_text == envelope
 
 
 def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):
@@ -1206,6 +1298,20 @@ def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):
         raw, "noise", pin_patterns=[re.escape("pin one\r\npin two")], ccr=False, citations=False
     )
     assert "pin one\r\npin two" in seen["match_text"]
+
+
+def test_crlf_pins_bind_the_same_block_in_raw_or_normalized_views():
+    import re
+    from tameru import compress_context as cc
+
+    raw = "pin one\r\npin two\r\n\r\nnoise\r\nnoise"
+    protected = cc._norm_newlines(raw)
+    assert cc._source_pin_texts(
+        protected, [re.escape("pin one\r\npin two")], 0, match_text=raw
+    ) == ["pin one\npin two"]
+    assert cc._source_pin_texts(
+        protected, [re.escape("pin one\npin two")], 0, match_text=raw
+    ) == ["pin one\npin two"]
 
 
 def test_wrapped_crlf_pins_do_not_fail_open_from_line_endings():

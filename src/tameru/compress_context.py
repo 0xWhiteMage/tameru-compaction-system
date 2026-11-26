@@ -6521,8 +6521,9 @@ def _source_pin_texts(
     ``text`` is the working copy whose forged markers were neutralized, while
     pins are caller-authored patterns and must match the caller-visible
     ``match_text``. Neutralization preserves line positions but can move block
-    boundaries, so pins are carried over by line span; the returned block
-    stays safe to emit without losing the pin's source spelling.
+    boundaries, so pins are carried over by line span. Rendering strips ANSI
+    control bytes, so the returned block does too: pin-loss verification must
+    compare the same emitted spelling rather than fail open on color bytes.
     """
     if not patterns and not recent:
         return []
@@ -6533,56 +6534,59 @@ def _source_pin_texts(
     pinned: set[int] = set()
     if match_text is not None:
         work_lines = text.split('\n')
-        # Neutralization can change a line's structural shape (for example an
-        # ASCII bracketed line no longer reads as a JSON/INI opener), so block
-        # ids need not denote the same line span in the two walks. Evaluate the
-        # caller's unchanged regex against the full caller-visible payload and
-        # map each match span back to logical lines. This avoids rewriting
-        # regex escapes: a CR-authored pin can match the raw payload while an
-        # LF-authored pin can match the newline-normalized rendering.
-        # Match the two representations the payload genuinely has here: its raw
-        # decoded spelling and the newline-normalized rendering. Do not synthesize
-        # other newline dialects: ``.`` matches a bare CR even though it rejects LF,
-        # so a synthetic CR view would invent matches the caller's regex does not
-        # license. Likewise, never rewrite the regex itself.
+        # Pins are block-local: selection has always applied them to one block
+        # at a time, so ``^`` and ``$`` mean that block's edges. Neutralization
+        # can change a line's structural shape (for example an ASCII bracketed
+        # line no longer reads as a JSON/INI opener), so block ids need not
+        # denote the same line span in the two walks. Segment the
+        # caller-visible lines into their own blocks and evaluate the caller's
+        # unchanged regex there, then carry each hit back by line-span overlap.
+        # This avoids rewriting regex escapes: a
+        # CR-authored pin can match the raw payload while an LF-authored pin
+        # can match the newline-normalized rendering. Match the two
+        # representations the payload genuinely has here: its raw decoded
+        # spelling and the newline-normalized rendering. Do not synthesize
+        # other newline dialects: ``.`` matches a bare CR even though it
+        # rejects LF, so a synthetic CR view would invent matches the caller's
+        # regex does not license. Likewise, never rewrite the regex itself.
         match_views = [match_text]
         normalized_match = _norm_newlines(match_text)
         if normalized_match != match_text:
             match_views.append(normalized_match)
-        pinned_lines = [False] * len(work_lines)
-        unpinned = len(work_lines)
-        for view_text in match_views:
-            starts = [0]
-            for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
-                starts.append(newline.end())
-            if len(starts) != len(work_lines):
-                continue
-            for expr in expressions:
-                for match in expr.finditer(view_text):
-                    start, end = match.span()
-                    first = bisect.bisect_right(starts, start) - 1
-                    last = bisect.bisect_right(starts, max(start, end - 1)) - 1
-                    for ln in range(max(0, first), min(len(work_lines) - 1, last) + 1):
-                        if not pinned_lines[ln]:
-                            pinned_lines[ln] = True
-                            unpinned -= 1
-                    if not unpinned:
-                        break
-                if not unpinned:
-                    break
-            if not unpinned:
-                break
-        pinned = {
-            block['id'] for block in blocks
-            if any(pinned_lines[block['start'] : block['end'] + 1])
-        }
+        pinned = set()
+        if expressions:
+            protected_starts = [block['start'] for block in blocks]
+            for view_text in match_views:
+                line_bounds = []
+                logical_lines = []
+                line_start = 0
+                for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
+                    line_bounds.append((line_start, newline.start()))
+                    logical_lines.append(view_text[line_start:newline.start()])
+                    line_start = newline.end()
+                line_bounds.append((line_start, len(view_text)))
+                logical_lines.append(view_text[line_start:])
+                if len(line_bounds) != len(work_lines):
+                    continue
+                # Anchor the regex in the caller-visible block, then carry the
+                # hit across by line span: neutralization can split or merge
+                # the protected blocks the engine later emits.
+                for view_block in _segment_blocks_memo(logical_lines):
+                    start = line_bounds[view_block['start']][0]
+                    end = line_bounds[view_block['end']][1]
+                    if not any(expr.search(view_text[start:end]) for expr in expressions):
+                        continue
+                    pos = bisect.bisect_right(protected_starts, view_block['end']) - 1
+                    while pos >= 0 and blocks[pos]['end'] >= view_block['start']:
+                        pinned.add(blocks[pos]['id'])
+                        pos -= 1
     else:
         pinned = {block['id'] for block in blocks
                   if any(expr.search(block['text']) for expr in expressions)}
     if recent and blocks:
         pinned.add(blocks[0]['id'])
         pinned.update(block['id'] for block in blocks[-recent:])
-    return [block['text'] for block in blocks if block['id'] in pinned]
+    return [strip_ansi(block['text']) for block in blocks if block['id'] in pinned]
 
 
 def _segment_blocks_memo(lines: list[str]) -> list[dict[str, Any]]:
@@ -13846,7 +13850,7 @@ def _compress_context_impl(
     # The decoded body (and the analysis_text fallback) can still carry a
     # marker-shaped span — the floors restore lines verbatim, so they must
     # come from the same marker-free copy the working text uses.
-    protected_source = _neutralize_forged_markers(_norm_newlines(protected_source))
+    protected_source = _neutralize_forged_markers(strip_ansi(_norm_newlines(protected_source)))
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -13935,7 +13939,10 @@ def _compress_context_impl(
                     requested_mode=requested_mode,
                 )
             tool_payload = cleaned_payload
-    text = _norm_newlines(tool_payload.inner)
+    # JSON-decoded control bytes are payload text too: the outer strip ran before
+    # decoding, when they were still spelled ``\u001b``. Keep the working copy in
+    # the same ANSI-free spelling plain tool output already uses.
+    text = strip_ansi(_norm_newlines(tool_payload.inner))
     if payload_industrial is not None and payload_industrial.applied:
         text = payload_industrial.text
     if artifact_contaminated:
@@ -13996,6 +14003,14 @@ def _compress_context_impl(
     if adapter_info is None or adapter_info.get("name") == "test_output":
         text = _restore_facts(fact_lines, text, before=protected_source)
     if not text.strip():
+        if caller_text.strip():
+            tokens = estimate_tokens(caller_text)
+            return CompressResult(
+                compressed_text=caller_text, original_tokens=tokens, kept_tokens=tokens,
+                tokens_saved_pct=0.0, policy_name="local-fail-open", mode=requested_mode,
+                keep_ratio=1.0, compression_risk="high", confidence=0.0, fail_open=True,
+                reasons=["ANSI-free payload rendered empty; preserving the original tool envelope"],
+            )
         return CompressResult(
             compressed_text="", policy_name="noop", mode=requested_mode
         )
