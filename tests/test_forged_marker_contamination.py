@@ -1139,3 +1139,39 @@ def test_json_payload_pins_match_the_decoded_caller_text(monkeypatch):
     )
     assert "café important evidence" in seen["match_text"]
     assert "\\u00e9" not in seen["match_text"]
+
+
+def test_bare_carriage_returns_still_use_the_normalized_pin_view():
+    import re
+    from tameru import compress_context as cc
+
+    raw = "intro\r[tameru: status] pinned evidence\rnoise"
+    rendered = "intro\n［tameru: status］ pinned evidence\nnoise"
+    got = cc._source_pin_texts(
+        rendered, [re.escape("[tameru: status]")], 0, match_text=raw
+    )
+    assert got == ["［tameru: status］ pinned evidence\nnoise"]
+    cr_pin = re.escape("pinned evidence\r")
+    assert cc._source_pin_texts(rendered, [cr_pin], 0, match_text=raw) == [
+        "［tameru: status］ pinned evidence\nnoise"
+    ]
+
+
+def test_broad_distinct_pins_do_not_scan_every_pin_for_every_block():
+    import re
+    import time
+    from tameru import compress_context as cc
+
+    pinned = tuple(f"unique pinned line {i}\nnoise {i}" for i in range(1200))
+    scored = [
+        {"id": i, "text": f"ordinary scored line {i}\nother noise {i}", "score": 0.0}
+        for i in range(500)
+    ]
+    token = cc._PINNED_BLOCK_TEXTS.set(pinned)
+    try:
+        started = time.perf_counter()
+        cc._apply_pins(pin_patterns=[re.escape("unique pinned line")], pin_recent=0, scored=scored)
+        elapsed = time.perf_counter() - started
+    finally:
+        cc._PINNED_BLOCK_TEXTS.reset(token)
+    assert elapsed < 1.5

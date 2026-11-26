@@ -6531,25 +6531,39 @@ def _source_pin_texts(
     if match_text is not None:
         match_lines = match_text.split('\n')
         work_lines = text.split('\n')
-        if len(match_lines) == len(work_lines):
-            # Neutralization can change a line's structural shape (for example
-            # an ASCII bracketed line no longer reads as a JSON/INI opener), so
-            # block ids need not denote the same line span in the two walks.
-            # Match the caller spelling by source line, then conservatively pin
-            # every working block intersecting one of those lines. A wrapped
-            # payload's CRLF is normalized before rendering; accept both the
-            # caller's raw spelling and the rendered LF spelling without
-            # treating either as a different logical line.
-            pinned_lines = [False] * len(match_lines)
-            match_views = [match_lines]
-            normalized_match = _norm_newlines(match_text)
-            if normalized_match != match_text:
-                normalized_lines = normalized_match.split('\n')
-                if len(normalized_lines) == len(work_lines):
-                    match_views.append(normalized_lines)
-            for view_lines in match_views:
+        # Neutralization can change a line's structural shape (for example an
+        # ASCII bracketed line no longer reads as a JSON/INI opener), so block
+        # ids need not denote the same line span in the two walks. Match the
+        # caller spelling by source line, then conservatively pin every working
+        # block intersecting one of those lines. A wrapped payload's CRLF is
+        # normalized before rendering; accept both the caller's raw spelling
+        # and the rendered LF spelling whenever either preserves the working
+        # line count. A bare CR is itself a newline after normalization, so the
+        # raw view can be unalignable while the normalized view still matches.
+        match_views = [(match_lines, expressions)]
+        normalized_match = _norm_newlines(match_text)
+        if normalized_match != match_text:
+            # A pin copied with the payload's line ending may name ``\r``
+            # explicitly. Normalization turns that line ending into ``\n`` in
+            # the rendered view, so evaluate an equivalently normalized pattern
+            # there too. This is a regex escape substitution, not a rewrite of
+            # the caller's pattern for the raw view.
+            normalized_patterns = [
+                pattern.replace("\\r", "\\n").replace("\r", "\n")
+                for pattern in (patterns or [])
+            ]
+            normalized_expressions = compile_pin_patterns(normalized_patterns)
+            if normalized_expressions is not None:
+                match_views.append((normalized_match.split('\n'), normalized_expressions))
+        aligned_views = [
+            (view_lines, view_expressions) for view_lines, view_expressions in match_views
+            if len(view_lines) == len(work_lines)
+        ]
+        if aligned_views:
+            pinned_lines = [False] * len(work_lines)
+            for view_lines, view_expressions in aligned_views:
                 for block in _segment_blocks_memo(view_lines):
-                    if any(expr.search(block['text']) for expr in expressions):
+                    if any(expr.search(block['text']) for expr in view_expressions):
                         for ln in range(block['start'], block['end'] + 1):
                             pinned_lines[ln] = True
             pinned = {
@@ -12689,18 +12703,31 @@ def _apply_pins(
     # bypassed for pins (a caller-pinned line outranks injection heuristics).
     if pin_patterns:
         _pin_res = compile_pin_patterns(pin_patterns)
+        # Match whole neutralized pinned source blocks (or a larger block that
+        # contains one intact). Individual lines repeat across unrelated
+        # tracebacks and log records, so line membership alone over-pins;
+        # inverse-normalizing arbitrary fullwidth caller text would likewise
+        # make an ASCII pin match text it never matched. Index the first line
+        # once: a containing block must start the pinned source block at one of
+        # its own line boundaries, and a broad pin must not multiply every
+        # scored block by every pinned block.
+        pinned_texts = _PINNED_BLOCK_TEXTS.get()
+        exact_pinned_texts = set(pinned_texts)
+        by_first_line: dict[str, list[str]] = {}
+        for part in pinned_texts:
+            by_first_line.setdefault(part.split("\n", 1)[0], []).append(part)
         for b in scored:
             text = b["text"]
-            # Match the whole neutralized pinned source block (or a larger
-            # block that contains it intact). Individual lines repeat across
-            # unrelated tracebacks and log records, so line membership alone
-            # over-pins; inverse-normalizing arbitrary fullwidth caller text
-            # would likewise make an ASCII pin match text it never matched.
-            pinned_texts = _PINNED_BLOCK_TEXTS.get()
-            pinned_block_hit = any(
-                part == text or (len(part) < len(text) and part in text)
-                for part in pinned_texts
-            )
+            pinned_block_hit = text in exact_pinned_texts
+            if not pinned_block_hit and pinned_texts:
+                candidates = {
+                    part
+                    for line in text.split("\n")
+                    for part in by_first_line.get(line, ())
+                    if len(part) < len(text)
+                }
+                bounded_text = "\n" + text + "\n"
+                pinned_block_hit = any("\n" + part + "\n" in bounded_text for part in candidates)
             if _pin_res is None or pinned_block_hit or any(rx.search(text) for rx in _pin_res):
                 b["score"] = max(b["score"], 999.0)
                 b["pinned"] = True
