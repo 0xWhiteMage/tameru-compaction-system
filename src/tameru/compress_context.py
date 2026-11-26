@@ -14778,11 +14778,14 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     if blocks <= max_blocks:
         return sample
     measured = _norm_newlines(strip_ansi(sample) if "\x1b" in sample else sample)
-    if measured.count("\n") != sample.count("\n"):
-        # A newline inside a terminal control string is not a caller row, so
-        # ANSI-free block spans no longer index raw rows. Return the untrimmed
-        # sample: the recursive pass measures the same visible shape and either
-        # compresses it or fails open, but never miscuts rows by stale offsets.
+    has_bare_cr = "\r" in sample and "\r" in sample.replace("\r\n", "")
+    if measured.count("\n") != sample.count("\n") or has_bare_cr:
+        # A newline inside a terminal control string is not a caller row, and a
+        # bare carriage return becomes a row only after normalization. Either
+        # transformation can desynchronize ANSI-free block spans from raw rows,
+        # even when opposite shifts cancel in the total count. Return the
+        # untrimmed sample: the recursive pass measures the same visible shape
+        # and either compresses it or fails open, but never miscuts rows.
         return sample
     err_reserve = min(len(errs), max(1, max_blocks // 4)) if errs and max_blocks >= 4 else 0
     edge_budget = max(1, max_blocks - err_reserve)

@@ -466,6 +466,22 @@ def test_huge_multiline_control_disables_offset_based_edge_trimming(monkeypatch)
     assert "tl030=v" in sample
 
 
+def test_huge_competing_control_shifts_still_disable_edge_trimming(monkeypatch):
+    # A stripped OSC newline and a normalized bare carriage return can cancel in
+    # a naive row-count comparison while moving different block boundaries.
+    # Offset-based trimming is unsafe for the whole sample in that state.
+    import tameru.compress_context as cc
+
+    rows = "".join(f"\x1b[31meh{i:03d}=v\x1b[0m\n" for i in range(60))
+    osc = "\x1b]0;window\ntitle\x07"
+    head = ((osc + rows)[:1020]).replace("eh010=v", "eh009=v\reh010=v", 1)
+    tail = "".join(f"\x1b[32mtl{i:03d}=v\x1b[0m\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", 1020)
+    sample = cc._huge_sample(head + "ordinary filler\n" + tail, max_blocks=15, max_lines=10_000)
+    assert "eh030=v" in sample
+    assert "tl030=v" in sample
+
+
 def test_huge_error_sample_respects_record_block_limit():
     # Key/value-shaped rows are one block per line in the recursive pass. Packing
     # the byte budget full of them must not turn the sample into a block-limit
