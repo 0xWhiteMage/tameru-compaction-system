@@ -1271,6 +1271,20 @@ def test_canceled_osc_sequences_do_not_swallow_visible_log_lines():
         assert "ERROR visible" in strip_ansi(raw)
 
 
+def test_multiline_osc_titles_do_not_disable_raw_ansi_pins():
+    """A newline inside an OSC title is control payload, not a visible row:
+    it must not desynchronise the raw view a caller's exact ANSI pin uses."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "\x1b[31mERROR pinned\x1b[0m"
+    for terminator in ("\x07", "\x1b\\"):
+        raw = "\x1b]0;multi\nline" + terminator + pin
+        protected = cc._neutralize_forged_markers(cc.strip_ansi(cc._norm_newlines(raw)))
+        assert protected == "ERROR pinned"
+        assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=raw)
+
+
 def test_pin_patterns_match_hyperlink_and_truecolor_visible_spelling():
     """OSC hyperlinks and colon-separated truecolor are terminal control
     bytes too: stripping them exposes the same visible phrase the pin names."""
