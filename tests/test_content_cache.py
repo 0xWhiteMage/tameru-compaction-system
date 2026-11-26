@@ -512,14 +512,14 @@ def test_huge_dense_edges_converge_without_repeated_segmentation(monkeypatch):
     count = (cc._HUGE_CHARS - 2 * len(head)) // 16 + 1_000
     middle = "".join(f"error failure {index}\n" for index in range(count))
     big = head + "\n" + middle + head
-    original = cc._huge_sample_blocks
+    original = cc._segment_blocks_memo
     calls = []
 
-    def counting(sample):
-        calls.append(len(sample))
-        return original(sample)
+    def counting(lines):
+        calls.append(len(lines))
+        return original(lines)
 
-    monkeypatch.setattr(cc, "_huge_sample_blocks", counting)
+    monkeypatch.setattr(cc, "_segment_blocks_memo", counting)
     sample = cc._huge_sample(big, max_blocks=20_000)
     assert len(calls) <= 4
     assert len(cc.segment_blocks(sample.split("\n"))) <= 20_000
@@ -534,14 +534,14 @@ def test_huge_grouped_error_blocks_thin_whole_blocks(monkeypatch):
     errors = "\n".join(f"error {index}" for index in range(20_000))
     filler = "f" * cc._HUGE_CHARS
     big = "x" * cc._HUGE_EDGE_CHARS + "\n" + errors + "\n" + filler + "\n" + "y" * cc._HUGE_EDGE_CHARS
-    original = cc._huge_sample_blocks
+    original = cc._segment_blocks_memo
     calls = []
 
-    def counting(sample):
-        calls.append(len(sample))
-        return original(sample)
+    def counting(lines):
+        calls.append(len(lines))
+        return original(lines)
 
-    monkeypatch.setattr(cc, "_huge_sample_blocks", counting)
+    monkeypatch.setattr(cc, "_segment_blocks_memo", counting)
     sample = cc._huge_sample(big, max_blocks=1_000, max_lines=250_000)
     assert len(cc.segment_blocks(sample.split("\n"))) <= 1_000
     assert len(calls) <= 4
