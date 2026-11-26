@@ -57,7 +57,7 @@ Query-independent analyses use a content-digest LRU with a default **64 MiB (67,
 
 Inputs **over 2,000,000 characters** take a head/tail and error-line sample before normal processing, reporting `confidence_basis="partial"`, confidence at most 0.5 and reason `huge_sampled`. This is partial analysis, not full-source evidence verification or full-source recovery. Inputs **over 8,000,000 characters** return the original with `too_large` and confidence 0 before analysis; this early return does not populate all normal schema metadata. Custom `IndustrialLimits` still apply to the normal/sample path and do not override these outer thresholds.
 
-Structural log/trace folding runs even for generic questions, but calls with `pin_patterns` or `pin_recent` retain the older structural behaviour because folding moves pinned block boundaries. Unstructured prose with no specific question may still fail open. See [recorded results and limitations](RESULTS-1.10.0.md); these are replay measurements, not live billing or answer-quality evidence.
+Structural log/trace folding runs even for generic questions, but calls with `pin_patterns` or `pin_recent` retain the older structural behaviour because folding moves pinned block boundaries. `pin_patterns` are Python regular expressions evaluated against one caller-visible block at a time: `^` and `$` anchor at that block's edges, a pattern does not span blocks, and CRLF source text is matched in either its raw or newline-normalized spelling. Unstructured prose with no specific question may still fail open. See [recorded results and limitations](RESULTS-1.10.0.md); these are replay measurements, not live billing or answer-quality evidence.
 
 ## Host controls
 

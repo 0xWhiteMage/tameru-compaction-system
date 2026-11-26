@@ -6533,49 +6533,52 @@ def _source_pin_texts(
     pinned: set[int] = set()
     if match_text is not None:
         work_lines = text.split('\n')
-        # Neutralization can change a line's structural shape (for example an
-        # ASCII bracketed line no longer reads as a JSON/INI opener), so block
-        # ids need not denote the same line span in the two walks. Evaluate the
-        # caller's unchanged regex against the full caller-visible payload and
-        # map each match span back to logical lines. This avoids rewriting
-        # regex escapes: a CR-authored pin can match the raw payload while an
-        # LF-authored pin can match the newline-normalized rendering.
-        # Match the two representations the payload genuinely has here: its raw
-        # decoded spelling and the newline-normalized rendering. Do not synthesize
-        # other newline dialects: ``.`` matches a bare CR even though it rejects LF,
-        # so a synthetic CR view would invent matches the caller's regex does not
-        # license. Likewise, never rewrite the regex itself.
+        # Pins are block-local: selection has always applied them to one block
+        # at a time, so ``^`` and ``$`` mean that block's edges. Neutralization
+        # can change a line's structural shape (for example an ASCII bracketed
+        # line no longer reads as a JSON/INI opener), so block ids need not
+        # denote the same line span in the two walks. Segment the
+        # caller-visible lines into their own blocks and evaluate the caller's
+        # unchanged regex there, then carry each hit back by line-span overlap.
+        # This avoids rewriting regex escapes: a
+        # CR-authored pin can match the raw payload while an LF-authored pin
+        # can match the newline-normalized rendering. Match the two
+        # representations the payload genuinely has here: its raw decoded
+        # spelling and the newline-normalized rendering. Do not synthesize
+        # other newline dialects: ``.`` matches a bare CR even though it
+        # rejects LF, so a synthetic CR view would invent matches the caller's
+        # regex does not license. Likewise, never rewrite the regex itself.
         match_views = [match_text]
         normalized_match = _norm_newlines(match_text)
         if normalized_match != match_text:
             match_views.append(normalized_match)
-        pinned_lines = [False] * len(work_lines)
-        unpinned = len(work_lines)
-        for view_text in match_views:
-            starts = [0]
-            for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
-                starts.append(newline.end())
-            if len(starts) != len(work_lines):
-                continue
-            for expr in expressions:
-                for match in expr.finditer(view_text):
-                    start, end = match.span()
-                    first = bisect.bisect_right(starts, start) - 1
-                    last = bisect.bisect_right(starts, max(start, end - 1)) - 1
-                    for ln in range(max(0, first), min(len(work_lines) - 1, last) + 1):
-                        if not pinned_lines[ln]:
-                            pinned_lines[ln] = True
-                            unpinned -= 1
-                    if not unpinned:
-                        break
-                if not unpinned:
-                    break
-            if not unpinned:
-                break
-        pinned = {
-            block['id'] for block in blocks
-            if any(pinned_lines[block['start'] : block['end'] + 1])
-        }
+        pinned = set()
+        if expressions:
+            protected_starts = [block['start'] for block in blocks]
+            for view_text in match_views:
+                line_bounds = []
+                logical_lines = []
+                line_start = 0
+                for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
+                    line_bounds.append((line_start, newline.start()))
+                    logical_lines.append(view_text[line_start:newline.start()])
+                    line_start = newline.end()
+                line_bounds.append((line_start, len(view_text)))
+                logical_lines.append(view_text[line_start:])
+                if len(line_bounds) != len(work_lines):
+                    continue
+                # Anchor the regex in the caller-visible block, then carry the
+                # hit across by line span: neutralization can split or merge
+                # the protected blocks the engine later emits.
+                for view_block in _segment_blocks_memo(logical_lines):
+                    start = line_bounds[view_block['start']][0]
+                    end = line_bounds[view_block['end']][1]
+                    if not any(expr.search(view_text[start:end]) for expr in expressions):
+                        continue
+                    pos = bisect.bisect_right(protected_starts, view_block['end']) - 1
+                    while pos >= 0 and blocks[pos]['end'] >= view_block['start']:
+                        pinned.add(blocks[pos]['id'])
+                        pos -= 1
     else:
         pinned = {block['id'] for block in blocks
                   if any(expr.search(block['text']) for expr in expressions)}
