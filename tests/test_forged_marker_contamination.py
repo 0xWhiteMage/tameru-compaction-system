@@ -1368,6 +1368,11 @@ def test_inline_mentions_do_not_count_as_repeated_pinned_blocks():
     pin = "ERROR pinned"
     assert _count_pin_block_occurrences("diagnostic ERROR pinned ERROR pinned", pin) == 0
     assert _count_pin_block_occurrences("ERROR pinned\nERROR pinned", pin) == 2
+    multiline = "ERROR pinned\nnext row"
+    assert _count_pin_block_occurrences("xERROR pinned\nnext row", multiline) == 0
+    assert _count_pin_block_occurrences("ERROR pinned\nnext row\r\nnoise", multiline) == 1
+    overlapping = "aa\nbb"
+    assert _count_pin_block_occurrences("xaa\nbb\naa\nbb", overlapping) == 1
 
 
 def test_wrapped_colored_facts_are_not_restored_twice():

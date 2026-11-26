@@ -136,7 +136,7 @@ def test_segmentation_cache_rebuilds_text_and_returns_private_blocks(text):
     lines = tuple(text.split("\n"))
     expected = cc.segment_blocks(list(lines))
     assert list(cc._segment_blocks_cached(lines)) == expected
-    key = content_key(cc.ENGINE_VERSION, "segment_blocks", text)
+    key = content_key(cc.ENGINE_VERSION, "segment_blocks", text, extra=(tuple(map(len, lines)),))
     packed, names = CACHE.get(key)
     assert all(isinstance(value, int) for value in packed)
     assert {names[packed[i + 2]] for i in range(0, len(packed), 4)} == {block["type"] for block in expected}

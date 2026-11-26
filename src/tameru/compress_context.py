@@ -6491,7 +6491,7 @@ def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]
     text = chr(10).join(lines)
     if len(text) > _MEMO_MAX_CHARS:
         return tuple(segment_blocks(list(lines)))
-    key = content_key(ENGINE_VERSION, "segment_blocks", text, extra=(len(lines),))
+    key = content_key(ENGINE_VERSION, "segment_blocks", text, extra=(tuple(map(len, lines)),))
     hit = _CONTENT.get(key)
     if hit is not _MISS:
         lst = list(lines)
@@ -6574,9 +6574,10 @@ def _count_pin_block_occurrences(text: str, part: str) -> int:
         if pos < 0:
             return count
         end = pos + len(part)
-        if (pos == 0 or text[pos - 1] == "\n") and (end == len(text) or text[end] == "\n"):
+        line_end = end == len(text) or text[end] == "\n" or text.startswith("\r\n", end)
+        if (pos == 0 or text[pos - 1] == "\n") and line_end:
             count += 1
-        pos = end
+        pos += 1
 
 
 def _source_pin_texts(
