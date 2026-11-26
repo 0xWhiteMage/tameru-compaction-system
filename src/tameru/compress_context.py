@@ -5597,7 +5597,9 @@ def preprocess_flat_records(text: str, query: str) -> str:
     return "\n".join(kept)
 
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_ANSI_RE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b\x18\x1a]*(?:\x07|\x1b\\|[\x18\x1a])"
+)
 _TEST_SUMMARY_RE = re.compile(r"Tests\s+\d+\s+passed", re.IGNORECASE)
 _TEST_FILE_NOISE_RE = re.compile(
     r"ExperimentalWarning|Use `node --trace-warnings|^\s*[✓✔]\s"
@@ -6512,6 +6514,38 @@ def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]
     return tuple(blocks)
 
 
+def _pin_line_parts(view_text: str) -> tuple[list[tuple[int, int]], list[str]]:
+    """Split pin match views on caller-visible line breaks.
+
+    A newline inside a terminal control string is control payload, not a row
+    the caller sees. Keep the byte offsets unchanged for the caller's regex,
+    but do not let that payload desynchronise the line-count alignment with
+    the protected working copy.
+    """
+    escape_spans = (
+        [match.span() for match in _ANSI_RE.finditer(view_text)] if "\x1b" in view_text else []
+    )
+    line_bounds = []
+    logical_lines = []
+    line_start = 0
+    span_index = 0
+    for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
+        newline_start = newline.start()
+        while span_index < len(escape_spans) and escape_spans[span_index][1] <= newline_start:
+            span_index += 1
+        if (
+            span_index < len(escape_spans)
+            and escape_spans[span_index][0] <= newline_start < escape_spans[span_index][1]
+        ):
+            continue
+        line_bounds.append((line_start, newline_start))
+        logical_lines.append(view_text[line_start:newline_start])
+        line_start = newline.end()
+    line_bounds.append((line_start, len(view_text)))
+    logical_lines.append(view_text[line_start:])
+    return line_bounds, logical_lines
+
+
 def _source_pin_texts(
     text: str, patterns: list[str] | None, recent: int, *, match_text: str | None = None
 ) -> list[str]:
@@ -6545,27 +6579,21 @@ def _source_pin_texts(
         # CR-authored pin can match the raw payload while an LF-authored pin
         # can match the newline-normalized rendering. Match the two
         # representations the payload genuinely has here: its raw decoded
-        # spelling and the newline-normalized rendering. Do not synthesize
-        # other newline dialects: ``.`` matches a bare CR even though it
-        # rejects LF, so a synthetic CR view would invent matches the caller's
-        # regex does not license. Likewise, never rewrite the regex itself.
-        match_views = [match_text]
-        normalized_match = _norm_newlines(match_text)
-        if normalized_match != match_text:
-            match_views.append(normalized_match)
+        # spelling, the ANSI-free spelling a terminal user reads, and their
+        # newline-normalized renderings. Do not synthesize other newline
+        # dialects: ``.`` matches a bare CR even though it rejects LF, so a
+        # synthetic CR view would invent matches the caller's regex does not
+        # license. Likewise, never rewrite the regex itself.
+        match_views = []
+        for view in (match_text, strip_ansi(match_text)):
+            for candidate in (view, _norm_newlines(view)):
+                if candidate not in match_views:
+                    match_views.append(candidate)
         pinned = set()
         if expressions:
             protected_starts = [block['start'] for block in blocks]
             for view_text in match_views:
-                line_bounds = []
-                logical_lines = []
-                line_start = 0
-                for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
-                    line_bounds.append((line_start, newline.start()))
-                    logical_lines.append(view_text[line_start:newline.start()])
-                    line_start = newline.end()
-                line_bounds.append((line_start, len(view_text)))
-                logical_lines.append(view_text[line_start:])
+                line_bounds, logical_lines = _pin_line_parts(view_text)
                 if len(line_bounds) != len(work_lines):
                     continue
                 # Anchor the regex in the caller-visible block, then carry the
@@ -12418,7 +12446,11 @@ def _apply_cost_gates(
             savings_gate = True
             kept_tokens = estimate_tokens(compressed)
 
-    source_pin_loss = not fail_open and any(part not in compressed for part in source_pin_texts)
+    pin_occurrences = collections.Counter(source_pin_texts)
+    source_pin_loss = not fail_open and any(
+        compressed.count(part) < occurrences
+        for part, occurrences in pin_occurrences.items()
+    )
     if source_pin_loss:
         compressed = caller_text
         kept = {block['id'] for block in scored}

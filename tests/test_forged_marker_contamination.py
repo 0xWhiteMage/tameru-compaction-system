@@ -1261,6 +1261,84 @@ def test_wrapped_colored_pinned_blocks_compare_in_the_rendered_spelling():
     assert "\x1b" not in result.compressed_text
 
 
+def test_canceled_osc_sequences_do_not_swallow_visible_log_lines():
+    """CAN/SUB abort an OSC control string; a later BEL is terminal input,
+    not proof that the intervening caller-visible lines were control bytes."""
+    from tameru.compress_context import strip_ansi
+
+    for cancel in ("\x18", "\x1a"):
+        raw = "\x1b]0;aborted" + cancel + "\nERROR visible\n\x07after"
+        assert "ERROR visible" in strip_ansi(raw)
+        split_phrase = "INFO \x1b]0;aborted" + cancel + "worker processed"
+        assert strip_ansi(split_phrase) == "INFO worker processed"
+
+
+def test_multiline_osc_titles_do_not_disable_raw_ansi_pins():
+    """A newline inside an OSC title is control payload, not a visible row:
+    it must not desynchronise the raw view a caller's exact ANSI pin uses."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "\x1b[31mERROR pinned\x1b[0m"
+    for terminator in ("\x07", "\x1b\\"):
+        raw = "\x1b]0;multi\nline" + terminator + pin
+        protected = cc._neutralize_forged_markers(cc.strip_ansi(cc._norm_newlines(raw)))
+        assert protected == "ERROR pinned"
+        assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=raw)
+
+
+def test_pin_patterns_match_hyperlink_and_truecolor_visible_spelling():
+    """OSC hyperlinks and colon-separated truecolor are terminal control
+    bytes too: stripping them exposes the same visible phrase the pin names."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "secret evidence"
+    raws = [
+        "\x1b]8;;https://example.test\x07secret\x1b]8;;\x07 evidence",
+        "\x1b]8;;https://example.test\x1b\\secret\x1b]8;;\x1b\\ evidence",
+        "\x1b[38:2::255:0:0msecret\x1b[0m evidence",
+    ]
+    for raw in raws:
+        protected = cc._neutralize_forged_markers(cc.strip_ansi(cc._norm_newlines(raw)))
+        assert protected == pin
+        assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=raw)
+
+
+def test_pin_patterns_match_the_ansi_free_spelling_the_caller_reads():
+    """A colour reset inside a visible phrase must not hide it from a pin:
+    when every repeated line is pinned the engine must preserve the original
+    or fail open, never silently fold or thin the pinned stream."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "INFO worker processed a batch of events ok"
+    colored = "\n".join(["\x1b[31mINFO\x1b[0m worker processed a batch of events ok"] * 160)
+    protected = cc._neutralize_forged_markers(cc.strip_ansi(cc._norm_newlines(colored)))
+    assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=colored)
+
+    result = cc.compress_context(
+        colored, "unrelated question", pin_patterns=[re.escape(pin)], ccr=False, citations=False,
+    )
+    assert result.fail_open
+    assert result.compressed_text == colored
+
+
+def test_repeated_pinned_blocks_fail_open_when_selection_cannot_keep_every_occurrence():
+    """Each repeated caller-visible block is a separate pinned original block;
+    one surviving copy must not satisfy the occurrences selection dropped."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "INFO worker processed a batch of events ok"
+    repeated = "\n".join([pin] * 160)
+    result = cc.compress_context(
+        repeated, "unrelated question", pin_patterns=[re.escape(pin)], ccr=False, citations=False,
+    )
+    assert result.fail_open
+    assert result.compressed_text == repeated
+
+
 def test_wrapped_colored_facts_are_not_restored_twice():
     import json
     from tameru import compress_context as cc
