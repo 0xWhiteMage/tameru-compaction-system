@@ -14527,6 +14527,7 @@ def compress_context(
             reasons=[*res.reasons, "huge_sampled"],
         )
     _pin_token = _PINNED_LINES.set(frozenset())
+    _pin_block_token = _PINNED_BLOCK_TEXTS.set(())
     _fact_off_token = _FACT_OFF.set(False)
     _err_token = _ERR_PROTECTED.set(())
     _out_token = _OUTCOME_PROTECTED.set(frozenset())
@@ -14551,6 +14552,7 @@ def compress_context(
         result = _structured_anchor_depth_noop_result(full_text, mode)
     finally:
         _PINNED_LINES.reset(_pin_token)
+        _PINNED_BLOCK_TEXTS.reset(_pin_block_token)
         _FACT_OFF.reset(_fact_off_token)
         _ERR_PROTECTED.reset(_err_token)
         _OUTCOME_PROTECTED.reset(_out_token)

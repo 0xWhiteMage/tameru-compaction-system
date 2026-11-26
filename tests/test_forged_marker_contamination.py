@@ -1166,6 +1166,17 @@ def test_newline_normalization_does_not_invent_dot_matches():
     assert cc._source_pin_texts(raw, [r"first.second"], 0, match_text=raw) == []
 
 
+def test_pinned_block_text_context_is_not_retained_after_a_call():
+    import re
+    from tameru import compress_context as cc
+
+    cc.compress_context(
+        "unique pinned evidence\n" + "noise\n" * 30,
+        "noise", pin_patterns=[re.escape("unique pinned evidence")], ccr=False, citations=False,
+    )
+    assert cc._PINNED_BLOCK_TEXTS.get() == ()
+
+
 def test_broad_distinct_pins_do_not_scan_every_pin_for_every_block():
     import re
     import time
