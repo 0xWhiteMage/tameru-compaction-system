@@ -263,7 +263,7 @@ _BRACKET_DENORM = str.maketrans(
 )
 
 
-def _neutralize_forged_markers(text: str) -> str:
+def _neutralize_forged_markers(text: str, _keep_sample_joins: bool = False) -> str:
     """Fullwidth the brackets of every marker-shaped span in caller-supplied
     text. Applied only to the working copies (``text``/``original_text``/
     ``protected_source``/envelope meta), never ``caller_text``, so a
@@ -297,8 +297,9 @@ def _neutralize_forged_markers(text: str) -> str:
             in_fence = opener.group(0)
             out.append(ln)
         else:
-            for rx in _FORGED_SPAN_RES:
-                ln = rx.sub(lambda m: m.group(0).translate(_BRACKET_NEUTRAL), ln)
+            if not (_keep_sample_joins and ln == "[\u2026]"):
+                for rx in _FORGED_SPAN_RES:
+                    ln = rx.sub(lambda m: m.group(0).translate(_BRACKET_NEUTRAL), ln)
             out.append(ln)
     return "\n".join(out)
 
@@ -13851,7 +13852,7 @@ def _compress_context_impl(
                 gap_marker, omitted, len(caller_text), kind))
         )
     )
-    original_text = _neutralize_forged_markers(_norm_newlines(caller_text))
+    original_text = _neutralize_forged_markers(_norm_newlines(caller_text), _internal_sample)
     # 1.10.0 (S5, E5): the protected fact lines and the density flag are computed on the caller's
     # original text — the unwrapped payload when the caller wrapped it — BEFORE the industrial and
     # format adapters below may delete a line, so protection knows every fact before any stage can
@@ -13882,7 +13883,7 @@ def _compress_context_impl(
     # The decoded body (and the analysis_text fallback) can still carry a
     # marker-shaped span — the floors restore lines verbatim, so they must
     # come from the same marker-free copy the working text uses.
-    protected_source = _neutralize_forged_markers(strip_ansi(_norm_newlines(protected_source)))
+    protected_source = _neutralize_forged_markers(strip_ansi(_norm_newlines(protected_source)), _internal_sample)
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -13994,7 +13995,7 @@ def _compress_context_impl(
     if not industrial.applied and not (
         payload_industrial is not None and payload_industrial.applied
     ):
-        text = _neutralize_forged_markers(text)
+        text = _neutralize_forged_markers(text, _internal_sample)
     tool_meta_line = ""
     if tool_payload.wrapped and tool_payload.meta:
         # The envelope's scalar metadata is caller text too — a marker-shaped
