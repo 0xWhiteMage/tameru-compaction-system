@@ -285,6 +285,57 @@ def test_huge_error_sample_packing_keeps_stride_anchor():
     assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
 
 
+def test_huge_error_sample_respects_record_block_limit():
+    # Key/value-shaped rows are one block per line in the recursive pass. Packing
+    # the byte budget full of them must not turn the sample into a block-limit
+    # fail-open, even though thousands still fit.
+    from tameru.compress_context import (
+        _HUGE_EDGE_CHARS, _HUGE_ERR_CHARS, _huge_sample, segment_blocks,
+    )
+    from tameru.industrial import IndustrialLimits
+
+    line = "error=value"
+    count = _HUGE_ERR_CHARS // (len(line) + 1) + 1_000
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + (line + "\n") * count + "y" * _HUGE_EDGE_CHARS
+    sample = _huge_sample(big)
+    assert sample.count(line) > 10_000
+    assert len(segment_blocks(sample.split("\n"))) <= IndustrialLimits().max_blocks
+    custom = _huge_sample(big, max_blocks=1_000)
+    assert len(segment_blocks(custom.split("\n"))) <= 1_000
+
+
+def test_huge_record_edges_respect_block_limit():
+    # Dense record lines in the fixed edges can cross the same ceiling before any
+    # middle error is packed; the sampler trims complete edge lines byte-exactly.
+    from tameru.compress_context import _HUGE_CHARS, _huge_sample, segment_blocks
+    from tameru.industrial import IndustrialLimits
+
+    line = "error=value"
+    big = (line + "\n") * (_HUGE_CHARS // (len(line) + 1) + 1_000)
+    sample = _huge_sample(big)
+    assert sample
+    assert len(segment_blocks(sample.split("\n"))) <= IndustrialLimits().max_blocks
+
+
+def test_huge_record_sample_compresses_within_custom_block_limit():
+    # End to end: a low caller limit exercises the same block ceiling without
+    # scoring 20,000 record blocks; before the cap the sampled inner pass failed
+    # open and the whole huge input came back.
+    from tameru.compress_context import _HUGE_CHARS, _HUGE_EDGE_CHARS
+    from tameru.industrial import IndustrialLimits
+
+    line = "error=value"
+    count = _HUGE_CHARS // (len(line) + 1) + 1_000
+    big = "x" * _HUGE_EDGE_CHARS + "\n" + (line + "\n") * count + "y" * _HUGE_EDGE_CHARS
+    res = compress_context(
+        big, line, budget_ratio=0.2, ccr=False, citations=False,
+        limits=IndustrialLimits(max_blocks=1_000),
+    )
+    assert not res.fail_open
+    assert "huge_sampled" in res.reasons
+    assert len(res.compressed_text) < len(big)
+
+
 def test_huge_one_line_tool_json_does_not_recurse():
     # Terminal envelopes carry an ``error`` key, so one long JSON line both
     # matches the error sampler and used to reproduce as an over-threshold sample.

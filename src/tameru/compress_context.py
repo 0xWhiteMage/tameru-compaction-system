@@ -14422,11 +14422,64 @@ def redact_secrets_in(text: str) -> str:
     return text
 
 
-def _huge_sample(text: str) -> str:
+def _evenly_spaced(lines: list[str], target: int) -> list[str]:
+    """Up to ``target`` lines spread across the input, endpoints included."""
+    count = len(lines)
+    if target >= count:
+        return list(lines)
+    if target <= 0:
+        return []
+    if target == 1:
+        return [lines[0]]
+    return [lines[i * (count - 1) // (target - 1)] for i in range(target)]
+
+
+def _huge_sample_block_count(sample: str) -> int:
+    """Blocks the recursive pass will segment for ``sample`` (0/1 line-based record shapes included)."""
+    return len(_segment_blocks_memo(tuple(sample.split("\n"))))
+
+
+def _join_huge_sample(head: str, errs: list[str], tail: str) -> str:
+    mid = "\n".join(errs)
+    return "\n[...]\n".join(part for part in (head, mid, tail) if part)
+
+
+def _lf_lines_keepends(text: str) -> list[str]:
+    """``text`` split only at LF, with each newline retained on its line."""
+    parts = text.split("\n")
+    lines = [part + "\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
+def _trim_huge_edges(head: str, tail: str, lines_to_remove: int) -> tuple[str, str]:
+    """Remove complete lines roughly evenly from the inner ends of both edges.
+
+    Splitting only at LF matches the recursive pass's line model; joining the
+    keepends pieces keeps each surviving edge byte-exact, including CRLF input.
+    The head stays a prefix and the tail a suffix."""
+    head_lines = _lf_lines_keepends(head)
+    tail_lines = _lf_lines_keepends(tail)
+    remove = min(lines_to_remove, max(0, len(head_lines) + len(tail_lines) - 1))
+    if remove <= 0:
+        return head, tail
+    head_remove = min(len(head_lines), remove // 2)
+    tail_remove = min(len(tail_lines), remove - head_remove)
+    head_remove = min(len(head_lines), remove - tail_remove)
+    head_keep = len(head_lines) - head_remove
+    tail_keep = len(tail_lines) - tail_remove
+    return "".join(head_lines[:head_keep]), "".join(tail_lines[len(tail_lines) - tail_keep:])
+
+
+def _huge_sample(text: str, max_blocks: int | None = None) -> str:
     """Streaming head/tail + error-line sample for inputs over ``_HUGE_CHARS`` (S7).
 
     One deterministic pass: fixed-size edges, every middle line matching a cheap
-    marker check, thinned evenly to ``_HUGE_ERR_CHARS`` when over budget."""
+    marker check, thinned evenly to ``_HUGE_ERR_CHARS`` when over budget. The
+    recursive pass still has a block ceiling, so record-shaped samples are
+    thinned to that ceiling as well; bytes alone are not enough when every
+    short line is its own block."""
     edge = _HUGE_EDGE_CHARS
     head, tail = text[:edge], text[-edge:]
     errs: list[str] = []
@@ -14465,7 +14518,6 @@ def _huge_sample(text: str) -> str:
                         packed.append(line)
                         local -= cost
             errs = packed
-    mid = "\n".join(errs)
     # Join with "[...]" (three ASCII dots), never "[…]": the unicode-ellipsis shape
     # is what the forged-marker defense rewrites, so joining with it either emitted
     # fullwidth impostor elisions or — worse — required neutralizing the sampled
@@ -14473,7 +14525,38 @@ def _huge_sample(text: str) -> str:
     # byte-exact recovery and the recursion guard, all of which compare original
     # spelling. "[...]" matches nothing in the defense, so the sample reaches the
     # inner pass byte-exact and the joins survive it untouched.
-    return "\n[...]\n".join(part for part in (head, mid, tail) if part)
+    sample = _join_huge_sample(head, errs, tail)
+    if max_blocks is None:
+        max_blocks = IndustrialLimits().max_blocks
+    # Blocks never outnumber lines, so the common long-line case skips the extra
+    # segmentation pass. When record-shaped lines cross the line count, count the
+    # shape the recursive pass will actually segment and thin error lines first;
+    # each removal keeps endpoint coverage instead of truncating the log's tail.
+    if len(sample.split("\n")) <= max_blocks:
+        return sample
+    blocks = _huge_sample_block_count(sample)
+    for _ in range(8):
+        over = blocks - max_blocks
+        if over <= 0:
+            return sample
+        if not errs:
+            break
+        target = max(0, len(errs) - over)
+        if target == len(errs):
+            target -= 1
+        errs = _evenly_spaced(errs, target)
+        sample = _join_huge_sample(head, errs, tail)
+        blocks = _huge_sample_block_count(sample)
+    # Dense one-line records in either edge can exceed the ceiling even with no
+    # middle errors. Shrink both edge slices toward the middle join while keeping
+    # them byte-exact prefixes/suffixes of the caller's text.
+    for _ in range(8):
+        if blocks <= max_blocks or (not head and not tail):
+            break
+        head, tail = _trim_huge_edges(head, tail, blocks - max_blocks + 1)
+        sample = _join_huge_sample(head, errs, tail)
+        blocks = _huge_sample_block_count(sample)
+    return sample
 
 
 def compress_context(
@@ -14613,7 +14696,7 @@ def compress_context(
                 keep_ratio=1.0, fail_open=True, reasons=["too_large"],
                 confidence=0.0, confidence_basis="none", query_specific=q_specific,
             )
-        sample = _huge_sample(full_text)
+        sample = _huge_sample(full_text, max_blocks=(limits or IndustrialLimits()).max_blocks)
         res = compress_context(
             sample, query, mode=mode, budget_ratio=budget_ratio, ccr=ccr,
             cache_prefix=cache_prefix, citations=citations, ccr_dir=ccr_dir,
