@@ -14444,13 +14444,23 @@ def _join_huge_sample(head: str, errs: list[str], tail: str) -> str:
     return "\n[...]\n".join(part for part in (head, mid, tail) if part)
 
 
+def _lf_lines_keepends(text: str) -> list[str]:
+    """``text`` split only at LF, with each newline retained on its line."""
+    parts = text.split("\n")
+    lines = [part + "\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
 def _trim_huge_edges(head: str, tail: str, lines_to_remove: int) -> tuple[str, str]:
     """Remove complete lines roughly evenly from the inner ends of both edges.
 
-    ``splitlines(keepends=True)`` plus joining keeps each surviving edge byte-exact,
-    including CRLF input; the head stays a prefix and the tail a suffix."""
-    head_lines = head.splitlines(keepends=True)
-    tail_lines = tail.splitlines(keepends=True)
+    Splitting only at LF matches the recursive pass's line model; joining the
+    keepends pieces keeps each surviving edge byte-exact, including CRLF input.
+    The head stays a prefix and the tail a suffix."""
+    head_lines = _lf_lines_keepends(head)
+    tail_lines = _lf_lines_keepends(tail)
     remove = min(lines_to_remove, max(0, len(head_lines) + len(tail_lines) - 1))
     if remove <= 0:
         return head, tail
