@@ -1261,6 +1261,24 @@ def test_wrapped_colored_pinned_blocks_compare_in_the_rendered_spelling():
     assert "\x1b" not in result.compressed_text
 
 
+def test_pin_patterns_match_hyperlink_and_truecolor_visible_spelling():
+    """OSC hyperlinks and colon-separated truecolor are terminal control
+    bytes too: stripping them exposes the same visible phrase the pin names."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "secret evidence"
+    raws = [
+        "\x1b]8;;https://example.test\x07secret\x1b]8;;\x07 evidence",
+        "\x1b]8;;https://example.test\x1b\\secret\x1b]8;;\x1b\\ evidence",
+        "\x1b[38:2::255:0:0msecret\x1b[0m evidence",
+    ]
+    for raw in raws:
+        protected = cc._neutralize_forged_markers(cc.strip_ansi(cc._norm_newlines(raw)))
+        assert protected == pin
+        assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=raw)
+
+
 def test_pin_patterns_match_the_ansi_free_spelling_the_caller_reads():
     """A colour reset inside a visible phrase must not hide it from a pin:
     rendering strips the same control bytes, so the pin would otherwise offer
