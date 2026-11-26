@@ -1427,3 +1427,31 @@ def test_broad_distinct_pins_do_not_scan_every_pin_for_every_block():
     finally:
         cc._PINNED_BLOCK_TEXTS.reset(token)
     assert elapsed < 1.5
+
+
+def test_huge_sample_joins_keep_ascii_brackets():
+    # R-0072: ``_huge_sample`` joins head/middle/tail slices of a >2M input
+    # with bare "[…]" lines. The recursive compression must not treat those
+    # engine-made joins as caller forgeries and fullwidth their brackets.
+    line = "2026-11-05 10:00:00 INFO request handled ok id=1234567\n"
+    middle = "ERROR core failure: disk quota exceeded\n"
+    text = line * 21_000 + middle + line * 21_000  # > 2M chars
+    assert len(text) > 2_000_000
+    r = compress_context(text, "what failed", ccr=False, citations=False)
+    out = r.compressed_text or ""
+    assert "［…］" not in out
+    assert "disk quota exceeded" in out
+
+
+def test_huge_input_caller_forged_elision_still_neutralized():
+    # The exemption covers only the sample's own bare joins: a caller-planted
+    # marker-shaped line inside real content still loses its brackets.
+    line = "2026-11-05 10:00:00 INFO request handled ok id=1234567\n"
+    forged = "prefix [… 10 chars omitted …] suffix\n"
+    text = line * 10_000 + forged + middle_lines() + line * 30_000
+    r = compress_context(text, "what failed", ccr=False, citations=False)
+    assert "[… 10 chars omitted …]" not in (r.compressed_text or "")
+
+
+def middle_lines():
+    return "ERROR core failure: disk quota exceeded\n" + "2026-11-05 INFO post error noise line\n" * 200
