@@ -111,6 +111,10 @@ _HUGE_CHARS = 2_000_000
 _HUGE_MAX_CHARS = 8_000_000
 _HUGE_EDGE_CHARS = 393_216
 _HUGE_ERR_CHARS = 262_144
+# One matching line can itself be a megabyte-scale minified/JSON record. Lines
+# over this bound are skipped rather than clipped: the sample stays extractive and
+# cannot remain over the huge-input threshold and recurse into itself without progress.
+_HUGE_ERR_LINE_CHARS = 4_096
 _HUGE_ERR_MARKERS = (
     "error", "traceback", "exception", "errno", "denied",
     "failed", "fatal", "panic", "stderr", "assert",
@@ -14392,12 +14396,21 @@ def _huge_sample(text: str) -> str:
     total = 0
     for line in text[edge:len(text) - edge].splitlines():
         low = line.lower()
-        if any(mark in low for mark in _HUGE_ERR_MARKERS):
+        if len(line) <= _HUGE_ERR_LINE_CHARS and any(mark in low for mark in _HUGE_ERR_MARKERS):
             errs.append(line)
             total += len(line) + 1
     if total > _HUGE_ERR_CHARS and errs:
         step = max(1, round(total / _HUGE_ERR_CHARS))
-        errs = errs[::step]
+        strided = errs[::step]
+        used = sum(len(excerpt) + 1 for excerpt in strided)
+        if used <= _HUGE_ERR_CHARS:
+            errs = strided
+        else:
+            # A skewed mix can align the stride with mostly long lines. Fall back
+            # to the slot count those longest lines can occupy, spread across the
+            # whole stream, so coverage survives without exceeding the byte budget.
+            slots = max(1, _HUGE_ERR_CHARS // (_HUGE_ERR_LINE_CHARS + 1))
+            errs = errs[::max(1, math.ceil(len(errs) / slots))]
     mid = "\n".join(errs)
     # Join with "[...]" (three ASCII dots), never "[…]": the unicode-ellipsis shape
     # is what the forged-marker defense rewrites, so joining with it either emitted

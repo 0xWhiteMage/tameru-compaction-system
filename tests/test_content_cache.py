@@ -2,6 +2,7 @@
 
 import os
 import importlib
+import json
 import subprocess
 import sys
 import time
@@ -220,6 +221,29 @@ def test_huge_sample_compresses_not_verbatim():
     assert not res.fail_open
     assert res.compressed_text != _huge_sample(big)
     assert "huge_sampled" in res.reasons
+
+
+def test_huge_error_line_sample_stays_bounded():
+    # Minified JSON and single-line logs can make one error-matching line larger
+    # than the whole error-sample budget. The sampler skips that line instead of
+    # copying enough bytes to recurse into the huge path again.
+    from tameru.compress_context import _huge_sample
+
+    big = "x" * 1_000_000 + " ERROR core failure: disk quota exceeded " + "y" * 1_200_000
+    assert len(big) > _HUGE_CHARS
+    sample = _huge_sample(big)
+    assert len(sample) <= _HUGE_CHARS
+    assert "ERROR core failure: disk quota exceeded" not in sample
+
+
+def test_huge_one_line_tool_json_does_not_recurse():
+    # Terminal envelopes carry an ``error`` key, so one long JSON line both
+    # matches the error sampler and used to reproduce as an over-threshold sample.
+    big = json.dumps({"output": "x" * 2_200_000, "exit_code": 0, "error": None})
+    assert len(big) > _HUGE_CHARS
+    res = compress_context(big, "why", ccr=False, citations=False)
+    assert "huge_sampled" in res.reasons
+    assert res.compressed_text
 
 
 def test_huge_sample_decline_returns_original():
