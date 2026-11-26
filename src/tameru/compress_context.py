@@ -14769,6 +14769,20 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     # every error the middle sample was meant to carry.
     if len(sample.split("\n")) <= max_blocks:
         return sample
+    # Measure the folded full sample before sacrificing edge rows. Middle
+    # diagnostics can change record-shape detection and fold dense edge rows
+    # below the ceiling even when the edges alone measure as separate records.
+    segmented = _huge_sample_blocks(sample)
+    blocks = len(segmented)
+    if blocks <= max_blocks:
+        return sample
+    measured = strip_ansi(sample) if "\x1b" in sample else sample
+    if measured.count("\n") != sample.count("\n"):
+        # A newline inside a terminal control string is not a caller row, so
+        # ANSI-free block spans no longer index raw rows. Return the untrimmed
+        # sample: the recursive pass measures the same visible shape and either
+        # compresses it or fails open, but never miscuts rows by stale offsets.
+        return sample
     err_reserve = min(len(errs), max(1, max_blocks // 4)) if errs and max_blocks >= 4 else 0
     edge_budget = max(1, max_blocks - err_reserve)
     base_sample = _join_huge_sample(head, [], tail)

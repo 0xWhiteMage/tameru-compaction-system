@@ -423,6 +423,38 @@ def test_huge_sample_block_cap_matches_the_recursive_ansi_free_shape(monkeypatch
     assert len(cc._huge_sample_blocks(cc.strip_ansi(sample))) <= 15
 
 
+def test_huge_sample_measures_folded_blocks_before_trimming_edges(monkeypatch):
+    # Dense record rows can fold below the block cap once middle log rows change
+    # the sample's shape. Trimming the fixed edges before measuring that folded
+    # shape discards query evidence the recursive pass could have kept.
+    import tameru.compress_context as cc
+
+    head = "".join(f"eh{i:03d}=v\n" for i in range(60))
+    tail = "".join(f"tl{i:03d}=v\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", len(head))
+    errs = [f"ERROR diagnostic {i} happened while worker continued processing" for i in range(10)]
+    text = head + "\n".join(errs) + "\n" + tail
+    sample = cc._huge_sample(text, max_blocks=15, max_lines=10_000)
+    assert "eh030=v" in sample
+    assert "tl030=v" in sample
+
+
+def test_huge_multiline_control_disables_offset_based_edge_trimming(monkeypatch):
+    # A newline inside an OSC title is control payload, not a caller row. Once
+    # ANSI-free block spans no longer index raw rows, the sampler must not use
+    # those spans to cut visible edge records.
+    import tameru.compress_context as cc
+
+    rows = "".join(f"\x1b[31meh{i:03d}=v\x1b[0m\n" for i in range(60))
+    osc = "\x1b]0;window\ntitle\x07"
+    head = (osc + rows)[:1020]
+    tail = "".join(f"\x1b[32mtl{i:03d}=v\x1b[0m\n" for i in range(60))
+    monkeypatch.setattr(cc, "_HUGE_EDGE_CHARS", 1020)
+    sample = cc._huge_sample(head + "ordinary filler\n" + tail, max_blocks=15, max_lines=10_000)
+    assert "eh030=v" in sample
+    assert "tl030=v" in sample
+
+
 def test_huge_error_sample_respects_record_block_limit():
     # Key/value-shaped rows are one block per line in the recursive pass. Packing
     # the byte budget full of them must not turn the sample into a block-limit

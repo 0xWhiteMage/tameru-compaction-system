@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
-- Fix: huge-input block measurement now matches the recursive pass's ANSI-free segmentation, and invisible terminal-control padding cannot become the sole protected opening or closing anchor row. - Unreleased
+- Fix: huge-input block measurement now matches the recursive pass's ANSI-free segmentation before any edge rows are trimmed, multiline terminal controls disable unsafe offset-based trimming, and invisible terminal-control padding cannot become the sole protected opening or closing anchor row. - Unreleased
 - Fix: huge-input block fitting no longer removes one row per excess block — inner edge rows are measured against their segmented blocks and grouped error rows are thinned as whole endpoint-spread blocks, avoiding repeated full-sample segmentation and the multi-second dense-log slowdown while preserving first/last error coverage. - Unreleased
 - Fix: huge-input sampling now fails open when line-cap thinning leaves no visible sample, keeps opening edge rows as a prefix instead of spreading them away, never trims either nonempty edge away entirely, and treats pinned huge inputs as a hard fail-open floor because streaming sampling cannot prove every pinned source block survived intact. - Unreleased
 - Fix: huge-input error packing now respects the recursive compressor's block ceiling — record-shaped short lines (key/value, git-oneline or npm-style rows) are coverage-thinned, and dense edge lines are trimmed as complete byte-exact lines without consuming the middle error slice's proportional block share, so a packed sample no longer fails open solely because every short row segments as its own block. - Unreleased
