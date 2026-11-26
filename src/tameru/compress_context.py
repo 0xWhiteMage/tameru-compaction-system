@@ -626,7 +626,7 @@ def _rebase_anchored(res, caller_text, caller_query):
     if not res.fail_open:
         # The probe ran with the anchors as its query, so it rated itself on recall of terms taken from the text.
         # The result's confidence rests on the anchors, i.e. on the error fingerprints it kept.
-        source = strip_ansi(_norm_newlines(caller_text))
+        source = _norm_newlines(strip_ansi(caller_text))
         basis = _query_basis(caller_query, source, anchored=True)
         extra = {
             "confidence_basis": basis,
@@ -6495,7 +6495,7 @@ def _segment_blocks_cached(lines: tuple[str, ...]) -> tuple[dict[str, Any], ...]
     text = chr(10).join(lines)
     if len(text) > _MEMO_MAX_CHARS:
         return tuple(segment_blocks(list(lines)))
-    key = content_key(ENGINE_VERSION, "segment_blocks", text)
+    key = content_key(ENGINE_VERSION, "segment_blocks", text, extra=(tuple(map(len, lines)),))
     hit = _CONTENT.get(key)
     if hit is not _MISS:
         lst = list(lines)
@@ -6533,21 +6533,55 @@ def _pin_line_parts(view_text: str) -> tuple[list[tuple[int, int]], list[str]]:
     logical_lines = []
     line_start = 0
     span_index = 0
-    for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
+    newline_matches = list(_PIN_LINE_BREAK_RE.finditer(view_text))
+    newline_index = 0
+    while newline_index < len(newline_matches):
+        newline = newline_matches[newline_index]
         newline_start = newline.start()
+        newline_end = newline.end()
         while span_index < len(escape_spans) and escape_spans[span_index][1] <= newline_start:
             span_index += 1
         if (
             span_index < len(escape_spans)
             and escape_spans[span_index][0] <= newline_start < escape_spans[span_index][1]
         ):
+            newline_index += 1
             continue
+        if newline.group() == "\r":
+            cursor = newline_end
+            while cursor < len(view_text):
+                escape = _ANSI_RE.match(view_text, cursor)
+                if escape is None:
+                    break
+                cursor = escape.end()
+            if cursor < len(view_text) and view_text[cursor] == "\n":
+                newline_end = cursor + 1
         line_bounds.append((line_start, newline_start))
         logical_lines.append(view_text[line_start:newline_start])
-        line_start = newline.end()
+        line_start = newline_end
+        newline_index += 1
+        while newline_index < len(newline_matches) and newline_matches[newline_index].start() < newline_end:
+            newline_index += 1
     line_bounds.append((line_start, len(view_text)))
     logical_lines.append(view_text[line_start:])
     return line_bounds, logical_lines
+
+
+def _count_pin_block_occurrences(text: str, part: str) -> int:
+    """Count occurrences of a whole pinned block at caller-visible line edges."""
+    if not part:
+        return 0
+    count = 0
+    pos = 0
+    while True:
+        pos = text.find(part, pos)
+        if pos < 0:
+            return count
+        end = pos + len(part)
+        line_end = end == len(text) or text[end] == "\n" or text.startswith("\r\n", end)
+        if (pos == 0 or text[pos - 1] == "\n") and line_end:
+            count += 1
+        pos += 1
 
 
 def _source_pin_texts(
@@ -12452,7 +12486,7 @@ def _apply_cost_gates(
 
     pin_occurrences = collections.Counter(source_pin_texts)
     source_pin_loss = not fail_open and any(
-        compressed.count(part) < occurrences
+        _count_pin_block_occurrences(compressed, part) < occurrences
         for part, occurrences in pin_occurrences.items()
     )
     if source_pin_loss:
@@ -13886,7 +13920,7 @@ def _compress_context_impl(
     # The decoded body (and the analysis_text fallback) can still carry a
     # marker-shaped span — the floors restore lines verbatim, so they must
     # come from the same marker-free copy the working text uses.
-    protected_source = _neutralize_forged_markers(strip_ansi(_norm_newlines(protected_source)))
+    protected_source = _neutralize_forged_markers(_norm_newlines(strip_ansi(protected_source)))
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -13946,7 +13980,7 @@ def _compress_context_impl(
     ))
     _PINNED_BLOCK_TEXTS.set(tuple(source_pin_texts))
     industrial_text = industrial.text if industrial.applied else caller_text
-    text = strip_ansi(_norm_newlines(industrial_text))
+    text = _norm_newlines(strip_ansi(industrial_text))
     # v1.4.0 (G9): keep the wrapper's scalar metadata (exit_code, error,
     # total_lines, ...) so it can be re-emitted ahead of the compressed body.
     tool_payload = unwrap_tool_payload(text)
@@ -13978,7 +14012,7 @@ def _compress_context_impl(
     # JSON-decoded control bytes are payload text too: the outer strip ran before
     # decoding, when they were still spelled ``\u001b``. Keep the working copy in
     # the same ANSI-free spelling plain tool output already uses.
-    text = strip_ansi(_norm_newlines(tool_payload.inner))
+    text = _norm_newlines(strip_ansi(tool_payload.inner))
     if payload_industrial is not None and payload_industrial.applied:
         text = payload_industrial.text
     if artifact_contaminated:

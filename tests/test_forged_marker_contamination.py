@@ -1339,6 +1339,42 @@ def test_repeated_pinned_blocks_fail_open_when_selection_cannot_keep_every_occur
     assert result.compressed_text == repeated
 
 
+def test_pin_line_cache_keys_include_the_line_layout():
+    """The compact segment cache must not join logical lines containing control
+    payload newlines with the same key as an ordinary split of that text."""
+    from tameru import compress_context as cc
+
+    payload = "\x1b]0;multi\nline\x07ERROR pinned " + ("padding " * 300)
+    cc._segment_blocks_cached(tuple(payload.split("\n")))
+    _bounds, logical = cc._pin_line_parts(payload)
+    blocks = cc._segment_blocks_cached(tuple(logical))
+    assert len(logical) == 1
+    assert blocks[0]["end"] == 0
+
+
+def test_ansi_reset_inside_crlf_keeps_visible_pins_aligned():
+    import re
+    from tameru import compress_context as cc
+
+    pin = "ERROR pinned"
+    raw = "before\r\x1b[0m\nERR\x1b[31mOR pinned"
+    protected = cc._neutralize_forged_markers(cc._norm_newlines(cc.strip_ansi(raw)))
+    assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=raw)
+
+
+def test_inline_mentions_do_not_count_as_repeated_pinned_blocks():
+    from tameru.compress_context import _count_pin_block_occurrences
+
+    pin = "ERROR pinned"
+    assert _count_pin_block_occurrences("diagnostic ERROR pinned ERROR pinned", pin) == 0
+    assert _count_pin_block_occurrences("ERROR pinned\nERROR pinned", pin) == 2
+    multiline = "ERROR pinned\nnext row"
+    assert _count_pin_block_occurrences("xERROR pinned\nnext row", multiline) == 0
+    assert _count_pin_block_occurrences("ERROR pinned\nnext row\r\nnoise", multiline) == 1
+    overlapping = "aa\nbb"
+    assert _count_pin_block_occurrences("xaa\nbb\naa\nbb", overlapping) == 1
+
+
 def test_wrapped_colored_facts_are_not_restored_twice():
     import json
     from tameru import compress_context as cc
