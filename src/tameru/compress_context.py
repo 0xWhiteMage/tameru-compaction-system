@@ -14499,6 +14499,20 @@ def _lf_lines_keepends(text: str) -> list[str]:
     return lines
 
 
+def _first_nonblank_index(lines: list[str]) -> int:
+    for index, line in enumerate(lines):
+        if line.strip():
+            return index
+    return 0
+
+
+def _last_nonblank_index(lines: list[str]) -> int:
+    for index in range(len(lines) - 1, -1, -1):
+        if lines[index].strip():
+            return index
+    return max(0, len(lines) - 1)
+
+
 def _trim_huge_edges(head: str, tail: str, lines_to_remove: int) -> tuple[str, str]:
     """Remove complete lines roughly evenly from the inner ends of both edges.
 
@@ -14513,8 +14527,8 @@ def _trim_huge_edges(head: str, tail: str, lines_to_remove: int) -> tuple[str, s
     # Never thin either nonempty edge away entirely. If the ceiling cannot
     # carry even one anchor row from each side, the oversized sample fails open
     # instead of silently losing the opening or closing context.
-    head_capacity = max(0, len(head_lines) - 1)
-    tail_capacity = max(0, len(tail_lines) - 1)
+    head_capacity = max(0, len(head_lines) - (_first_nonblank_index(head_lines) + 1)) if head_lines else 0
+    tail_capacity = max(0, _last_nonblank_index(tail_lines)) if tail_lines else 0
     head_remove = min(head_capacity, remove // 2)
     tail_remove = min(tail_capacity, remove - head_remove)
     head_remove = min(head_capacity, remove - tail_remove)
@@ -14530,8 +14544,8 @@ def _trim_huge_edges_by_counts(
     tail_lines = _lf_lines_keepends(tail)
     # Never thin either nonempty edge away entirely; an impossible ceiling
     # fails open rather than silently losing the opening or closing context.
-    head_capacity = max(0, len(head_lines) - 1)
-    tail_capacity = max(0, len(tail_lines) - 1)
+    head_capacity = max(0, len(head_lines) - (_first_nonblank_index(head_lines) + 1)) if head_lines else 0
+    tail_capacity = max(0, _last_nonblank_index(tail_lines)) if tail_lines else 0
     head_remove = min(head_capacity, max(0, head_remove))
     tail_remove = min(tail_capacity, max(0, tail_remove))
     head_keep = len(head_lines) - head_remove
@@ -14541,6 +14555,7 @@ def _trim_huge_edges_by_counts(
 
 def _edge_block_costs(
     blocks: list[dict[str, Any]], start_line: int, end_line: int, *, inner_end: bool,
+    anchor_line: int | None = None,
 ) -> list[int]:
     """Cumulative row costs for removing complete blocks from one edge's inner end."""
     costs: list[int] = []
@@ -14549,6 +14564,8 @@ def _edge_block_costs(
         start = int(block["start"])
         end = int(block["end"])
         if start < start_line or end > end_line:
+            continue
+        if anchor_line is not None and start <= anchor_line <= end:
             continue
         if inner_end:
             cost = end_line - start + 1
@@ -14585,8 +14602,16 @@ def _trim_huge_edges_blockaware(
     if tail_start >= total_lines:
         return None
     tail_end = total_lines - 1
-    head_costs = _edge_block_costs(blocks, 0, head_end, inner_end=True) if head else []
-    tail_costs = _edge_block_costs(blocks, tail_start, tail_end, inner_end=False) if tail else []
+    head_anchor = _first_nonblank_index(_lf_lines_keepends(head)) if head else None
+    tail_anchor = (
+        tail_start + _last_nonblank_index(_lf_lines_keepends(tail)) if tail else None
+    )
+    head_costs = (
+        _edge_block_costs(blocks, 0, head_end, inner_end=True, anchor_line=head_anchor) if head else []
+    )
+    tail_costs = (
+        _edge_block_costs(blocks, tail_start, tail_end, inner_end=False, anchor_line=tail_anchor) if tail else []
+    )
     if not head_costs and not tail_costs:
         return None
     head_blocks = len(head_costs)

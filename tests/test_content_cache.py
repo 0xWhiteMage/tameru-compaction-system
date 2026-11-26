@@ -502,6 +502,37 @@ def test_huge_uneven_edges_share_the_line_budget():
     assert sample.endswith(tail)
 
 
+def test_huge_edge_trim_preserves_nonblank_closing_anchor():
+    # Blank tail padding is not caller evidence. It must not become the sole
+    # surviving "anchor" while the closing diagnostic is trimmed away.
+    from tameru.compress_context import _trim_huge_edges, _trim_huge_edges_by_counts
+
+    head = "opening fact\n"
+    tail = "closing diagnostic\n\n"
+    for trim in (
+        lambda h, t: _trim_huge_edges(h, t, 10),
+        lambda h, t: _trim_huge_edges_by_counts(h, t, 0, 10),
+    ):
+        head_out, tail_out = trim(head, tail)
+        assert "opening fact" in head_out
+        assert "closing diagnostic" in tail_out
+
+
+def test_huge_blockaware_trim_skips_unremovable_anchor_blocks():
+    # A one-line closing block cannot be eliminated without erasing the closing
+    # anchor. Overflow work must shift to a removable opening block instead of
+    # repeatedly assigning the trim to the unremovable tail block.
+    from tameru.compress_context import _trim_huge_edges_blockaware
+
+    head = "head one\nhead two\n"
+    tail = "closing diagnostic\n"
+    sample = head + "\n[...]\n" + tail
+    blocks = [{"start": 0, "end": 0}, {"start": 1, "end": 1}, {"start": 4, "end": 4}]
+    head_out, tail_out = _trim_huge_edges_blockaware(sample, head, tail, blocks, 1)
+    assert head_out == "head one\n"
+    assert tail_out == tail
+
+
 def test_huge_dense_edges_converge_without_repeated_segmentation(monkeypatch):
     # Blank-separated edge rows need several rows per block removal. Measuring
     # that density must converge in a few passes, not one row per excess block.
