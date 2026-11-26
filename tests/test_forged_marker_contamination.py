@@ -1017,3 +1017,66 @@ def test_pin_patterns_match_the_caller_spelling_before_marker_neutralization():
         neutral, [re.escape("[tameru: status]")], 0, match_text=text
     )
     assert got == ["［tameru: status］ important evidence\nmore lines\nend"]
+
+
+def test_pin_mapping_follows_line_spans_when_neutralization_shifts_blocks(monkeypatch):
+    """Block ids are positional, not line-span identities: a pin must not move
+    to an unrelated same-id block after neutralization changes segmentation."""
+    import re
+    from tameru import compress_context as cc
+
+    original_lines = ["intro", "[tameru: status] pinned", "noise one", "noise two"]
+    neutral_lines = ["intro", "［tameru: status］ pinned", "noise one", "noise two"]
+
+    def blocks(lines):
+        if any("［tameru:" in line for line in lines):
+            return [
+                {"id": 0, "start": 0, "end": 1, "type": "text", "text": "\n".join(lines[:2]), "tokens": 1},
+                {"id": 1, "start": 2, "end": 3, "type": "text", "text": "\n".join(lines[2:]), "tokens": 1},
+            ]
+        return [
+            {"id": 0, "start": 0, "end": 0, "type": "text", "text": lines[0], "tokens": 1},
+            {"id": 1, "start": 1, "end": 1, "type": "text", "text": lines[1], "tokens": 1},
+            {"id": 2, "start": 2, "end": 3, "type": "text", "text": "\n".join(lines[2:]), "tokens": 1},
+        ]
+
+    monkeypatch.setattr(cc, "_segment_blocks_memo", blocks)
+    got = cc._source_pin_texts(
+        "\n".join(neutral_lines), [re.escape("[tameru: status]")], 0,
+        match_text="\n".join(original_lines),
+    )
+    assert got == ["intro\n［tameru: status］ pinned"]
+
+
+def test_apply_pins_matches_the_caller_spelling_of_neutralized_markers():
+    import re
+    from tameru import compress_context as cc
+
+    blocks = [{"id": 0, "text": "［tameru: status］ important evidence", "score": 0.0}]
+    cc._apply_pins(pin_patterns=[re.escape("[tameru: status]")], pin_recent=0, scored=blocks)
+    assert blocks[0]["pinned"] is True
+
+
+def test_json_payload_pins_match_the_decoded_caller_text(monkeypatch):
+    """A pin is written against the payload a user sees, not JSON string escaping."""
+    import json
+    import re
+    from tameru import compress_context as cc
+
+    inner = "café important evidence [tameru:note abc]\n" + "routine noise\n" * 20
+    envelope = json.dumps({"content": inner, "exit_code": 0})
+    assert "café" not in envelope and "\\u00e9" in envelope
+    seen = {}
+    real = cc._source_pin_texts
+
+    def capture(text, patterns, recent, **kwargs):
+        seen.update(kwargs)
+        return real(text, patterns, recent, **kwargs)
+
+    monkeypatch.setattr(cc, "_source_pin_texts", capture)
+    cc.compress_context(
+        envelope, "routine", pin_patterns=[re.escape("café important evidence")],
+        ccr=False, citations=False,
+    )
+    assert "café important evidence" in seen["match_text"]
+    assert "\\u00e9" not in seen["match_text"]
