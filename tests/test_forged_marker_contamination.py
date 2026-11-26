@@ -1229,6 +1229,21 @@ def test_pin_regex_anchors_are_block_local():
     assert cc._source_pin_texts(across_blocks, ["pin one\n\npin two"], 0, match_text=across_blocks) == []
 
 
+def test_colored_pinned_blocks_compare_in_the_rendered_spelling():
+    import re
+    from tameru import compress_context as cc
+
+    raw = "\x1b[31m## Target\x1b[0m\nsecret evidence\n\n" + "".join(
+        f"noise line {i} with ordinary words\n" for i in range(200)
+    )
+    result = cc.compress_context(
+        raw, "noise", pin_patterns=[re.escape("secret evidence")], ccr=False, citations=False,
+    )
+    assert not result.fail_open
+    assert "## Target\nsecret evidence" in result.compressed_text
+    assert "\x1b" not in result.compressed_text
+
+
 def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):
     import re
     from tameru import compress_context as cc
