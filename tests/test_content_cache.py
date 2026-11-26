@@ -223,17 +223,17 @@ def test_huge_sample_compresses_not_verbatim():
     assert "huge_sampled" in res.reasons
 
 
-def test_huge_error_line_excerpt_stays_bounded():
+def test_huge_error_line_sample_stays_bounded():
     # Minified JSON and single-line logs can make one error-matching line larger
-    # than the whole error-sample budget. The sampler keeps a window around the
-    # marker instead of copying enough bytes to recurse into the huge path again.
+    # than the whole error-sample budget. The sampler skips that line instead of
+    # copying enough bytes to recurse into the huge path again.
     from tameru.compress_context import _huge_sample
 
     big = "x" * 1_000_000 + " ERROR core failure: disk quota exceeded " + "y" * 1_200_000
     assert len(big) > _HUGE_CHARS
     sample = _huge_sample(big)
     assert len(sample) <= _HUGE_CHARS
-    assert "ERROR core failure: disk quota exceeded" in sample
+    assert "ERROR core failure: disk quota exceeded" not in sample
 
 
 def test_huge_one_line_tool_json_does_not_recurse():
@@ -244,23 +244,6 @@ def test_huge_one_line_tool_json_does_not_recurse():
     res = compress_context(big, "why", ccr=False, citations=False)
     assert "huge_sampled" in res.reasons
     assert res.compressed_text
-
-
-def test_huge_error_excerpt_redacts_before_clipping():
-    from tameru.compress_context import _huge_error_excerpt
-
-    secret = "abc1234567890xyz"
-    line = f'password="{secret}" ' + "x" * 2030 + " ERROR core failure " + "y" * 5_000
-    assert secret[-8:] in _huge_error_excerpt(line)  # the clipping hazard itself
-    redacted = _huge_error_excerpt(line, redact_secrets=True)
-    assert secret[-8:] not in redacted
-
-
-def test_huge_error_excerpt_matches_case_without_unicode_offset_shift():
-    from tameru.compress_context import _huge_error_excerpt
-
-    line = "İ" * 2_100 + " ERROR core failure " + "x" * 5_000
-    assert "ERROR core failure" in _huge_error_excerpt(line)
 
 
 def test_huge_sample_decline_returns_original():
