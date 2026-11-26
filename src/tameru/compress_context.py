@@ -774,46 +774,7 @@ def _norm_newlines(text: str) -> str:
     return str(text or "").replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _newline_normalized_pin_pattern(pattern: str) -> str:
-    """``pattern`` with its carriage-return newline spellings normalized.
-
-    The substitution scans regex escape tokens rather than replacing bytes: an escaped
-    backslash keeps a following ``r`` ordinary, and one CRLF spelling collapses to one LF.
-    ``re.escape`` writes control characters as a backslash plus the literal character,
-    so both ``\r`` and backslash+CR are carriage-return tokens.
-    """
-    out: list[str] = []
-    i = 0
-
-    def lf_token_len(pos: int) -> int:
-        if pattern.startswith("\\n", pos) or pattern.startswith("\\" + "\n", pos):
-            return 2
-        return 1 if pattern.startswith("\n", pos) else 0
-
-    while i < len(pattern):
-        cr_len = 0
-        if pattern[i] == "\\" and i + 1 < len(pattern):
-            token = pattern[i : i + 2]
-            if token == "\\\\":
-                out.append(token)
-                i += 2
-                continue
-            if token == "\\r" or token[1] == "\r":
-                cr_len = 2
-        elif pattern[i] == "\r":
-            cr_len = 1
-        if cr_len:
-            next_i = i + cr_len
-            lf_len = lf_token_len(next_i)
-            out.append("\\n")
-            i = next_i + lf_len if lf_len else next_i
-        elif pattern[i] == "\\" and i + 1 < len(pattern):
-            out.append(pattern[i : i + 2])
-            i += 2
-        else:
-            out.append(pattern[i])
-            i += 1
-    return "".join(out)
+_PIN_LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
 
 
 _CL_HEADING_RE = re.compile(r"^#{1,6}\s+")
@@ -6571,56 +6532,52 @@ def _source_pin_texts(
         return [text]
     pinned: set[int] = set()
     if match_text is not None:
-        match_lines = match_text.split('\n')
         work_lines = text.split('\n')
         # Neutralization can change a line's structural shape (for example an
         # ASCII bracketed line no longer reads as a JSON/INI opener), so block
-        # ids need not denote the same line span in the two walks. Match the
-        # caller spelling by source line, then conservatively pin every working
-        # block intersecting one of those lines. A wrapped payload's CRLF is
-        # normalized before rendering; accept both the caller's raw spelling
-        # and the rendered LF spelling whenever either preserves the working
-        # line count. A bare CR is itself a newline after normalization, so the
-        # raw view can be unalignable while the normalized view still matches.
-        match_views = [(match_lines, expressions)]
-        raw_aligned = len(match_lines) == len(work_lines)
+        # ids need not denote the same line span in the two walks. Evaluate the
+        # caller's unchanged regex against the full caller-visible payload and
+        # map each match span back to logical lines. This avoids rewriting
+        # regex escapes: a CR-authored pin can match the raw payload while an
+        # LF-authored pin can match the newline-normalized rendering.
+        match_views = [match_text]
         normalized_match = _norm_newlines(match_text)
-        if normalized_match != match_text:
-            if raw_aligned:
-                # CRLF payloads already match their raw spelling. Use the
-                # caller's regex unchanged here; LF-authored pins can still
-                # match this normalized view, while CR-authored pins were
-                # already handled by the raw view.
-                normalized_expressions = expressions
-            else:
-                # A bare CR is itself a newline after normalization, so only
-                # this view can align. Translate newline tokens with regex
-                # tokenization rather than rewriting bytes: an escaped
-                # backslash keeps a following ``r`` ordinary, and one CRLF
-                # spelling collapses to one LF.
-                normalized_expressions = compile_pin_patterns([
-                    _newline_normalized_pin_pattern(pattern) for pattern in (patterns or [])
-                ])
-            if normalized_expressions is not None:
-                match_views.append((normalized_match.split('\n'), normalized_expressions))
-        aligned_views = [
-            (view_lines, view_expressions) for view_lines, view_expressions in match_views
-            if len(view_lines) == len(work_lines)
-        ]
-        if aligned_views:
-            pinned_lines = [False] * len(work_lines)
-            for view_lines, view_expressions in aligned_views:
-                for block in _segment_blocks_memo(view_lines):
-                    if any(expr.search(block['text']) for expr in view_expressions):
-                        for ln in range(block['start'], block['end'] + 1):
+        # Newline bytes are transport spelling, not pin semantics. Offer the
+        # unchanged caller regex canonical CR, LF and CRLF views instead of
+        # rewriting its escapes: a pin copied with any ASCII line-ending
+        # spelling can match, without disturbing verbose comments, escaped
+        # backslashes, optional quantifiers or character classes.
+        for newline in ("\n", "\r", "\r\n"):
+            view = normalized_match.replace("\n", newline)
+            if view not in match_views:
+                match_views.append(view)
+        pinned_lines = [False] * len(work_lines)
+        unpinned = len(work_lines)
+        for view_text in match_views:
+            starts = [0]
+            for newline in _PIN_LINE_BREAK_RE.finditer(view_text):
+                starts.append(newline.end())
+            if len(starts) != len(work_lines):
+                continue
+            for expr in expressions:
+                for match in expr.finditer(view_text):
+                    start, end = match.span()
+                    first = bisect.bisect_right(starts, start) - 1
+                    last = bisect.bisect_right(starts, max(start, end - 1)) - 1
+                    for ln in range(max(0, first), min(len(work_lines) - 1, last) + 1):
+                        if not pinned_lines[ln]:
                             pinned_lines[ln] = True
-            pinned = {
-                block['id'] for block in blocks
-                if any(pinned_lines[block['start'] : block['end'] + 1])
-            }
-        else:
-            pinned = {block['id'] for block in blocks
-                      if any(expr.search(block['text']) for expr in expressions)}
+                            unpinned -= 1
+                    if not unpinned:
+                        break
+                if not unpinned:
+                    break
+            if not unpinned:
+                break
+        pinned = {
+            block['id'] for block in blocks
+            if any(pinned_lines[block['start'] : block['end'] + 1])
+        }
     else:
         pinned = {block['id'] for block in blocks
                   if any(expr.search(block['text']) for expr in expressions)}
