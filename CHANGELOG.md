@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
+- Perf: huge-input block fitting reuses the already measured block list when no middle errors make the edge-only sample differ, chunked segmentation reuses pure per-row scans for repeated short rows, and forged-marker neutralization fast-paths rows without fence or bracket introducers, avoiding duplicate dense-log work on large multiline output. - Unreleased
 - Fix: huge-input block measurement now matches the recursive pass's ANSI-free, newline-normalized segmentation before any edge rows are trimmed, row-count-changing control bytes or carriage returns disable unsafe offset-based trimming, and invisible terminal-control padding cannot become the sole protected opening or closing anchor row. - Unreleased
 - Fix: huge-input block fitting now reserves the second `[...]` seam needed to reintroduce middle errors in record-shaped samples, so dense edges cannot spend that row from the error budget and drop the last reserved error. - Unreleased
 - Fix: huge-input block fitting no longer removes one row per excess block — inner edge rows are measured against their segmented blocks and grouped error rows are thinned as whole endpoint-spread blocks, avoiding repeated full-sample segmentation and the multi-second dense-log slowdown while preserving first/last error coverage. - Unreleased

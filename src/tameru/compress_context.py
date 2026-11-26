@@ -282,10 +282,14 @@ def _neutralize_forged_markers(text: str) -> str:
     out: list[str] = []
     in_fence: str | None = None
     for ln in text.split("\n"):
-        probe = _GUTTER_RE.sub("", strip_ansi(ln), count=1).strip()
-        opener = _FENCE_RUN_RE.match(probe)
+        # Plain log rows dominate large tool output. Neither a fence marker nor
+        # a forged bracket can appear when their literal introducers are absent;
+        # ANSI stripping only removes bytes, so it cannot introduce one either.
+        has_fence_char = "`" in ln or "~" in ln
+        probe = _GUTTER_RE.sub("", strip_ansi(ln), count=1).strip() if has_fence_char else ""
+        opener = _FENCE_RUN_RE.match(probe) if has_fence_char else None
         if in_fence is not None:
-            closer = _FENCE_RUN_RE.fullmatch(probe)
+            closer = _FENCE_RUN_RE.fullmatch(probe) if has_fence_char else None
             if (
                 closer is not None
                 and closer.group(0)[0] == in_fence[0]
@@ -301,8 +305,9 @@ def _neutralize_forged_markers(text: str) -> str:
             in_fence = opener.group(0)
             out.append(ln)
         else:
-            for rx in _FORGED_SPAN_RES:
-                ln = rx.sub(lambda m: m.group(0).translate(_BRACKET_NEUTRAL), ln)
+            if "[" in ln or "\u27ea" in ln:
+                for rx in _FORGED_SPAN_RES:
+                    ln = rx.sub(lambda m: m.group(0).translate(_BRACKET_NEUTRAL), ln)
             out.append(ln)
     return "\n".join(out)
 
@@ -6372,6 +6377,52 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
     start: Optional[int] = None
     btype = "text"
     tokens = 0
+    # Dense tool output repeats the same short rows thousands of times. The
+    # per-line scans below are pure functions of the row text, so remember them
+    # for this pass without retaining row text beyond it. The cap bounds the
+    # transient map for highly unique input; repeated rows are normally seen
+    # early enough to be cached before it is reached.
+    classify_cache: dict[str, str] = {}
+    token_cache: dict[str, int] = {}
+    code_part_cache: dict[str, str] = {}
+    line_cache_limit = 4096
+    line_cache_max_chars = 512
+
+    def classify_cached(line: str) -> str:
+        try:
+            return classify_cache[line]
+        except KeyError:
+            value = classify_line(line)
+            if len(line) <= line_cache_max_chars and len(classify_cache) < line_cache_limit:
+                classify_cache[line] = value
+            return value
+
+    def tokens_cached(line: str) -> int:
+        try:
+            return token_cache[line]
+        except KeyError:
+            value = estimate_tokens(line)
+            if len(line) <= line_cache_max_chars and len(token_cache) < line_cache_limit:
+                token_cache[line] = value
+            return value
+
+    def code_part_cached(line: str) -> str:
+        try:
+            return code_part_cache[line]
+        except KeyError:
+            value = _quote_aware_code_part(line)
+            if len(line) <= line_cache_max_chars and len(code_part_cache) < line_cache_limit:
+                code_part_cache[line] = value
+            return value
+
+    # A strided probe keeps mostly unique input on the original zero-overhead
+    # path; caching pays only when repeated rows dominate the pass.
+    probe_step = max(1, len(lines) // 256)
+    probe = lines[::probe_step][:256]
+    use_line_cache = bool(probe) and len(set(probe)) * 2 <= len(probe)
+    classify_row = classify_cached if use_line_cache else classify_line
+    row_tokens = tokens_cached if use_line_cache else estimate_tokens
+    row_code_part = code_part_cached if use_line_cache else _quote_aware_code_part
 
     def close(end: int) -> None:
         nonlocal start, tokens
@@ -6402,8 +6453,8 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
     in_fence = False
     in_string: str | None = None
     for i, line in enumerate(lines):
-        kind = classify_line(line)
-        line_toks = estimate_tokens(line)
+        kind = classify_row(line)
+        line_toks = row_tokens(line)
         if in_fence:
             tokens += line_toks
             if kind == "fence":
@@ -6470,7 +6521,7 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
         # span in one block. Quotes inside a trailing comment or a quoted
         # literal are text, and an even count opens and closes on the line.
         if in_string is None:
-            code = _quote_aware_code_part(line)
+            code = row_code_part(line)
             in_string = _advance_multiline_state(code, None)
         prev_type = kind
     close(len(lines) - 1)
@@ -14794,7 +14845,13 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     middle_seam_reserve = 1 if errs else 0
     edge_budget = max(1, max_blocks - err_reserve - middle_seam_reserve)
     base_sample = _join_huge_sample(head, [], tail)
-    base_segmented = _huge_sample_blocks(base_sample)
+    if errs:
+        base_segmented = _huge_sample_blocks(base_sample)
+    else:
+        # With no middle errors the base sample is the full sample byte-for-byte.
+        # Reuse the measurement above: even when the segmentation memo hits,
+        # rebuilding tens of thousands of dense block rows is repeated work.
+        base_segmented = segmented
     base_blocks = len(base_segmented)
     for _ in range(8):
         if base_blocks <= edge_budget or (not head and not tail):
@@ -14817,7 +14874,12 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     # thin rows that already fit; the reconciliation below removes only measured
     # overflow while preserving endpoint coverage.
     sample = _join_huge_sample(head, errs, tail)
-    segmented = _huge_sample_blocks(sample)
+    if errs:
+        segmented = _huge_sample_blocks(sample)
+    else:
+        # The edge-only join is still identical to ``base_sample`` here, whether
+        # or not the fitting loop needed to trim it.
+        segmented = base_segmented
     blocks = len(segmented)
     for _ in range(8):
         over = blocks - max_blocks
