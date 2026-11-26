@@ -1177,13 +1177,16 @@ def test_pinned_block_text_context_is_not_retained_after_a_call():
     assert cc._PINNED_BLOCK_TEXTS.get() == ()
 
 
-def test_block_anchored_pin_matches_a_later_source_block():
+def test_pin_regex_anchors_keep_python_semantics():
     from tameru import compress_context as cc
 
     text = "intro\n\n## Target\nsecret evidence\n\n" + "noise\n" * 40
-    assert cc._source_pin_texts(text, [r"^## Target"], 0, match_text=text) == [
+    assert cc._source_pin_texts(text, [r"^## Target"], 0, match_text=text) == []
+    assert cc._source_pin_texts(text, [r"(?m)^## Target"], 0, match_text=text) == [
         "## Target\nsecret evidence"
     ]
+    end_anchored = "pending\nnoise\n" * 20 + "pending"
+    assert cc._source_pin_texts(end_anchored, [r"pending$"], 0, match_text=end_anchored) == ["pending"]
 
 
 def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):

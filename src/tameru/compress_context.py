@@ -6549,9 +6549,6 @@ def _source_pin_texts(
         normalized_match = _norm_newlines(match_text)
         if normalized_match != match_text:
             match_views.append(normalized_match)
-        search_expressions = tuple(
-            re.compile(expr.pattern, expr.flags | re.MULTILINE) for expr in expressions
-        )
         pinned_lines = [False] * len(work_lines)
         unpinned = len(work_lines)
         for view_text in match_views:
@@ -6560,7 +6557,7 @@ def _source_pin_texts(
                 starts.append(newline.end())
             if len(starts) != len(work_lines):
                 continue
-            for expr in search_expressions:
+            for expr in expressions:
                 for match in expr.finditer(view_text):
                     start, end = match.span()
                     first = bisect.bisect_right(starts, start) - 1
