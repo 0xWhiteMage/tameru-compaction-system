@@ -6513,8 +6513,8 @@ def _source_pin_texts(
 
     ``text`` is the working copy whose forged markers were neutralized, while
     pins are caller-authored patterns and must match the caller-visible
-    ``match_text``. The two walks have the same line and block boundaries
-    (neutralization only rewrites bracket characters), so the returned block
+    ``match_text``. Neutralization preserves line positions but can move block
+    boundaries, so pins are carried over by line span; the returned block
     stays safe to emit without losing the pin's source spelling.
     """
     if not patterns and not recent:
@@ -6523,15 +6523,31 @@ def _source_pin_texts(
     expressions = compile_pin_patterns(patterns)
     if expressions is None:
         return [text]
-    match_blocks = blocks
+    pinned: set[int] = set()
     if match_text is not None:
-        candidates = _segment_blocks_memo(match_text.split('\n'))
-        if len(candidates) == len(blocks) and all(
-            candidate['id'] == block['id'] for candidate, block in zip(candidates, blocks)
-        ):
-            match_blocks = candidates
-    pinned = {block['id'] for block in match_blocks
-              if any(expr.search(block['text']) for expr in expressions)}
+        match_lines = match_text.split('\n')
+        work_lines = text.split('\n')
+        if len(match_lines) == len(work_lines):
+            # Neutralization can change a line's structural shape (for example
+            # an ASCII bracketed line no longer reads as a JSON/INI opener), so
+            # block ids need not denote the same line span in the two walks.
+            # Match the caller spelling by source line, then conservatively pin
+            # every working block intersecting one of those lines.
+            pinned_lines = [False] * len(match_lines)
+            for block in _segment_blocks_memo(match_lines):
+                if any(expr.search(block['text']) for expr in expressions):
+                    for ln in range(block['start'], block['end'] + 1):
+                        pinned_lines[ln] = True
+            pinned = {
+                block['id'] for block in blocks
+                if any(pinned_lines[block['start'] : block['end'] + 1])
+            }
+        else:
+            pinned = {block['id'] for block in blocks
+                      if any(expr.search(block['text']) for expr in expressions)}
+    else:
+        pinned = {block['id'] for block in blocks
+                  if any(expr.search(block['text']) for expr in expressions)}
     if recent and blocks:
         pinned.add(blocks[0]['id'])
         pinned.update(block['id'] for block in blocks[-recent:])
@@ -12660,7 +12676,16 @@ def _apply_pins(
     if pin_patterns:
         _pin_res = compile_pin_patterns(pin_patterns)
         for b in scored:
-            if _pin_res is None or any(rx.search(b["text"]) for rx in _pin_res):
+            text = b["text"]
+            # Neutralized pinned lines are recorded exactly; inverse-normalizing
+            # arbitrary fullwidth caller text here would make an ASCII pin match
+            # text it never matched in the source.
+            pinned_lines = _PINNED_LINES.get()
+            pinned_line_hit = bool(pinned_lines) and any(
+                line in pinned_lines or strip_ansi(line) in pinned_lines
+                for line in text.split("\n")
+            )
+            if _pin_res is None or pinned_line_hit or any(rx.search(text) for rx in _pin_res):
                 b["score"] = max(b["score"], 999.0)
                 b["pinned"] = True
 
@@ -13773,7 +13798,7 @@ def _compress_context_impl(
     # The decoded body (and the analysis_text fallback) can still carry a
     # marker-shaped span — the floors restore lines verbatim, so they must
     # come from the same marker-free copy the working text uses.
-    protected_source = _neutralize_forged_markers(protected_source)
+    protected_source = _neutralize_forged_markers(_norm_newlines(protected_source))
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -13817,12 +13842,15 @@ def _compress_context_impl(
             content_hint=content_hint, industrial=industrial, query_as_given=query_as_given,
             requested_mode=requested_mode, strategy=strategy,
         )
-    # Pin texts must compare against the neutralized working text — a forged
-    # marker span inside a pinned block would otherwise read as un-preservable
-    # and trip the pin cost gate into returning the whole original.
+    # Pin texts compare against the neutralized decoded payload — the shape the
+    # renderer emits — while the patterns match the caller-visible decoded
+    # spelling, never the JSON serialization or the already-neutralized copy.
+    pin_match_text = _norm_newlines(protected_payload.inner)
+    if artifact_contaminated:
+        pin_match_text = _strip_artifact_noise(pin_match_text, noise_res)
     source_pin_texts = _source_pin_texts(
-        _neutralize_forged_markers(analysis_text), pin_patterns, pin_recent,
-        match_text=analysis_text,
+        protected_source, pin_patterns, pin_recent,
+        match_text=pin_match_text,
     )
     _PINNED_LINES.set(frozenset(
         form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
