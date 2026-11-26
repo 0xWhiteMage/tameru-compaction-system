@@ -6540,17 +6540,15 @@ def _source_pin_texts(
         # map each match span back to logical lines. This avoids rewriting
         # regex escapes: a CR-authored pin can match the raw payload while an
         # LF-authored pin can match the newline-normalized rendering.
+        # Match the two representations the payload genuinely has here: its raw
+        # decoded spelling and the newline-normalized rendering. Do not synthesize
+        # other newline dialects: ``.`` matches a bare CR even though it rejects LF,
+        # so a synthetic CR view would invent matches the caller's regex does not
+        # license. Likewise, never rewrite the regex itself.
         match_views = [match_text]
         normalized_match = _norm_newlines(match_text)
-        # Newline bytes are transport spelling, not pin semantics. Offer the
-        # unchanged caller regex canonical CR, LF and CRLF views instead of
-        # rewriting its escapes: a pin copied with any ASCII line-ending
-        # spelling can match, without disturbing verbose comments, escaped
-        # backslashes, optional quantifiers or character classes.
-        for newline in ("\n", "\r", "\r\n"):
-            view = normalized_match.replace("\n", newline)
-            if view not in match_views:
-                match_views.append(view)
+        if normalized_match != match_text:
+            match_views.append(normalized_match)
         pinned_lines = [False] * len(work_lines)
         unpinned = len(work_lines)
         for view_text in match_views:

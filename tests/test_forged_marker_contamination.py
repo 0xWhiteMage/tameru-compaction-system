@@ -1157,32 +1157,11 @@ def test_bare_carriage_returns_still_use_the_normalized_pin_view():
     ]
 
 
-def test_cr_only_pin_matches_crlf_payload_without_regex_rewriting():
-    import re
+def test_newline_normalization_does_not_invent_dot_matches():
     from tameru import compress_context as cc
 
-    raw = "first\r\nsecond\r\n\r\nnoise"
-    rendered = "first\nsecond\n\nnoise"
-    assert cc._source_pin_texts(
-        rendered, [re.escape("first\rsecond")], 0, match_text=raw
-    ) == ["first\nsecond"]
-
-
-def test_verbose_pin_comments_survive_newline_dialect_matching():
-    from tameru import compress_context as cc
-
-    raw = "first\rsecond\r\rnoise"
-    rendered = "first\nsecond\n\nnoise"
-    pattern = "(?x)first\\r\\n # pair\nsecond"
-    assert cc._source_pin_texts(rendered, [pattern], 0, match_text=raw) == ["first\nsecond"]
-
-
-def test_required_carriage_return_is_not_made_optional():
-    from tameru import compress_context as cc
-
-    raw = "firstsecond\r\rnoise"
-    rendered = "firstsecond\n\nnoise"
-    assert cc._source_pin_texts(rendered, [r"first\r\n?second"], 0, match_text=raw) == []
+    raw = "first\nsecond\n\nnoise"
+    assert cc._source_pin_texts(raw, [r"first.second"], 0, match_text=raw) == []
 
 
 def test_broad_distinct_pins_do_not_scan_every_pin_for_every_block():
