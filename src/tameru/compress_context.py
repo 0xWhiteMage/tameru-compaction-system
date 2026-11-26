@@ -14769,7 +14769,11 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     if len(sample.split("\n")) <= max_blocks:
         return sample
     err_reserve = min(len(errs), max(1, max_blocks // 4)) if errs and max_blocks >= 4 else 0
-    edge_budget = max(1, max_blocks - err_reserve)
+    # ``base_sample`` already carries the edge-joining separator. Reintroducing a
+    # nonempty middle adds a second one, which is its own block in record-shaped
+    # samples; reserve that row too instead of spending it from the error budget.
+    middle_seam_reserve = 1 if errs else 0
+    edge_budget = max(1, max_blocks - err_reserve - middle_seam_reserve)
     base_sample = _join_huge_sample(head, [], tail)
     base_segmented = _huge_sample_blocks(base_sample)
     base_blocks = len(base_segmented)
