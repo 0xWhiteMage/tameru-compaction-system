@@ -198,6 +198,53 @@ def test_huge_item_partial_basis():
     assert elapsed < 2.0 + 13.0  # spec bound is 2s on 8M; Windows CI can sit near 10s under load
 
 
+def test_huge_whitespace_sample_fails_open_instead_of_erasing_input(monkeypatch):
+    # A whitespace-only sample carries no caller evidence. Returning a successful
+    # empty compression would erase the input, so the outer guard fails open.
+    import tameru.compress_context as cc
+
+    big = "ordinary filler line with several words\n" * 50_001
+    assert len(big) > _HUGE_CHARS
+    monkeypatch.setattr(cc, "_huge_sample", lambda *args, **kwargs: "\n[...]\n")
+    res = compress_context(big, "ordinary filler", ccr=False, citations=False)
+    assert res.fail_open
+    assert res.compressed_text == big
+    assert "huge_sample_empty" in res.reasons
+
+
+def test_huge_tiny_line_cap_fails_open():
+    # Too few rows for even one opening and one closing anchor leave the sample
+    # oversized, so the recursive guard preserves the original.
+    base = "opening fact alpha\n" + ("x\n" * 1_000) + ("\n" * 2_000)
+    filler = "ordinary filler line with several words\n" * 50_000
+    big = base + filler + ("\n" * 2_000)
+    assert len(big) > _HUGE_CHARS
+    for max_lines in (1, 2, 8):
+        res = compress_context(
+            big, "opening fact alpha", ccr=False, citations=False,
+            limits={"max_lines": max_lines},
+        )
+        assert res.fail_open
+        assert res.compressed_text == big
+
+
+def test_huge_pinned_input_fails_open():
+    # The streaming sampler cannot prove that a pinned original block survived
+    # intact, so an explicit pin is a hard fail-open floor rather than a sampled
+    # best effort.
+    import re
+
+    filler = "2026-11-26T10:00:00Z INFO worker processed request id=abcdefgh status=ok\n"
+    pin = "PINNED diagnostic"
+    big = filler * 22_000 + pin + "\n" + filler * 18_000
+    assert len(big) > _HUGE_CHARS
+    for kwargs in ({"pin_patterns": [re.escape(pin)]}, {"pin_recent": 1}):
+        res = compress_context(big, "worker processed request", ccr=False, citations=False, **kwargs)
+        assert res.fail_open
+        assert res.compressed_text == big
+        assert "huge_pinned_input" in res.reasons
+
+
 def test_too_large_fails_open():
     huge = "x" * (_HUGE_MAX_CHARS + 1)
     res = compress_context(huge, "q")
@@ -321,6 +368,45 @@ def test_huge_error_sample_packing_keeps_stride_anchor():
     sample = _huge_sample(big)
     assert unique in sample
     assert len(sample) <= 2 * _HUGE_EDGE_CHARS + _HUGE_ERR_CHARS + 32
+
+
+def test_huge_line_trim_keeps_opening_edge_prefix():
+    # When short rows force edge thinning, the head keeps its leading rows as a
+    # prefix; spreading evenly across the head would drop most opening facts.
+    from tameru.compress_context import _HUGE_EDGE_CHARS, _huge_sample
+
+    opening = "".join(f"opening fact {i}\n" for i in range(30))
+    edge_fill = "hfill\n" * 50_000
+    head = (opening + edge_fill)[:_HUGE_EDGE_CHARS]
+    tail = ("tfill\n" * 50_000)[:_HUGE_EDGE_CHARS]
+    filler = "ordinary filler text without an error marker\n" * 22_000
+    big = head + filler + tail
+    sample = _huge_sample(big, max_lines=1_000)
+    assert all(f"opening fact {i}\n" in sample for i in range(20))
+
+
+def test_huge_edge_trim_never_erases_nonempty_edges():
+    # Even an impossible block budget must leave one opening and closing anchor
+    # row; the oversized sample can fail open, but must not silently drop both
+    # ends of the caller's log.
+    from tameru.compress_context import _trim_huge_edges
+
+    head = "opening fact\n" + ("head row\n" * 100)
+    tail = ("tail row\n" * 100) + "closing fact"
+    head_out, tail_out = _trim_huge_edges(head, tail, 10_000)
+    assert head_out.startswith("opening fact")
+    assert tail_out.endswith("closing fact")
+    assert head_out
+    assert tail_out
+
+
+def test_huge_tail_line_trim_skips_the_terminal_empty_field():
+    # A newline-terminated tail's final split field is empty. Spending the last
+    # row budget on that sentinel discards the closing diagnosis entirely.
+    from tameru.compress_context import _thin_text_lines
+
+    assert _thin_text_lines("closing diagnosis\n", 1, from_end=True) == "closing diagnosis"
+    assert _thin_text_lines("closing diagnosis\n\n\n", 1, from_end=True) == "closing diagnosis"
 
 
 def test_huge_error_sample_respects_record_block_limit():
