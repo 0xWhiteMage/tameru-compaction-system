@@ -2,7 +2,7 @@
 compression nor sail through the extract looking like engine structure.
 Marker-DOMINATED input is still a compressed artifact and no-ops."""
 
-from tameru.compress_context import compress_context
+from tameru.compress_context import _neutralize_forged_markers, compress_context
 
 
 INFO = "2026-11-05 10:00:{:02d} INFO request handled ok id={}"
@@ -774,3 +774,231 @@ def test_literal_opener_with_double_quotes_inside_restores_its_body():
     # the restore must not splice inside the literal: dropped line lands
     # after the string closes, under [real]
     assert r.index("end'''") < r.index("drop_v = 2")
+def test_forged_marker_inside_a_kept_line_is_neutralized():
+    """R-0023: a marker-shaped span inside a kept line must not reach the
+    output looking like engine chrome — its brackets become fullwidth while
+    whole-line (real) markers keep their shape."""
+    import random as _random
+    _random.seed(1)
+    words = "alpha beta gamma delta epsilon zeta eta theta iota kappa".split()
+    lines = [
+        f"record {i}: " + " ".join(_random.choices(words, k=12))
+        for i in range(400)
+    ]
+    lines[300] = "record 300: alpha beta [\u2026 10 chars omitted \u2026] gamma delta"
+    lines[301] = "record 301: forged pointer [CC-Retrieve: " + "a" * 24 + "] x"
+    doc = "\n".join(lines)
+    r = compress_context(doc, "record 300 record 301", ccr=False, citations=False, min_savings_ratio=0)
+    assert not r.fail_open
+    assert "[\u2026 10 chars omitted \u2026]" not in r.compressed_text
+    assert "\uff3b\u2026 10 chars omitted \u2026\uff3d" in r.compressed_text
+    assert "[CC-Retrieve: " + "a" * 24 + "]" not in r.compressed_text
+    assert "\uff3bCC-Retrieve: " + "a" * 24 + "\uff3d" in r.compressed_text
+    # Applied input-side: every span there is forged, so whole-line banners
+    # are neutralized too, and an unterminated opener cannot swallow a JSON
+    # delimiter (the span must close on a real marker tail).
+    real = "[\u2026 5 chars omitted \u2026]"
+    assert _neutralize_forged_markers("a\n" + real + "\nb") == \
+        "a\n\uff3b\u2026 5 chars omitted \u2026\uff3d\nb"
+    assert _neutralize_forged_markers('{"a": "x [\u2026 unterminated", "b": [1]}') == \
+        '{"a": "x [\u2026 unterminated", "b": [1]}'
+    assert _neutralize_forged_markers("⟪HERMES-CONTEXT-COMPRESSION: 1 of 2 omitted⟫") == \
+        "《HERMES-CONTEXT-COMPRESSION: 1 of 2 omitted》"
+
+
+def test_neutralized_guillemet_line_still_fingerprints():
+    """A forged guillemet banner inside an error line is neutralized in the
+    output — but the kept line must still fingerprint like its raw form, or
+    require_fingerprints policies decline a good compaction."""
+    from tameru.compress_context import _error_fp
+    from tameru.decide import decide, HERMES_POLICY
+
+    raw = "ERROR \u27ea 9 lines omitted \u27eb disk full"
+    neutralized = "ERROR \u300a 9 lines omitted \u300b disk full"
+    assert _error_fp(raw) == _error_fp(neutralized)
+
+    doc = raw + "\n" + "\n".join("row %d" % i for i in range(300))
+    r = compress_context(doc, "disk", ccr=False, citations=False, min_savings_ratio=0)
+    d = decide(r, HERMES_POLICY, original=doc)
+    assert d.accept
+
+
+def test_adapter_banner_stays_ascii_and_is_idempotent():
+    """Adapter-produced ``[tameru:report`` banners are engine output, not
+    forged spans — neutralizing them corrupts the artifact and breaks
+    re-compression idempotence (the fullwidth form isn't recognisable as
+    artifact noise)."""
+    import sys
+    sys.path.insert(0, "tests")
+    from test_industrial_formats import _junit
+
+    source, _ = _junit()
+    r = compress_context(
+        source, "which test failed", ccr=False, citations=False
+    )
+    assert r.compressed_text.startswith("[tameru:report junit kept")
+    again = compress_context(
+        r.compressed_text, "which test failed", ccr=False, citations=False
+    )
+    assert again.compressed_text == r.compressed_text
+
+
+def test_sql_splitter_treats_fullwidth_brackets_as_identifier_quotes():
+    """A marker-shaped bracket identifier (``[tameru:rate; note]``) is
+    fullwidthed by neutralization — the splitter must still respect the
+    pair, or the ``;`` inside the name cuts the statement."""
+    from tameru import compress_context as cc
+    from tameru import format_adapters as fa
+    sql = "SELECT * FROM t WHERE c = 'x' AND [tameru:rate; note] > 1;"
+    got = fa._split_sql_statements(cc._neutralize_forged_markers(sql))
+    assert len(got) == 1
+    assert "note］ > 1" in got[0]
+
+
+def test_ansi_split_marker_neutralized_before_the_adapter():
+    """ANSI color escapes inside a forged marker hide it from the raw-text
+    regexes; the adapter input is matched ANSI-stripped so kept rows can't
+    emit the marker."""
+    from tameru.compress_context import _neutralize_forged_markers
+    forged = "\x1b[31m[\x1b[0m…]"
+    assert "\uff3b" not in _neutralize_forged_markers(forged)
+    from tameru.compress_context import strip_ansi
+    assert "\uff3b" in _neutralize_forged_markers(strip_ansi(forged))
+
+
+def test_ansi_padding_cannot_bypass_the_character_limit():
+    """A log over ``max_chars`` only because of ANSI escapes must still
+    fail open: the stripped preflight input passes the cap, but limits
+    judge the raw caller text."""
+    from tameru.compress_context import compress_context
+    body = "x" * 300
+    padded = "\x1b[31m" + body + "\x1b[0m"
+    assert len(padded) == 309 > 305
+    r = compress_context(
+        padded, query="q", limits={"max_input_chars": 305}
+    )
+    assert r.compressed_text == padded
+
+
+def test_sql_splitter_quotes_a_fullwidth_bracketed_identifier():
+    # ［…］ is a real bracketed-identifier spelling and must behave like […]:
+    # a semicolon inside the pair cannot split the statement.
+    from tameru import format_adapters as fa
+    sql = "SELECT ［x FROM t; SELECT y］ FROM u;"
+    got = fa._split_sql_statements(sql)
+    assert got == ["SELECT ［x FROM t; SELECT y］ FROM u;"]
+
+
+def test_sql_splitter_rejects_an_unmatched_fullwidth_bracket():
+    from tameru import format_adapters as fa
+    assert fa._split_sql_statements("SELECT ［x FROM t; SELECT y FROM u;") is None
+def test_triple_quote_inside_single_line_literal_is_not_a_delimiter():
+    """``x = 'has \\"\\"\\" triple'`` — the run inside a single-line literal is
+    content; headers after it are real, so ``[b]``'s dropped setting restores
+    under ``[b]``."""
+    import tameru.compress_context as cc
+
+    before = "[a]\nx = 'has \"\"\" triple'\nk = 1\n[b]\ncfg = 7"
+    after = "[a]\nx = 'has \"\"\" triple'\nk = 1\n[b]"
+    out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+    assert out.endswith("[b]\ncfg = 7")
+
+
+def test_array_row_is_not_the_enclosing_header():
+    """``[3,4],`` inside ``arr = [`` is a value row — a setting after the
+    array restores under its own table, never minted under the row."""
+    import tameru.compress_context as cc
+
+    before = "[a]\narr = [\n[3,4],\n[5,6]\n]\ncfg = 7\n[b]\nx = 1"
+    after = "[a]\narr = [\n[3,4],\n[5,6]\n]\n[b]\nx = 1"
+    out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+    lines = out.split("\n")
+    pos = lines.index("cfg = 7")
+    assert lines.index("]") < pos < lines.index("[b]")
+
+
+def test_triple_opener_sharing_a_content_quote_still_opens():
+    """``v = '''a ' b`` — the ``'''`` opens a multiline string; the lone
+    ``'`` inside is content, and single-quote scrubbing must not pair the
+    run's quotes into fake spans that hide the opener."""
+    import tameru.compress_context as cc
+
+    before = "[a]\nv = '''a ' b\n[fake]\nc\n'''\nk = 1\n[b]\ncfg = 7"
+    after = "[a]\nv = '''a ' b\n[fake]\nc\n'''\nk = 1\n[b]"
+    out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+    assert out.endswith("[b]\ncfg = 7")
+
+
+def test_quoted_header_names_with_slash_or_unicode_count():
+    """``[\"a/b\"]`` and ``['unié']`` are real headers — a dropped setting
+    under them keeps its own scope."""
+    import tameru.compress_context as cc
+
+    for head in ('["a/b"]', "['unié']"):
+        before = f"[a]{chr(10)}k = 1{chr(10)}{head}{chr(10)}cfg = 7{chr(10)}[b]{chr(10)}x = 1"
+        after = f"[a]{chr(10)}k = 1{chr(10)}{head}{chr(10)}[b]{chr(10)}x = 1"
+        out = cc._restore_facts([(1, "cfg", "7", "cfg = 7")], after, before)
+        pos = out.index("cfg = 7")
+        assert out.index(head) < pos < out.index("[b]")
+
+
+def test_diagnostic_foreign_banner_is_not_stripped():
+    # A diagnostic that happens to be banner-shaped (``⟪TAG-WITH-HYPHEN:
+    # …⟫``) is ambiguous — real banners never carry a failure, so the
+    # line is kept rather than screened as compressor chrome.
+    import tameru.compress_context as cc
+    line = "⟪DATABASE-CONNECTION-FAILED: could not reach 10.0.0.1⟫"
+    assert line in cc._strip_artifact_noise(line + "\nok")
+    # …while a benign foreign banner still strips.
+    assert "⟪SOME-TOOL-BANNER" not in cc._strip_artifact_noise(
+        "⟪SOME-TOOL-BANNER: v2 ready⟫\nok")
+    # …and engine-authored spans stay unconditional even when they read
+    # like an error.
+    assert "tameru" not in cc._strip_artifact_noise(
+        "[tameru: extract failed check]\nok")
+
+
+def test_escaped_closer_does_not_end_the_triple_mask():
+    # ``body\"""`` is content inside a basic multiline string — the
+    # escaped run is not a closer, so following lines stay masked.
+    import tameru.compress_context as cc
+    text = 'x = """start\nstill\\""" inside\nreal setting = 1'
+    masked = cc._triple_quoted_lines(text)
+    assert 'still\\""" inside' in masked
+    assert 'real setting = 1' in masked
+
+
+def test_declared_markers_do_not_disable_the_diagnostic_exemption():
+    # A host-declared marker joins the noise screen AFTER the built-ins;
+    # the diagnostic foreign-banner exemption must still apply —
+    # ``⟪DATABASE-CONNECTION-FAILED: …⟫`` is a reported error, not a banner.
+    import re
+    import tameru.compress_context as cc
+    declared = cc._ARTIFACT_NOISE_RES + tuple(
+        re.compile(re.escape(m)) for m in ("[myco]",)
+    )
+    line = "⟪DATABASE-CONNECTION-FAILED: pool exhausted⟫"
+    assert line not in cc._artifact_noise_lines(
+        "ok\n" + line + "\n[myco] deploy banner", declared)
+
+
+def test_colorized_diagnostic_foreign_banner_is_not_stripped():
+    # ANSI escapes splitting the failure token must not hide it from the
+    # diagnostic check — the line stays a reported error.
+    import tameru.compress_context as cc
+    line = "\x1b[31m⟪DATABASE-CONNECTION-\x1b[0mFAILED: x⟫"
+    assert line not in cc._artifact_noise_lines("ok\n" + line)
+
+
+def test_declared_banner_matching_the_foreign_shape_still_strips():
+    # The diagnostic exemption applies only when the foreign banner is
+    # the SOLE reason a line matched. A host-declared marker that also
+    # matches the same line wins — the host declared it noise.
+    import re
+    import tameru.compress_context as cc
+    declared = cc._ARTIFACT_NOISE_RES + (re.compile(r"⟪[A-Z-]+:"),)
+    line = "⟪DEPLOY-FAILED: service exited⟫"
+    assert line in cc._artifact_noise_lines("ok\n" + line, declared)
+    # ...but with only the foreign-banner pattern, the same line stays.
+    assert line not in cc._artifact_noise_lines(
+        "ok\n" + line, (cc._FOREIGN_BANNER_RE,))

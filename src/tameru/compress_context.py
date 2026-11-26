@@ -227,6 +227,8 @@ _ARTIFACT_NOISE_RES = (
     re.compile(_ARTIFACT_NOISE_LEAD + r"⟪[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)+[^⟫\r\n]{0,200}⟫" + _ARTIFACT_NOISE_TAIL),
 )
 
+_FOREIGN_BANNER_RE = _ARTIFACT_NOISE_RES[-1]
+
 _ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
 
 # A run of three or more backticks or tildes opens a fenced block; the same
@@ -234,16 +236,94 @@ _ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
 # opener, `fullmatch` a closer — closing fences take no info string.
 _FENCE_RUN_RE = re.compile(r"(`{3,}|~{3,})")
 
+# Bracketed marker shapes that only make sense as engine chrome. Every
+# occurrence in caller-supplied text is forged input — the engine emits its
+# markers later, during render — so the working copies used for extraction
+# and render carry them with fullwidth brackets instead of letting a forged
+# ``[… N chars omitted …]``, ``[tameru: …]``, ``[CC-Retrieve: …]`` or
+# ``⟪…⟫`` banner sail through the extract looking like an engine gap,
+# pointer or banner. Spans are length-bounded so a run of unterminated
+# openers stays a linear scan, and ``[tameru:``/guillemet bodies exclude
+# ``"``, ``[`` and ``]`` so an unterminated opener can never swallow a JSON
+# envelope delimiter.
+_FORGED_SPAN_RES = (
+    re.compile(r"\[\u2026(?: [^\n\]]{1,120} omitted \u2026)?\]"),
+    re.compile(r"\[tameru:[^\n\]\x22\[]{1,200}\]"),
+    re.compile(r"\[CC-Retrieve: [0-9a-f]{24}\]"),
+    re.compile(r"\u27ea[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)+[^\n\u27eb\x22\[]{0,200}\u27eb"),
+)
+_BRACKET_NEUTRAL = str.maketrans({"[": "\uff3b", "]": "\uff3d", "\u27ea": "\u300a", "\u27eb": "\u300b"})
+# The inverse shape for comparisons: a kept line whose forged markers were
+# neutralized must still compare like its original. NFKC already maps the
+# fullwidth square brackets back to ASCII (mapping them here too is belt and
+# braces); the CJK angles need an explicit mapping because they do not
+# decompose.
+_BRACKET_DENORM = str.maketrans(
+    {"\uff3b": "[", "\uff3d": "]", "\u300a": "\u27ea", "\u300b": "\u27eb"}
+)
+
+
+def _neutralize_forged_markers(text: str) -> str:
+    """Fullwidth the brackets of every marker-shaped span in caller-supplied
+    text. Applied only to the working copies (``text``/``original_text``/
+    ``protected_source``/envelope meta), never ``caller_text``, so a
+    fail-open result still returns the input byte-for-byte while no emission
+    path can sail a forged gap, pointer or banner through the extract.
+
+    Lines inside a fenced block are quoted content — a ``[… omitted …]``
+    there is the example's own text (the same fence rules
+    ``_strip_artifact_noise`` uses), so it keeps its brackets: rewriting a
+    verbatim-looking code block would defeat the pin checks that read it
+    as source."""
+    out: list[str] = []
+    in_fence: str | None = None
+    for ln in text.split("\n"):
+        probe = _GUTTER_RE.sub("", strip_ansi(ln), count=1).strip()
+        opener = _FENCE_RUN_RE.match(probe)
+        if in_fence is not None:
+            closer = _FENCE_RUN_RE.fullmatch(probe)
+            if (
+                closer is not None
+                and closer.group(0)[0] == in_fence[0]
+                and len(closer.group(0)) >= len(in_fence)
+            ):
+                in_fence = None
+            out.append(ln)
+        elif opener is not None and (
+            # A backtick fence's info string cannot contain a backtick —
+            # `` ```code``` `` on one line is inline code, not an opener.
+            opener.group(0)[0] != "`" or "`" not in probe[len(opener.group(0)) :]
+        ):
+            in_fence = opener.group(0)
+            out.append(ln)
+        else:
+            for rx in _FORGED_SPAN_RES:
+                ln = rx.sub(lambda m: m.group(0).translate(_BRACKET_NEUTRAL), ln)
+            out.append(ln)
+    return "\n".join(out)
+
 
 def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[str]:
     """Lines of ``text`` that carry an engine-artifact span. Callers gate this
     behind ``_ARTIFACT_NOISE_TOKENS`` so ordinary text pays one substring scan.
     Matching runs on the ANSI-stripped line: a colorized marker is still a
-    marker."""
-    return [
-        ln for ln in text.split("\n")
-        if any(rx.search(strip_ansi(ln)) for rx in res)
-    ]
+    marker. A foreign-banner line that also reads as a diagnostic
+    (``⟪DATABASE-CONNECTION-FAILED: …⟫``) is ambiguous — banners never look
+    like failures — so keeping it costs one banner but never drops a
+    reported error. Engine-authored spans (``[tameru:…]``, ``[…]``) stay
+    unconditional, and the exemption applies only when the foreign banner
+    is the SOLE reason the line matched — a host-declared marker or an
+    engine span on the same line still strips."""
+    out: list[str] = []
+    for ln in text.split("\n"):
+        clean = strip_ansi(ln)
+        matched = [rx for rx in res if rx.search(clean)]
+        if matched and not (
+            all(rx is _FOREIGN_BANNER_RE for rx in matched)
+            and _is_error_line(clean)
+        ):
+            out.append(ln)
+    return out
 
 
 def _strip_artifact_noise(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> str:
@@ -275,8 +355,18 @@ def _strip_artifact_noise(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> str:
             if marker[0] != "`" or "`" not in probe[len(marker) :]:
                 in_fence = marker
             kept.append(ln)
-        elif not any(rx.search(strip_ansi(ln)) for rx in res):
-            kept.append(ln)
+        else:
+            clean = strip_ansi(ln)
+            matched = [rx for rx in res if rx.search(clean)]
+            # Same exemption _artifact_noise_lines applies: a foreign-banner
+            # line that also reads as a diagnostic is ambiguous — banners
+            # never report failures — so it is kept unless an engine span or
+            # a host-declared marker also matched.
+            if not matched or (
+                all(rx is _FOREIGN_BANNER_RE for rx in matched)
+                and _is_error_line(clean)
+            ):
+                kept.append(ln)
     return "\n".join(kept)
 
 
@@ -1091,7 +1181,7 @@ def _error_fp(line: str) -> str:
     whitespace collapsed, capped at 160 chars.
     """
     s = _COUNT_PREFIX_RE.sub("", _nfkc(line[:_RX_LINE_CAP]), count=1).lower()
-    return mask_template(s)[:_FINGERPRINT_CAP]
+    return mask_template(s.translate(_BRACKET_DENORM))[:_FINGERPRINT_CAP]
 
 
 def error_fingerprints(text: str, *, status_rows: bool = True) -> dict[str, str]:
@@ -1776,6 +1866,14 @@ def _missing_in_original_order(missing: list[tuple[int, int, str]]) -> list[str]
 
 
 _SECTION_HEAD_RE = re.compile(r"^\s*\[")
+# A line that can be a TOML/INI section head: bare or quoted key chars,
+# closes with brackets, then only an optional comment. Array rows like
+# ``[3,4],`` or values like ``[x] = y`` are content, not headers.
+_SECTION_KEY_SEG = r"(?:[A-Za-z0-9_-]+(?: +[A-Za-z0-9_-]+)*|\"[^\"]*\"|'[^']*')"
+_SECTION_LIKE_RE = re.compile(
+    rf"^\s*\[+\s*{_SECTION_KEY_SEG}"
+    rf"(?:\s*\.\s*{_SECTION_KEY_SEG})*\s*\]+\s*([#;].*)?$"
+)
 
 def _triple_close_positions(line: str, delim: str) -> list[int]:
     """Positions of ``delim`` occurrences that close a TOML multiline string.
@@ -1806,6 +1904,81 @@ def _unescaped_triple_count(line: str, delim: str) -> int:
 
 def _has_unescaped_triple(line: str, delim: str) -> bool:
     return bool(_triple_close_positions(line, delim))
+def _first_close_pos(line: str, delim: str) -> int | None:
+    ps = _triple_close_positions(line, delim)
+    return ps[0] if ps else None
+
+def _advance_multiline_state(code: str, state: str | None) -> str | None:
+    """Advance TOML multiline-string state across one line, position
+    ordered. The first unescaped triple of either kind opens the string
+    (a same-line triple of the other kind after the opener is literal
+    content, not a competing opener); inside one only its own delimiter
+    closes it; and the remainder after a close is fresh code that may
+    open another string on the same line. In fresh code a ``#``/``;``
+    starts a comment — triples inside it are text, never delimiters —
+    and single-line quoted literals are skipped, so their quotes open
+    nothing."""
+    i = 0
+    n = len(code)
+    while i < n:
+        if state is not None:
+            if (
+                i + 3 <= n
+                and code.startswith(state, i)
+                and (state == "'''" or not _odd_backslashes(code, i))
+            ):
+                quote = state[0]
+                state = None
+                i += 3
+                # TOML lets one or two content quotes sit right against the
+                # closing delimiter (``"""say "hi"""""``); they are string
+                # content, not the start of fresh code. The run tells the two
+                # grammars apart: in TOML a value's close can only be
+                # followed by ``,`` ``]`` ``}`` a comment or the line end, so
+                # trailing quotes are content only when the maximal run is
+                # five or fewer AND such a follower comes next — otherwise
+                # (Python's adjacent-literal concatenation, where the next
+                # quote opens a new string) they are fresh code.
+                # The count caps at three: the decision below only needs
+                # two-or-fewer versus more, and scanning the whole maximal
+                # run at every close re-reads the suffix once per open/close
+                # cycle of a long quote run — quadratic.
+                extra = 0
+                while extra < 3 and i + extra < n and code[i + extra] == quote:
+                    extra += 1
+                if extra <= 2 and (i + extra >= n or code[i + extra] in ",]}#; \t"):
+                    i += extra
+                continue
+            i += 1
+            continue
+        ch = code[i]
+        if ch in "#;":
+            break
+        if ch == '"' and i + 3 <= n and code.startswith('"""', i):
+            if not _odd_backslashes(code, i):
+                state = '"""'
+                i += 3
+                continue
+            i += 1
+            continue
+        if ch == "'" and i + 3 <= n and code.startswith("'''", i):
+            state = "'''"
+            i += 3
+            continue
+        if ch == '"':
+            i += 1
+            while i < n and code[i] != '"':
+                i += 2 if code[i] == "\\" else 1
+            i += 1
+            continue
+        if ch == "'":
+            i += 1
+            while i < n and code[i] != "'":
+                i += 1
+            i += 1
+            continue
+        i += 1
+    return state
 _TRIPLE_RUN_RE = re.compile(r'"""|\'\'\'')
 
 
@@ -1924,6 +2097,18 @@ def _unclosed_quote_pos(
 
 
 
+_TRIPLE_RUN_DQ = re.compile(r'(?<![\\"])"{3,5}(?!")')
+
+_TRIPLE_RUN_SQ = re.compile(r"(?<![\\'])'{3,5}(?!')")
+
+_TRIPLE_QUOTED_SAME_LINE_RE = re.compile(
+    r'"""(?:[^"]|"(?!""))*"""|\'\'\'(?:[^\']|\'(?!\'\'))*\'\'\'')
+
+_SINGLE_QUOTED_STRICT_RE = re.compile(
+    r'(?<!")"(?!"")(?:\\.|[^"\\])*"(?!")'
+    r"|(?<!')'(?!'')[^']*'(?!')"
+)
+
 
 def _toml_code_part(line: str) -> str:
     """The line before any ``#`` comment, for TOML structure scanning.
@@ -1993,6 +2178,373 @@ def _unsafe_restored_line(ln: str) -> bool:
     em = _env_match(probe)
     return em is not None and _env_is_sensitive(em.group(1), em.group(2))
 
+def _norm_header(s: str) -> str:
+    """Section text minus insignificant whitespace. Whitespace between
+    tokens is free in TOML headers (``[a . b]`` == ``[a.b]``) but inside a
+    quoted key it is significant — ``[[\"a b\"]]`` is not ``[[\"ab\"]]`` and
+    must not normalize to it."""
+    out: list[str] = []
+    q = ""
+    esc = False
+    for ch in s:
+        if q:
+            out.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\" and q == '"':
+                esc = True
+            elif ch == q:
+                q = ""
+        elif ch in "\"'":
+            q = ch
+            out.append(ch)
+        elif not ch.isspace():
+            out.append(ch)
+    return "".join(out)
+
+
+def _delim_view(l: str, inside: bool) -> str:
+    """The part of a line where a ``'''``/``\"\"\"`` can act as a
+    delimiter. Inside a multiline string the raw line is right — a
+    closer inside a quoted-looking span still closes. Outside one,
+    same-line quoted spans are blanked first so a ``\"\"\"`` sitting
+    inside a single-line literal (``x = 'has \"\"\" triple'``) is
+    content, not an opener."""
+    if inside:
+        return l
+    blank = lambda m: " " * len(m.group(0))
+    s = _toml_code_part(l)
+    s = _TRIPLE_QUOTED_SAME_LINE_RE.sub(blank, s)
+    return _SINGLE_QUOTED_STRICT_RE.sub(blank, s)
+
+
+def _arr_view(code: str, inside_basic: bool, inside_literal: bool) -> str:
+    """The part of one line that lives outside multiline strings — where
+    ``[``/``]`` count toward array-literal depth. ``code`` is the
+    ``_delim_view`` output: raw while inside a string, already blanked
+    outside one. Inside a string everything up to the closer is content;
+    the remainder is ordinary code (a closer can sit mid-line, e.g.
+    ``s = \"\"\"x\"\"\" + [1]``). Outside one, everything from the first
+    unescaped triple quote is string content — brackets in an opener's
+    tail (``x = \"\"\"[a``) are content, not array syntax."""
+    if inside_basic:
+        # The closer is the LAST three quotes of a 3-5 run — the first quotes
+        # are content. A 6+ run is close+open: cut at the first triple so the
+        # rest reads as the opener it is.
+        m = _TRIPLE_RUN_DQ.search(code)
+        if m:
+            code = _delim_view(code[m.end():], False)
+        else:
+            p = _first_close_pos(code, '"""')
+            code = _delim_view(code[p + 3:], False) if p is not None else ""
+    elif inside_literal:
+        m = _TRIPLE_RUN_SQ.search(code)
+        if m:
+            code = _delim_view(code[m.end():], False)
+        else:
+            p = _first_close_pos(code, "'''")
+            code = _delim_view(code[p + 3:], False) if p is not None else ""
+    cuts = [
+        p
+        for p in (_first_close_pos(code, '"""'), _first_close_pos(code, "'''"))
+        if p is not None
+    ]
+    return code[: min(cuts)] if cuts else code
+
+
+def _toml_section_scope(lines: list[str]):
+    """TOML section structure of ``lines``.
+
+    Returns ``(head_text, enclosing_idx, ancestors, in_string)``:
+    ``head_text[j]`` is the text of a real section header at line ``j``;
+    ``enclosing_idx[i]`` is the index of the nearest preceding real
+    header (a line's TOML scope); ``ancestors[j]`` is the ordered list of
+    ancestor header indices a header at ``j`` needs minted if they did
+    not survive — derived from its own dotted path, in the document's own
+    form (``[[x]]`` when the doc used an array, ``[x]`` otherwise);
+    ``in_string`` holds the indices that are multiline-string content.
+    Positions, not texts: two ``[[x]]`` entries share one text but are
+    distinct entries that must each mint."""
+    head_text: dict[int, str] = {}
+    enclosing_idx: dict[int, int] = {}
+    ancestors: dict[int, list[int]] = {}
+    in_string: set[int] = set()
+    inside_basic = inside_literal = False
+    arr_depth = 0
+    cur_idx: int | None = None
+    last_pos: dict[str, int] = {}
+    last_pos_norm: dict[str, int] = {}
+    for i, ln in enumerate(lines):
+        in_s = inside_basic or inside_literal
+        if in_s:
+            in_string.add(i)
+        else:
+            sv = _GUTTER_RE.sub("", ln, count=1).strip()
+            if cur_idx is not None:
+                enclosing_idx[i] = cur_idx
+            # ``arr_depth`` keeps a row like ``[1]`` inside a multiline
+            # array literal from reading as a header — while a real
+            # numeric table ``[123]`` (depth 0) still counts.
+            if arr_depth == 0 and _SECTION_LIKE_RE.match(sv):
+                head_text[i] = sv
+                if cur_idx is not None:
+                    enclosing_idx[i] = cur_idx
+                anc: list[int] = []
+                if "." in sv:
+                    inner = [
+                        seg.strip()
+                        for seg in sv.lstrip("[").rstrip("]").split(".")
+                    ]
+                    for k in range(len(inner) - 1, 0, -1):
+                        prefix = ".".join(inner[:k])
+                        pos = last_pos.get(
+                            "[[" + prefix + "]]", last_pos.get("[" + prefix + "]")
+                        )
+                        if pos is None:
+                            # The header may carry insignificant whitespace
+                            # (``[a . b]``) while the doc spells it canonically.
+                            pos = last_pos_norm.get(
+                                "[[" + prefix + "]]",
+                                last_pos_norm.get("[" + prefix + "]"),
+                            )
+                        if pos is not None:
+                            anc.append(pos)
+                    anc.reverse()
+                ancestors[i] = anc
+                last_pos[sv] = i
+                last_pos_norm[_norm_header(sv)] = i
+                cur_idx = i
+        code = _delim_view(ln, in_s)
+        view = _arr_view(code, inside_basic, inside_literal)
+        arr_depth = max(0, arr_depth + view.count("[") - view.count("]"))
+        if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
+            inside_basic = not inside_basic
+        if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
+            inside_literal = not inside_literal
+    return head_text, enclosing_idx, ancestors, in_string
+
+
+
+def _triple_positions_from(line: str, delim: str, pos: int) -> list[int]:
+    return [p for p in _triple_close_positions(line, delim) if p >= pos]
+
+
+def _advance_triple_state(ln: str, inside_basic: bool, inside_literal: bool):
+    """Triple-quote state after one line, scanned in position order.
+
+    Once a string closes mid-line the rest is code again — delimiter-looking
+    runs in its comment tail are text, because the outside view blanks them.
+    Per-kind independent parity would count them as openers. Returns
+    ``(inside_basic, inside_literal)``.
+    """
+    ln, _ = _blank_same_line_triples(ln)
+    pos = 0
+    view_out = _delim_view(ln, False)
+    n = len(ln)
+    while pos < n:
+        if inside_basic:
+            ps = _triple_positions_from(ln, '"""', pos)
+            if not ps:
+                break
+            inside_basic = False
+            pos = ps[0] + 3
+        elif inside_literal:
+            ps = _triple_positions_from(ln, "'''", pos)
+            if not ps:
+                break
+            inside_literal = False
+            pos = ps[0] + 3
+        else:
+            dq = _triple_positions_from(view_out, '"""', pos)
+            sq = _triple_positions_from(view_out, "'''", pos)
+            first_dq = dq[0] if dq else n + 1
+            first_sq = sq[0] if sq else n + 1
+            if first_dq == n + 1 and first_sq == n + 1:
+                break
+            if first_sq < first_dq:
+                inside_literal = True
+                pos = first_sq + 3
+            else:
+                inside_basic = True
+                pos = first_dq + 3
+    return inside_basic, inside_literal
+
+
+_CITATION_SHAPE_RE = re.compile(r"\[§[0-9a-f]{0,16}\]\s")
+
+
+def _toml_string_repair(parts: list[str], header_texts: set[str]) -> list[str]:
+    """Close a multiline TOML string whose closer was dropped with the
+    lines around it. Emitted while still inside one, a section header or
+    gap marker would be swallowed as string content — so the closer goes
+    out first. A string still open at the end is closed there."""
+    out: list[str] = []
+    inside_basic = inside_literal = False
+    in_fence = False
+    in_s_fence = False
+    # later_fence[i]: another ``` line follows line i. A ``` inside a TOML
+    # string opens content fence only while it still closes ahead — with its
+    # own closer dropped the "fence" is just dropped lines, and a real header
+    # after it must still force the string's closer out.
+    later_fence = [False] * len(parts)
+    for i in range(len(parts) - 2, -1, -1):
+        later_fence[i] = later_fence[i + 1] or parts[i + 1].strip().startswith("```")
+    # closes_later: parity of the remaining delimiter quotes. An ODD count
+    # means a quote cannot pair off — our string's own closer survives, so
+    # header-shaped lines are content and must not force an early close.
+    # An EVEN count means every later quote pairs up (a different string's
+    # opener and closer) — ours was dropped and the early close is needed.
+    # The toggles come from the same forward lexing the emit pass uses —
+    # quote runs inside string content or a trailing comment never count.
+    dq_t = [False] * len(parts)
+    sq_t = [False] * len(parts)
+    sim_basic = sim_literal = False
+    sim_fence = False
+    for i, ln in enumerate(parts):
+        if not (sim_basic or sim_literal) and ln.strip().startswith("```"):
+            sim_fence = not sim_fence
+            continue
+        if sim_fence:
+            continue
+        pb, pl = sim_basic, sim_literal
+        sim_basic, sim_literal = _advance_triple_state(ln, sim_basic, sim_literal)
+        dq_t[i] = pb != sim_basic
+        sq_t[i] = pl != sim_literal
+    dq_par = [False] * len(parts)
+    sq_par = [False] * len(parts)
+    for i in range(len(parts) - 2, -1, -1):
+        dq_par[i] = dq_par[i + 1] ^ dq_t[i + 1]
+        sq_par[i] = sq_par[i + 1] ^ sq_t[i + 1]
+    # A plain header text is unique in valid TOML, so when the SAME text
+    # appears more than once in the extract every occurrence but one is
+    # string content. The early close is suppressed at all but the LAST
+    # occurrence — the content copies keep scanning as string body, and
+    # the close still fires at the last one, which is the real header
+    # whenever it survives. Array-of-tables headers repeat legitimately
+    # and are exempt.
+    stripped_last: dict[str, int] = {}
+    for _i, _ln in enumerate(parts):
+        stripped_last[_ln.strip()] = _i
+    out_pos: dict[int, int] = {}
+    str_start = -1
+    str_delim = '"""'
+    for i, ln in enumerate(parts):
+        out_pos[i] = len(out)
+        in_s = inside_basic or inside_literal
+        if not in_s:
+            in_s_fence = False
+        sv = ln.strip()
+        if not in_s and sv.startswith("```"):
+            in_fence = not in_fence
+            out.append(ln)
+            continue
+        scan_suppressed = False
+        if sv.startswith("[§"):
+            if not in_s:
+                # Citation annotations embed quoted content verbatim —
+                # their quote runs are not TOML delimiters, so the line is
+                # emitted untouched and never scanned.
+                out.append(ln)
+                continue
+            # Inside a multiline string the shape means something else
+            # entirely: a source content line may genuinely start with
+            # "[§" (and carry the string's real closer), while an emitted
+            # citation landing mid-string marks the exact point a drop
+            # happened — the trigger below must see it, but its quoted
+            # fragments ("{head}"…"{tail}") are text, not delimiters.
+            # The digest-shaped annotation form is never scanned; any
+            # other "[§" line is content and scans normally.
+            scan_suppressed = bool(_CITATION_SHAPE_RE.match(sv))
+        if in_fence:
+            # Fenced code is kept verbatim — a """/''' or a header-shaped
+            # line inside it is code content, never TOML syntax.
+            out.append(ln)
+            continue
+        if in_s and sv.startswith("```"):
+            # A Markdown fence *inside* a TOML string is content too:
+            # header-shaped lines in it stay string content and must not
+            # force the closer out early.
+            in_s_fence = not in_s_fence
+        unclosed_s_fence = in_s_fence and not later_fence[i]
+        closes_later = (inside_basic and dq_par[i]) or (
+            inside_literal and sq_par[i]
+        )
+        header_trigger = sv in header_texts and not (
+            sv.startswith("[")
+            and not sv.startswith("[[")
+            and stripped_last.get(sv, -1) != i
+        )
+        trigger_shape = in_s and (not in_s_fence or unclosed_s_fence) and (
+            _DEFAULT_ELISION_LINE.match(sv)
+            or scan_suppressed
+            or header_trigger
+        )
+        delim = '"""' if inside_basic else "'''"
+        hazard_at = -1
+        if trigger_shape:
+            for j in range(str_start + 1, i):
+                if _triple_close_positions(parts[j], delim):
+                    hazard_at = j
+                    break
+        self_closes = (
+            trigger_shape
+            and sv.startswith("[§")
+            and not scan_suppressed
+            and bool(_triple_close_positions(ln, delim))
+        )
+        if trigger_shape and not self_closes and (not closes_later or hazard_at >= 0):
+            # A same-kind delimiter run between the opener and here closes
+            # the string early in real TOML — the parity "closer" behind
+            # it can never be reached, so it cannot be ours. Mint the close
+            # before the first such run so the extract still parses.
+            at = out_pos[hazard_at] if hazard_at >= 0 else len(out)
+            out.insert(at, delim)
+            # Re-sync the scan with the mutated reality: the minted closer
+            # ends the string before the hazard line, so everything from
+            # there on is fresh code — re-scan it or later delimiters of
+            # the intervening string would toggle phantom episodes.
+            inside_basic = inside_literal = False
+            str_start = -1
+            rescan_from = hazard_at if hazard_at >= 0 else i
+            for k in range(rescan_from, i):
+                if parts[k].strip().startswith("[§"):
+                    continue
+                hb = inside_basic or inside_literal
+                inside_basic, inside_literal = _advance_triple_state(
+                    parts[k], inside_basic, inside_literal
+                )
+                if hb and not (inside_basic or inside_literal):
+                    if not re.match(r"\s*[A-Za-z0-9_.\-]+\s*=", parts[k]):
+                        str_start = -1
+                if not hb and (inside_basic or inside_literal) and str_start < 0:
+                    str_start = k
+                    str_delim = '"""' if inside_basic else "'''"
+            in_s = False
+        out.append(ln)
+        if scan_suppressed:
+            # The annotation's quoted fragments are text — advancing the
+            # delimiter scan over them would toggle phantom string state.
+            continue
+        was_in = in_s
+        inside_basic, inside_literal = _advance_triple_state(ln, inside_basic, inside_literal)
+        if was_in and not (inside_basic or inside_literal):
+            # The scan says the string closed here — but on an assignment-
+            # shaped line (``x = \"\"\"``) that delimiter is far more
+            # likely the opener of a LATER string whose own closer survives:
+            # the close is ambiguous, so the unclosed chain continues and
+            # the line stays a premature-close hazard for the repair.
+            if not re.match(r"\s*[A-Za-z0-9_.\-]+\s*=", ln):
+                str_start = -1
+        if not was_in and (inside_basic or inside_literal):
+            if str_start < 0:
+                str_start = i
+                str_delim = '"""' if inside_basic else "'''" 
+    if inside_basic:
+        out.append('"""')
+    elif inside_literal:
+        out.append("'''")
+    return out
+
 
 
 def _scan_positions_from(line: str, delim: str, pos: int) -> list[int]:
@@ -2058,8 +2610,10 @@ def _restored_block(
     entry order: the line is restored as its own entry before the next
     surviving one (repeated headers resolve to the last occurrence's index,
     so middle entries approximate)."""
-    if not lines:
-        return after
+    # Even with nothing to restore, ``after`` can contain orphaned
+    # ``[x.y]`` headers dropped by earlier stages — the repair pass
+    # below still runs (``lines`` stays empty; no splices can apply).
+    lines = lines or []
     after_lines = after.split("\n")
     oi = orig_index or {}
     header_of = line_headers or {}
@@ -2069,9 +2623,15 @@ def _restored_block(
     # header too — mask out lines that sit inside a """ or ''' string.
     header_texts = set(header_of.values())
     in_string = [False] * len(after_lines)
+    after_hdr: list[str] = [""] * len(after_lines)
     inside_basic = inside_literal = False
+    cur_after_hdr = ""
     for i, l in enumerate(after_lines):
         in_string[i] = inside_basic or inside_literal
+        after_hdr[i] = cur_after_hdr
+        if not in_string[i] and _SECTION_LIKE_RE.match(l):
+            cur_after_hdr = l
+            after_hdr[i] = l
         # Only the code part of the line opens or closes a TOML string —
         # quotes inside a trailing # comment are text, and \"-escaped
         # quotes inside a basic string don't end it.
@@ -2170,7 +2730,105 @@ def _restored_block(
     insert_before: dict[int, list[str]] = {}
     appended: list[str] = []
     opened: set[str] = set()
+    insert_after: dict[int, list[str]] = {}
+    insert_before: dict[int, list[str]] = {}
+    appended: list[str] = []
+    opened: set[object] = set()
+    emitted_keys: dict[object, set[str]] = {}
+    extra_opened: set[object] = set()
     claimed: set[int] = set()
+    spans_emitted: list[tuple[str | None, set[str]]] = []
+    # A ``[[x]]``-shaped line inside a multiline string is content, not an
+    # entry boundary — but ``oi`` records its position as the header's last
+    # occurrence all the same, which would split one real entry's fields
+    # across two emitted entries. Rebuild each header's last REAL (unquoted)
+    # index by replaying triple-quote state over the original line order —
+    # ``orig_lines`` when the caller has the text, else the ``oi`` subset
+    # (which last-wins on identical lines and can miss a repeated delimiter).
+    # The same replay maps every multiline value's opener to its body and
+    # closer, so a restored opener can pull its continuation lines back
+    # verbatim (``oi`` keeps only a repeated line's LAST index — two strings
+    # that share a closing line would collapse into one span).
+    orig_in_string: set[int] = set()
+    enclosing: dict[int, str] = {}
+    openers: dict[int, int] = {}      # opener idx -> closer idx
+    body_of: dict[int, list[str]] = {}  # opener idx -> continuation lines
+    cont_of: dict[int, int] = {}      # continuation idx -> opener idx
+    close_kind: dict[int, str] = {}   # opener idx -> its delimiter
+    inside_basic = inside_literal = False
+    pending: tuple[int, str] | None = None
+    pending_body: list[str] = []
+    cur_hdr = ""
+    replay = (
+        enumerate(orig_lines)
+        if orig_lines is not None
+        else ((idx, l2) for l2, idx in sorted(oi.items(), key=lambda kv: kv[1]))
+    )
+    for idx, ln in replay:
+        if pending is not None or inside_basic or inside_literal:
+            orig_in_string.add(idx)
+        enclosing[idx] = cur_hdr
+        if pending is not None:
+            pending_body.append(ln)
+            if (
+                (inside_literal and _has_unescaped_triple(ln, "'''"))
+                or (inside_basic and _has_unescaped_triple(ln, '"""'))
+            ):
+                openers[pending[0]] = idx
+                body_of[pending[0]] = pending_body
+                for cidx in range(pending[0] + 1, idx + 1):
+                    cont_of[cidx] = pending[0]
+                pending = None
+                pending_body = []
+                inside_basic = inside_literal = False
+            continue
+        ins = inside_basic or inside_literal
+        code = ln if ins else _quote_aware_code_part(ln)
+        if not ins:
+            # The last REAL (unquoted) section head seen so far scopes this
+            # position — a string-quoted ``[x]`` or an array row never does.
+            if _SECTION_LIKE_RE.match(ln):
+                cur_hdr = ln
+                enclosing[idx] = cur_hdr
+            if (_unescaped_triple_count(code, '"""') % 2
+                    or _unescaped_triple_count(code, "'''") % 2):
+                pending = (idx, ln)
+                dq = _unescaped_triple_count(code, '"""') % 2
+                sq = _unescaped_triple_count(code, "'''") % 2
+                inside_basic = bool(dq)
+                inside_literal = not inside_basic and bool(sq)
+                close_kind[idx] = "'''" if inside_literal else '"""'
+                continue
+        if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
+            inside_basic = not inside_basic
+        if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
+            inside_literal = not inside_literal
+    last_real: dict[str, int] = {}
+    for ln, idx in oi.items():
+        if idx not in orig_in_string and _SECTION_LIKE_RE.match(ln) and idx > last_real.get(ln, -1):
+            last_real[ln] = idx
+    # Header whitespace is insignificant (``[a . b]`` == ``[a.b]``) — index
+    # by whitespace-stripped text so a spaced ``[x . y]`` still finds its
+    # ``[[x]]`` parent, and resolve to the document's own spelling so every
+    # raw-text compare below keeps working.
+    # Several spellings can share one norm (``[[a.b]]``, ``[[a . b]]``):
+    # resolve to the LAST-positioned one — repeated headers mean the last
+    # entry, matching ``oi``'s own last-wins convention.
+    last_real_norm: dict[str, str] = {}
+    for raw in sorted(last_real, key=last_real.__getitem__):
+        last_real_norm[_norm_header(raw)] = raw
+
+    def _array_parent(section: str) -> str | None:
+        """The ``[[a]]`` array header a dotted ``[a.b]`` section sits under,
+        in the document's own spelling — longest matching prefix first."""
+        inner = [
+            seg.strip() for seg in section.lstrip("[").rstrip("]").split(".")
+        ]
+        for i in range(len(inner) - 1, 0, -1):
+            raw = last_real_norm.get("[[" + ".".join(inner[:i]) + "]]")
+            if raw is not None:
+                return raw
+        return None
 
     def _resolve(ln: str) -> str:
         """The original line a possibly window-bounded ``ln`` came from.
@@ -2205,8 +2863,25 @@ def _restored_block(
                 return ln
         return hits[0] if hits else ln
 
+    present = {
+        l for i, l in enumerate(after_lines) if not in_string[i]
+    }
+    seen: set[str] = set()
     for ln in lines:
+        if ln in seen:
+            # Two protection pools can hand up the same line (a fact that
+            # is also an outcome line) — identical text emits once. Dedupe
+            # on the line itself, not the resolved source: two distinct
+            # originals bound to different text must both restore even
+            # when _resolve maps them to the same line.
+            continue
+        seen.add(ln)
         orig = _resolve(ln)
+        if orig in present:
+            # Already in the output — surviving text, a duplicate entry in
+            # the restore set, or a header another line's open minted:
+            # re-emitting duplicates a key or a table.
+            continue
         target0 = oi.get(orig)
         emit = [ln]
         if target0 in cont_of:
@@ -2226,6 +2901,7 @@ def _restored_block(
             oi_pos = [
                 i for i, l in enumerate(after_lines)
                 if l == otext and not in_string[i]
+                and after_hdr[i] == (enclosing.get(oidx) or "")
             ]
             if oi_pos:
                 insert_after.setdefault(oi_pos[-1], []).append(ln)
@@ -2244,6 +2920,7 @@ def _restored_block(
             if emit[-1] != body_of[oidx][-1]:
                 emit.append(close_kind.get(oidx, '"""'))
             claimed.add(oidx)
+            spans_emitted.append((oidx, enclosing.get(oidx) or header_of.get(orig) or "", set(emit[1:])))
             # ``_line_scopes`` is not string-aware — a fake ``[x.w]`` inside
             # the value claims the lines after it. The real enclosing scope
             # is the last unquoted header.
@@ -2273,48 +2950,389 @@ def _restored_block(
             if emit[-1] != body_of[target0][-1]:
                 emit.append(close_kind.get(target0, '"""'))
             claimed.add(target0)
+            spans_emitted.append((target0, enclosing.get(target0) or header_of.get(orig) or "", set(emit[1:])))
         h = header_of.get(orig)
         if h is not None and oi.get(h) in cont_of:
             # ``_line_scopes`` is not string-aware: a ``[x.w]`` that only
             # ever sat inside a multiline value still claims the lines
             # after it. The real scope is the last unquoted header.
             h = enclosing.get(target0) or h
+        target = oi.get(orig)
+        if h and oi.get(h) in orig_in_string:
+            # ``_line_scopes`` is not string-aware: a ``[x]`` that only ever
+            # sat inside a multiline string still claims the lines after it
+            # as its section. The line's real scope is the last unquoted
+            # header before it, not the fake one.
+            h = enclosing.get(target) or None
+        if orig is not None and oi.get(orig) in orig_in_string:
+            # The line itself is section-shaped content inside a multiline
+            # string — restoring it as a header mints a phantom section.
+            h = enclosing.get(target) or None
         if h == orig:
             # A section head maps to itself only to mark it as a boundary;
             # it still restores bare — re-opening under itself would nest
             # the table inside its own body.
             h = None
-        cand = [i for i, l in enumerate(after_lines) if l == h] if h else []
+        cand = (
+            [i for i, l in enumerate(after_lines) if l == h and not in_string[i]]
+            if h
+            else []
+        )
         if not h:
-            appended.extend(emit)
+            # A dotted ``[x.y]`` under a ``[[x]]`` array attaches to the LAST
+            # entry; appended bare it binds to whatever section ends the
+            # block — emit the parent entry with it instead.
+            os_ = orig.strip()
+            ap: str | None = None
+            if os_.startswith("[") and not os_.startswith("[[") and "." in os_:
+                ap = _array_parent(os_)
+            if ap is not None:
+                boundary = last_real.get(ap, oi.get(ap))
+                last_entry = (
+                    target is not None
+                    and boundary is not None
+                    and target > boundary
+                )
+                ek = (ap, last_entry)
+                if ek in opened:
+                    # The subtable's own entry was already minted — extend
+                    # that entry's appended block instead of opening a
+                    # second ``ap`` entry for the header alone. ``ap`` keeps
+                    # the document's raw spelling, so compare stripped text
+                    # — a padded ``[[ x ]]`` otherwise raises StopIteration.
+                    ap_norm = ap.strip()
+                    if last_entry:
+                        pos = len(appended) - 1 - next(
+                            i3
+                            for i3, l3 in enumerate(reversed(appended))
+                            if l3.strip() == ap_norm
+                        )
+                    else:
+                        pos = next(
+                            i3 for i3, l3 in enumerate(appended)
+                            if l3.strip() == ap_norm
+                        )
+                    # ``os_`` — or the same subtable spelled differently —
+                    # may already sit inside this entry: a second insert
+                    # redeclares the table, which strict TOML rejects.
+                    end = pos + 1
+                    while end < len(appended) and (
+                        appended[end].strip() != ap_norm
+                    ):
+                        end += 1
+                    if (ek, os_) in opened or any(
+                        l3.strip() == os_ for l3 in appended[pos + 1 : end]
+                    ):
+                        present.update(emit[:1]); present.add(orig)
+                        continue
+                    j = pos + 1
+                    while j < len(appended) and (
+                        appended[j].strip() != ap_norm
+                        and not _SECTION_LIKE_RE.match(appended[j].strip())
+                    ):
+                        j += 1
+                    appended.insert(j, os_)
+                    opened.add((ek, os_))
+                    present.update(emit[:1]); present.add(orig)
+                    continue
+                ap_norm = ap.strip()
+                ap_at = [
+                    i2 for i2, l2 in enumerate(after_lines)
+                    if l2.strip() == ap_norm and not in_string[i2]
+                ]
+                if ap_at:
+                    has_member = any(
+                        _resolve(x2) != orig
+                        and (header_of.get(_resolve(x2)) or "").strip() == os_
+                        for x2 in lines
+                    )
+                    if has_member:
+                        # The entry header already opened — minting ``ap``
+                        # again would start a second array entry. The
+                        # subtable's members re-emit ``os_`` themselves via
+                        # the hcand/extra path, so only mark it present.
+                        present.update(emit[:1]); present.add(orig)
+                        continue
+                    # An empty subtable has no member to re-emit ``os_`` —
+                    # skipping here drops the header (and any protected
+                    # line it carries). It belongs inside its own entry:
+                    # insert it at the end of the last surviving ``ap``
+                    # entry ONLY when the original's last ``ap`` is the one
+                    # that survived — a dropped later entry's subtable
+                    # would otherwise redeclare a same-named subtable the
+                    # surviving entry already holds.
+                    anchor = ap_at[-1]
+                    # The surviving entry's block runs to the next ``ap``
+                    # or the next header that ISN'T one of the entry's own
+                    # subtables — stopping at a ``[x.z]`` would mis-read
+                    # the entry's end and miss an ``os_`` further in.
+                    pref = "[" + ap_norm[2:-2] + "."
+                    j = anchor + 1
+                    while j < len(after_lines) and (
+                        after_lines[j] not in header_texts
+                        or in_string[j]
+                        or after_lines[j].strip().startswith(pref)
+                    ):
+                        j += 1
+                    if orig_lines is not None:
+                        parent_total = sum(
+                            1
+                            for i2, l2 in enumerate(orig_lines)
+                            if l2 == ap and i2 not in orig_in_string
+                        )
+                        survives_last = len(ap_at) >= parent_total
+                    else:
+                        survives_last = (
+                            boundary is not None
+                            and oi.get(after_lines[anchor], -1) >= boundary
+                        )
+                    already = any(
+                        l2.strip() == os_ for l2 in after_lines[anchor + 1 : j]
+                    )
+                    if last_entry and survives_last and not already:
+                        insert_after.setdefault(j - 1, []).extend(emit)
+                        extra_opened.add((ek, os_))
+                        present.update(emit[:1]); present.add(orig)
+                        continue
+                appended.extend((ap, os_))
+                present.update((ap, orig))
+                # The minted pair stands in for the entry ``ek`` names —
+                # register the same keys ``_emit_open`` would. It is NOT
+                # always the array's final entry: claiming (ap, True) here
+                # would make a later final-entry restore skip its ``[[x]]``
+                # mint and land under this earlier entry's subtable.
+                opened.add(ek)
+                opened.add((ek, os_))
+            else:
+                appended.extend(emit)
+                present.update(emit[:1]); present.add(orig)
+                if _SECTION_LIKE_RE.match(os_):
+                    # A restored header is minted without ``_emit_open`` —
+                    # register it so a member restoring later does not
+                    # declare the table a second time. An array-of-tables
+                    # entry mints a fresh LAST entry.
+                    opened.add(os_)
+                    if os_.startswith("[["):
+                        # Which entry did this header mint? Its own index
+                        # answers: equal to the last ``os_`` position it
+                        # closes the array's final entry, before it an
+                        # earlier one — members key on the same test.
+                        b2 = last_real.get(os_, oi.get(os_))
+                        opened.add((os_, b2 is not None and target == b2))
             continue
-        if not cand:
-            # The section itself was dropped: re-emit its header with the
-            # line — a fresh table there, so the re-open is valid.
-            if h not in opened:
-                appended.append(h)
-                opened.add(h)
-            appended.extend(emit)
-            continue
-        target = oi.get(orig)
+        # The array entry a restore belongs to. ``oi`` keeps the LAST index
+        # of a header text, so a line positioned after the last ``[[x]]``
+        # occurrence provably belongs to that final entry; lines before it
+        # can't be told apart and share the earlier one. A ``[x.y]`` line
+        # under a ``[[x]]`` array is the last entry's subtable — it needs the
+        # same entry-aware open, emitted as ``[[x]]`` + ``[x.y]``.
+        array_parent: str | None = None
         if h.lstrip().startswith("[["):
+            array_parent = h
+        elif h.lstrip().startswith("[") and "." in h:
+            array_parent = _array_parent(h)
+        boundary = last_real.get(array_parent, oi.get(array_parent)) if array_parent else None
+        last_entry = (
+            array_parent is not None
+            and target is not None
+            and boundary is not None
+            and target > boundary
+        )
+        # Two-level open: the ENTRY key (parent + which entry) mints one
+        # ``[[x]]``; the section key adds a ``[x.y]`` under it. Sibling
+        # sub-tables of one entry therefore share the parent's open.
+        ekey = (array_parent, last_entry) if array_parent is not None else h
+        skey = (ekey, h.strip())
+        open_seq = (array_parent, h) if array_parent is not None and array_parent != h else (h,)
+
+        def _into_appended(head: str, member: str) -> bool:
+            """Insert ``member`` at the end of ``head``'s block inside
+            ``appended`` — False when ``head`` was never minted there.
+            A section restored earlier and followed by a minted sibling
+            stays active by registration only; a tail append would put the
+            member under the LAST section, not its own."""
+            pos = max(
+                (i3 for i3, l3 in enumerate(appended) if l3.strip() == head),
+                default=None,
+            )
+            if pos is None:
+                return False
+            # A header-shaped line inside a ``"""``/``\'\'\'`` value is
+            # content, not a boundary — inserting above it would land the
+            # member inside the string.
+            j = pos + 1
+            mb = ml = False
+            while j < len(appended):
+                l3 = appended[j]
+                ins = mb or ml
+                code = _delim_view(l3, ins)
+                if not ins and _SECTION_LIKE_RE.match(l3.strip()):
+                    break
+                if not ml and _unescaped_triple_count(code, '"""') % 2:
+                    mb = not mb
+                if not mb and _unescaped_triple_count(code, "'''") % 2:
+                    ml = not ml
+                j += 1
+            appended.insert(j, member)
+            return True
+
+        def _head_in_entry(head: str) -> bool:
+            """``head`` already sits under the last ``array_parent`` entry in
+            ``appended`` — re-emitting it there would redeclare the table."""
+            ap_norm = array_parent.strip()
+            pos = max(
+                (i3 for i3, l3 in enumerate(appended) if l3.strip() == ap_norm),
+                default=None,
+            )
+            if pos is None:
+                return False
+            for l3 in appended[pos + 1 :]:
+                t = l3.strip()
+                if t == ap_norm:
+                    break
+                if t == head:
+                    return True
+            return False
+
+        def _emit_open() -> bool:
+            """Emit the headers the restore needs; True when the member may
+            be tail-appended (its section now ends ``appended``)."""
+            if ekey not in opened:
+                appended.extend(open_seq)
+                opened.add(ekey)
+                opened.add(skey)
+                return True
+            if (
+                array_parent is not None
+                and array_parent != h
+                and skey not in opened
+            ):
+                if _head_in_entry(h.strip()):
+                    # ``h`` already opens under this entry — a second
+                    # declaration is invalid TOML; the member joins it.
+                    opened.add(skey)
+                    return False
+                appended.append(h)
+                opened.add(skey)
+                return True
+            return False
+
+        if array_parent is not None and "=" in ln:
+            # Entries before the last occurrence can't be told apart — two
+            # lines with the same key under one emitted entry are a
+            # duplicate key (invalid TOML), so the second opens a fresh
+            # entry instead. Each appended entry tracks its own key names.
+            kn = ln.split("=", 1)[0].strip()
+            if kn in emitted_keys.setdefault(ekey, set()):
+                opened.discard(ekey)
+                opened.discard(skey)
+                emitted_keys[ekey] = {kn}
+            else:
+                emitted_keys[ekey].add(kn)
+
+        if array_parent is not None:
             # Array-of-tables: re-emitting the header would start a NEW entry,
             # and a bare insert lands in whatever entry happens to be last —
             # duplicating a key that entry already holds. The line's own entry
             # is gone, so restore it AS an entry before the next surviving
-            # entry (or at the end when it was the last).
+            # entry (or at the end when it was the last). ``[x.y]`` children
+            # of an array restore under a fresh parent entry the same way.
+            pcand = [
+                i for i, l in enumerate(after_lines)
+                if l == array_parent and not in_string[i]
+            ]
             nxt = (
-                [c for c in cand if oi.get(after_lines[c], 1 << 62) > target]
+                [c for c in pcand if oi.get(after_lines[c], 1 << 62) > target]
                 if target is not None
                 else []
             )
             if not nxt:
-                if h not in opened:
-                    appended.append(h)
-                    opened.add(h)
-                appended.extend(emit)
+                # ``oi`` resolves every ``[[x]]`` to its LAST original
+                # position, so a surviving earlier entry's header looks like
+                # the last one — inserting there lands the line in the wrong
+                # record. The last entry provably survived only when every
+                # original ``[[x]]`` occurrence did; anything less mints a
+                # fresh entry instead.
+                if orig_lines is not None:
+                    parent_total = sum(
+                        1
+                        for i, l in enumerate(orig_lines)
+                        if l == array_parent and i not in orig_in_string
+                    )
+                    last_survives = bool(pcand and len(pcand) >= parent_total)
+                else:
+                    last_survives = bool(
+                        pcand
+                        and boundary is not None
+                        and oi.get(after_lines[pcand[-1]], -1) >= boundary
+                    )
+                if last_entry and last_survives:
+                    # The last entry's header survived: restore inside it,
+                    # after a matching [x.y] block when one exists (else at
+                    # the entry's end) — a fresh [[x]] would mint a phantom
+                    # record while its real parent sits in the extract.
+                    anchor = pcand[-1]
+                    hcand = (
+                        [
+                            i for i, l in enumerate(after_lines)
+                            if l == h and i > anchor and not in_string[i]
+                        ]
+                        if array_parent != h
+                        else []
+                    )
+                    # A surviving sub-table takes the line at its end; a new
+                    # sub-table is emitted there too — before the next header,
+                    # so the entry's own fields stay under [[x]]. Emit ``h``
+                    # once per (ekey, h): a second line needing the same
+                    # sub-table joins the first minted one — a repeat would
+                    # be a duplicate table (invalid TOML). When the line IS
+                    # the header, a prior mint already covers it.
+                    extra = () if (hcand or array_parent == h) else (h,)
+                    if extra:
+                        if skey in extra_opened:
+                            if ln == h:
+                                present.update(emit[:1]); present.add(orig)
+                                continue
+                            extra = ()
+                        else:
+                            extra_opened.add(skey)
+                            opened.add(skey)
+                    if hcand:
+                        anchor = hcand[-1]
+                    j = anchor + 1
+                    while (
+                        j < len(after_lines)
+                        and (after_lines[j] not in header_texts or in_string[j])
+                    ):
+                        j += 1
+                    insert_after.setdefault(j - 1, []).extend(extra + tuple(emit))
+                    present.update(extra + (orig,)); present.update(emit[:1])
+                else:
+                    head = h.strip()
+                    if _emit_open():
+                        present.update(open_seq)
+                        appended.extend(emit)
+                    elif len(emit) == 1 and _into_appended(head, ln):
+                        pass
+                    else:
+                        appended.extend(emit)
+                    present.update(emit[:1]); present.add(orig)
             else:
-                insert_before.setdefault(nxt[0], []).extend((h,) + tuple(emit))
+                insert_before.setdefault(nxt[0], []).extend(open_seq + tuple(emit))
+                present.update(open_seq + (orig,)); present.update(emit[:1])
+            continue
+        if not cand:
+            # The section itself was dropped: re-emit its header with the
+            # line — a fresh table there, so the re-open is valid. One minted
+            # earlier in ``appended`` is joined in place instead.
+            if _emit_open():
+                present.update(open_seq)
+                appended.extend(emit)
+            elif len(emit) == 1 and _into_appended(h.strip(), ln):
+                pass
+            else:
+                appended.extend(emit)
+            present.update(emit[:1]); present.add(orig)
             continue
         # A plain table: the surviving section owns the setting — insert at
         # the section's end, before the next header line.
@@ -2330,13 +3348,352 @@ def _restored_block(
         ):
             j += 1
         insert_after.setdefault(j - 1, []).extend(emit)
-    if insert_after or insert_before:
+        present.update(emit[:1])
+        present.add(orig)
+    drop_after: set[int] = set()
+    if spans_emitted:
+        # A fragment of a dropped span that survived stays verbatim at its own
+        # position — the span's whole-value restore would print it twice. Drop
+        # the stray copy only when its resolved ORIGINAL index sits inside that
+        # span: a same-text line that was never part of the value is real
+        # content and stays, whatever section it is in.
+        for i, l in enumerate(after_lines):
+            if in_string[i] or _SECTION_LIKE_RE.match(l):
+                continue
+            for oidx, eh, texts in spans_emitted:
+                if (l in texts and after_hdr[i] == eh
+                        and cont_of.get(oi.get(l)) == oidx):
+                    drop_after.add(i)
+                    break
+    if insert_after or insert_before or drop_after:
         merged: list[str] = []
         for i, l in enumerate(after_lines):
             merged.extend(insert_before.get(i, ()))
-            merged.append(l)
+            if i not in drop_after:
+                merged.append(l)
             merged.extend(insert_after.get(i, ()))
-        after = "\n".join(merged)
+    else:
+        merged = list(after_lines)
+    if last_real:
+        # A kept ``[x.y]`` whose ``[[x]]`` parent was dropped parses as a
+        # top-level table that collides with the real ``[[x]]`` array later —
+        # mint the entry header the orphan block is missing.
+        seen: set[str] = set()
+        inside_basic = inside_literal = False
+        patched: list[str] = []
+        appended_heads = {
+            l.strip() for l in appended if _SECTION_LIKE_RE.match(l.strip())
+        }
+        _TAIL_KV_RE = re.compile(
+            r'^\s*([A-Za-z0-9_.-]+|"[^"]+"|\'[^\']+\')\s*='
+        )
+
+        def _splice_tail(ap: str, sv: str, block: list[str]) -> None:
+            """Place an orphan ``[x.y]`` block inside the LAST ``ap`` entry
+            of ``appended`` — the entry it originally belonged to. When the
+            entry already opens ``sv``, the moved members merge into it
+            (a repeated key would redeclare it, so the surviving value
+            wins); otherwise ``sv`` opens at the end. A dotted subtable
+            attaches to the last ``[[x]]`` no matter which sections
+            intervene, so the search for an existing ``sv`` scans to the
+            end — string-aware, since a header-shaped line inside a
+            ``\"\"\"`` value is content, not a boundary. Members are only
+            filtered while the moved block is outside its own strings."""
+            seq = appended
+            ap_norm = ap.strip()
+            last_ap = max(
+                (i for i, l2 in enumerate(seq) if l2.strip() == ap_norm),
+                default=None,
+            )
+            if last_ap is None:
+                seq.extend([ap] + block)
+                return
+            sv_start: int | None = None
+            sv_end: int | None = None
+            mb = ml = False
+            for k in range(last_ap + 1, len(seq)):
+                l2 = seq[k]
+                ins = mb or ml
+                code = _delim_view(l2, ins)
+                if not ins and _SECTION_LIKE_RE.match(l2.strip()):
+                    if sv_start is None:
+                        if l2.strip() == sv:
+                            sv_start = k
+                    else:
+                        sv_end = k
+                        break
+                if not ml and _unescaped_triple_count(code, '"""') % 2:
+                    mb = not mb
+                if not mb and _unescaped_triple_count(code, "'''") % 2:
+                    ml = not ml
+            if sv_start is None:
+                seq.extend(block)
+                return
+            if sv_end is None:
+                sv_end = len(seq)
+            keys: set[str] = set()
+            for l2 in seq[sv_start + 1 : sv_end]:
+                m = _TAIL_KV_RE.match(l2)
+                if m:
+                    keys.add(m.group(1).strip().strip("\"'"))
+            # The surviving block already holds a key the orphan sets — the
+            # orphan really sat under a DIFFERENT entry (``oi`` resolves
+            # every ``ap`` to its last position, so an earlier entry's
+            # subtable can look like the last one's). Merging would drop the
+            # colliding setting; a fresh ``ap`` entry keeps it instead.
+            for l2 in block[1:]:
+                m2 = _TAIL_KV_RE.match(l2)
+                if m2 and m2.group(1).strip().strip("\"'") in keys:
+                    seq.extend([ap] + block)
+                    return
+            body: list[str] = []
+            mb = ml = False
+            drop_rest = False
+            for l2 in block[1:]:
+                ins = mb or ml
+                code = _delim_view(l2, ins)
+                if drop_rest:
+                    if not ml and _unescaped_triple_count(code, '"""') % 2:
+                        mb = not mb
+                    if not mb and _unescaped_triple_count(code, "'''") % 2:
+                        ml = not ml
+                    if not (mb or ml):
+                        drop_rest = False
+                    continue
+                m = _TAIL_KV_RE.match(l2) if not ins else None
+                if m:
+                    key = m.group(1).strip().strip("\"'")
+                    if key in keys:
+                        # Dropping a member that opens a multiline value
+                        # must take its continuation lines too — a bare
+                        # remainder would splice as stray text.
+                        if not ml and _unescaped_triple_count(code, '"""') % 2:
+                            mb = not mb
+                            drop_rest = mb or ml
+                        elif not mb and _unescaped_triple_count(code, "'''") % 2:
+                            ml = not ml
+                            drop_rest = mb or ml
+                        continue
+                    keys.add(key)
+                body.append(l2)
+                if not ml and _unescaped_triple_count(code, '"""') % 2:
+                    mb = not mb
+                if not mb and _unescaped_triple_count(code, "'''") % 2:
+                    ml = not ml
+            seq[sv_end:sv_end] = body
+
+        def _track_strings(l: str) -> None:
+            nonlocal inside_basic, inside_literal
+            code = _delim_view(l, inside_basic or inside_literal)
+            if not inside_literal and _unescaped_triple_count(code, '"""') % 2:
+                inside_basic = not inside_basic
+            if not inside_basic and _unescaped_triple_count(code, "'''") % 2:
+                inside_literal = not inside_literal
+
+        pending: str | None = None
+        pending_ap: str | None = None
+        block: list[str] = []
+        moves: list[tuple[str, str, list[str]]] = []
+        patched_head: str | None = None
+        for l in merged:
+            sv = l.strip()
+            in_s = inside_basic or inside_literal
+            if pending is not None:
+                if not in_s and _SECTION_LIKE_RE.match(sv):
+                    moves.append((pending, pending_ap, block))
+                    pending = None
+                    pending_ap = None
+                    block = []
+                else:
+                    block.append(l)
+                    _track_strings(l)
+                    continue
+            if not in_s and _SECTION_LIKE_RE.match(sv):
+                seen.add(sv)
+                if sv.startswith("[") and not sv.startswith("[[") and "." in sv:
+                    ap = _array_parent(sv)
+                    if ap is not None:
+                            # The restore appends the LAST entry's lines: an
+                            # orphan that followed the last ``[[x]]`` in the
+                            # original joins it there. One that sat earlier
+                            # mints its own entry in place — joining the tail
+                            # would misattribute it to the later entry.
+                            if ap.strip() in appended_heads and oi.get(
+                                sv, -1
+                            ) > oi.get(ap, -1):
+                                # An immediately-preceding ``[[x]]`` with no
+                                # members was minted only to scope this orphan
+                                # (its real members all dropped). Once the
+                                # orphan joins the appended entry that empty
+                                # entry is dead weight — drop it.
+                                if patched and patched[-1].strip() == ap.strip():
+                                    patched.pop()
+                                    patched_head = next(
+                                        (
+                                            p.strip()
+                                            for p in reversed(patched)
+                                            if _SECTION_LIKE_RE.match(p.strip())
+                                        ),
+                                        None,
+                                    )
+                                pending = sv
+                                pending_ap = ap
+                                block = [l]
+                            else:
+                                # Mint ``ap`` unless the section open right
+                                # now is already inside its scope — ``ap``
+                                # itself, or a dotted subtable of it: a
+                                # sibling ``[x.a]`` keeps ``[x.b]`` in the
+                                # same array entry, while a *seen* ``[[x]]``
+                                # elsewhere belongs to a different entry and
+                                # must not suppress the mint. Whitespace
+                                # inside a header is insignificant
+                                # (``[service . zone]`` == ``[service.zone]``),
+                                # so compare the whitespace-stripped paths —
+                                # a spaced sibling must read as the same
+                                # scope.
+                                ap_inner = re.sub(
+                                    r"\s+", "", ap.lstrip("[").rstrip("]")
+                                )
+                                ph_inner = re.sub(
+                                    r"\s+",
+                                    "",
+                                    (patched_head or "").lstrip("[").rstrip("]"),
+                                )
+                                same_scope = ph_inner == ap_inner or (
+                                    patched_head is not None
+                                    and ph_inner.startswith(ap_inner + ".")
+                                )
+                                if not same_scope:
+                                    patched.append(ap)
+                                    patched_head = ap
+                if pending is not None:
+                    continue
+            patched.append(l)
+            if not in_s and _SECTION_LIKE_RE.match(sv):
+                patched_head = sv
+            _track_strings(l)
+        if pending is not None:
+            moves.append((pending, pending_ap, block))
+        for sv2, ap2, blk in moves:
+            _splice_tail(ap2, sv2, blk)
+        merged = patched
+    def _dedupe_sections(
+        merged: list[str], appended: list[str]
+    ) -> tuple[list[str], list[str]]:
+        """Drop section re-declarations a restore minted.
+
+        ``merged`` and ``appended`` form ONE document — an orphan ``[x.y]``
+        at the tail binds to the last ``[[x]]`` of either half, so the
+        pass must see both. TOML rejects a table declared twice under one
+        array entry and a key assigned twice in one table; INI files
+        never carry ``[[`` so the pass only engages on array-of-tables
+        docs. Header- and key-shaped text inside a ``\"\"\"``/``\'\'\'``
+        value is content, not structure — the scan tracks them."""
+        _kv = re.compile(
+            r'^\s*([A-Za-z0-9_.-]+|"[^"]+"|\'[^\']+\')\s*='
+        )
+        # Only dedupe headers the ORIGINAL document knew (``header_of`` /
+        # ``last_real_norm`` vocab + their minted spellings), and only when
+        # the spelling is a valid TOML table name — a ``[[see this page]]``
+        # wiki link or a bare ``[1]`` array row must not engage the pass.
+        _TOML_KEY_RE = re.compile(
+            r"^(?:[A-Za-z0-9_-]+|\"[^\"]*\"|'[^']*')"
+            r"(?:\s*\.\s*(?:[A-Za-z0-9_-]+|\"[^\"]*\"|'[^']*'))*$"
+        )
+
+        def _toml_named(raw: str) -> bool:
+            inner = raw[2:-2] if raw.startswith("[[") else raw[1:-1]
+            return bool(_TOML_KEY_RE.match(inner.strip()))
+
+        vocab = {
+            _norm_header(x.strip())
+            for x in list(header_of.values()) + list(last_real_norm.values())
+            if _toml_named(x.strip())
+        }
+        kept: list[tuple[str, int]] = []
+        declared: set[str] = set()
+        scope_keys: dict[str, set[str]] = {}
+        cur_scope: str | None = None
+        last_arr_norm: str | None = None
+        entry = 0
+        mb = ml = False
+        tagged = [(l, 0) for l in merged] + [(l, 1) for l in appended]
+        for l, side in tagged:
+            ins = mb or ml
+            code = _delim_view(l, ins)
+            if not ins:
+                t = l.strip()
+                if _SECTION_LIKE_RE.match(t):
+                    norm = _norm_header(t)
+                    if norm not in vocab:
+                        # Not a TOML table the pass knows (array rows like
+                        # ``[1]``, wiki ``[[link]]``): append verbatim and
+                        # close the dedupe scope — its following lines are
+                        # content, not members of a real table.
+                        cur_scope = None
+                        kept.append((l, side))
+                    elif t.startswith("[["):
+                        entry += 1
+                        last_arr_norm = norm
+                        cur_scope = f"arr{entry}:{norm}"
+                        scope_keys.setdefault(cur_scope, set())
+                        kept.append((l, side))
+                    else:
+                        inner = norm[1:-1]
+                        scope = (
+                            f"arr{entry}:{norm}"
+                            if (
+                                last_arr_norm is not None
+                                and inner.startswith(
+                                    last_arr_norm[2:-2] + "."
+                                )
+                            )
+                            else f"top:{norm}"
+                        )
+                        if scope in declared:
+                            # A re-declaration: its members merge into the
+                            # surviving block's scope; same keys drop below.
+                            cur_scope = scope
+                        else:
+                            declared.add(scope)
+                            scope_keys.setdefault(scope, set())
+                            cur_scope = scope
+                            kept.append((l, side))
+                else:
+                    m = _kv.match(l) if cur_scope is not None else None
+                    if m:
+                        raw_key = m.group(1).strip()
+                        if raw_key[:1] in {'"', "'"}:
+                            # A quoted key is literal: ``"a.b"`` and ``a.b``
+                            # are DIFFERENT TOML keys.
+                            key = raw_key
+                        else:
+                            # ``a . b`` and ``a.b`` name the same dotted key.
+                            key = re.sub(r"\s*\.\s*", ".", raw_key)
+                        keys = scope_keys.setdefault(cur_scope, set())
+                        if key in keys:
+                            l = None  # type: ignore[assignment]
+                        else:
+                            keys.add(key)
+                    if l is not None:
+                        kept.append((l, side))
+            else:
+                kept.append((l, side))
+            if not ml and _unescaped_triple_count(code, '"""') % 2:
+                mb = not mb
+            if not mb and _unescaped_triple_count(code, "'''") % 2:
+                ml = not ml
+        return (
+            [l for l, side in kept if side == 0],
+            [l for l, side in kept if side == 1],
+        )
+
+    if any(l.strip().startswith("[[") for l in merged) or any(
+        l.strip().startswith("[[") for l in appended
+    ):
+        merged, appended = _dedupe_sections(merged, appended)
+    after = "\n".join(merged)
     return after + ("\n" + "\n".join(appended) if appended else "")
 
 
@@ -2395,7 +3752,10 @@ def _restore_facts(protected, after: str, before: str | None = None) -> str:
                     and not (record_doc and _RECORD_BOUNDARY_RE.match(ln))):
                 missing.append((index.get(ln, float("inf")), pos, _bound_fact_line(ln)))
     return _restored_block(
-        after, _missing_in_original_order(missing), line_headers, orig_index,
+        after,
+        _missing_in_original_order(missing),
+        line_headers,
+        orig_index,
         before.split("\n") if before is not None else None,
     )
 
@@ -2447,7 +3807,13 @@ def _triple_quoted_lines(text: str) -> set[str]:
     for ln in (text or "").split("\n"):
         if inside is not None:
             masked.add(ln)
-            if inside in ln:
+            # A ``"""`` basic-string run closes on a delimiter an odd
+            # backslash run does not escape; TOML literal strings never
+            # escape — any ``'''`` ends the run.
+            if inside == "'''":
+                if inside in ln:
+                    inside = None
+            elif _has_unescaped_triple(ln, '"""'):
                 inside = None
             continue
         if '"""' not in ln and "'''" not in ln:
@@ -2787,8 +4153,11 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
         for f in sorted(chosen, key=lambda f: f[0])
     ]
     out = _restored_block(
-        compressed, bound_lines, line_headers, orig_index,
-        original_text.split("\n") if original_text else None,
+        compressed,
+        bound_lines,
+        line_headers,
+        orig_index,
+        original_text.split("\n") if original_text is not None else None,
     )
     if out == compressed:
         return compressed
@@ -2819,11 +4188,62 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
                     line_score[ln] = b["score"]
     rendered = compressed.split("\n")
     pool_texts = {f[3] for f in facts}
+    # A section header is never an eviction candidate: scoring ties break by
+    # position, so the header of a low-scoring kept block evicts before its
+    # own settings — orphaning them at the document root or under the wrong
+    # table, which strict TOML parsers reject (a repeated key) or silently
+    # mis-scope. Evicting a header's body lines is always the safer spend:
+    # an emptied section still parses.
+    header_texts = set((line_headers or {}).values())
+    # Lines of a multiline string span are load-bearing as a set: the scan
+    # evicts in position order inside a tied block, so it can stop mid-span —
+    # a dropped opener strands its body as bare text and a bare closer, a
+    # dropped closer leaves the opener unterminated and the rest of the
+    # extract parses as string content. Either way strict TOML parsers reject
+    # the extract, so no line of a span is a candidate on its own.
+    span_texts: set[str] = set()
+    if original_text is not None:
+        in_basic = in_literal = False
+        fence_marker: str | None = None
+        for oln in original_text.split("\n"):
+            in_s = in_basic or in_literal
+            # Fenced code spans are load-bearing the same way: a dropped
+            # opener strands bare code under a bare closer, presenting a
+            # mutilated block as verbatim. A fence inside a string is
+            # content, so string state wins; fences do not nest.
+            probe = _GUTTER_RE.sub("", oln, count=1).strip()
+            fm = re.match(r"(`{3,}|~{3,})", probe)
+            fc = re.fullmatch(r"(`{3,}|~{3,})", probe)
+            if in_s or fence_marker is not None:
+                span_texts.add(oln)
+            if fence_marker is not None:
+                if (
+                    fc is not None
+                    and fc.group(0)[0] == fence_marker[0]
+                    and len(fc.group(0)) >= len(fence_marker)
+                ):
+                    fence_marker = None
+                continue
+            if not in_s and fm is not None:
+                span_texts.add(oln)
+                fence_marker = fm.group(0)
+                continue
+            code = oln if in_s else _quote_aware_code_part(oln)
+            if not in_literal and _unescaped_triple_count(code, '"""') % 2:
+                if not in_basic:
+                    span_texts.add(oln)
+                in_basic = not in_basic
+            if not in_basic and _unescaped_triple_count(code, "'''") % 2:
+                if not in_literal:
+                    span_texts.add(oln)
+                in_literal = not in_literal
     cand = sorted(
         (
             i for i, ln in enumerate(rendered)
             if ln in line_score
             and ln not in pool_texts
+            and ln not in header_texts
+            and ln not in span_texts
             and not _OUTCOME_ERR_NEAR_RE.search(ln)
             and not _is_trust_risk_line(ln)
         ),
@@ -2843,8 +4263,11 @@ def _apply_fact_floor(*, compressed: str, facts, query: str, budget_chars: int |
     if drop:
         compressed = "\n".join(ln for i, ln in enumerate(rendered) if i not in drop)
         out = _restored_block(
-            compressed, bound_lines, line_headers, orig_index,
-            original_text.split("\n") if original_text else None,
+            compressed,
+            bound_lines,
+            line_headers,
+            orig_index,
+            original_text.split("\n") if original_text is not None else None,
         )
     return out
 
@@ -3666,7 +5089,11 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
             i += 1
             continue
         fp = fingerprint(line)
-        if fp and short_counts.get(fp, 0) >= collapse_floor and (_template_long_enough(line) or (short_counts.get(fp, 0) >= 5 and sum(ch.isalpha() for ch in line) >= 2 and "=" not in line)):
+        # ``[[x]]`` array-of-tables headers are never folded: identical
+        # texts are still DISTINCT entries, so collapsing them orphans
+        # the member lines of the folded entries.
+        is_array_header = line.lstrip().startswith("[[") and line.rstrip().endswith("]]")
+        if fp and not is_array_header and short_counts.get(fp, 0) >= collapse_floor and (_template_long_enough(line) or (short_counts.get(fp, 0) >= 5 and sum(ch.isalpha() for ch in line) >= 2 and "=" not in line)):
             if fp in exemplar_idx:
                 seen[fp] += 1
                 last_seen[fp] = line
@@ -3702,7 +5129,11 @@ def preprocess_logs(lines: list[str], query: str = "", *, structural: bool = Fal
             exemplar_text = pin if pin and pin != ln and pin != last else ln
             counted_out.append(f"[\u00d7{cnt}] {exemplar_text}")
             counted_src.append(out_src[idx])
-            if cnt >= 3 and last is not None and last != exemplar_text:
+            if (
+                last is not None
+                and last != exemplar_text
+                and (cnt >= 3 or (pin is not None and pin == last))
+            ):
                 counted_out.append(f"[last] {last}")
                 counted_src.append(out_src[idx])
         else:
@@ -4956,6 +6387,7 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
 
     prev_type = None
     in_fence = False
+    in_string: str | None = None
     for i, line in enumerate(lines):
         kind = classify_line(line)
         line_toks = estimate_tokens(line)
@@ -4964,6 +6396,19 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
             if kind == "fence":
                 close(i)
                 in_fence = False
+            prev_type = kind
+            continue
+        if in_string is not None:
+            # Inside a TOML multiline string the whole line is content — a
+            # blank line or a shape change must not split the block, because
+            # selection is block-atomic: a partial span emits an unterminated
+            # opener or bare body lines, and no TOML parser accepts either.
+            # The block is NOT closed at the closer: trailing settings keep
+            # gluing to the span's block exactly as they did before strings
+            # were tracked, so a tight budget cannot keep a setting while
+            # dropping the table header the span block carries.
+            tokens += line_toks
+            in_string = _advance_multiline_state(line, in_string)
             prev_type = kind
             continue
         if kind == "fence":
@@ -5007,6 +6452,13 @@ def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
             tokens += line_toks
             if btype == "text" and kind != "blank":
                 btype = kind
+        # A line whose code part holds an odd number of unescaped triple
+        # quotes opens a TOML multiline string — the scan above keeps the
+        # span in one block. Quotes inside a trailing comment or a quoted
+        # literal are text, and an even count opens and closes on the line.
+        if in_string is None:
+            code = _quote_aware_code_part(line)
+            in_string = _advance_multiline_state(code, None)
         prev_type = kind
     close(len(lines) - 1)
     return blocks
@@ -6957,7 +8409,10 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
     # the per-line loop was O(lines x output) — 30 s of a 35 s run on a 650 KB
     # log (and ~10x worse again when the output holds a non-ASCII "[…]").
     compressed_lower = compressed.lower()
-    # Collapse prefixes do not change a line's facts.
+    # Collapse prefixes do not change a line's facts. Neither does forged-marker
+    # neutralization: a kept line whose span was bracket-translated still counts
+    # as kept — but only through its own neutralized form, so a genuinely
+    # fullwidth lookalike cannot stand in for a different dropped line.
     out_lines: set[str] = set()
     for out_line in compressed_lower.split("\n"):
         out_line = out_line.strip()
@@ -6966,8 +8421,11 @@ def _critical_kept(critical: list[str], compressed: str) -> int:
         if bare is not out_line:
             out_lines.add(bare)
     for line in critical:
-        core = line.strip().lower()
-        if core in out_lines:
+        core = line.strip()
+        # Neutralize BEFORE lowering: the marker patterns are case-sensitive
+        # (e.g. CC-Retrieve), and Unicode lowering can push a marker body past
+        # its length bound — either way a retained line would read as dropped.
+        if core.lower() in out_lines or _neutralize_forged_markers(core).lower() in out_lines:
             kept += 1
     return kept
 
@@ -7702,6 +9160,51 @@ def _render(
             ln, _MAX_KEPT_LINE_CHARS, hit_terms, marker_fn, total, raw_hit_terms
         )
 
+    # Section structure of the input: a kept line whose enclosing header
+    # was dropped would read under the wrong table, and a kept `"""` opener
+    # whose closer was dropped swallows every later line as string content.
+    head_text, enclosing_idx, ancestors, orig_in_string = _toml_section_scope(
+        lines
+    )
+    orig_header_texts = set(head_text.values())
+    emitted_heads: set[int] = set()
+
+    # Emit position of each block in `order` — under a reordering
+    # strategy a covering block can still be ahead of us, in which case
+    # its headers must mint now, not "later".
+    order_pos = {id(b2): j2 for j2, b2 in enumerate(order)}
+
+    def _will_emit(pos: int, upto: int) -> bool:
+        # The header's own kept line still renders (a covered position is
+        # emitted by its block, or an earlier overlapping one) — minting
+        # it again would declare the section twice.
+        if pos in orig_in_string:
+            return False
+        return any(
+            b2["start"] <= pos <= b2["end"] and order_pos[id(b2)] <= upto
+            for b2 in order
+        )
+
+    def _emit_scope(i: int, upto: int) -> None:
+        # Emit the missing section headers a kept line needs, outermost
+        # first, each once — the same repair _restored_block applies to
+        # restored lines. Keyed by POSITION: two ``[[x]]`` entries share a
+        # text but are distinct entries, each of which must mint. A minted
+        # ``[[x]]`` is a fresh entry: always valid.
+        sv = _GUTTER_RE.sub("", lines[i], count=1).strip()
+        if _SECTION_LIKE_RE.match(sv):
+            chain = ancestors.get(i, [])
+        else:
+            h_idx = enclosing_idx.get(i)
+            chain = (
+                ancestors.get(h_idx, []) + [h_idx] if h_idx is not None else []
+            )
+        for pos in chain:
+            if pos in emitted_heads or _will_emit(pos, upto):
+                continue
+            parts.append(head_text[pos])
+            emitted_heads.add(pos)
+
     # Lines the most recent _gap inlined verbatim: an emit_prefix on the
     # next kept block must not repeat them — a duplicated `[[array]]`
     # header would mint a second TOML entry.
@@ -7727,21 +9230,32 @@ def _render(
             return inlined_gap
         return [marker]
 
+    def _emit_gap(lo: int, hi: int, seq: list[str] | None, upto: int) -> None:
+        """Append a gap marker run — or, when the gap was inlined verbatim,
+        mint the enclosing scope first and mark the headers it carries,
+        exactly as if the lines had flowed through the normal emit path."""
+        if seq is None:
+            return
+        if seq is inlined_gap:
+            _emit_scope(lo, upto)
+            for i in range(lo, hi):
+                if i in head_text and i not in orig_in_string:
+                    emitted_heads.add(i)
+        parts.extend(seq)
+
     parts: list[str] = []
     prev_end = -1
-    for b in order:
+    for upto, b in enumerate(order):
         if chronological and b["end"] <= prev_end:
             continue
         inlined_gap = []
         if marker_fn is not None:
             if prev_end < 0 and chronological and b["start"] > 0:
                 lead = _gap(0, b["start"])
-                if lead is not None:
-                    parts.extend(lead)
+                _emit_gap(0, b["start"], lead, upto)
             elif prev_end >= 0 and b["start"] > prev_end + 1:
                 between = _gap(prev_end + 1, b["start"])
-                if between is not None:
-                    parts.extend(between)
+                _emit_gap(prev_end + 1, b["start"], between, upto)
         elif prev_end >= 0 and b["start"] > prev_end + 1:
             if citations:
                 if chronological_blocks is None:
@@ -7849,16 +9363,39 @@ def _render(
         # A short gap already inlined holds the same header line — emit it
         # once: a repeated `[[array]]` header mints a second TOML entry.
         prefix_lines = b.get("emit_prefix") or ()
-        if inlined_gap:
+        if inlined_gap or prefix_lines:
+            # The restored prefix (or an inlined gap) supplies the block's
+            # scope — but only mark the positions whose header text was
+            # actually emitted, or a missing mint gets suppressed and the
+            # block lands under the wrong section.
             inlined = set(inlined_gap)
             prefix_lines = [ln for ln in prefix_lines if ln not in inlined]
+            # Positions the inlined gap covers are marked exactly by
+            # _emit_gap — here only the emit_prefix texts count, and a
+            # prefix line stands in for the LAST same-text header of the
+            # chain: an earlier same-text ``[[x]]`` is a different entry.
+            emitted_texts = {ln.strip() for ln in prefix_lines}
+            h_idx = enclosing_idx.get(start)
+            if h_idx is not None:
+                chain = ancestors.get(h_idx, []) + [h_idx]
+                for pos in chain:
+                    if head_text[pos] in emitted_texts and not any(
+                        head_text[p2] == head_text[pos] for p2 in chain if p2 > pos
+                    ):
+                        emitted_heads.add(pos)
+        _emit_scope(start, upto)
+        parts.extend(prefix_lines)
         if b.get("pinned"):
-            parts.extend(prefix_lines)
-            parts.extend(lines[start : end + 1])
+            _emit_scope(start, upto)
+            for i in range(start, end + 1):
+                ln = lines[i]
+                parts.append(ln)
+                if i not in orig_in_string and i in head_text:
+                    emitted_heads.add(i)
         else:
-            parts.extend(prefix_lines)
             in_fence: str | None = None
-            for ln in lines[start : end + 1]:
+            for i in range(start, end + 1):
+                ln = lines[i]
                 m = _fence_marker(ln)
                 if in_fence is not None:
                     if _closes(in_fence, _fence_closer(ln)):
@@ -7868,12 +9405,16 @@ def _render(
                     in_fence = m
                     parts.append(ln)
                 else:
+                    if i not in orig_in_string:
+                        _emit_scope(i, upto)
+                        if i in head_text:
+                            emitted_heads.add(i)
                     parts.append(_bound(ln))
         prev_end = end
     if marker_fn is not None and chronological and parts and prev_end < len(lines) - 1:
         trail = _gap(prev_end + 1, len(lines))
-        if trail is not None:
-            parts.extend(trail)
+        _emit_gap(prev_end + 1, len(lines), trail, len(order))
+    parts = _toml_string_repair(parts, orig_header_texts)
     return "\n".join(parts)
 
 
@@ -11623,14 +13164,26 @@ def _industrial_preflight(
     query,
 ):
     """Run the industrial preflight (size and safety limits, format adapters), degrading to a bounded scoring view when allowed, and preflight any wrapped tool payload. Returns ``(industrial, degraded, payload_industrial)``. ``analysis_text`` is the noise-free copy used for format detection when sparse artifact markers were stripped; hard limits still judge ``caller_text``."""
+    # Neutralize the adapter INPUT, not its output: kept records are caller
+    # content whose forged spans must not sail through, while the
+    # ``[tameru:report …]`` banners and gap markers the adapter emits are
+    # engine-produced — neutralizing the output would fullwidth them and a
+    # re-compression would no longer recognize its own extract.
+    # ANSI escapes can split a marker's literal span (a colored ``[…]``);
+    # the later cleanup would reveal it inside rows that then skip the
+    # final pass — match on the ANSI-stripped copy instead.
+    vetted_source = analysis_text if analysis_text is not None else caller_text
+    vetted = strip_ansi(vetted_source)
     industrial = industrial_preprocess(
-        analysis_text if analysis_text is not None else caller_text,
+        _neutralize_forged_markers(vetted),
         industrial_query, limits, gap_marker=adapter_gap,
         allow_reports=not no_table,
     )
     if (
-        analysis_text is not None
-        and analysis_text is not caller_text
+        (
+            (analysis_text is not None and analysis_text is not caller_text)
+            or vetted != vetted_source
+        )
         and not industrial.hard_fail_open
     ):
         # Hard limits judge the TRUE input: stripping marker lines can never
@@ -11697,7 +13250,8 @@ def _industrial_preflight(
         )
         if candidate_payload.wrapped:
             payload_industrial = industrial_preprocess(
-                candidate_payload.inner, industrial_query, industrial.limits,
+                _neutralize_forged_markers(candidate_payload.inner),
+                industrial_query, industrial.limits,
                 gap_marker=adapter_gap, allow_reports=not no_table, reports_only=True,
             )
             if payload_industrial.hard_fail_open:
@@ -12174,13 +13728,17 @@ def _compress_context_impl(
                 gap_marker, omitted, len(caller_text), kind))
         )
     )
-    original_text = _norm_newlines(caller_text)
+    original_text = _neutralize_forged_markers(_norm_newlines(caller_text))
     # 1.10.0 (S5, E5): the protected fact lines and the density flag are computed on the caller's
     # original text — the unwrapped payload when the caller wrapped it — BEFORE the industrial and
     # format adapters below may delete a line, so protection knows every fact before any stage can
     # drop one. Density (sparsity rule B) is decided once here; ``_FACT_OFF`` keeps the machinery
     # off through every later stage on a dense original.
-    protected_payload = unwrap_tool_payload(original_text)
+    # Decode the RAW envelope, not the neutralized one: the neutralizer cannot
+    # see fences still escaped inside the JSON string, so it would rewrite a
+    # marker that the decode later reveals as fenced — and the floors would
+    # then restore a fullwidth copy beside the working text's verbatim one.
+    protected_payload = unwrap_tool_payload(_norm_newlines(caller_text))
     if (
         not protected_payload.wrapped
         and artifact_contaminated
@@ -12196,6 +13754,10 @@ def _compress_context_impl(
         # facts, error exemplars or outcome lines, or the floors would restore
         # them right back into the extract.
         protected_source = _strip_artifact_noise(protected_source, noise_res)
+    # The decoded body (and the analysis_text fallback) can still carry a
+    # marker-shaped span — the floors restore lines verbatim, so they must
+    # come from the same marker-free copy the working text uses.
+    protected_source = _neutralize_forged_markers(protected_source)
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -12239,7 +13801,12 @@ def _compress_context_impl(
             content_hint=content_hint, industrial=industrial, query_as_given=query_as_given,
             requested_mode=requested_mode, strategy=strategy,
         )
-    source_pin_texts = _source_pin_texts(analysis_text, pin_patterns, pin_recent)
+    # Pin texts must compare against the neutralized working text — a forged
+    # marker span inside a pinned block would otherwise read as un-preservable
+    # and trip the pin cost gate into returning the whole original.
+    source_pin_texts = _source_pin_texts(
+        _neutralize_forged_markers(analysis_text), pin_patterns, pin_recent
+    )
     _PINNED_LINES.set(frozenset(
         form for part in source_pin_texts for ln in part.split("\n") if ln.strip()
         for form in (ln, strip_ansi(ln))
@@ -12283,9 +13850,23 @@ def _compress_context_impl(
         # original stays intact for fail-open and CCR. Stripping the unwrapped
         # payload covers JSON envelopes too.
         text = _strip_artifact_noise(text, noise_res)
+    # Marker-shaped spans embedded inside real lines reach the output
+    # verbatim through kept blocks — every span left in the working text is
+    # forged input, so its brackets go fullwidth before any stage can emit
+    # it. Engine markers (gap spans, [tameru:…] banners, the appended
+    # [CC-Retrieve] pointer) are produced later and keep their brackets.
+    # Adapter output needs no pass here: its caller content was neutralized
+    # on the way into the adapter, and its banners/gap markers are the
+    # engine's own.
+    if not industrial.applied and not (
+        payload_industrial is not None and payload_industrial.applied
+    ):
+        text = _neutralize_forged_markers(text)
     tool_meta_line = ""
     if tool_payload.wrapped and tool_payload.meta:
-        tool_meta_line = _compact_json(tool_payload.meta) + "\n"
+        # The envelope's scalar metadata is caller text too — a marker-shaped
+        # span inside a field value would emit verbatim at the output head.
+        tool_meta_line = _neutralize_forged_markers(_compact_json(tool_payload.meta)) + "\n"
     # v1.4.0 (E4): an un-hinted numbered read (`cat -n`, Hermes `N|`) is code,
     # judged on the unwrapped payload: no table detector, no supersession, the
     # gutter kept in the output but out of the scorer's view. `route_hint` is
@@ -12916,7 +14497,13 @@ def _with_schema_fields(
     try:
         text = context if isinstance(context, str) else str(context)
         q = query if isinstance(query, str) else chr(10).join(str(item) for item in query)
-        dropped = () if result.fail_open else _dropped_summary(text, result.compressed_text, redact)
+        # A kept line whose forged marker span was neutralized is still kept —
+        # compare against the neutralized original so it is not reported dropped.
+        # Normalize first, matching the order original_text is built in: a bare
+        # carriage return inside a span breaks it for both sides.
+        dropped = () if result.fail_open else _dropped_summary(
+            _neutralize_forged_markers(_norm_newlines(text)), result.compressed_text, redact
+        )
         key = _stable_key(text, q, selector_query)
     except Exception:  # a summary never costs a result
         return result

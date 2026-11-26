@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 — dev extra installs tomli
+    import tomli as tomllib
+
 from tameru import compress_context as cc
 from tameru.transcript import build_query, build_selector_query
 
@@ -586,3 +591,889 @@ def test_secret_body_lines_are_never_pulled_back():
     # ...while the rest of the value still restores whole.
     tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
     assert "normal body" in tomllib.loads(out)["x"]["v"]
+def test_distinct_array_entries_restore_under_their_own_header():
+    """Lines from different ``[[deps]]`` entries must not merge under one
+    header — ``lib`` under two entries is a duplicate key, i.e. invalid TOML."""
+    toml = '''[root]
+name = "app"
+
+[[deps]]
+lib = "a"
+ver = 1
+
+[[deps]]
+lib = "b"
+ver = 2
+
+[deps.serve]
+port = 99
+'''
+    text = toml + "\n".join(f"other topic line {i} words words" for i in range(300))
+    res = cc.compress_context(text, "port 99", **OPTS)
+    out = res.compressed_text
+    # Two entries, no duplicate key under a single [[deps]].
+    assert out.count("[[deps]]") == 2
+    e1, e2 = out.split("[[deps]]")[1], out.split("[[deps]]")[2]
+    assert 'lib = "a"' in e1 and 'lib = "b"' not in e1
+    assert 'lib = "b"' in e2
+
+
+def test_same_key_from_distinct_entries_opens_a_fresh_entry():
+    """Entries before the last ``[[x]]`` occurrence can't be told apart, so
+    two ``sub =`` lines that would collide open a second entry instead of
+    emitting a duplicate key (invalid TOML)."""
+    lines = ["sub = 0", "sub = 2"]
+    # orig: [[deps]]@2, [deps.sub]@3, sub=0@4, [[deps]]@5, [deps.sub]@6, sub=2@7, [[deps]]@8
+    oi = {"sub = 0": 4, "sub = 2": 7, "[[deps]]": 8, "[deps.sub]": 6}
+    header_of = {"sub = 0": "[deps.sub]", "sub = 2": "[deps.sub]",
+                 "[[deps]]": "[[deps]]", "[deps.sub]": "[deps.sub]"}
+    out = cc._restored_block("[t0]\nk0 = 1", lines, header_of, oi)
+    assert out.count("[[deps]]") == 2
+    assert out.count("[deps.sub]") == 2
+    first, second = out.split("[[deps]]")[1], out.split("[[deps]]")[2]
+    assert "sub = 0" in first and "sub = 0" not in second
+    assert "sub = 2" in second
+
+
+def test_last_entry_member_mints_entry_when_earlier_header_survived():
+    """``oi`` maps every ``[[deps]]`` to the last occurrence, so a surviving
+    earlier entry's header masquerades as the last one. A last-entry line
+    must mint a fresh ``[[deps]]`` rather than merging into the earlier
+    entry — otherwise two ``f0`` keys share one table."""
+    before = ('[t2]\nk0 = 58\n[[deps]]\nf0 = "v98"\n[deps.sub]\nsub = 1\n'
+              '[[deps]]\nf0 = "v41"')
+    # Entry 0's header and member survive; the last entry is dropped except
+    # its member line, which must restore as a fresh entry.
+    after = '[t2]\nk0 = 58\n[[deps]]\nf0 = "v98"\n[deps.sub]\nsub = 1'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(after, ['f0 = "v41"'], lh, oi, before.split("\n"))
+    assert out.count("[[deps]]") == 2
+    first, second = out.split("[[deps]]")[1], out.split("[[deps]]")[2]
+    assert 'f0 = "v98"' in first and 'f0 = "v41"' not in first
+    assert 'f0 = "v41"' in second
+
+
+def test_orphan_subtable_merges_into_the_restored_parent_entry():
+    """A kept ``[deps.sub]`` whose ``[[deps]]`` parent was dropped restores
+    under the ``[[deps]]`` minted for the entry's own members — a lone
+    ``[x.y]`` table header would collide with the ``[[x]]`` array."""
+    before = ('[[deps]]\nf0 = "v1"\n[[deps]]\nf0 = "v2"\n[deps.sub]\n'
+              'sub = 3\ns0 = 2')
+    # The second entry's header is dropped; its ``[deps.sub]`` block survives
+    # and its ``f0`` member restores later, minting the missing ``[[deps]]``.
+    after = '[[deps]]\nf0 = "v1"\n[deps.sub]\nsub = 3\ns0 = 2'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(after, ['f0 = "v2"'], lh, oi, before.split("\n"))
+    doc = tomllib.loads(out)
+    assert isinstance(doc["deps"], list)
+    subs = [e.get("sub") for e in doc["deps"] if isinstance(e, dict)]
+    assert any(isinstance(s, dict) and s.get("sub") == 3 for s in subs)
+    assert out.count("[deps.sub]") == 1
+
+
+def test_orphan_subtable_merge_keeps_colliding_keys_in_a_fresh_entry():
+    """When the orphan ``[x.y]`` collides with the minted entry's ``[x.y]``
+    keys it really belonged to a different entry — merging would silently
+    drop the colliding setting, so a fresh ``[[x]]`` entry keeps it."""
+    before = ('[[deps]]\n[deps.sub]\nsub = 7\n[[deps]]\n[deps.sub]\n'
+              'sub = 3\ns0 = 2')
+    # Every ``[[deps]]`` dropped; the last entry's ``[deps.sub]`` block
+    # survives orphaned while ``sub = 7`` restores — minting ``[[deps]]`` +
+    # ``[deps.sub]`` at the tail for it. The orphan's ``sub = 3`` collides
+    # with the minted block, so it gets its own ``[[deps]]`` entry —
+    # ``sub = 3`` AND ``s0 = 2`` both survive.
+    after = '[deps.sub]\nsub = 3\ns0 = 2'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(after, ['sub = 7'], lh, oi, before.split("\n"))
+    doc = tomllib.loads(out)
+    subs = sorted(e["sub"]["sub"] for e in doc["deps"])
+    assert subs == [3, 7]
+    assert doc["deps"][-1]["sub"] == {"sub": 3, "s0": 2}
+
+
+def test_orphan_of_nested_array_mints_its_own_entry():
+    """``[[x.b]]`` nested under ``[[x]]`` shares the ``x`` root with the
+    surviving subtable ``[x.z]`` — a first-segment compare wrongly calls
+    them the same scope, skips the mint, and the orphan ``[x.b.c]`` then
+    implicitly declares ``[x.b]`` a plain table that the appended
+    ``[[x.b]]`` entries collide with."""
+    before = ('[[x]]\ne = 1\n[x.z]\nz = 1\n[[x.b]]\nb0 = 9\n[x.b.c]\nc = 3\n'
+              '[[x.b]]\nb1 = 8')
+    after = '[[x]]\ne = 1\n[x.z]\nz = 1\n[x.b.c]\nc = 3'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(after, ['b0 = 9', 'b1 = 8'], lh, oi, before.split("\n"))
+    doc = tomllib.loads(out)
+    assert isinstance(doc["x"][0]["b"], list)
+    assert any(e.get("c", {}).get("c") == 3 for e in doc["x"][0]["b"])
+
+
+def test_scope_scan_ignores_brackets_in_string_openers():
+    """``x = \"\"\"[a`` puts a bracket in string content — counting it as
+    array depth hides every later real header behind arr_depth > 0."""
+    lines = ['x = """[a', 'body', '"""', '[real]', 'k = 1']
+    head_text, enclosing_idx, ancestors, in_string = cc._toml_section_scope(lines)
+    assert head_text == {3: '[real]'}
+
+
+def test_scope_scan_counts_array_brackets_after_same_line_closer():
+    """A ``[`` after the ``\"\"\"`` that closes a string on the same line is
+    real array syntax — skipping the whole line leaves a following ``[9]``
+    element looking like a numeric table header."""
+    lines = ['x = """', 'body""" + [1,', '[9]', ']', '[real]', 'k = 1']
+    head_text, enclosing_idx, ancestors, in_string = cc._toml_section_scope(lines)
+    assert head_text == {4: '[real]'}
+
+
+def test_fenced_header_inside_toml_string_stays_content():
+    """A markdown fence inside a multiline TOML string is content: a
+    header-shaped line in it must not force the string's closer."""
+    parts = ['x = """', 'intro', '```', '[deps]', '```', 'tail']
+    out = cc._toml_string_repair(parts, {"[deps]"})
+    joined = "\n".join(out)
+    assert joined.count('"""') == 2
+    assert out[3] == '[deps]'
+    assert tomllib.loads(joined)["x"] == 'intro\n```\n[deps]\n```\ntail\n'
+
+
+def test_scope_scan_quote_run_closes_before_next_element():
+    '''``a"""" "["`` is ``a"`` + closer + a *quoted* element ``"["`` — its
+    ``[`` is content. Searching for the first ``\"\"\"`` of the run leaves the
+    trailing ``"`` to pair with the element's opener, exposing the bracket
+    and holding arr_depth open so real headers drown.'''
+    lines = [
+        'arr = ["""start',
+        'a"""" "["',
+        ', 1]',
+        '[real]',
+        'k = 1',
+    ]
+    head_text, enclosing_idx, ancestors, in_string = cc._toml_section_scope(lines)
+    assert head_text == {3: '[real]'}
+
+
+def test_unclosed_fence_inside_string_does_not_hide_headers():
+    """A ``` inside a TOML string whose own closer was dropped can't keep
+    swallowing real headers — the fence's protection only holds while the
+    fence itself still closes ahead."""
+    parts = ['x = """', '```', '[deps]', 'tail']
+    out = cc._toml_string_repair(parts, {"[deps]"})
+    assert out[2] == '"""'
+    assert out[3] == '[deps]'
+    # ...but a fence that still closes ahead still protects its content:
+    parts = ['x = """', '```', '[deps]', '```', 'tail']
+    out = cc._toml_string_repair(parts, {"[deps]"})
+    assert out[2] == '[deps]'
+    assert "\n".join(out).count('"""') == 2
+
+
+def test_spaced_dotted_subtable_stays_in_same_array_entry():
+    """``[service . cache]`` after ``[service . zone]`` is still inside the
+    ``[[service]]`` entry — header whitespace is insignificant, so the
+    scope compare must not mint a second ``[[service]]`` for it."""
+    before = ('[[service]]\ns0 = 1\n[service . zone]\nz = 1\n'
+              '[service . cache]\nc = 1')
+    after = '[[service]]\ns0 = 1\n[service . zone]\nz = 1'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(
+        after, ['[service . cache]', 'c = 1'], lh, oi, before.split("\n")
+    )
+    doc = tomllib.loads(out)
+    assert len(doc["service"]) == 1
+    assert doc["service"][0]["cache"]["c"] == 1
+
+
+def test_string_repair_keeps_header_line_when_real_closer_survives():
+    """``[deps]`` inside a multiline string is content when the string's own
+    ``\"\"\"`` survives — the early closer must only fire when the real one
+    was dropped."""
+    parts = ['x = """', '```', '[deps]', 'tail', '"""', '[real]', 'k = 1']
+    out = cc._toml_string_repair(parts, {"[deps]", "[real]"})
+    doc = tomllib.loads("\n".join(out))
+    assert doc["x"] == '```\n[deps]\ntail\n'
+    assert doc["real"]["k"] == 1
+
+
+def test_array_parent_prefers_last_spelling_per_norm():
+    """``[[a.b]]``, ``[[a . b]]``, ``[[a.b]]`` — one norm, three entries.
+    Restoring ``[a.b.c]`` must attach to the LAST entry, not the middle
+    spelling the dict order happens to leave."""
+    before = ('[[a.b]]\nx = 1\n[[a . b]]\ny = 2\n[[a.b]]\nz = 3\n'
+              '[a.b.c]\nc = 4')
+    after = '[[a.b]]\nx = 1\n[[a . b]]\ny = 2\n[[a.b]]\nz = 3'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(
+        after, ['[a.b.c]', 'c = 4'], lh, oi, before.split("\n")
+    )
+    doc = tomllib.loads(out)
+    assert doc["a"]["b"][2]["c"]["c"] == 4
+
+
+def test_quoted_key_is_not_a_bare_key_prefix():
+    """``["ab".child]`` is not a child of ``[["a b"]]`` — stripping the
+    space inside a quoted key must not turn ``a b`` into ``ab``."""
+    lines = ['[["a b"]]', 'k = 1', '["ab".child]', 'c = 2']
+    head_text, enclosing_idx, ancestors, in_string = cc._toml_section_scope(lines)
+    assert ancestors.get(2, []) == []
+
+
+def test_empty_subtable_header_restores_under_surviving_array():
+    """``[[x]]`` survives and ``[x.y]`` has no members to re-emit it — the
+    surviving-entry gate must still emit the header, or its content (a
+    protected error) disappears."""
+    before = '[[x]]\nm = 1\n[x.y]'
+    after = '[[x]]\nm = 1'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(
+        after, ['[x.y]'], lh, oi, before.split("\n")
+    )
+    doc = tomllib.loads(out)
+    assert "y" in doc["x"][0]
+
+
+def test_string_repair_closes_early_when_only_later_string_quotes():
+    """The real closer was dropped: a ``\"\"\"`` on a LATER string's line
+    is not ours — the header it would swallow must still force the early
+    closer out."""
+    parts = ['x = """', '```', '[deps]', 'k = 0', '[real]', 'k = 1',
+             'y = """z"""', 'w = 2']
+    out = cc._toml_string_repair(parts, {"[deps]", "[real]"})
+    doc = tomllib.loads("\n".join(out))
+    assert doc["deps"]["k"] == 0
+    assert doc["real"]["k"] == 1
+    assert doc["real"]["y"] == 'z'
+
+
+def test_string_repair_keeps_two_header_lines_inside_a_real_string():
+    """A retained multiline string may legitimately contain two lines that
+    look like table headers — the surviving closer (odd quote parity)
+    means they are content, not triggers for the early close."""
+    parts = ['x = """', '[deps]', 'k = 0', '[other]', 'o = 1', '"""',
+             'w = 2']
+    out = cc._toml_string_repair(parts, {"[deps]", "[other]"})
+    doc = tomllib.loads("\n".join(out))
+    assert doc["w"] == 2
+    assert "[deps]" in doc["x"]
+
+
+def test_empty_subtable_extends_its_minted_entry():
+    """The final ``[[x]]`` entry was dropped along with its empty
+    ``[x.y]`` — restoring the field mints the entry once, and the empty
+    subtable must extend THAT entry, not open a second ``[[x]]``."""
+    before = ('[[x]]\na = 1\n[[x]]\nb = 2\n[x.y]')
+    after = '[[x]]\na = 1'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(
+        after, ['[[x]]', 'b = 2', '[x.y]'], lh, oi, before.split("\n")
+    )
+    doc = tomllib.loads(out)
+    assert len(doc["x"]) == 2
+    assert doc["x"][0]["a"] == 1
+    assert doc["x"][1]["b"] == 2
+    assert doc["x"][1]["y"] == {}
+
+
+def test_restore_does_not_duplicate_a_line_dropped_by_two_pools():
+    """End-to-end: the same kept-source line protected by two pools must
+    restore once — a second copy lands in the SAME table and makes the
+    extract invalid TOML (duplicate key)."""
+    text = ("[[x]]\nk0_0 = 59\nk0_1 = 59\n[x.y]\n[[x]]\nk1_0 = 39\n[[x]]\n"
+            "k2_0 = 2\nk2_1 = 37\nk2_2 = 58\n[x.y]\ny0 = 4\ny1 = 6\ny2 = 3\n"
+            "[other]\no = 1")
+    out = cc.compress_context(
+        text, query="y0", budget_ratio=0.4
+    ).compressed_text
+    doc = tomllib.loads(out.split("[CC-Retrieve")[0])
+    assert doc["other"]["o"] == 1
+    assert out.count("o = 1") == 1
+
+
+def test_padded_array_header_does_not_crash_subtable_restore():
+    """A ``[[x]]`` spelled with padding keeps that spelling in
+    ``last_real_norm`` — the minted-pair search must compare stripped text
+    or it raises StopIteration and the whole restore is lost."""
+    before = "  [[x]]  \n[x.y]\n[x.z]\n  [[x]]  \nw = 9"
+    after = "[z]\nm = 0"
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(
+        after, ["[x.y]", "[x.z]"], lh, oi, before.split("\n")
+    )
+    doc = tomllib.loads(out)
+    assert doc["x"][0]["y"] == {}
+    assert doc["x"][0]["z"] == {}
+
+
+def test_member_joins_its_registered_subtable_not_the_sibling():
+    """``[x.a]`` minted then ``[x.b]`` pos-inserted ahead of it leaves
+    ``appended`` = ``[[x]], [x.b], [x.a]`` — a ``[x.b]`` member restoring
+    after that must join ``[x.b]``, not tail-append under ``[x.a]``."""
+    before = "[[x]]\n[x.a]\n[x.b]\nv = 1"
+    after = "[z]\nm = 0"
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(
+        after, ["[x.a]", "[x.b]", "v = 1"], lh, oi, before.split("\n")
+    )
+    doc = tomllib.loads(out)
+    assert doc["x"][0]["b"]["v"] == 1
+    assert "a" in doc["x"][0]
+
+
+def test_earlier_entry_subtable_does_not_steal_final_entry_settings():
+    """Restoring an earlier entry's empty ``[x.a]`` mints a pair — but that
+    entry is NOT the array's last. A ``q`` member of the dropped final
+    entry must mint its own ``[[x]]``, not land inside ``x.a``."""
+    before = "[[x]]\n[x.a]\n[[x]]\nq = 1"
+    after = "[z]\nm = 0"
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block(
+        after, ["[x.a]", "q = 1"], lh, oi, before.split("\n")
+    )
+    doc = tomllib.loads(out)
+    assert len(doc["x"]) == 2
+    assert doc["x"][0]["a"] == {}
+    assert doc["x"][1]["q"] == 1
+
+
+def test_member_restore_joins_subtable_inside_a_multiline_value():
+    """A member whose ``[x.y]`` block lives in ``appended`` behind an open
+    ``\"\"\"`` value must not insert before a header-shaped line inside that
+    string — the line is content, not a boundary."""
+    before = ('[[x]]\n[x.y]\nv = """\n[x.w]\nfake\n"""\nm = 1\n'
+              '[[x]]\nw = 2')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[[x]]\nw = 2'
+    restore = ['v = """', '[x.w]', 'fake', '"""', 'm = 1']
+    out = cc._restored_block(after, restore, lh, oi, lines)
+    doc = tomllib.loads(out)
+    # The string-shaped content stays inside ``v``; every member survives
+    # somewhere in the array — the doc stays valid and lossless.
+    assert "[x.w]" in doc["x"][0]["y"]["v"]
+    assert "fake" in doc["x"][0]["y"]["v"]
+    vals = [e["y"]["m"] for e in doc["x"] if "m" in e.get("y", {})]
+    assert vals == [1]
+
+
+def test_orphan_collision_under_padded_array_mints_fresh_entry():
+    """A padded ``[[ x ]]`` spelling orphaned its ``[x.y]`` against the
+    minted entry's keys — a fresh entry keeps both blocks instead of
+    silently dropping the colliding setting."""
+    before = ('  [[deps]]  \n[deps.sub]\nsub = 7\n  [[deps]]  \n'
+              '[deps.sub]\nsub = 3\ns0 = 2')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[deps.sub]\nsub = 3\ns0 = 2'
+    out = cc._restored_block(after, ['sub = 7'], lh, oi, lines)
+    doc = tomllib.loads(out)
+    subs = sorted(e["sub"]["sub"] for e in doc["deps"])
+    assert subs == [3, 7]
+
+def test_multiline_body_text_does_not_suppress_a_real_setting():
+    """A restored string's body quoting ``x = 1`` marks the quoted text, not
+    the real setting: a later table's identical line still restores."""
+    before = ('[a]\ndoc = """\nx = 1\n"""\n[t]\nx = 1\ny = 2')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[a]'
+    restore = ['doc = """', 'x = 1', '"""', 'x = 1', 'y = 2']
+    out = cc._restored_block(after, restore, lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["t"]["x"] == 1
+    assert doc["t"]["y"] == 2
+    assert 'x = 1' in doc["a"]["doc"]
+
+
+def test_continuation_anchors_to_its_own_sections_opener_not_a_same_text_one():
+    """Two ``key = \"\"\"`` openers under different tables: a dropped span's
+    continuation restores the whole value under ITS section, never inside a
+    surviving same-text opener of another table."""
+    before = ('[a]\nkey = """\nfirst body\n"""\n[b]\nkey = """\n'
+              'second body\n"""\nother = 1')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[a]\nkey = """\nfirst body\n"""\n[b]\nother = 1'
+    restore = ['key = """', 'second body', '"""']
+    out = cc._restored_block(after, restore, lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["a"]["key"] == "first body\n"
+    assert doc["b"]["key"] == "second body\n"
+    assert doc["b"]["other"] == 1
+
+
+def test_surviving_fragment_of_a_restored_span_is_not_emitted_twice():
+    """``second body`` survived bare under ``[b]`` while its opener and closer
+    were dropped: the whole-value restore covers it, so the stray copy goes
+    away — the doc prints the line once and stays valid."""
+    before = ('[a]\nx = 1\n[b]\nkey = """\nsecond body\n"""\nother = 2')
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[a]\nx = 1\n[b]\nsecond body\nother = 2'
+    out = cc._restored_block(after, ['key = """', '"""'], lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["b"]["key"].strip() == "second body"
+    assert doc["b"]["other"] == 2
+    assert out.count("second body") == 1
+
+
+def test_same_text_real_setting_in_span_section_is_not_dropped():
+    """A surviving ``other = 2`` that merely shares text with a restored
+    string's body line is real content — only a line whose original index
+    sat inside the span may drop."""
+    before = '[b]\nkey = """\nother = 2\n"""\nother = 2\nz = 9'
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = '[b]\nother = 2\nz = 9'
+    out = cc._restored_block(after, ['key = """', '"""'], lh, oi, lines)
+    doc = tomllib.loads(out)
+    assert doc["b"]["other"] == 2
+    assert doc["b"]["z"] == 9
+
+
+def test_continuation_attaches_to_a_top_level_surviving_opener():
+    """A string above every table has no header: its surviving opener still
+    takes the missing body back (top-level scope compares equal, not None)."""
+    before = 'key = """\nbody text\n"""\n[t]\nx = 1'
+    lines = before.split("\n")
+    oi = {ln: i for i, ln in enumerate(lines)}
+    lh = {}
+    cc._line_scopes(before, lh)
+    after = 'key = """\n[t]\nx = 1'
+    out = cc._restored_block(after, ['body text'], lh, oi, lines)
+    assert out.count('key = """') == 1
+    assert 'body text' in out
+
+
+def test_comment_tail_quotes_do_not_count_as_delimiters_in_repair():
+    """A ``'''`` inside the comment tail of a line where a basic string
+    closes is text — the repair must not mint a literal closer for it."""
+    parts = ['doc = """', 'body', 'end"""  # use \'\'\' for literals', '[real]', 'x = 1']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    assert not any(l.strip() == "'''" for l in out)
+    doc = tomllib.loads("\n".join(out))
+    assert doc["real"]["x"] == 1
+
+
+def test_repair_still_closes_a_genuinely_dropped_closer():
+    parts = ['doc = """', 'body text', 'tail end', '[real]', 'x = 1']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    assert '"""' in [l.strip() for l in out]
+    doc = tomllib.loads("\n".join(out))
+    assert doc["real"]["x"] == 1
+
+
+def test_repair_mints_the_close_before_a_later_strings_opener():
+    """A dropped closer followed by another string's intact opener: the
+    opener is a premature-close hazard — the minted close must precede it
+    or the body lines in between are stranded as bare text (invalid TOML)."""
+    parts = ['a = """', 'body', 'x = """', 'content # hash', 'tail"""', '[real]', 'k = 1']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    doc = tomllib.loads("\n".join(out))
+    assert doc["real"]["k"] == 1
+    assert doc["x"] == "content # hash\ntail"
+
+
+@pytest.mark.xfail(reason="irreducible: the scan cannot tell a dropped closer "
+    "followed by another string's opener from an intact string whose closer "
+    "line is assignment-shaped — both look identical at the header line",
+    strict=False)
+def test_repair_mints_before_an_opener_when_the_header_sits_inside_it():
+    parts = ['a = """', 'body', 'x = """', '[real]', 'k = 1', '"""', 'w = 2']
+    out = cc._toml_string_repair(parts, {"[real]"})
+    tomllib.loads("\n".join(out))  # must parse — no bare text lines
+
+
+def test_query_hit_settings_stay_under_their_restored_header():
+    """R-0069: selection kept the hit steps but dropped the ``[tasks]``
+    header and the multiline note; the fact restore then landed the
+    header AFTER the emitted steps and they parsed as root keys. The
+    restored output must seat every step back under ``[tasks]``."""
+    doc_lines = ["[tasks]",
+        'step1 = "do the first thing"',
+        'note = """',
+        "a long multiline note body line one",
+        "body line two with more detail",
+        '"""',
+        'step2 = "then do the second thing"',
+        'step3 = "finally do the third thing"']
+    noise = [
+        f'noise{i} = "filler text number {i} padding padding padding padding extra filler"'
+        for i in range(80)
+    ]
+    doc = "\n".join(noise + doc_lines)
+    out = cc.compress_context(doc, query="third thing", budget_ratio=0.05)
+    body = out.compressed_text.split("[CC-Retrieve")[0].replace("[…]", "").strip()
+    parsed = tomllib.loads(body)
+    tasks = parsed.get("tasks", {})
+    assert sorted(k for k in tasks if k.startswith("step")) == ["step1", "step2", "step3"]
+    assert not any(k.startswith("step") for k in parsed if k != "tasks")
+
+
+def test_citation_lines_are_not_scanned_for_delimiters():
+    """A ``[§hash]`` citation annotation embeds omitted content verbatim —
+    its quote runs (e.g. a trailing ``\"\"\"`` of an elided closer) are not
+    TOML delimiters. Scanning them toggles phantom string state and mints
+    stray closers after the intact string that follows."""
+    doc = "\n".join(
+        ["[sec0]", "arr0 = [1, 2, 3]", "arr1 = [1, 2, 3]", "[sec1]",
+         'key0 = "val0 padding padding padding padding"',
+         'ml1 = """',
+         "body text line 0 filler filler filler filler",
+         "body text line 1 filler filler filler filler",
+         "body text line 2 filler filler filler filler",
+         '"""',
+         'key2 = "val2 padding padding padding padding"',
+         'key3 = "val3 padding padding padding padding"',
+         'ml4 = """',
+         "body text line 0 filler filler filler filler",
+         '"""',
+         "[sec2]",
+         'ml0 = """',
+         "body text line 0 filler filler filler filler",
+         "body text line 1 filler filler filler filler",
+         '"""',
+         'key1 = "val1 padding padding padding padding"',
+         'key2 = "val2 padding padding padding padding"',
+         "arr3 = [1, 2, 3]",
+         'ml4 = """',
+         "body text line 0 filler filler filler filler",
+         "body text line 1 filler filler filler filler",
+         '"""']
+    )
+    out = cc.compress_context(doc, query="body", budget_ratio=0.05)
+    txt = out.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        l for l in txt.split("\n")
+        if not l.startswith(("[§", "[…", "[×", "[last"))
+    )
+    tomllib.loads(cleaned)  # must parse — no stray minted closers
+
+
+def test_citation_at_a_mid_string_drop_triggers_the_close():
+    """A citation annotation emitted mid-string marks where lines were
+    dropped — when the string's closer went with them, the repair must
+    mint the close at the citation, not at the end of the extract. The
+    annotation's quoted fragments are text: even an embedded triple quote
+    is never a closer, and the keys after it must survive as keys."""
+    parts = ['ml4 = """', '[§3049a1ba] "body text"…"""""', "[sec2]", "key = 1"]
+    out = cc._toml_string_repair(parts, set())
+    assert out.index('"""') == 1  # minted right before the citation
+    body = "\n".join(l for l in out if not l.strip().startswith("[§"))
+    parsed = tomllib.loads(body)
+    assert parsed["sec2"]["key"] == 1
+
+
+def test_a_content_line_starting_with_the_citation_shape_scans_normally():
+    """Inside a multiline string a line can genuinely start with ``[§`` —
+    it is content, not an annotation. When it carries the string's real
+    closer the repair must leave the span untouched: skipping the scan
+    used to miss the close and mint a stray trailing delimiter."""
+    parts = ['ml = """', '[§ content line """', "next = 1"]
+    out = cc._toml_string_repair(parts, set())
+    assert out == parts  # no minted closers anywhere
+    parsed = tomllib.loads("\n".join(out))
+    assert parsed["next"] == 1
+    assert parsed["ml"] == "[§ content line "
+
+
+def test_a_header_comment_triple_is_never_the_string_closer():
+    """A known section header is drop evidence by definition — it cannot
+    be string content, so a triple quote inside its trailing comment is
+    coincidental text, not the closer. Treating it as one leaves the
+    header inside the string: the close lands mid-line, the header never
+    takes effect, and its keys parse into the previous table (or the
+    extract stops parsing at all)."""
+    hdr = '[tbl1] # note with """ inside'
+    parts = ["[tbl0]", 'ml = """', "body text", hdr, "key = 1"]
+    out = cc._toml_string_repair(parts, {hdr})
+    assert out.index('"""') == 3  # minted right before the header
+    parsed = tomllib.loads("\n".join(out))
+    assert parsed["tbl1"]["key"] == 1
+
+
+def test_a_header_text_repeated_in_string_content_defers_the_close():
+    """A plain header is unique in valid TOML, so when its text appears
+    again later in the extract the earlier copy inside a string must be
+    content. Closing there mints the delimiter too early: the content
+    line becomes a second table declaration and the extract is invalid.
+    The close now fires only at the last occurrence."""
+    parts = ["[tbl0]", 'ml = """', "body", "  [tbl1]  ", "more body", "[tbl1]", "key = 1"]
+    out = cc._toml_string_repair(parts, {"[tbl1]"})
+    parsed = tomllib.loads("\n".join(out))
+    assert parsed["tbl1"]["key"] == 1
+    assert "[tbl1]" in parsed["tbl0"]["ml"]  # the content copy stays string body
+def test_restored_line_never_emitted_twice_end_to_end():
+    """A protected line that is also an outcome line reaches ``_restored_block``
+    from both pools — one original line restores once, and the section header
+    its setting needs is exempt from the floor's displacement eviction."""
+    toml = "\n".join([
+        "[root]", 'name = "app"', "",
+        "[[deps]]", 'lib = "a"', "ver = 1", "",
+        "[[deps]]", 'lib = "b"', "ver = 2", 'extra = "gone"', "",
+        "[deps.serve]", "port = 1", "",
+    ])
+    text = toml + "\n".join(
+        f"other topic line {i} words words" for i in range(300)
+    )
+    res = cc.compress_context(text, "extra gone", **OPTS)
+    out = res.compressed_text
+    assert out.count("port = 1") == 1
+    assert "[deps.serve]" in out
+    assert out.index("[deps.serve]") < out.index("port = 1")
+    assert "[root]" in out
+
+
+def test_restored_block_dedupes_one_source_line():
+    """``_restored_block`` emits each original line once: two entries that
+    resolve to the same source line (a bounded form and the verbatim one)
+    produce a single restore."""
+    from tameru.compress_context import _restored_block
+    header_of = {"k = 1": "[t]"}
+    oi = {"k = 1": 3}
+    out = _restored_block("x = 0", ["k = 1", "k = 1"], header_of, oi)
+    assert out.count("k = 1") == 1
+    assert out.count("[t]") == 1
+
+def test_segmentation_keeps_a_multiline_string_span_in_one_block():
+    """Selection is block-atomic, so a multiline string split across blocks
+    can emit a partial span: the opener alone is an unterminated string that
+    swallows the rest of the extract, and bare body lines are not valid TOML
+    statements. Blank lines and shape changes inside the span must not split
+    the block — the same contract fences already have."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    lines = (
+        'ml = """\nbody alpha filler\n\nbody beta with blank line above\n'
+        '"""\n[sec1]\nkey2 = "value2 filler filler filler"'
+    ).split("\n")
+    blocks = cc.segment_blocks(lines)
+    span = [b for b in blocks if 'ml = """' in b["text"]]
+    assert len(span) == 1
+    assert '"""' in span[0]["text"].split("\n")[-1] or span[0]["text"].count('"""') >= 2
+    assert "body beta" in span[0]["text"]
+
+
+def test_a_multiline_opener_never_emits_without_its_span():
+    """End to end: at a tight budget the whole span rides its one block —
+    the extract never strands the opener as an unterminated string."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    doc = (
+        'ml = """\nmlbody0 filler filler filler filler filler\n'
+        'mlbody1 filler filler filler filler filler\n"""\n'
+        '[sec1]\nkey0 = "value0 filler filler filler filler filler filler"\n'
+        'key2 = "value2 filler filler filler filler filler filler"\n'
+        '[sec2]\nkey0 = "value0 filler filler filler filler filler filler"\n'
+        'key2 = "value2 filler filler filler filler filler filler"\n'
+        'ml = """\nmlbody0 filler filler filler filler filler\n'
+        'mlbody2 filler filler filler filler filler\n"""'
+    )
+    r = cc.compress_context(doc, "value2", budget_ratio=0.05, **OPTS)
+    txt = r.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        ln for ln in txt.split("\n")
+        if not ln.startswith(("[§", "[…", "[×", "[last")))
+    if 'ml = """' in cleaned:
+        tomllib.loads(cleaned)  # raises when an opener is stranded
+
+
+DQ = chr(34) * 3
+SQ = chr(39) * 3
+
+
+def test_segmentation_tracks_the_first_triple_kind_on_the_line():
+    'A triple-single-quoted value whose opening line also holds a double-quote triple opens a LITERAL string: the first triple by position wins and the other kind is content. Tracking the double quotes instead closed the block early at the next body triple, splitting the span.'
+    lines = ["x = " + SQ + "has " + DQ + " embedded", "body " + DQ + " line", "more", SQ, "next = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] >= 3
+
+
+def test_segmentation_sees_a_second_opener_on_the_closing_line():
+    'An array element can close one multiline string and open another on the same line. Missing the reopen ends the string tracking early, so the body lines of the second string become bare code lines no TOML parser accepts.'
+    lines = ["arr = [" + DQ + "a" + DQ + ", " + DQ, "body", DQ + "]", "next = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] >= 2
+
+
+def test_segmentation_does_not_split_settings_off_the_span_block():
+    'The block holding a multiline span is not closed at the end of the string: trailing settings keep gluing to it, so a tight budget cannot keep a setting while dropping the table header the span block carries, and the ownership of the setting never changes.'
+    lines = ["[tbl0]", "ml = " + DQ, "body", DQ, "keyhit = 1"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[0]["start"] == 0 and blocks[0]["end"] == 4
+
+
+def test_a_triple_in_the_closing_lines_comment_opens_nothing():
+    'A multiline closer can carry a trailing comment, and triple quotes inside it are comment text. Treating one as an opener leaves the scan inside a phantom string, so every later table glues into the same block and pinning one setting can block compression of the document.'
+    lines = ["[tbl0]", "ml = " + DQ, "body", DQ + " # done " + DQ, "key = 1", "[tbl1]", "x = 2"]
+    blocks = cc.segment_blocks(lines)
+    assert blocks[-1]["start"] >= 5, blocks  # [tbl1] starts its own block
+
+
+def test_a_content_quote_adjacent_to_the_close_opens_no_phantom_string():
+    'TOML lets one or two content quotes sit right against the closing delimiter. The leftover quote must not lex as a fresh single-line string — it would consume the first quote of a real multiline opener later on the line (an array of multiline elements), inverting the open state for the rest of the document.'
+    lines = ["arr = [" + DQ + "a" + DQ + '", ' + DQ, "body", DQ + "]", "next = 1"]
+    st = None
+    states = []
+    for ln in lines:
+        st = cc._advance_multiline_state(ln, st)
+        states.append(st)
+    assert states == [DQ, DQ, None, None], states
+
+
+def test_python_adjacent_concatenation_does_not_eat_the_next_strings_opener():
+    'Python adjacent-literal concatenation puts a new strings opening quote right against the triple closer. That quote is fresh code — in TOML a close can only be followed by a comma, bracket, comment or line end, so the content-quote consumption must not fire for other followers.'
+    line = "x = " + DQ + "x" + DQ + '"y" ' + DQ
+    assert cc._advance_multiline_state(line, None) == DQ
+    # TOML followers still consume the content quote
+    line2 = "arr = [" + DQ + "a" + DQ + '", ' + DQ
+    assert cc._advance_multiline_state(line2, None) == DQ
+def test_a_two_event_fold_keeps_a_protected_last_instance():
+    """A template folding to ``[xN]`` emits ``[last]`` only at three or
+    more — but the exemplar substitution trusts that marker to carry the
+    protected instance when it IS the last one. At exactly two events the
+    protected second instance vanished entirely. The marker now emits at
+    two whenever the protected instance would otherwise be lost."""
+    base = "uploading chunk {} of payload to staging bucket"
+    first, second = base.format(1000), base.format(1001)
+    lines = ["ctx filler filler filler filler filler", first, second,
+             "tail filler filler filler filler"]
+    token = cc._OUTCOME_PROTECTED.set(frozenset({second}))
+    try:
+        out = cc.preprocess_logs(lines, "ctx")
+    finally:
+        cc._OUTCOME_PROTECTED.reset(token)
+    assert any("1001" in ln for ln in out), out
+    # without protection a two-event fold must stay marker-only
+    plain = cc.preprocess_logs(lines, "ctx")
+    assert not any(ln.startswith("[last] ") for ln in plain), plain
+def test_floor_eviction_never_drops_a_section_header():
+    """The savings-floor eviction scores lines, not structure: ties break by
+    position, so a kept block's ``[[deps]]`` header evicted before its own
+    settings — orphaning them at the document root, where two entries'
+    ``name`` keys collided and strict TOML parsers reject the extract."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    doc = (
+        '[[deps]]\nname = "pkg0 padding padding padding padding"\n'
+        'field0 = "val0 filler filler filler filler filler"\n'
+        '[[deps]]\nname = "pkg1 padding padding padding padding"\n'
+        'field0 = "val0 filler filler filler filler filler"\n'
+        '[[deps]]\nfield0 = "val0 filler filler filler filler filler"\n'
+        '[deps.serve]\nport = 8002\n'
+        'host = "localhost filler filler filler filler"'
+    )
+    r = cc.compress_context(doc, "pkg1", budget_ratio=0.3, **OPTS)
+    txt = r.compressed_text.split("[CC-Retrieve")[0]
+    cleaned = "\n".join(
+        ln for ln in txt.split("\n")
+        if not ln.startswith(("[§", "[…", "[×", "[last"))
+    )
+    parsed = tomllib.loads(cleaned)  # raises when a header orphan collides
+    # No setting of any array entry may surface at the document root.
+    assert "name" not in parsed
+    assert "field0" not in parsed
+    for entry in parsed.get("deps", []):
+        assert isinstance(entry, dict)
+
+
+def test_floor_eviction_never_splits_a_multiline_string_span():
+    """Eviction walks tied lines in position order and can stop mid-span: a
+    dropped opener strands its body as bare text under a bare closer, and a
+    dropped closer leaves the opener unterminated — either way strict TOML
+    parsers reject the extract. Span lines are never eviction candidates."""
+    tomllib = pytest.importorskip("tomllib")  # 3.11+; CI also runs 3.10
+    original = (
+        '[x]\ndesc = """\nbody one filler\nbody two filler\n"""\nk = 1\n'
+        '[y]\nport = 8002\nhost = "localhost filler filler"'
+    )
+    compressed = '[x]\ndesc = """\nbody one filler\nbody two filler\n"""\nk = 1'
+    scored = [
+        {"id": 0, "score": 0.1,
+         "text": 'desc = """\nbody one filler\nbody two filler\n"""\nk = 1',
+         "entity_hits": 0, "term_hits": 0},
+    ]
+    facts = [
+        (6, "port", "8002", "port = 8002"),
+        (7, "host", "localhost filler filler", 'host = "localhost filler filler"'),
+    ]
+    out = cc._apply_fact_floor(
+        compressed=compressed, facts=facts, query="port", budget_chars=None,
+        scored=scored, kept_ids={0}, min_savings_ratio=0.99,
+        original_text=original,
+    )
+    tomllib.loads(out)  # raises when the span is dismembered
+    # The eviction may only touch k = 1 — every line of the span survives.
+    for ln in ('desc = """', "body one filler", "body two filler", '"""'):
+        assert ln in out
+
+
+def test_floor_eviction_never_splits_a_fenced_code_span():
+    """A dropped fence opener strands bare code under a bare closer — a
+    mutilated block presented as verbatim. Fenced spans are load-bearing as
+    a set, exactly like multiline strings."""
+    original = (
+        '[x]\nnote = "example:"\n```\ncode line one filler\n'
+        'code line two filler\n```\nk = 1\n[y]\nport = 8002'
+    )
+    compressed = (
+        '[x]\nnote = "example:"\n```\ncode line one filler\n'
+        'code line two filler\n```\nk = 1'
+    )
+    scored = [
+        {"id": 0, "score": 0.1,
+         "text": 'note = "example:"\n```\ncode line one filler\n'
+                 'code line two filler\n```\nk = 1',
+         "entity_hits": 0, "term_hits": 0},
+    ]
+    facts = [(8, "port", "8002", "port = 8002")]
+    out = cc._apply_fact_floor(
+        compressed=compressed, facts=facts, query="port", budget_chars=None,
+        scored=scored, kept_ids={0}, min_savings_ratio=0.99,
+        original_text=original,
+    )
+    assert "```\ncode line one filler\ncode line two filler\n```" in out
+
+
+def test_restored_opener_joins_its_surviving_array_entry():
+    """A ``[[x]]`` element whose ``v = \"\"\"`` opener was dropped but whose
+    ``w = 2`` survived keeps the value in the SAME element — minting a second
+    ``[[x]]`` splits one element's fields across two."""
+    before = '[[x]]\nv = """\nbody\n"""\nw = 2'
+    oi = {ln: i for i, ln in enumerate(before.split("\n"))}
+    lh = {}
+    cc._line_scopes(before, lh)
+    out = cc._restored_block('[[x]]\nw = 2', ['v = """'], lh, oi, before.split("\n"))
+    tomllib = pytest.importorskip("tomllib")
+    assert tomllib.loads(out) == {"x": [{"w": 2, "v": "body\n"}]}
+    # A dead entry still restores as its own element.
+    out2 = cc._restored_block('w = 2', ['v = """'], lh, oi, before.split("\n"))
+    assert tomllib.loads(out2) == {"w": 2, "x": [{"v": "body\n"}]}
