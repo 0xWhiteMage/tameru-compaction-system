@@ -1261,6 +1261,26 @@ def test_wrapped_colored_pinned_blocks_compare_in_the_rendered_spelling():
     assert "\x1b" not in result.compressed_text
 
 
+def test_pin_patterns_match_the_ansi_free_spelling_the_caller_reads():
+    """A colour reset inside a visible phrase must not hide it from a pin:
+    rendering strips the same control bytes, so the pin would otherwise offer
+    no protection while the fold rewrites the repeated source lines."""
+    import re
+    from tameru import compress_context as cc
+
+    pin = "INFO worker processed a batch of events ok"
+    colored = "\n".join(["\x1b[31mINFO\x1b[0m worker processed a batch of events ok"] * 160)
+    protected = cc._neutralize_forged_markers(cc.strip_ansi(cc._norm_newlines(colored)))
+    assert cc._source_pin_texts(protected, [re.escape(pin)], 0, match_text=colored)
+
+    result = cc.compress_context(
+        colored, "unrelated question", pin_patterns=[re.escape(pin)], ccr=False, citations=False,
+    )
+    assert not result.fail_open
+    assert result.compressed_text.count(pin) > 1
+    assert not result.compressed_text.startswith("[×160]")
+
+
 def test_wrapped_colored_facts_are_not_restored_twice():
     import json
     from tameru import compress_context as cc

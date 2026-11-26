@@ -6545,14 +6545,16 @@ def _source_pin_texts(
         # CR-authored pin can match the raw payload while an LF-authored pin
         # can match the newline-normalized rendering. Match the two
         # representations the payload genuinely has here: its raw decoded
-        # spelling and the newline-normalized rendering. Do not synthesize
-        # other newline dialects: ``.`` matches a bare CR even though it
-        # rejects LF, so a synthetic CR view would invent matches the caller's
-        # regex does not license. Likewise, never rewrite the regex itself.
-        match_views = [match_text]
-        normalized_match = _norm_newlines(match_text)
-        if normalized_match != match_text:
-            match_views.append(normalized_match)
+        # spelling, the ANSI-free spelling a terminal user reads, and their
+        # newline-normalized renderings. Do not synthesize other newline
+        # dialects: ``.`` matches a bare CR even though it rejects LF, so a
+        # synthetic CR view would invent matches the caller's regex does not
+        # license. Likewise, never rewrite the regex itself.
+        match_views = []
+        for view in (match_text, strip_ansi(match_text)):
+            for candidate in (view, _norm_newlines(view)):
+                if candidate not in match_views:
+                    match_views.append(candidate)
         pinned = set()
         if expressions:
             protected_starts = [block['start'] for block in blocks]
