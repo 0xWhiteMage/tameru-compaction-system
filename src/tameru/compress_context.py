@@ -14502,7 +14502,8 @@ def _thin_text_lines(text: str, max_lines: int, *, from_end: bool = False) -> st
     lines = text.split("\n")
     if len(lines) <= max_lines:
         return text
-    kept = lines[-max_lines:] if from_end else lines[:max_lines]
+    selectable = lines[:-1] if from_end and lines and not lines[-1] else lines
+    kept = selectable[-max_lines:] if from_end else selectable[:max_lines]
     return "\n".join(kept)
 
 
@@ -14807,7 +14808,10 @@ def compress_context(
         sample = _huge_sample(
             full_text, max_blocks=(limits or IndustrialLimits()).max_blocks,
             max_lines=(limits or IndustrialLimits()).max_lines)
-        if not strip_ansi(sample).strip():
+        if not any(
+            row.strip() and row.strip() != "[...]"
+            for row in strip_ansi(sample).splitlines()
+        ):
             est = _estimate_tokens(full_text)
             return CompressResult(
                 compressed_text=full_text, original_tokens=est, kept_tokens=est,

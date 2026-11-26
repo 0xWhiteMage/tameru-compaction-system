@@ -205,7 +205,7 @@ def test_huge_whitespace_sample_fails_open_instead_of_erasing_input(monkeypatch)
 
     big = "ordinary filler line with several words\n" * 50_001
     assert len(big) > _HUGE_CHARS
-    monkeypatch.setattr(cc, "_huge_sample", lambda *args, **kwargs: "\n\n")
+    monkeypatch.setattr(cc, "_huge_sample", lambda *args, **kwargs: "\n[...]\n")
     res = compress_context(big, "ordinary filler", ccr=False, citations=False)
     assert res.fail_open
     assert res.compressed_text == big
@@ -398,6 +398,14 @@ def test_huge_edge_trim_never_erases_nonempty_edges():
     assert tail_out.endswith("closing fact")
     assert head_out
     assert tail_out
+
+
+def test_huge_tail_line_trim_skips_the_terminal_empty_field():
+    # A newline-terminated tail's final split field is empty. Spending the last
+    # row budget on that sentinel discards the closing diagnosis entirely.
+    from tameru.compress_context import _thin_text_lines
+
+    assert _thin_text_lines("closing diagnosis\n", 1, from_end=True) == "closing diagnosis"
 
 
 def test_huge_error_sample_respects_record_block_limit():
