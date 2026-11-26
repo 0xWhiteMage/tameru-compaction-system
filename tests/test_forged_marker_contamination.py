@@ -1269,6 +1269,8 @@ def test_canceled_osc_sequences_do_not_swallow_visible_log_lines():
     for cancel in ("\x18", "\x1a"):
         raw = "\x1b]0;aborted" + cancel + "\nERROR visible\n\x07after"
         assert "ERROR visible" in strip_ansi(raw)
+        split_phrase = "INFO \x1b]0;aborted" + cancel + "worker processed"
+        assert strip_ansi(split_phrase) == "INFO worker processed"
 
 
 def test_multiline_osc_titles_do_not_disable_raw_ansi_pins():

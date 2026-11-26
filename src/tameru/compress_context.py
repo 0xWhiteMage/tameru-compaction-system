@@ -5598,7 +5598,7 @@ def preprocess_flat_records(text: str, query: str) -> str:
 
 
 _ANSI_RE = re.compile(
-    r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b\x18\x1a]*(?:\x07|\x1b\\)"
+    r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b\x18\x1a]*(?:\x07|\x1b\\|[\x18\x1a])"
 )
 _TEST_SUMMARY_RE = re.compile(r"Tests\s+\d+\s+passed", re.IGNORECASE)
 _TEST_FILE_NOISE_RE = re.compile(
