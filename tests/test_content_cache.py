@@ -246,6 +246,23 @@ def test_huge_one_line_tool_json_does_not_recurse():
     assert res.compressed_text
 
 
+def test_huge_error_excerpt_redacts_before_clipping():
+    from tameru.compress_context import _huge_error_excerpt
+
+    secret = "abc1234567890xyz"
+    line = f'password="{secret}" ' + "x" * 2030 + " ERROR core failure " + "y" * 5_000
+    assert secret[-8:] in _huge_error_excerpt(line)  # the clipping hazard itself
+    redacted = _huge_error_excerpt(line, redact_secrets=True)
+    assert secret[-8:] not in redacted
+
+
+def test_huge_error_excerpt_matches_case_without_unicode_offset_shift():
+    from tameru.compress_context import _huge_error_excerpt
+
+    line = "İ" * 2_100 + " ERROR core failure " + "x" * 5_000
+    assert "ERROR core failure" in _huge_error_excerpt(line)
+
+
 def test_huge_sample_decline_returns_original():
     # When the sampled pass declines, the fail-open contract is the caller's
     # whole text — a partial sample is never it (red-team fail_open_identity).

@@ -119,6 +119,7 @@ _HUGE_ERR_MARKERS = (
     "error", "traceback", "exception", "errno", "denied",
     "failed", "fatal", "panic", "stderr", "assert",
 )
+_HUGE_ERR_RE = re.compile("|".join(re.escape(mark) for mark in _HUGE_ERR_MARKERS), re.IGNORECASE)
 
 # Shape of CompressResult for hosts: 4 since 1.10.0 (query_specific; schema 3 added
 # fact_lines_dropped; schema 2 added confidence_basis, stable_key, dropped, result_schema, preset).
@@ -14385,26 +14386,25 @@ def redact_secrets_in(text: str) -> str:
     return text
 
 
-def _huge_error_excerpt(line: str) -> str:
+def _huge_error_excerpt(line: str, *, redact_secrets: bool = False) -> str:
     """Bound one error-matching line while keeping its first marker visible."""
+    if len(line) > _HUGE_ERR_LINE_CHARS and redact_secrets:
+        # Clipping can otherwise cut a credential assignment into a shape the
+        # output redaction pass no longer recognizes.
+        line = redact_secrets_in(line)
     if len(line) <= _HUGE_ERR_LINE_CHARS:
         return line
-    low = line.lower()
-    matches = [
-        (pos, len(mark))
-        for mark in _HUGE_ERR_MARKERS
-        if (pos := low.find(mark)) >= 0
-    ]
-    if not matches:
+    match = _HUGE_ERR_RE.search(line)
+    if match is None:
         return line[:_HUGE_ERR_LINE_CHARS]
-    pos, mark_len = min(matches)
+    pos, mark_len = match.start(), match.end() - match.start()
     start = max(0, pos - (_HUGE_ERR_LINE_CHARS - mark_len) // 2)
     end = min(len(line), start + _HUGE_ERR_LINE_CHARS)
     start = max(0, end - _HUGE_ERR_LINE_CHARS)
     return line[start:end]
 
 
-def _huge_sample(text: str) -> str:
+def _huge_sample(text: str, *, redact_secrets: bool = False) -> str:
     """Streaming head/tail + error-line sample for inputs over ``_HUGE_CHARS`` (S7).
 
     One deterministic pass: fixed-size edges, every middle line matching a cheap
@@ -14416,12 +14416,20 @@ def _huge_sample(text: str) -> str:
     for line in text[edge:len(text) - edge].splitlines():
         low = line.lower()
         if any(mark in low for mark in _HUGE_ERR_MARKERS):
-            excerpt = _huge_error_excerpt(line)
+            excerpt = _huge_error_excerpt(line, redact_secrets=redact_secrets)
             errs.append(excerpt)
             total += len(excerpt) + 1
     if total > _HUGE_ERR_CHARS and errs:
         step = max(1, round(total / _HUGE_ERR_CHARS))
-        errs = errs[::step]
+        strided = errs[::step]
+        bounded: list[str] = []
+        used = 0
+        for excerpt in strided:
+            cost = len(excerpt) + 1
+            if used + cost <= _HUGE_ERR_CHARS:
+                bounded.append(excerpt)
+                used += cost
+        errs = bounded
     mid = "\n".join(errs)
     # Join with "[...]" (three ASCII dots), never "[…]": the unicode-ellipsis shape
     # is what the forged-marker defense rewrites, so joining with it either emitted
@@ -14570,7 +14578,7 @@ def compress_context(
                 keep_ratio=1.0, fail_open=True, reasons=["too_large"],
                 confidence=0.0, confidence_basis="none", query_specific=q_specific,
             )
-        sample = _huge_sample(full_text)
+        sample = _huge_sample(full_text, redact_secrets=redact_secrets)
         res = compress_context(
             sample, query, mode=mode, budget_ratio=budget_ratio, ccr=ccr,
             cache_prefix=cache_prefix, citations=citations, ccr_dir=ccr_dir,
