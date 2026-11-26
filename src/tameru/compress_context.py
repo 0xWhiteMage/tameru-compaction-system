@@ -8298,7 +8298,7 @@ def _match_fold(text: str) -> str:
 @content_memo("evidence_blob", max_chars=_MEMO_MAX_CHARS, version=lambda: ENGINE_VERSION)
 def _evidence_blob(text: str) -> str:
     """``_match_fold(text)`` without its trust-risk lines. Injection-shaped text is never evidence: a key that only
-    an ``ignore previous instructions`` line holds is not present, and such a line never counts as kept."""
+    an instruction-override line holds is not present, and such a line never counts as kept."""
     folded = _match_fold(text)
     if _TRUST_RISK_RE.search(_normalise_instruction_text(folded)) is None:
         return folded
@@ -8318,7 +8318,7 @@ def _source_keys(query: str, blob: str) -> list[str]:
 
 
 _QUERY_TERM_CAP = 24
-_IDENTIFIER_RE = re.compile(r"[_./:-]|"+chr(92)+chr(92))
+_IDENTIFIER_RE = re.compile(r"[_./:-]|\\")
 
 
 def _prune_query(query: str, source: str) -> str:
@@ -14366,8 +14366,8 @@ def _huge_sample(text: str) -> str:
     if total > _HUGE_ERR_CHARS and errs:
         step = max(1, round(total / _HUGE_ERR_CHARS))
         errs = errs[::step]
-    mid = chr(10).join(errs)
-    return (chr(10) + chr(91) + chr(8230) + chr(93) + chr(10)).join(part for part in (head, mid, tail) if part)
+    mid = "\n".join(errs)
+    return "\n[…]\n".join(part for part in (head, mid, tail) if part)
 
 
 def compress_context(
