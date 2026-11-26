@@ -3,6 +3,7 @@ compression nor sail through the extract looking like engine structure.
 Marker-DOMINATED input is still a compressed artifact and no-ops."""
 
 try:
+    import tomllib
 except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
