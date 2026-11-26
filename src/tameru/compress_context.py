@@ -13850,7 +13850,7 @@ def _compress_context_impl(
     # The decoded body (and the analysis_text fallback) can still carry a
     # marker-shaped span — the floors restore lines verbatim, so they must
     # come from the same marker-free copy the working text uses.
-    protected_source = strip_ansi(_neutralize_forged_markers(_norm_newlines(protected_source)))
+    protected_source = _neutralize_forged_markers(strip_ansi(_norm_newlines(protected_source)))
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
