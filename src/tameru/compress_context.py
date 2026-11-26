@@ -13939,7 +13939,10 @@ def _compress_context_impl(
                     requested_mode=requested_mode,
                 )
             tool_payload = cleaned_payload
-    text = _norm_newlines(tool_payload.inner)
+    # JSON-decoded control bytes are payload text too: the outer strip ran before
+    # decoding, when they were still spelled ``\u001b``. Keep the working copy in
+    # the same ANSI-free spelling plain tool output already uses.
+    text = strip_ansi(_norm_newlines(tool_payload.inner))
     if payload_industrial is not None and payload_industrial.applied:
         text = payload_industrial.text
     if artifact_contaminated:

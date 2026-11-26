@@ -1244,6 +1244,23 @@ def test_colored_pinned_blocks_compare_in_the_rendered_spelling():
     assert "\x1b" not in result.compressed_text
 
 
+def test_wrapped_colored_pinned_blocks_compare_in_the_rendered_spelling():
+    import json
+    import re
+    from tameru import compress_context as cc
+
+    inner = "\x1b[31m## Target\x1b[0m\nsecret evidence\n\n" + "".join(
+        f"noise line {i} with ordinary words\n" for i in range(200)
+    )
+    envelope = json.dumps({"content": inner, "exit_code": 0})
+    result = cc.compress_context(
+        envelope, "noise", pin_patterns=[re.escape("secret evidence")], ccr=False, citations=False,
+    )
+    assert not result.fail_open
+    assert "## Target\nsecret evidence" in result.compressed_text
+    assert "\x1b" not in result.compressed_text
+
+
 def test_plain_crlf_payload_pins_match_the_raw_caller_text(monkeypatch):
     import re
     from tameru import compress_context as cc
