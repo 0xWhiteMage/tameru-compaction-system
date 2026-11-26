@@ -12677,17 +12677,15 @@ def _apply_pins(
         _pin_res = compile_pin_patterns(pin_patterns)
         for b in scored:
             text = b["text"]
-            # Pins are written against the caller's spelling. The working copy
-            # neutralizes marker brackets into fullwidth characters, so compare
-            # the inverse-normalized form as well as the emitted text.
-            denormalized = (
-                text.translate(_BRACKET_DENORM)
-                if any(mark in text for mark in ("［", "］", "《", "》"))
-                else text
+            # Neutralized pinned lines are recorded exactly; inverse-normalizing
+            # arbitrary fullwidth caller text here would make an ASCII pin match
+            # text it never matched in the source.
+            pinned_lines = _PINNED_LINES.get()
+            pinned_line_hit = bool(pinned_lines) and any(
+                line in pinned_lines or strip_ansi(line) in pinned_lines
+                for line in text.split("\n")
             )
-            if _pin_res is None or any(
-                rx.search(text) or rx.search(denormalized) for rx in _pin_res
-            ):
+            if _pin_res is None or pinned_line_hit or any(rx.search(text) for rx in _pin_res):
                 b["score"] = max(b["score"], 999.0)
                 b["pinned"] = True
 
@@ -13800,7 +13798,7 @@ def _compress_context_impl(
     # The decoded body (and the analysis_text fallback) can still carry a
     # marker-shaped span — the floors restore lines verbatim, so they must
     # come from the same marker-free copy the working text uses.
-    protected_source = _neutralize_forged_markers(protected_source)
+    protected_source = _neutralize_forged_markers(_norm_newlines(protected_source))
     # One split shared by both protection passes (S7): the fact memo and the break
     # scan each used to split the same text — a second line-objects copy at 1M.
     protected_lines = protected_source.split("\n")
@@ -13847,7 +13845,7 @@ def _compress_context_impl(
     # Pin texts compare against the neutralized decoded payload — the shape the
     # renderer emits — while the patterns match the caller-visible decoded
     # spelling, never the JSON serialization or the already-neutralized copy.
-    pin_match_text = protected_payload.inner
+    pin_match_text = _norm_newlines(protected_payload.inner)
     if artifact_contaminated:
         pin_match_text = _strip_artifact_noise(pin_match_text, noise_res)
     source_pin_texts = _source_pin_texts(

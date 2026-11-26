@@ -1053,8 +1053,36 @@ def test_apply_pins_matches_the_caller_spelling_of_neutralized_markers():
     from tameru import compress_context as cc
 
     blocks = [{"id": 0, "text": "［tameru: status］ important evidence", "score": 0.0}]
-    cc._apply_pins(pin_patterns=[re.escape("[tameru: status]")], pin_recent=0, scored=blocks)
+    token = cc._PINNED_LINES.set(frozenset({blocks[0]["text"]}))
+    try:
+        cc._apply_pins(pin_patterns=[re.escape("[tameru: status]")], pin_recent=0, scored=blocks)
+    finally:
+        cc._PINNED_LINES.reset(token)
     assert blocks[0]["pinned"] is True
+
+    unrelated = [{"id": 0, "text": "［tameru: status］ important evidence", "score": 0.0}]
+    cc._apply_pins(pin_patterns=[re.escape("[tameru: status]")], pin_recent=0, scored=unrelated)
+    assert "pinned" not in unrelated[0]
+
+
+def test_wrapped_payload_pins_are_normalized_to_the_rendered_line_endings(monkeypatch):
+    import json
+    import re
+    from tameru import compress_context as cc
+
+    inner = "café important evidence\r\n" + "routine noise\r\n" * 3
+    envelope = json.dumps({"content": inner})
+    seen = {}
+    real = cc._source_pin_texts
+
+    def capture(text, patterns, recent, **kwargs):
+        seen["text"] = text
+        seen.update(kwargs)
+        return real(text, patterns, recent, **kwargs)
+
+    monkeypatch.setattr(cc, "_source_pin_texts", capture)
+    cc.compress_context(envelope, "routine", pin_patterns=[re.escape("café important evidence")], ccr=False, citations=False)
+    assert "\r" not in seen["text"] and "\r" not in seen["match_text"]
 
 
 def test_json_payload_pins_match_the_decoded_caller_text(monkeypatch):
