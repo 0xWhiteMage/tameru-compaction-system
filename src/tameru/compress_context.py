@@ -14557,11 +14557,18 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     # thinned evenly as well. Eight reserved rows cover the seam markers with
     # slack for the surrounding empty rows.
     seam_reserve = 8
-    if _line_count(head) + _line_count(tail) + seam_reserve > resolved_max_lines:
-        edge_budget = max(0, resolved_max_lines - seam_reserve)
+    err_line_reserve = (
+        min(len(errs), max(1, resolved_max_lines // 4))
+        if errs and resolved_max_lines >= 4 else 0
+    )
+    edge_budget = max(0, resolved_max_lines - seam_reserve - err_line_reserve)
+    if _line_count(head) + _line_count(tail) > edge_budget:
         if head and tail:
-            head_budget = edge_budget // 2
-            tail_budget = edge_budget - head_budget
+            head_lines = _line_count(head)
+            tail_lines = _line_count(tail)
+            head_budget = min(head_lines, edge_budget // 2)
+            tail_budget = min(tail_lines, edge_budget - head_budget)
+            head_budget = min(head_lines, edge_budget - tail_budget)
         elif head:
             head_budget, tail_budget = edge_budget, 0
         else:
@@ -14584,11 +14591,28 @@ def _huge_sample(text: str, max_blocks: int | None = None, max_lines: int | None
     if max_blocks is None:
         max_blocks = IndustrialLimits().max_blocks
     # Blocks never outnumber lines, so the common long-line case skips the extra
-    # segmentation pass. When record-shaped lines cross the line count, count the
-    # shape the recursive pass will actually segment and thin error lines first;
-    # each removal keeps endpoint coverage instead of truncating the log's tail.
+    # segmentation pass. Over that count, reserve the same quarter of the block
+    # budget for middle errors that the byte sampler gives them. Without the
+    # reservation, dense edge records can consume the whole ceiling and erase
+    # every error the middle sample was meant to carry.
     if len(sample.split("\n")) <= max_blocks:
         return sample
+    err_reserve = min(len(errs), max(1, max_blocks // 4)) if errs and max_blocks >= 4 else 0
+    edge_budget = max(1, max_blocks - err_reserve)
+    base_sample = _join_huge_sample(head, [], tail)
+    base_blocks = _huge_sample_block_count(base_sample)
+    for _ in range(8):
+        if base_blocks <= edge_budget or (not head and not tail):
+            break
+        head, tail = _trim_huge_edges(head, tail, base_blocks - edge_budget + 1)
+        base_sample = _join_huge_sample(head, [], tail)
+        base_blocks = _huge_sample_block_count(base_sample)
+
+    # Measure the full sample before spending any error rows. In prose-like logs
+    # several errors can share one block, so a one-block-per-row allowance would
+    # thin rows that already fit; the reconciliation below removes only measured
+    # overflow while preserving endpoint coverage.
+    sample = _join_huge_sample(head, errs, tail)
     blocks = _huge_sample_block_count(sample)
     for _ in range(8):
         over = blocks - max_blocks
