@@ -10,7 +10,7 @@ belongs, how to run everything, the rules every pull request must follow, and ho
 ```bash
 python -m pytest -q                              # the test suite (about two minutes)
 python scripts/check_host_rules.py               # the host restrictions
-python scripts/check_attribution.py --base origin/v1.10.0   # substitute your PR's target branch; accepts noreply addresses or local mappings in contributors/emails/
+python scripts/check_attribution.py --base origin/main   # substitute your PR's target branch; accepts noreply addresses or local mappings in contributors/emails/
 ```
 
 ---
@@ -89,7 +89,7 @@ pip install -e ".[dev]"
 
 The optional `semantic` extra (`pip install -e ".[semantic]"`) is not needed for the engine or for the default tests.
 
-For a release-specific checkout, use the immutable 1.10.0 commit in the [install guide](README.md#install); cloning the default branch gives the 1.10.0 development line. Do not build or run the sealed engine split or the corpus holdout during routine development.
+For a release-specific checkout, use the immutable 1.10.0 commit in the [install guide](README.md#install); cloning the default branch gives the current development line on `main`. Do not build or run the sealed engine split or the corpus holdout during routine development.
 
 ### Run the checks
 
@@ -97,7 +97,7 @@ For a release-specific checkout, use the immutable 1.10.0 commit in the [install
 |---|---|---|
 | `python -m pytest -q --ignore-glob='*test_engine_bench*.py' --ignore=tests/test_session_corpus.py --ignore=tests/test_s5_diagnose.py --ignore=tests/test_determinism.py` | Routine tests, excluding engine-benchmark and corpus/diagnosis tests. Add `-k name` or a file path for a quick loop. | every change |
 | `python scripts/check_host_rules.py` | [Host restrictions](docs/HOST-RESTRICTIONS.md). `--list` shows every finding. | every change |
-| `python scripts/check_attribution.py --base origin/v1.10.0` | Accepts noreply addresses or local mappings in `contributors/emails/`; substitute your PR's target branch. | before you push |
+| `python scripts/check_attribution.py --base origin/main` | Accepts noreply addresses or local mappings in `contributors/emails/`; substitute your PR's target branch. | before you push |
 | `python benchmarks/compare.py --verify-against benchmarks/comparison-v<version>.json` | The engine's outputs, savings and retention still match the recorded report (timings are not compared). | any change that can alter output |
 | `TAMERU_WRITE_GOLDEN=1 python -m pytest tests/test_golden_compress_context.py` | Regenerates the golden hashes. **Only when the output is meant to change**, and review the diff of `tests/golden/compress_context.json` like code. | intended output changes |
 
