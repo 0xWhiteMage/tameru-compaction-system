@@ -479,6 +479,23 @@ def test_huge_dense_edges_keep_middle_error_coverage():
     assert sum(line.startswith("error=value") for line in sample.splitlines()) >= 200
 
 
+def test_huge_dense_edge_budget_includes_the_middle_error_seam():
+    # In record-shaped samples every ``[...]`` join is itself a block. The base
+    # edge fit already measures the edge join, but restoring a nonempty middle
+    # adds a second join; spending that row from the error reserve drops the
+    # last of two otherwise-reserved errors.
+    from tameru.compress_context import _HUGE_CHARS, _HUGE_EDGE_CHARS, _huge_sample, segment_blocks
+
+    edge_unit = "edge=" + "e" * 20 + "\n"
+    head = (edge_unit * (_HUGE_EDGE_CHARS // len(edge_unit) + 2))[:_HUGE_EDGE_CHARS]
+    filler_len = _HUGE_CHARS - 2 * len(head) + 1_000
+    big = head + "\nerror=alpha\n" + "f" * filler_len + "\nerror=omega\n" + head
+    sample = _huge_sample(big, max_blocks=50, max_lines=250_000)
+    assert len(segment_blocks(sample.split("\n"))) <= 50
+    assert "error=alpha" in sample
+    assert "error=omega" in sample
+
+
 def test_huge_grouped_errors_are_not_thinned_when_they_fit():
     from tameru.compress_context import _HUGE_EDGE_CHARS, _huge_sample
 
