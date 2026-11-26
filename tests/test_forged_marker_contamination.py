@@ -2,6 +2,10 @@
 compression nor sail through the extract looking like engine structure.
 Marker-DOMINATED input is still a compressed artifact and no-ops."""
 
+try:
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
 from tameru.compress_context import _neutralize_forged_markers, compress_context
 
 
@@ -681,7 +685,6 @@ def test_an_escaped_backslash_does_not_hide_a_triple_closer():
     # single-char ``(?<!\\)`` lookbehind rejects it, so the mask stays open
     # and the following header is skipped: a dropped ``[other]`` line would
     # restore under the wrong table. tomllib closes the string.
-    import tomllib
     from tameru import compress_context as cc
     esc = chr(92)
     after = "x = \"\"\"" + esc + esc + '"""' + "\n[other]\nkeep_v = 1"
@@ -706,7 +709,6 @@ def test_an_escaped_quote_before_the_closer_does_not_hide_it():
     # matched ``"""`` on the escaped quote, the parity check rejected it,
     # and the consumed match ate two of the closer's quotes, so the closer
     # was never seen: the header after it read as string content.
-    import tomllib
     from tameru import compress_context as cc
     esc = chr(92)
     after = "x = \"\"\"" + "\nbody" + esc + '""""' + "\n[other]\nkeep_v = 1"
@@ -758,7 +760,6 @@ def test_literal_opener_with_double_quotes_inside_restores_its_body():
     # ``note = '''it's \"""`` — the literal opens FIRST; the ``"""`` later
     # in the line is its content. Giving ``"""`` priority tracked a basic
     # string, so the replay restored the opener without its body/closer.
-    import tomllib
     from tameru import compress_context as cc
     esc = chr(92)
     after = (
