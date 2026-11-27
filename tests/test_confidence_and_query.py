@@ -187,3 +187,69 @@ def test_kind_marker_receives_structural_kinds():
     compress_context.compress_context(text, "order=9912", gap_marker=marker, ccr=False, citations=False)
     from tameru.markers import GAP_KINDS
     assert seen and set(seen) <= set(GAP_KINDS)
+
+
+def test_confidence_caps_when_output_contradicts_itself():
+    # A stale value surviving beside its replacement is the worst compression
+    # outcome — silently wrong — so the reported confidence must not claim
+    # success when the output carries both spellings of one setting.
+    def scene(i, torus):
+        return (f"--- scene state report {i} ---\n"
+                "objects: cube at (0, 0, 0), camera at (7, -7, 5)\n"
+                f"gold_torus position: {torus}\n"
+                + "\n".join(f"obj.prop_{j} = {(i * j) % 100}" for j in range(30)))
+    parts = [scene(1, "(1.0, 2.0, 3.0)")]
+    for i in range(2, 13):
+        parts.append(scene(i, "(1.0, 2.0, 3.0)"))
+    parts.append(scene(13, "(5.5, 2.0, 3.0)"))
+    parts.append(scene(14, "(5.5, 2.0, 3.0)") + "\nERROR final render ok")
+    text = "\n\n".join(parts)
+    r = compress_context.compress_context(
+        text, "where is the gold torus now", ccr=False, citations=False)
+    out = r.compressed_text or ""
+    if "gold_torus position: (1.0, 2.0, 3.0)" in out and "gold_torus position: (5.5, 2.0, 3.0)" in out:
+        assert r.confidence <= 0.5, f"contradictory output reported confidence {r.confidence}"
+        assert "value_contradiction" in (r.reasons or [])
+
+
+def test_value_contradiction_scanner_case_matrix():
+    # The discriminator matrix the review loop established: traps must flag,
+    # stream shapes must not. Each pair is (text, flagged).
+    from tameru.compress_context import _output_value_contradictions as scan
+    cases = [
+        ("gold_torus position: (1.0, 2.0, 3.0)\ngold_torus position: (5.5, 2.0, 3.0)", True),
+        ("gold_torus position: (1.0, 2.0, 3.0)\n  gold_torus position: (1.0, 2.0, 3.0)\ngold_torus position: (5.5, 2.0, 3.0)", True),
+        ("2025-03-14T02:00:01Z INFO picked job id=aaa\n2025-03-14T02:00:01Z INFO picked job id=aaa\n2025-03-14T02:05:22Z INFO picked job id=bbb", False),
+        ("order id=ORD-111 status=paid\norder id=ORD-111 status=paid\norder id=ORD-222 status=paid", False),
+        ("endpoint = https://x/?a=1\nendpoint = https://x/?b=2", True),
+        ("2025-03-14 position: (1,2,3)\n2025-03-15 position: (4,5,6)", False),
+        ("2025-03-14 position: (1,2,3)\n2025-03-14 position: (4,5,6)", True),
+        ("2025-03-14T02:00 key state=on\n2025-03-14T02:00 key state=on\n2025-03-14T02:30 key state=off", False),
+        ("[2025-03-14] position: (1,2,3)\n2025-03-14 position: (4,5,6)", True),
+        ("order id=ORD-111 status = paid\norder id=ORD-222 status = paid", False),
+        ("order id=ORD-111,status=paid\norder id=ORD-222,status=paid", False),
+        ("order id=ORD-1 labels[region]=us\norder id=ORD-2 labels[region]=eu", False),
+        ("endpoint = https://x/?a=1,b=2\nendpoint = https://x/?a=1,b=3", True),
+        ("order id=ORD-1,url=https://x/?a=1\norder id=ORD-2,url=https://x/?a=2", False),
+        ("filter = price = 5\nfilter = price = 9", True),
+        ("ValueError: bad state 1\nValueError: bad state 2", False),
+        ("Traceback (most recent call last):\nValueError: bad state 1\nTypeError: other thing", False),
+        ("water_level: 12\nwater_level: 16", True),
+        ("status: Permission denied\nstatus: Success", True),
+        ("WARNING:root: ValueError: bad state 1\nWARNING:root: ValueError: bad state 2", False),
+        ("debug: false\ndebug: true", True),
+        ("validation_error: false\nvalidation_error: true", True),
+        ("error: timeout\nerror: connection refused", False),
+        ("error: 502\nerror: 404", False),
+        ("the mesh render completes (id=af123)\nthe export fails midway (id=bf456)", False),
+        ("render complete id=af123\nexport failed id=bf456", False),
+        ("AssertionError: True\nAssertionError: False", False),
+        ("error: true\nerror: false", True),
+        ("NO_PROXY = " + "a" * 450 + "\nNO_PROXY = " + "b" * 450, True),
+        ("continueOnError: true\ncontinueOnError: false", True),
+        ("Exception: True\nException: False", False),
+        ("Copy.ContinueOnError: true\nCopy.ContinueOnError: false", False),
+        ("Copy.continueOnError: true\nCopy.continueOnError: false", True),
+    ]
+    for text, want in cases:
+        assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"
