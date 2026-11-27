@@ -225,6 +225,9 @@ def test_value_contradiction_scanner_case_matrix():
         ("2025-03-14 position: (1,2,3)\n2025-03-15 position: (4,5,6)", False),
         ("2025-03-14 position: (1,2,3)\n2025-03-14 position: (4,5,6)", True),
         ("2025-03-14T02:00 key state=on\n2025-03-14T02:00 key state=on\n2025-03-14T02:30 key state=off", False),
+        ("[2025-03-14] position: (1,2,3)\n2025-03-14 position: (4,5,6)", True),
+        ("order id=ORD-111 status = paid\norder id=ORD-222 status = paid", False),
+        ("order id=ORD-111,status=paid\norder id=ORD-222,status=paid", False),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"

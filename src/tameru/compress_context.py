@@ -1631,14 +1631,17 @@ def _output_value_contradictions(text: str) -> int:
         # one date are the redefinition the scan exists for.
         date = _CONTRA_DATE_RE.match(probe)
         if date is not None:
-            key = " ".join((date.group(0) + " " + key).split())
-        # A value carrying a further whitespace-separated `key=value` field is
-        # a multi-field event row (`order id=ORD-1 status=paid` parses the
-        # tail as one value), not a scalar restatement of one entity —
-        # repetition and variety are what such rows do, so they never testify.
-        # A scalar URL query (`https://x/?a=1`) has no whitespace before its
-        # `=`, so it still testifies.
-        if re.search(r"\s\S{1,40}=", value):
+            digits = re.search(r"\d{4}-\d{2}-\d{2}", date.group(0))
+            key = " ".join((digits.group(0) + " " + key).split())
+        # A value carrying a further separated `key=value` field is a
+        # multi-field event row (`order id=ORD-1 status=paid` parses the tail
+        # as one value), not a scalar restatement of one entity — repetition
+        # and variety are what such rows do, so they never testify. The
+        # separator is whitespace or a comma, the field name word-shaped, and
+        # the equals sign may itself be spaced (`status = paid`). A scalar
+        # URL query (`https://x/?a=1`) has neither separator before its `=`,
+        # so it still testifies.
+        if re.search(r"[\s,][\w.\-]{1,60}\s*=", value):
             continue
         values.setdefault(key, set()).add(value)
     return sum(1 for vals in values.values() if len(vals) > 1)
