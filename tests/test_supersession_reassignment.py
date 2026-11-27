@@ -611,7 +611,7 @@ def test_same_named_methods_in_different_classes_are_distinct_scopes():
 
 def test_a_dedented_assignment_leaves_the_function_scope():
     kv = supersession._assignments("def f():\n    retry_budget = 1\nretry_budget = 9")
-    assert any(k.startswith("fn f\x1f") for k in kv)
+    assert any(k.startswith("fn def f\x1f") for k in kv)
     assert any("\x1f" not in k for k in kv)
 
 
@@ -626,11 +626,11 @@ def test_flush_left_multiline_string_keeps_the_function_scope():
         "    beta_val = 2\ndef g():\n    beta_val = 9"
     )
     kv = supersession._assignments(text)
-    assert "fn f\x1fbeta_val|=|    " in kv
-    assert "fn g\x1fbeta_val|=|    " in kv
+    assert "fn def f\x1fbeta_val|=|    " in kv
+    assert "fn def g\x1fbeta_val|=|    " in kv
     scopes = supersession._line_scopes(text)
-    assert scopes["    beta_val = 2"].endswith("fn f")
-    assert scopes["    beta_val = 9"].endswith("fn g")
+    assert scopes["    beta_val = 2"].endswith("fn def f")
+    assert scopes["    beta_val = 9"].endswith("fn def g")
 
 
 def test_a_line_inside_a_multiline_string_mints_no_assignment():
@@ -647,7 +647,7 @@ def test_flush_left_comment_mentioning_triple_quotes_opens_no_string():
     kv = supersession._assignments(
         'def f():\n    alpha_val = 1\n# see """docs"""\ndef g():\n    beta_val = 9'
     )
-    assert "fn g\x1fbeta_val|=|    " in kv
+    assert "fn def g\x1fbeta_val|=|    " in kv
 
 
 def test_comment_quotes_after_a_closer_do_not_reopen_the_string():
@@ -655,8 +655,8 @@ def test_comment_quotes_after_a_closer_do_not_reopen_the_string():
         'def f():\n    doc = """a"""  # note """x\n    beta_val = 2\n'
         'def g():\n    beta_val = 9'
     )
-    assert "fn f\x1fbeta_val|=|    " in kv
-    assert "fn g\x1fbeta_val|=|    " in kv
+    assert "fn def f\x1fbeta_val|=|    " in kv
+    assert "fn def g\x1fbeta_val|=|    " in kv
 
 
 def test_a_block_holding_a_multiline_value_is_not_pure():
@@ -828,3 +828,98 @@ def test_triple_state_run_closes_a_single_literal_first():
     # A run of the other quote kind stays literal content.
     assert _triple_state(None, "x = 'a'''b'''") == "'''"
     assert _triple_state(None, "x = 'a\"b'") is None
+
+
+def test_spaced_key_reassignment_supersedes():
+    """A key with interior spaces (`gold_torus position`) is a common shape in
+    state-of-scene reports and prose-adjacent config. The assignment regex
+    rejected the space, so reassignment supersession never fired for such keys
+    even in pure blocks."""
+    from tameru import supersession
+    newer = "gold_torus position: (5.5, 2.0, 3.0)"
+    older = "gold_torus position: (1.0, 2.0, 3.0)"
+    assert supersession._supersedes(newer, older, newer_is_later=True)
+    # Direction comes only from the caller's position knowledge: with unknown
+    # order a bare reassignment never supersedes.
+    assert not supersession._supersedes(newer, older, newer_is_later=None)
+
+
+def test_spaced_key_prose_labels_stay_out():
+    """The distinctive-key gate still decides: a spaced prose label without
+    `_`/`.`/`-` (`the result is: wrong`) never parses as a definition."""
+    from tameru.supersession import _assignments_tracked, _scope_state
+    assert _assignments_tracked("the result is: wrong", _scope_state(None)) == {}
+    assert _assignments_tracked("effects: none", _scope_state(None)) == {}
+    tracked = _assignments_tracked("gold_torus position: (1, 2, 3)", _scope_state(None))
+    assert len(tracked) == 1
+
+
+def test_spaced_key_block_supersession_end_to_end():
+    """A pure spaced-key block falls when a later kept block reassigns the key."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "gold_torus position: (1.0, 2.0, 3.0)"},
+        {"id": 1, "text": "gold_torus position: (5.5, 2.0, 3.0)"},
+    ]
+    kept = apply_supersession(scored, {0, 1})
+    assert kept == {1}
+
+
+def test_severity_prefixed_lines_are_not_settings():
+    """`INFO worker_pool: started` is a log event row, not a definition — a
+    key opening with an uppercase severity token never parses, so sibling
+    log entries cannot supersede each other."""
+    from tameru.supersession import _assignments_tracked, _scope_state
+    for line in ("INFO worker_pool: started", "ERROR payment_gateway: timeout",
+                 "DEBUG core_loop: iteration 5"):
+        assert _assignments_tracked(line, _scope_state(None)) == {}
+
+
+def test_double_spaced_keys_parse():
+    from tameru.supersession import _assignments_tracked, _scope_state
+    assert len(_assignments_tracked("gold_torus  position: (1,2,3)", _scope_state(None))) == 1
+
+
+def test_spaced_yaml_parents_scope_their_fields():
+    """The same field name under two different spaced YAML parents is two
+    different settings — neither may supersede the other."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "worker pool:\n  worker_count: 3"},
+        {"id": 1, "text": "copier pool:\n  worker_count: 5"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}
+
+
+def test_yaml_parents_are_case_sensitive():
+    """`Worker Pool:` and `worker pool:` are different YAML mappings — the
+    same field under each is a different setting and neither supersedes."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "Worker Pool:\n  worker_count: 3"},
+        {"id": 1, "text": "worker pool:\n  worker_count: 5"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}
+
+
+def test_class_declarations_are_code_not_yaml_parents():
+    """`class Widget:` is parent-shaped once spaced keys are admitted, but it
+    is a code scope: two same-named class bodies never supersede each other."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "class Widget:\n  cache_size = 5"},
+        {"id": 1, "text": "class widget:\n  cache_size = 9"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}
+
+
+def test_function_keyword_is_part_of_the_scope():
+    """`func worker` (Go) and `method worker` are different declarations from
+    each other and from `def worker` — collapsing every non-class kind to one
+    `fn` scope merged their bodies into one imagined reassignment history."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "func worker:\n  worker_count: 3"},
+        {"id": 1, "text": "method worker:\n  worker_count: 5"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}

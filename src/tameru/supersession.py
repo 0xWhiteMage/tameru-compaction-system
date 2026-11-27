@@ -47,8 +47,13 @@ _SUPERSESSION_MARKERS = (
 # semantics where the last definition wins (``timeout_ms = 30000`` then
 # ``timeout_ms = 5000``). No prose marker is required because the
 # reassignment itself is the marker.
+# Keys may carry interior spaces (`gold_torus position`) — a common shape
+# for state-of-scene reports and prose-adjacent config. The distinctive-key
+# gate is what keeps prose labels out: a spaced key still needs `_`/`.`/`-`
+# or uppercase for the colon form, so `the result is: x` never parses as a
+# definition while `gold_torus position: (1, 2, 3)` does.
 _ASSIGN_RE = re.compile(
-    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
+    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*(?: +[A-Za-z0-9_./\-]+)*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
 )
 # A "parent" line scopes the assignments nested under it: an INI/TOML
 # section header (``[database]``) or a YAML mapping key on its own line
@@ -57,7 +62,7 @@ _ASSIGN_RE = re.compile(
 # alone dropped the earlier section's live value.
 _PARENT_RE = re.compile(
     r"^\s*(?:\[\[?\s*(?P<ini>(?:\"[^\"]*\"|'[^']*'|[^\[\]\"']|\"(?![^\"]*\")|'(?![^']*'))+)\s*\]?\]\s*(?:[;#].*)?"
-    r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:\s*(?:#.*)?)$"
+    r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*(?: +[A-Za-z0-9_./\-]+)*)\s*:\s*(?:#.*)?)$"
 )
 # A line past this length is never a section header or a bare mapping
 # parent — and per-line regex work on it is bounded.
@@ -309,7 +314,18 @@ def _distinctive_key(key: str, op: str) -> bool:
         return False
     if op == "=" and k in _GENERIC_EQ_KEYS:
         return False
-    if op == ":" and "_" not in k and "." not in k and "-" not in k \
+    # A key opening with an uppercase severity token is a log prefix —
+    # `INFO worker_pool: started` is an event row, not a definition.
+    first = key.split(None, 1)[0] if key.split() else ""
+    if first in {"INFO", "ERROR", "WARN", "WARNING", "DEBUG", "TRACE",
+                 "FATAL", "CRITICAL", "PANIC", "NOTICE"}:
+        return False
+    # A spaced key is prose unless it carries technical punctuation —
+    # `gold_torus position` is a state-report field, but the word run in
+    # `ERROR payment gateway timeout order=991` is a log line's prefix and
+    # must never parse as a definition. Colon keys need the same evidence:
+    # `effects: none` is a sentence.
+    if (op == ":" or " " in key) and "_" not in k and "." not in k and "-" not in k \
             and not key.isupper():
         return False
     return True
@@ -491,10 +507,18 @@ def _advance(state: list, line: str) -> str | None:
         return "ini"
     while state[1] and state[1][-1][0] >= indent:
         state[1].pop()
-    if pm:
+    # A class declaration is code, not a YAML mapping: with spaced keys
+    # admitted, `class Widget:` is parent-shaped, and reading it as YAML
+    # both hides the code scope and scopes the body under a fabricated
+    # setting parent. The funcdef check wins over the parent shape.
+    if pm and _FUNC_DEF_RE.match(line) is None:
         state[0] = ""
-        state[1].append((indent, pm["yaml"].casefold()))
+        # YAML keys are case-sensitive, so the parent keeps its spelling:
+        # `Worker Pool:` and `worker pool:` are different mappings.
+        state[1].append((indent, pm["yaml"]))
         return "yaml"
+    elif pm:
+        pm = None
     fm = _FUNC_DEF_RE.match(line)
     if fm is not None:
         # A code scope — a function or class body — bounds a local scope
@@ -504,7 +528,12 @@ def _advance(state: list, line: str) -> str | None:
         # ends it, ``def run`` in ``class A`` never merges with
         # ``def run`` in ``class B``, and the name keeps its case —
         # ``def Parse`` and ``def parse`` are different functions.
-        kind = "cls" if fm.group("kind") == "class" else "fn"
+        # The keyword is part of the scope: `func worker` (Go) and `method
+        # worker` are not the same declaration as Python's `def worker`,
+        # and collapsing every non-class kind to one `fn` scope merges
+        # their bodies into one imagined reassignment history.
+        kw = " ".join(fm.group("kind").split())
+        kind = "cls" if kw == "class" else "fn " + kw
         state[1].append((indent, kind + " " + fm.group("fn")))
         return "func"
     return None
@@ -802,7 +831,8 @@ def _line_scopes(
                 parents.pop()
             scopes[line] = section or "/".join(p for _i, p in parents)
             cur_header = ""
-            kind = "cls" if fm.group("kind") == "class" else "fn"
+            kw = " ".join(fm.group("kind").split())
+            kind = "cls" if kw == "class" else "fn " + kw
             parents.append((indent, kind + " " + fm.group("fn")))
             continue
         pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])
