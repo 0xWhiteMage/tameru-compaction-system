@@ -1100,7 +1100,10 @@ def _is_critical_line(line: str) -> bool:
 
 # Level-tagged error lines. Case-sensitive on purpose: "error" in prose is not
 # a log level, ERROR is.
-_ERR_LEVEL_RE = re.compile(r"\b(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)\b")
+# Uppercase level tokens; a trailing `_WORD` continuation still counts
+# (`ERROR_CODE`, `FATAL_ERROR`) — the underscore joins the level to its
+# classifier, it does not make the word benign. Plurals (`ERRORS`) stay out.
+_ERR_LEVEL_RE = re.compile(r"\b(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)(?:_\w+)?\b")
 _ERR_LEVEL_TAG_RE = re.compile(r"\[(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)\]")
 _ERR_STRUCT_LEVEL_RE = re.compile(
     r"(?:^|[\s{,])\"?(?:level|lvl|severity|log\.level)\"?\s*[=:]\s*\"?(?:error|err|fatal|critical|crit|panic|emerg|alert)\b",
@@ -1116,7 +1119,7 @@ _ERR_TRACEBACK = "Traceback (most recent call last)"
 # count.
 _ERR_NEGATED_RE = re.compile(
     r"\b0\s+(?:errors?|failures?|failed|fatals?)\b"
-    r"|\b(?:errors?|failures?|failed|fatals?|critical)\s*[=:]\s*0(?!\w|\.\d)",
+    r"|\b(?:errors?|failures?|failed|fatals?|critical)(?:_\w+)?\s*[=:]\s*0(?!\w|\.\d)",
     re.IGNORECASE,
 )
 _COUNT_PREFIX_RE = re.compile(r"^\s*\[(?:\u00d7\d+|last)\]\s*")
@@ -1169,11 +1172,17 @@ def _is_error_line(line: str) -> bool:
         return False
     s = _without_zero_counts(capped)
     # The exception head is anchored at the line start: look past a "[×N] "
-    # collapse prefix so the same failure keeps its key after a fold.
+    # collapse prefix so the same failure keeps its key after a fold, and
+    # past a pytest ``E `` margin — pytest indents the failure payload into
+    # ``E       AssertionError: …``, and that line is the error the whole
+    # traceback exists for.
     head = s
     prefix = _COUNT_PREFIX_RE.match(s)
     if prefix:
         head = s[prefix.end():]
+    pytest_e = re.match(r"^E[ \t]+", head)
+    if pytest_e is not None:
+        head = head[pytest_e.end():]
     return bool(
         _ERR_LEVEL_RE.search(s)
         or _ERR_EXC_RE.match(head)
