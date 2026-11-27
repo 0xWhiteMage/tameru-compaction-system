@@ -232,6 +232,8 @@ def test_value_contradiction_scanner_case_matrix():
         ("endpoint = https://x/?a=1,b=2\nendpoint = https://x/?a=1,b=3", True),
         ("order id=ORD-1,url=https://x/?a=1\norder id=ORD-2,url=https://x/?a=2", False),
         ("filter = price = 5\nfilter = price = 9", True),
+        ("ValueError: bad state 1\nValueError: bad state 2", False),
+        ("Traceback (most recent call last):\nValueError: bad state 1\nTypeError: other thing", False),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"
