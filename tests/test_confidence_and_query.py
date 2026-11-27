@@ -249,6 +249,7 @@ def test_value_contradiction_scanner_case_matrix():
         ("continueOnError: true\ncontinueOnError: false", True),
         ("Exception: True\nException: False", False),
         ("Copy.ContinueOnError: true\nCopy.ContinueOnError: false", False),
+        ("Copy.continueOnError: true\nCopy.continueOnError: false", True),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"

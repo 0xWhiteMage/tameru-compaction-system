@@ -1681,7 +1681,7 @@ def _output_value_contradictions(text: str) -> int:
         # …but the class name is capitalized — `continueOnError` is a
         # camelCase setting that merely ends in `Error`, while
         # `ValueError`/`foo.ValueError` are raise sites.
-        if re.match(r"^(?:\w+\.)*(?:[A-Z][\w.]*(?:Error|Exception)|Error|Exception)$", raw_head):
+        if re.match(r"^(?:\w+\.)*(?:[A-Z]\w*(?:Error|Exception)|Error|Exception)$", raw_head):
             continue
         boolean = value.casefold() in {
             "true", "false", "on", "off", "yes", "no", "enabled", "disabled",
