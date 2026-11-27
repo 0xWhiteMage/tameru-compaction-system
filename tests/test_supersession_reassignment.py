@@ -828,3 +828,38 @@ def test_triple_state_run_closes_a_single_literal_first():
     # A run of the other quote kind stays literal content.
     assert _triple_state(None, "x = 'a'''b'''") == "'''"
     assert _triple_state(None, "x = 'a\"b'") is None
+
+
+def test_spaced_key_reassignment_supersedes():
+    """A key with interior spaces (`gold_torus position`) is a common shape in
+    state-of-scene reports and prose-adjacent config. The assignment regex
+    rejected the space, so reassignment supersession never fired for such keys
+    even in pure blocks."""
+    from tameru import supersession
+    newer = "gold_torus position: (5.5, 2.0, 3.0)"
+    older = "gold_torus position: (1.0, 2.0, 3.0)"
+    assert supersession._supersedes(newer, older, newer_is_later=True)
+    # Direction comes only from the caller's position knowledge: with unknown
+    # order a bare reassignment never supersedes.
+    assert not supersession._supersedes(newer, older, newer_is_later=None)
+
+
+def test_spaced_key_prose_labels_stay_out():
+    """The distinctive-key gate still decides: a spaced prose label without
+    `_`/`.`/`-` (`the result is: wrong`) never parses as a definition."""
+    from tameru.supersession import _assignments_tracked, _scope_state
+    assert _assignments_tracked("the result is: wrong", _scope_state(None)) == {}
+    assert _assignments_tracked("effects: none", _scope_state(None)) == {}
+    tracked = _assignments_tracked("gold_torus position: (1, 2, 3)", _scope_state(None))
+    assert len(tracked) == 1
+
+
+def test_spaced_key_block_supersession_end_to_end():
+    """A pure spaced-key block falls when a later kept block reassigns the key."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "gold_torus position: (1.0, 2.0, 3.0)"},
+        {"id": 1, "text": "gold_torus position: (5.5, 2.0, 3.0)"},
+    ]
+    kept = apply_supersession(scored, {0, 1})
+    assert kept == {1}

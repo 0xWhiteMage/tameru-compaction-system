@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ---
 
 ## [1.10.0]
+- Fix: reassignment supersession now parses keys with interior spaces (`gold_torus position: (1, 2, 3)`) — the assignment regex's key charset excluded spaces, so a common state-report shape never tracked as a definition and a later corrected restatement could never supersede the stale one even in pure-assignment blocks; the distinctive-key gate still excludes prose labels, so `the result is: x` never parses as a definition. - Unreleased
 - Perf: huge-input block fitting reuses the already measured block list when no middle errors make the edge-only sample differ, chunked segmentation reuses pure per-row scans for repeated short rows, and forged-marker neutralization fast-paths rows without fence or bracket introducers, avoiding duplicate dense-log work on large multiline output. - Unreleased
 - Fix: huge-input block measurement now matches the recursive pass's ANSI-free, newline-normalized segmentation before any edge rows are trimmed, row-count-changing control bytes or carriage returns disable unsafe offset-based trimming, and invisible terminal-control padding cannot become the sole protected opening or closing anchor row. - Unreleased
 - Fix: huge-input block fitting now reserves the second `[...]` seam needed to reintroduce middle errors in record-shaped samples, so dense edges cannot spend that row from the error budget and drop the last reserved error. - Unreleased

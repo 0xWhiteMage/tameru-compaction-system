@@ -47,8 +47,13 @@ _SUPERSESSION_MARKERS = (
 # semantics where the last definition wins (``timeout_ms = 30000`` then
 # ``timeout_ms = 5000``). No prose marker is required because the
 # reassignment itself is the marker.
+# Keys may carry interior spaces (`gold_torus position`) — a common shape
+# for state-of-scene reports and prose-adjacent config. The distinctive-key
+# gate is what keeps prose labels out: a spaced key still needs `_`/`.`/`-`
+# or uppercase for the colon form, so `the result is: x` never parses as a
+# definition while `gold_torus position: (1, 2, 3)` does.
 _ASSIGN_RE = re.compile(
-    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
+    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*(?: [A-Za-z0-9_./\-]+)*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
 )
 # A "parent" line scopes the assignments nested under it: an INI/TOML
 # section header (``[database]``) or a YAML mapping key on its own line
@@ -309,7 +314,12 @@ def _distinctive_key(key: str, op: str) -> bool:
         return False
     if op == "=" and k in _GENERIC_EQ_KEYS:
         return False
-    if op == ":" and "_" not in k and "." not in k and "-" not in k \
+    # A spaced key is prose unless it carries technical punctuation —
+    # `gold_torus position` is a state-report field, but the word run in
+    # `ERROR payment gateway timeout order=991` is a log line's prefix and
+    # must never parse as a definition. Colon keys need the same evidence:
+    # `effects: none` is a sentence.
+    if (op == ":" or " " in key) and "_" not in k and "." not in k and "-" not in k \
             and not key.isupper():
         return False
     return True
