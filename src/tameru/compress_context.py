@@ -1588,6 +1588,7 @@ def _output_value_contradictions(text: str) -> int:
     """
     values: dict[str, set[str]] = {}
     texts: dict[str, set[str]] = {}
+    counts: dict[str, int] = {}
     for ln in text.split("\n"):
         # A collapse-marker line ("[×N] …", "[last] …") is an explicit sample of a
         # stream — the marker itself announces that other rows with other values
@@ -1602,16 +1603,24 @@ def _output_value_contradictions(text: str) -> int:
         key = " ".join(parts[0].casefold().split())
         value = " ".join(parts[1].split())
         values.setdefault(key, set()).add(value)
-        texts.setdefault(key, set()).add(ln)
-    # The count of DISTINCT line texts distinguishes a redefinition history from
-    # a record stream: rows of a stream differ from one another (timestamps,
-    # ids), so a record key carries many distinct texts, while a stale setting
-    # survives as a few identical copies of each spelling. The trap case is
-    # exactly high-occurrence — twelve copies of the stale line — so occurrence
-    # count must not exempt it.
+        # The text identity is whitespace-normalised: two spellings of one row
+        # that differ only in indentation or spacing are the same copy, so
+        # formatting cannot hide a conflict, and copies in differently indented
+        # sections count as the repetition they are.
+        norm = " ".join(ln.split())
+        texts.setdefault(key, set()).add(norm)
+        counts[norm] = counts.get(norm, 0) + 1
+    # A contradiction needs redundancy evidence: at least one copy of the key
+    # must survive twice byte-for-byte. Rows of a record stream differ from
+    # one another (timestamps, ids), so an extract that keeps a few distinct
+    # rows of one field shows variety, never a redefinition — only identical
+    # copies mark the lines as state snapshots rather than events, and it is
+    # state snapshots whose values can go stale. The trap case is exactly
+    # redundant — identical copies of the outdated spelling beside the
+    # corrected one.
     return sum(
         1 for key, vals in values.items()
-        if len(vals) > 1 and len(texts.get(key) or ()) <= 4
+        if len(vals) > 1 and any(counts.get(t, 0) > 1 for t in texts.get(key) or ())
     )
 
 
@@ -8865,16 +8874,24 @@ def _compute_confidence(
     ``none``: capped at 0.5. A fail-open result keeps the recall it was given (it returns the original)."""
     if fail_open:
         return recall
+    # A contradictory extract caps every basis, and the cap must live here
+    # rather than at one call site: the error-anchored rebase re-derives the
+    # confidence from error retention alone, so a contradiction a probe
+    # compression already capped would otherwise re-emerge at full confidence
+    # when the probe result is reused.
+    contradictory = bool(_output_value_contradictions(compressed))
     if basis in ("lexical", "tool_call"):
-        return recall
+        return min(recall, 0.5) if contradictory else recall
     if basis in ("structural", "anchored", "derived"):
         kept, total = _error_retention(original, compressed)
         if basis == "structural":
-            return _CONF_NO_ERRORS_STRUCTURAL if not total else min(_CONF_CAP_STRUCTURAL, kept / total)
-        if basis == "anchored":
-            return _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_ANCHORED, kept / total)
-        return _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_DERIVED, kept / total)
-    return min(_CONF_CAP_NONE, recall)
+            conf = _CONF_NO_ERRORS_STRUCTURAL if not total else min(_CONF_CAP_STRUCTURAL, kept / total)
+        elif basis == "anchored":
+            conf = _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_ANCHORED, kept / total)
+        else:
+            conf = _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_DERIVED, kept / total)
+        return min(conf, 0.5) if contradictory else conf
+    return min(min(_CONF_CAP_NONE, recall), 0.5) if contradictory else min(_CONF_CAP_NONE, recall)
 
 
 def _span_chars(lines: list[str], lo: int, hi: int) -> int:
