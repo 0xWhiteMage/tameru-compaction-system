@@ -237,6 +237,12 @@ def test_value_contradiction_scanner_case_matrix():
         ("water_level: 12\nwater_level: 16", True),
         ("status: Permission denied\nstatus: Success", True),
         ("WARNING:root: ValueError: bad state 1\nWARNING:root: ValueError: bad state 2", False),
+        ("debug: false\ndebug: true", True),
+        ("validation_error: false\nvalidation_error: true", True),
+        ("error: timeout\nerror: connection refused", False),
+        ("error: 502\nerror: 404", False),
+        ("the mesh render completes (id=af123)\nthe export fails midway (id=bf456)", False),
+        ("render complete id=af123\nexport failed id=bf456", False),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"

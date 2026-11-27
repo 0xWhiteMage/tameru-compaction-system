@@ -1628,6 +1628,13 @@ def _output_value_contradictions(text: str) -> int:
         # `2025-03-14T02:00:01Z …` does not.
         if _CONTRA_TS_RE.match(probe) is not None:
             continue
+        # Only an anchored assignment testifies. An inline `key=value` lifted
+        # out of prose (`the render completes (id=af123)`) is event metadata
+        # or a citation — each row's id differs because each row is a
+        # different event — never a restated setting.
+        rest = probe[_lead_ts_end(probe):]
+        if _FACT_ASSIGN_RE.match(rest) is None:
+            continue
         parts = _fact_parts(ln)
         if parts is None:
             continue
@@ -1644,7 +1651,14 @@ def _output_value_contradictions(text: str) -> int:
         # common case in tool output, so the key/value placement of the
         # evidence is the whole distinction.
         head = key.split(":", 1)[0].split()[0] if key.split() else ""
-        if (
+        # A boolean-literal value is setting-shaped, not event-shaped:
+        # `debug: false` beside `debug: true` is a redefined setting whose
+        # key merely shares a name with a log level, while `error: timeout`
+        # beside `error: refused` stays the stream it always was.
+        boolean = value.casefold() in {
+            "true", "false", "on", "off", "yes", "no", "enabled", "disabled",
+        }
+        if not boolean and (
             head in _CONTRA_LEVEL_KEYS
             or head.endswith("error")
             or head.endswith("exception")
