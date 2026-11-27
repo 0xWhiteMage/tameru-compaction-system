@@ -1637,11 +1637,16 @@ def _output_value_contradictions(text: str) -> int:
         # multi-field event row (`order id=ORD-1 status=paid` parses the tail
         # as one value), not a scalar restatement of one entity — repetition
         # and variety are what such rows do, so they never testify. The
-        # separator is whitespace or a comma, the field name word-shaped, and
-        # the equals sign may itself be spaced (`status = paid`). A scalar
-        # URL query (`https://x/?a=1`) has neither separator before its `=`,
-        # so it still testifies.
-        if re.search(r"[\s,][\w.\-]{1,60}\s*=", value):
+        # separator is whitespace or a comma, the field name word-shaped
+        # (bracketed subscripts like `labels[region]` included), and the
+        # equals sign may itself be spaced (`status = paid`). A value that is
+        # one URL token testifies regardless: query strings carry `=`, `&`
+        # and commas inside the single token (`https://x/?a=1,b=2`). A scalar
+        # value written with a spaced comparison of its own (`filter =
+        # price = 5`) is indistinguishable from a multi-field row at line
+        # level and stays a documented conservative miss — the exclusion
+        # asymmetry favours stream safety.
+        if not re.match(r"^\S+://\S+$", value) and re.search(r"[\s,][\w.\-\[\]]{1,60}\s*=", value):
             continue
         values.setdefault(key, set()).add(value)
     return sum(1 for vals in values.values() if len(vals) > 1)
