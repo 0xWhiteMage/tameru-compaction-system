@@ -230,6 +230,8 @@ def test_value_contradiction_scanner_case_matrix():
         ("order id=ORD-111,status=paid\norder id=ORD-222,status=paid", False),
         ("order id=ORD-1 labels[region]=us\norder id=ORD-2 labels[region]=eu", False),
         ("endpoint = https://x/?a=1,b=2\nendpoint = https://x/?a=1,b=3", True),
+        ("order id=ORD-1,url=https://x/?a=1\norder id=ORD-2,url=https://x/?a=2", False),
+        ("filter = price = 5\nfilter = price = 9", True),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"
