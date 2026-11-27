@@ -76,3 +76,24 @@ diagnostics never matched the level regex. Validation chain: fixed engine → er
 hermes ladder now carries the token line through the second prune. Zero-count classifier false positive
 (`ERROR_COUNT=0`) caught in review and fixed in the same PR. Once merged, the hermes/dsh vendored copies
 need a re-vendor for the chain to propagate.
+
+## R-0073 UPDATE — selection-side stale trap: full mechanism pinned, fix located
+
+Reproduced on main: 14 scene reports each restating `gold_torus position` (stale in reports 1-10,
+corrected in 11-14) — compression keeps BOTH values at confidence 1.0. Chain of causes:
+
+1. `_ASSIGN_RE` in supersession.py rejected keys with interior spaces — `gold_torus position` never
+   parsed as an assignment, so reassignment supersession could not fire at all. Fixed on branch
+   `whitemage/supersession-spaced-keys` (unpushed): key charset extended with bounded interior-space
+   groups; the distinctive-key gate still excludes prose labels. Verified: `_supersedes` now fires.
+2. Even with that fixed, the stale line survives: `apply_supersession` deletes only WHOLE blocks, and
+   only blocks where `_pure_assignments` holds — every line a header or distinctive assignment. Scene
+   reports are impure by construction (`scene report 3` title, non-distinctive keys like `objects:`),
+   and the impurity guard is correct: block deletion would silently lose unanalysed content.
+3. The real fix is LINE-level supersession: drop the superseded assignment line inside an impure block
+   when a later kept line reassigns the same distinctive key. The machinery exists — `_fact_superseded_in`
+   already implements exactly this veto for restore/floor paths (with orig_index ordering and
+   line_scopes); what is missing is a pass that applies the same veto to lines SELECTED for keep during
+   rendering. Insertion point: after `apply_supersession` in `_select_blocks` final pass, or in the
+   render filter beside the existing `_fact_superseded_in` call sites (lines ~3758-3807, 4084-4092).
+   Risk: moderate — line-level drops must respect fold markers, multiline values and pin protection.
