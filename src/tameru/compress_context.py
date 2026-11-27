@@ -1588,6 +1588,12 @@ _CONTRA_TS_RE = re.compile(
 
 # A bare date opener (no time-of-day): part of the record key, not a stream
 # prefix — see the scan below.
+# Anchored assignment without the 400-char value cap of `_FACT_ASSIGN_RE` —
+# the scan-only fallback for over-length settings. Same key charset.
+_CONTRA_LONG_ASSIGN_RE = re.compile(
+    rf"^[ \t]*(?:#|;|//|--)?[ \t]*(?P<key>{_FACT_KEY})[ \t]*(?:=>|->|=|:)[ \t]*(?P<value>\S[^\n]*)[ \t]*$"
+)
+
 _CONTRA_DATE_RE = re.compile(r"^\s*[\[(]?\d{4}-\d{2}-\d{2}(?![T ]\d)")
 
 
@@ -1631,13 +1637,24 @@ def _output_value_contradictions(text: str) -> int:
         # Only an anchored assignment testifies. An inline `key=value` lifted
         # out of prose (`the render completes (id=af123)`) is event metadata
         # or a citation — each row's id differs because each row is a
-        # different event — never a restated setting.
+        # different event — never a restated setting. The delimiter precheck
+        # is load-bearing twice over: rows without one cannot be assignments,
+        # and the key charset includes spaces, so the anchored regex
+        # backtracks quadratically on delimiter-free padded prose.
+        if "=" not in probe and ":" not in probe and "->" not in probe:
+            continue
         rest = probe[_lead_ts_end(probe):]
-        if _FACT_ASSIGN_RE.match(rest) is None:
+        if _CONTRA_LONG_ASSIGN_RE.match(rest) is None:
             continue
         parts = _fact_parts(ln)
         if parts is None:
-            continue
+            # _fact_parts caps the value at 400 chars; a longer anchored
+            # assignment still testifies — the cap is a regex-safety bound,
+            # not a statement that long settings cannot contradict.
+            long = _CONTRA_LONG_ASSIGN_RE.match(rest)
+            if long is None or _FACT_VALUE_ALNUM_RE.search(long.group("value")) is None:
+                continue
+            parts = (long.group("key"), long.group("value"))
         key = " ".join(parts[0].casefold().split())
         value = " ".join(parts[1].split())
         # Error evidence belongs to the key, never the value. A line whose
@@ -1651,10 +1668,18 @@ def _output_value_contradictions(text: str) -> int:
         # common case in tool output, so the key/value placement of the
         # evidence is the whole distinction.
         head = key.split(":", 1)[0].split()[0] if key.split() else ""
-        # A boolean-literal value is setting-shaped, not event-shaped:
+        raw_head = parts[0].split(":", 1)[0].split()[0] if parts[0].split() else ""
+        # A CamelCase `XxxError`/`XxxException` head is an exception class —
+        # never a setting — so its rows are events even when the message is a
+        # bare boolean (`AssertionError: True` beside `AssertionError: False`
+        # are two test failures, not one redefined setting). Lowercase
+        # error-shaped heads are ambiguous with snake_case settings, so for
+        # them a boolean-literal value is setting-shaped and testifies:
         # `debug: false` beside `debug: true` is a redefined setting whose
         # key merely shares a name with a log level, while `error: timeout`
         # beside `error: refused` stays the stream it always was.
+        if re.match(r"^\w*(?:Error|Exception)$", raw_head):
+            continue
         boolean = value.casefold() in {
             "true", "false", "on", "off", "yes", "no", "enabled", "disabled",
         }

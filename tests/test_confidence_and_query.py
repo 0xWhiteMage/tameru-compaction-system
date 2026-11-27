@@ -243,6 +243,9 @@ def test_value_contradiction_scanner_case_matrix():
         ("error: 502\nerror: 404", False),
         ("the mesh render completes (id=af123)\nthe export fails midway (id=bf456)", False),
         ("render complete id=af123\nexport failed id=bf456", False),
+        ("AssertionError: True\nAssertionError: False", False),
+        ("error: true\nerror: false", True),
+        ("NO_PROXY = " + "a" * 450 + "\nNO_PROXY = " + "b" * 450, True),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"
