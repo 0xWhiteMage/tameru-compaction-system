@@ -235,6 +235,8 @@ def test_value_contradiction_scanner_case_matrix():
         ("ValueError: bad state 1\nValueError: bad state 2", False),
         ("Traceback (most recent call last):\nValueError: bad state 1\nTypeError: other thing", False),
         ("water_level: 12\nwater_level: 16", True),
+        ("status: Permission denied\nstatus: Success", True),
+        ("WARNING:root: ValueError: bad state 1\nWARNING:root: ValueError: bad state 2", False),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"

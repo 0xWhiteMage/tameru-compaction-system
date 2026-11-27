@@ -1591,6 +1591,14 @@ _CONTRA_TS_RE = re.compile(
 _CONTRA_DATE_RE = re.compile(r"^\s*[\[(]?\d{4}-\d{2}-\d{2}(?![T ]\d)")
 
 
+# Log-level key heads marking a stream event in the contradiction scan —
+# logging-module severity prefixes and structured level fields.
+_CONTRA_LEVEL_KEYS = frozenset({
+    "error", "warning", "warn", "fatal", "critical", "panic", "info", "debug",
+    "trace", "level", "severity", "lvl",
+})
+
+
 def _output_value_contradictions(text: str) -> int:
     """Count output keys that survive with two or more distinct values.
 
@@ -1613,17 +1621,6 @@ def _output_value_contradictions(text: str) -> int:
     for ln in text.split("\n"):
         if ln.lstrip().startswith(("[\u00d7", "[last] ", "[first] ")):
             continue
-        # An error line is an event — each raise of one exception type is a
-        # distinct occurrence, so `ValueError: bad state 1` beside
-        # `ValueError: bad state 2` is a stream doing what streams do, never
-        # a restated setting. Untimestamped stderr is the common case in tool
-        # output; without this exemption every compressed exception trace
-        # reads as a contradiction. The test is the real error-line
-        # discriminator, not the hint regex: the hint matches `level` and
-        # `severity` as bare substrings, so `water_level: 12` would pass for
-        # an event and a genuine contradiction would go unseen.
-        if _is_error_line(ln):
-            continue
         probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
         # Stream evidence needs a real log prefix — a time-of-day, not a bare
         # date: a date opening a line keys a record more often than it stamps
@@ -1636,6 +1633,23 @@ def _output_value_contradictions(text: str) -> int:
             continue
         key = " ".join(parts[0].casefold().split())
         value = " ".join(parts[1].split())
+        # Error evidence belongs to the key, never the value. A line whose
+        # KEY is error-shaped is an event — each raise of one exception type
+        # is a distinct occurrence (`ValueError: bad state 1` beside
+        # `ValueError: bad state 2` is a stream doing what streams do), and a
+        # logging-module severity head (`WARNING:root: …`) is a stream prefix.
+        # Error TEXT in the value is the content of a restated setting:
+        # `status: Permission denied` beside `status: Success` is exactly the
+        # contradiction the scan exists for. Untimestamped stderr is the
+        # common case in tool output, so the key/value placement of the
+        # evidence is the whole distinction.
+        head = key.split(":", 1)[0].split()[0] if key.split() else ""
+        if (
+            head in _CONTRA_LEVEL_KEYS
+            or head.endswith("error")
+            or head.endswith("exception")
+        ):
+            continue
         # A bare date opening the line is part of the key, not a stream
         # prefix: `2025-03-14 position` and `2025-03-15 position` are
         # different records of a dated series, while two spellings under
