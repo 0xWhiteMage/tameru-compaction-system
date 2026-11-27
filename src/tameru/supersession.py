@@ -528,7 +528,12 @@ def _advance(state: list, line: str) -> str | None:
         # ends it, ``def run`` in ``class A`` never merges with
         # ``def run`` in ``class B``, and the name keeps its case —
         # ``def Parse`` and ``def parse`` are different functions.
-        kind = "cls" if fm.group("kind") == "class" else "fn"
+        # The keyword is part of the scope: `func worker` (Go) and `method
+        # worker` are not the same declaration as Python's `def worker`,
+        # and collapsing every non-class kind to one `fn` scope merges
+        # their bodies into one imagined reassignment history.
+        kw = " ".join(fm.group("kind").split())
+        kind = "cls" if kw == "class" else "fn " + kw
         state[1].append((indent, kind + " " + fm.group("fn")))
         return "func"
     return None
@@ -826,7 +831,8 @@ def _line_scopes(
                 parents.pop()
             scopes[line] = section or "/".join(p for _i, p in parents)
             cur_header = ""
-            kind = "cls" if fm.group("kind") == "class" else "fn"
+            kw = " ".join(fm.group("kind").split())
+            kind = "cls" if kw == "class" else "fn " + kw
             parents.append((indent, kind + " " + fm.group("fn")))
             continue
         pm = _PARENT_RE.match(line[:_MAX_HEADER_LINE])

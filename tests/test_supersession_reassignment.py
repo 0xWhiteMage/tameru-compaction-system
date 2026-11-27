@@ -611,7 +611,7 @@ def test_same_named_methods_in_different_classes_are_distinct_scopes():
 
 def test_a_dedented_assignment_leaves_the_function_scope():
     kv = supersession._assignments("def f():\n    retry_budget = 1\nretry_budget = 9")
-    assert any(k.startswith("fn f\x1f") for k in kv)
+    assert any(k.startswith("fn def f\x1f") for k in kv)
     assert any("\x1f" not in k for k in kv)
 
 
@@ -626,11 +626,11 @@ def test_flush_left_multiline_string_keeps_the_function_scope():
         "    beta_val = 2\ndef g():\n    beta_val = 9"
     )
     kv = supersession._assignments(text)
-    assert "fn f\x1fbeta_val|=|    " in kv
-    assert "fn g\x1fbeta_val|=|    " in kv
+    assert "fn def f\x1fbeta_val|=|    " in kv
+    assert "fn def g\x1fbeta_val|=|    " in kv
     scopes = supersession._line_scopes(text)
-    assert scopes["    beta_val = 2"].endswith("fn f")
-    assert scopes["    beta_val = 9"].endswith("fn g")
+    assert scopes["    beta_val = 2"].endswith("fn def f")
+    assert scopes["    beta_val = 9"].endswith("fn def g")
 
 
 def test_a_line_inside_a_multiline_string_mints_no_assignment():
@@ -647,7 +647,7 @@ def test_flush_left_comment_mentioning_triple_quotes_opens_no_string():
     kv = supersession._assignments(
         'def f():\n    alpha_val = 1\n# see """docs"""\ndef g():\n    beta_val = 9'
     )
-    assert "fn g\x1fbeta_val|=|    " in kv
+    assert "fn def g\x1fbeta_val|=|    " in kv
 
 
 def test_comment_quotes_after_a_closer_do_not_reopen_the_string():
@@ -655,8 +655,8 @@ def test_comment_quotes_after_a_closer_do_not_reopen_the_string():
         'def f():\n    doc = """a"""  # note """x\n    beta_val = 2\n'
         'def g():\n    beta_val = 9'
     )
-    assert "fn f\x1fbeta_val|=|    " in kv
-    assert "fn g\x1fbeta_val|=|    " in kv
+    assert "fn def f\x1fbeta_val|=|    " in kv
+    assert "fn def g\x1fbeta_val|=|    " in kv
 
 
 def test_a_block_holding_a_multiline_value_is_not_pure():
@@ -909,5 +909,17 @@ def test_class_declarations_are_code_not_yaml_parents():
     scored = [
         {"id": 0, "text": "class Widget:\n  cache_size = 5"},
         {"id": 1, "text": "class widget:\n  cache_size = 9"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}
+
+
+def test_function_keyword_is_part_of_the_scope():
+    """`func worker` (Go) and `method worker` are different declarations from
+    each other and from `def worker` — collapsing every non-class kind to one
+    `fn` scope merged their bodies into one imagined reassignment history."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "func worker:\n  worker_count: 3"},
+        {"id": 1, "text": "method worker:\n  worker_count: 5"},
     ]
     assert apply_supersession(scored, {0, 1}) == {0, 1}
