@@ -1581,21 +1581,23 @@ def _output_value_contradictions(text: str) -> int:
     normalised key is internally contradictory — one spelling is stale, and a
     reader cannot tell which. The count feeds only the reported confidence
     (never the output itself): contradiction is a reason to distrust the
-    extract, not licence to rewrite it. A key carried by many distinct line
-    texts is a record-stream field (``user=…`` in rows that differ from one
-    another), not a redefinition history, so it does not count; a key surviving
-    as a few identical copies of each spelling does.
+    extract, not licence to rewrite it.
+
+    The stream/state distinction is the timestamp: a line that opens with a
+    timestamp (or log prefix) is an event row — repetition and variety are
+    what streams do, so its key/value never testifies either way. An
+    untimestamped assignment is a state snapshot: the same entity restated,
+    so two spellings of one key are a redefinition history whose older value
+    is simply wrong. Collapse-marker lines ("[×N] …", "[last] …") never
+    testify either — the marker itself announces that other rows with other
+    values exist.
     """
     values: dict[str, set[str]] = {}
-    texts: dict[str, set[str]] = {}
-    counts: dict[str, int] = {}
     for ln in text.split("\n"):
-        # A collapse-marker line ("[×N] …", "[last] …") is an explicit sample of a
-        # stream — the marker itself announces that other rows with other values
-        # exist — so its key/value is evidence of variety, never of a
-        # contradiction. Two fold samples of one stream with different ids must
-        # not read as the key being redefined.
         if ln.lstrip().startswith(("[\u00d7", "[last] ", "[first] ")):
+            continue
+        probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
+        if _lead_ts_end(probe) > 0:
             continue
         parts = _fact_parts(ln)
         if parts is None:
@@ -1603,26 +1605,7 @@ def _output_value_contradictions(text: str) -> int:
         key = " ".join(parts[0].casefold().split())
         value = " ".join(parts[1].split())
         values.setdefault(key, set()).add(value)
-        # The text identity is whitespace-normalised: two spellings of one row
-        # that differ only in indentation or spacing are the same copy, so
-        # formatting cannot hide a conflict, and copies in differently indented
-        # sections count as the repetition they are.
-        norm = " ".join(ln.split())
-        texts.setdefault(key, set()).add(norm)
-        counts[norm] = counts.get(norm, 0) + 1
-    # A contradiction needs redundancy evidence: at least one copy of the key
-    # must survive twice byte-for-byte. Rows of a record stream differ from
-    # one another (timestamps, ids), so an extract that keeps a few distinct
-    # rows of one field shows variety, never a redefinition — only identical
-    # copies mark the lines as state snapshots rather than events, and it is
-    # state snapshots whose values can go stale. The trap case is exactly
-    # redundant — identical copies of the outdated spelling beside the
-    # corrected one.
-    return sum(
-        1 for key, vals in values.items()
-        if len(vals) > 1 and any(counts.get(t, 0) > 1 for t in texts.get(key) or ())
-    )
-
+    return sum(1 for vals in values.values() if len(vals) > 1)
 
 def _protected_fact_lines(
     lines: list[str], fingerprint=_log_fingerprint
