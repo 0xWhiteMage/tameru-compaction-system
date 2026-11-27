@@ -507,10 +507,18 @@ def _advance(state: list, line: str) -> str | None:
         return "ini"
     while state[1] and state[1][-1][0] >= indent:
         state[1].pop()
-    if pm:
+    # A class declaration is code, not a YAML mapping: with spaced keys
+    # admitted, `class Widget:` is parent-shaped, and reading it as YAML
+    # both hides the code scope and scopes the body under a fabricated
+    # setting parent. The funcdef check wins over the parent shape.
+    if pm and _FUNC_DEF_RE.match(line) is None:
         state[0] = ""
-        state[1].append((indent, pm["yaml"].casefold()))
+        # YAML keys are case-sensitive, so the parent keeps its spelling:
+        # `Worker Pool:` and `worker pool:` are different mappings.
+        state[1].append((indent, pm["yaml"]))
         return "yaml"
+    elif pm:
+        pm = None
     fm = _FUNC_DEF_RE.match(line)
     if fm is not None:
         # A code scope — a function or class body — bounds a local scope

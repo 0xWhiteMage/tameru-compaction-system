@@ -889,3 +889,25 @@ def test_spaced_yaml_parents_scope_their_fields():
         {"id": 1, "text": "copier pool:\n  worker_count: 5"},
     ]
     assert apply_supersession(scored, {0, 1}) == {0, 1}
+
+
+def test_yaml_parents_are_case_sensitive():
+    """`Worker Pool:` and `worker pool:` are different YAML mappings — the
+    same field under each is a different setting and neither supersedes."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "Worker Pool:\n  worker_count: 3"},
+        {"id": 1, "text": "worker pool:\n  worker_count: 5"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}
+
+
+def test_class_declarations_are_code_not_yaml_parents():
+    """`class Widget:` is parent-shaped once spaced keys are admitted, but it
+    is a code scope: two same-named class bodies never supersede each other."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "class Widget:\n  cache_size = 5"},
+        {"id": 1, "text": "class widget:\n  cache_size = 9"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}
