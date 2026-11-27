@@ -1100,7 +1100,10 @@ def _is_critical_line(line: str) -> bool:
 
 # Level-tagged error lines. Case-sensitive on purpose: "error" in prose is not
 # a log level, ERROR is.
-_ERR_LEVEL_RE = re.compile(r"\b(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)\b")
+# Uppercase level tokens; a trailing `_WORD` continuation still counts
+# (`ERROR_CODE`, `FATAL_ERROR`) — the underscore joins the level to its
+# classifier, it does not make the word benign. Plurals (`ERRORS`) stay out.
+_ERR_LEVEL_RE = re.compile(r"\b(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)(?:_\w+)?\b")
 _ERR_LEVEL_TAG_RE = re.compile(r"\[(?:ERROR|FATAL|CRITICAL|PANIC|FAIL(?:ED|URE)?)\]")
 _ERR_STRUCT_LEVEL_RE = re.compile(
     r"(?:^|[\s{,])\"?(?:level|lvl|severity|log\.level)\"?\s*[=:]\s*\"?(?:error|err|fatal|critical|crit|panic|emerg|alert)\b",
@@ -1116,7 +1119,7 @@ _ERR_TRACEBACK = "Traceback (most recent call last)"
 # count.
 _ERR_NEGATED_RE = re.compile(
     r"\b0\s+(?:errors?|failures?|failed|fatals?)\b"
-    r"|\b(?:errors?|failures?|failed|fatals?|critical)\s*[=:]\s*0(?!\w|\.\d)",
+    r"|\b(?:errors?|failures?|failed|fatals?|critical)(?:_\w+)?\s*[=:]\s*0(?!\w|\.\d)",
     re.IGNORECASE,
 )
 _COUNT_PREFIX_RE = re.compile(r"^\s*\[(?:\u00d7\d+|last)\]\s*")
@@ -1169,11 +1172,17 @@ def _is_error_line(line: str) -> bool:
         return False
     s = _without_zero_counts(capped)
     # The exception head is anchored at the line start: look past a "[×N] "
-    # collapse prefix so the same failure keeps its key after a fold.
+    # collapse prefix so the same failure keeps its key after a fold, and
+    # past a pytest ``E `` margin — pytest indents the failure payload into
+    # ``E       AssertionError: …``, and that line is the error the whole
+    # traceback exists for.
     head = s
     prefix = _COUNT_PREFIX_RE.match(s)
     if prefix:
         head = s[prefix.end():]
+    pytest_e = re.match(r"^E[ \t]+", head)
+    if pytest_e is not None:
+        head = head[pytest_e.end():]
     return bool(
         _ERR_LEVEL_RE.search(s)
         or _ERR_EXC_RE.match(head)
@@ -1563,6 +1572,154 @@ def _fact_parts(line: str) -> tuple[str, str] | None:
         return None
     return key.strip(), value
 
+
+
+# Stream-evidence prefix for the contradiction scan: time-of-day is mandatory
+# (ISO `T hh:mm`, syslog `Mon dd hh:mm:ss`, or a bare `hh:mm:ss`); a date-only
+# opener is a record key, not a log stamp.
+_CONTRA_TS_RE = re.compile(
+    r"^\s*[\[(]?(?:"
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}"
+    r"|[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}"
+    r"|\d{2}:\d{2}:\d{2}"
+    r")"
+)
+
+
+# A bare date opener (no time-of-day): part of the record key, not a stream
+# prefix — see the scan below.
+# Anchored assignment without the 400-char value cap of `_FACT_ASSIGN_RE` —
+# the scan-only fallback for over-length settings. Same key charset.
+_CONTRA_LONG_ASSIGN_RE = re.compile(
+    rf"^[ \t]*(?:#|;|//|--)?[ \t]*(?P<key>{_FACT_KEY})[ \t]*(?:=>|->|=|:)[ \t]*(?P<value>\S[^\n]*)[ \t]*$"
+)
+
+_CONTRA_DATE_RE = re.compile(r"^\s*[\[(]?\d{4}-\d{2}-\d{2}(?![T ]\d)")
+
+
+# Log-level key heads marking a stream event in the contradiction scan —
+# logging-module severity prefixes and structured level fields.
+_CONTRA_LEVEL_KEYS = frozenset({
+    "error", "warning", "warn", "fatal", "critical", "panic", "info", "debug",
+    "trace", "level", "severity", "lvl",
+})
+
+
+def _output_value_contradictions(text: str) -> int:
+    """Count output keys that survive with two or more distinct values.
+
+    A compressed extract that carries both ``k: v1`` and ``k: v2`` for one
+    normalised key is internally contradictory — one spelling is stale, and a
+    reader cannot tell which. The count feeds only the reported confidence
+    (never the output itself): contradiction is a reason to distrust the
+    extract, not licence to rewrite it.
+
+    The stream/state distinction is the timestamp: a line that opens with a
+    timestamp (or log prefix) is an event row — repetition and variety are
+    what streams do, so its key/value never testifies either way. An
+    untimestamped assignment is a state snapshot: the same entity restated,
+    so two spellings of one key are a redefinition history whose older value
+    is simply wrong. Collapse-marker lines ("[×N] …", "[last] …") never
+    testify either — the marker itself announces that other rows with other
+    values exist.
+    """
+    values: dict[str, set[str]] = {}
+    for ln in text.split("\n"):
+        if ln.lstrip().startswith(("[\u00d7", "[last] ", "[first] ")):
+            continue
+        probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
+        # Stream evidence needs a real log prefix — a time-of-day, not a bare
+        # date: a date opening a line keys a record more often than it stamps
+        # an event, so `2025-03-14 position: …` stays state evidence while
+        # `2025-03-14T02:00:01Z …` does not.
+        if _CONTRA_TS_RE.match(probe) is not None:
+            continue
+        # Only an anchored assignment testifies. An inline `key=value` lifted
+        # out of prose (`the render completes (id=af123)`) is event metadata
+        # or a citation — each row's id differs because each row is a
+        # different event — never a restated setting. The delimiter precheck
+        # is load-bearing twice over: rows without one cannot be assignments,
+        # and the key charset includes spaces, so the anchored regex
+        # backtracks quadratically on delimiter-free padded prose.
+        if "=" not in probe and ":" not in probe and "->" not in probe:
+            continue
+        rest = probe[_lead_ts_end(probe):]
+        if _CONTRA_LONG_ASSIGN_RE.match(rest) is None:
+            continue
+        parts = _fact_parts(ln)
+        if parts is None:
+            # _fact_parts caps the value at 400 chars; a longer anchored
+            # assignment still testifies — the cap is a regex-safety bound,
+            # not a statement that long settings cannot contradict.
+            long = _CONTRA_LONG_ASSIGN_RE.match(rest)
+            if long is None or _FACT_VALUE_ALNUM_RE.search(long.group("value")) is None:
+                continue
+            parts = (long.group("key"), long.group("value"))
+        key = " ".join(parts[0].casefold().split())
+        value = " ".join(parts[1].split())
+        # Error evidence belongs to the key, never the value. A line whose
+        # KEY is error-shaped is an event — each raise of one exception type
+        # is a distinct occurrence (`ValueError: bad state 1` beside
+        # `ValueError: bad state 2` is a stream doing what streams do), and a
+        # logging-module severity head (`WARNING:root: …`) is a stream prefix.
+        # Error TEXT in the value is the content of a restated setting:
+        # `status: Permission denied` beside `status: Success` is exactly the
+        # contradiction the scan exists for. Untimestamped stderr is the
+        # common case in tool output, so the key/value placement of the
+        # evidence is the whole distinction.
+        head = key.split(":", 1)[0].split()[0] if key.split() else ""
+        raw_head = parts[0].split(":", 1)[0].split()[0] if parts[0].split() else ""
+        # A CamelCase `XxxError`/`XxxException` head is an exception class —
+        # never a setting — so its rows are events even when the message is a
+        # bare boolean (`AssertionError: True` beside `AssertionError: False`
+        # are two test failures, not one redefined setting). Lowercase
+        # error-shaped heads are ambiguous with snake_case settings, so for
+        # them a boolean-literal value is setting-shaped and testifies:
+        # `debug: false` beside `debug: true` is a redefined setting whose
+        # key merely shares a name with a log level, while `error: timeout`
+        # beside `error: refused` stays the stream it always was.
+        # …but the class name is capitalized — `continueOnError` is a
+        # camelCase setting that merely ends in `Error`, while
+        # `ValueError`/`foo.ValueError` are raise sites.
+        if re.match(r"^(?:\w+\.)*(?:[A-Z]\w*(?:Error|Exception)|Error|Exception)$", raw_head):
+            continue
+        boolean = value.casefold() in {
+            "true", "false", "on", "off", "yes", "no", "enabled", "disabled",
+        }
+        if not boolean and (
+            head in _CONTRA_LEVEL_KEYS
+            or head.endswith("error")
+            or head.endswith("exception")
+        ):
+            continue
+        # A bare date opening the line is part of the key, not a stream
+        # prefix: `2025-03-14 position` and `2025-03-15 position` are
+        # different records of a dated series, while two spellings under
+        # one date are the redefinition the scan exists for.
+        date = _CONTRA_DATE_RE.match(probe)
+        if date is not None:
+            digits = re.search(r"\d{4}-\d{2}-\d{2}", date.group(0))
+            key = " ".join((digits.group(0) + " " + key).split())
+        # A value carrying a further separated `key=value` field is a
+        # multi-field event row (`order id=ORD-1 status=paid` parses the tail
+        # as one value), not a scalar restatement of one entity — repetition
+        # and variety are what such rows do, so they never testify. The
+        # separator is whitespace or a comma, the field name word-shaped
+        # (bracketed subscripts like `labels[region]` included), and the
+        # equals sign may itself be spaced (`status = paid`). A value that is
+        # one URL token testifies regardless: query strings carry `=`, `&`
+        # and commas inside the single token (`https://x/?a=1,b=2`). The
+        # scheme anchor is a real scheme — letter-first, scheme charset only —
+        # or a multi-field row containing `://` (`id=ORD-1,url=https://x/`)
+        # would pass the test and skip the exemption that row needs. A scalar
+        # value written with a spaced comparison of its own (`filter =
+        # price = 5`) is indistinguishable from a multi-field row at line
+        # level and stays a documented conservative miss — the exclusion
+        # asymmetry favours stream safety.
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://\S+$", value) and re.search(r"[\s,][\w.\-\[\]]{1,60}\s*=", value):
+            continue
+        values.setdefault(key, set()).add(value)
+    return sum(1 for vals in values.values() if len(vals) > 1)
 
 def _protected_fact_lines(
     lines: list[str], fingerprint=_log_fingerprint
@@ -8814,16 +8971,24 @@ def _compute_confidence(
     ``none``: capped at 0.5. A fail-open result keeps the recall it was given (it returns the original)."""
     if fail_open:
         return recall
+    # A contradictory extract caps every basis, and the cap must live here
+    # rather than at one call site: the error-anchored rebase re-derives the
+    # confidence from error retention alone, so a contradiction a probe
+    # compression already capped would otherwise re-emerge at full confidence
+    # when the probe result is reused.
+    contradictory = bool(_output_value_contradictions(compressed))
     if basis in ("lexical", "tool_call"):
-        return recall
+        return min(recall, 0.5) if contradictory else recall
     if basis in ("structural", "anchored", "derived"):
         kept, total = _error_retention(original, compressed)
         if basis == "structural":
-            return _CONF_NO_ERRORS_STRUCTURAL if not total else min(_CONF_CAP_STRUCTURAL, kept / total)
-        if basis == "anchored":
-            return _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_ANCHORED, kept / total)
-        return _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_DERIVED, kept / total)
-    return min(_CONF_CAP_NONE, recall)
+            conf = _CONF_NO_ERRORS_STRUCTURAL if not total else min(_CONF_CAP_STRUCTURAL, kept / total)
+        elif basis == "anchored":
+            conf = _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_ANCHORED, kept / total)
+        else:
+            conf = _CONF_NO_ERRORS_ANCHORED if not total else min(_CONF_CAP_DERIVED, kept / total)
+        return min(conf, 0.5) if contradictory else conf
+    return min(min(_CONF_CAP_NONE, recall), 0.5) if contradictory else min(_CONF_CAP_NONE, recall)
 
 
 def _span_chars(lines: list[str], lo: int, hi: int) -> int:
@@ -14411,6 +14576,13 @@ def _compress_context_impl(
         recall = min(recall, 0.98)
         if not query_has_distinctive_selectors(caller_query):
             recall = min(recall, max(0.0, 1.0 - 0.1 * fact_lines_dropped))
+    # A contradictory extract (one key surviving with two spellings) is the worst
+    # outcome compression can produce — silently wrong — so it never reports
+    # confidence above 0.5 regardless of what the recall measured.
+    if not fail_open and _output_value_contradictions(result_text):
+        recall = min(recall, 0.5)
+        if "value_contradiction" not in reasons:
+            reasons.append("value_contradiction")
     __cr = CompressResult(
         compressed_text=result_text,
         original_tokens=original_tokens,
