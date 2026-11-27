@@ -863,3 +863,29 @@ def test_spaced_key_block_supersession_end_to_end():
     ]
     kept = apply_supersession(scored, {0, 1})
     assert kept == {1}
+
+
+def test_severity_prefixed_lines_are_not_settings():
+    """`INFO worker_pool: started` is a log event row, not a definition — a
+    key opening with an uppercase severity token never parses, so sibling
+    log entries cannot supersede each other."""
+    from tameru.supersession import _assignments_tracked, _scope_state
+    for line in ("INFO worker_pool: started", "ERROR payment_gateway: timeout",
+                 "DEBUG core_loop: iteration 5"):
+        assert _assignments_tracked(line, _scope_state(None)) == {}
+
+
+def test_double_spaced_keys_parse():
+    from tameru.supersession import _assignments_tracked, _scope_state
+    assert len(_assignments_tracked("gold_torus  position: (1,2,3)", _scope_state(None))) == 1
+
+
+def test_spaced_yaml_parents_scope_their_fields():
+    """The same field name under two different spaced YAML parents is two
+    different settings — neither may supersede the other."""
+    from tameru.supersession import apply_supersession
+    scored = [
+        {"id": 0, "text": "worker pool:\n  worker_count: 3"},
+        {"id": 1, "text": "copier pool:\n  worker_count: 5"},
+    ]
+    assert apply_supersession(scored, {0, 1}) == {0, 1}

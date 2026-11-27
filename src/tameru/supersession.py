@@ -53,7 +53,7 @@ _SUPERSESSION_MARKERS = (
 # or uppercase for the colon form, so `the result is: x` never parses as a
 # definition while `gold_torus position: (1, 2, 3)` does.
 _ASSIGN_RE = re.compile(
-    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*(?: [A-Za-z0-9_./\-]+)*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
+    r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_./\-]*(?: +[A-Za-z0-9_./\-]+)*)\s*(?P<op>=|:)\s*(?P<val>\S(?:.*\S)?)\s*$"
 )
 # A "parent" line scopes the assignments nested under it: an INI/TOML
 # section header (``[database]``) or a YAML mapping key on its own line
@@ -62,7 +62,7 @@ _ASSIGN_RE = re.compile(
 # alone dropped the earlier section's live value.
 _PARENT_RE = re.compile(
     r"^\s*(?:\[\[?\s*(?P<ini>(?:\"[^\"]*\"|'[^']*'|[^\[\]\"']|\"(?![^\"]*\")|'(?![^']*'))+)\s*\]?\]\s*(?:[;#].*)?"
-    r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*)\s*:\s*(?:#.*)?)$"
+    r"|(?P<yaml>[A-Za-z_][A-Za-z0-9_./\-]*(?: +[A-Za-z0-9_./\-]+)*)\s*:\s*(?:#.*)?)$"
 )
 # A line past this length is never a section header or a bare mapping
 # parent — and per-line regex work on it is bounded.
@@ -313,6 +313,12 @@ def _distinctive_key(key: str, op: str) -> bool:
     if len(k) < _MIN_KEY_LENGTH or k in _STOP or k in _OVERLAP_STOP:
         return False
     if op == "=" and k in _GENERIC_EQ_KEYS:
+        return False
+    # A key opening with an uppercase severity token is a log prefix —
+    # `INFO worker_pool: started` is an event row, not a definition.
+    first = key.split(None, 1)[0] if key.split() else ""
+    if first in {"INFO", "ERROR", "WARN", "WARNING", "DEBUG", "TRACE",
+                 "FATAL", "CRITICAL", "PANIC", "NOTICE"}:
         return False
     # A spaced key is prose unless it carries technical punctuation —
     # `gold_torus position` is a state-report field, but the word run in
