@@ -246,6 +246,7 @@ def test_value_contradiction_scanner_case_matrix():
         ("AssertionError: True\nAssertionError: False", False),
         ("error: true\nerror: false", True),
         ("NO_PROXY = " + "a" * 450 + "\nNO_PROXY = " + "b" * 450, True),
+        ("continueOnError: true\ncontinueOnError: false", True),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"
