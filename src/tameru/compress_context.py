@@ -1579,11 +1579,16 @@ def _fact_parts(line: str) -> tuple[str, str] | None:
 # opener is a record key, not a log stamp.
 _CONTRA_TS_RE = re.compile(
     r"^\s*[\[(]?(?:"
-    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}"
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}"
     r"|[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}"
     r"|\d{2}:\d{2}:\d{2}"
     r")"
 )
+
+
+# A bare date opener (no time-of-day): part of the record key, not a stream
+# prefix — see the scan below.
+_CONTRA_DATE_RE = re.compile(r"^\s*[\[(]?\d{4}-\d{2}-\d{2}(?![T ]\d)")
 
 
 def _output_value_contradictions(text: str) -> int:
@@ -1620,11 +1625,20 @@ def _output_value_contradictions(text: str) -> int:
             continue
         key = " ".join(parts[0].casefold().split())
         value = " ".join(parts[1].split())
-        # A value carrying further `key=value` structure is a multi-field
-        # event row (`order id=ORD-1 status=paid` parses the tail as one
-        # value), not a scalar restatement of one entity — repetition and
-        # variety are what such rows do, so they never testify.
-        if "=" in value:
+        # A bare date opening the line is part of the key, not a stream
+        # prefix: `2025-03-14 position` and `2025-03-15 position` are
+        # different records of a dated series, while two spellings under
+        # one date are the redefinition the scan exists for.
+        date = _CONTRA_DATE_RE.match(probe)
+        if date is not None:
+            key = " ".join((date.group(0) + " " + key).split())
+        # A value carrying a further whitespace-separated `key=value` field is
+        # a multi-field event row (`order id=ORD-1 status=paid` parses the
+        # tail as one value), not a scalar restatement of one entity —
+        # repetition and variety are what such rows do, so they never testify.
+        # A scalar URL query (`https://x/?a=1`) has no whitespace before its
+        # `=`, so it still testifies.
+        if re.search(r"\s\S{1,40}=", value):
             continue
         values.setdefault(key, set()).add(value)
     return sum(1 for vals in values.values() if len(vals) > 1)

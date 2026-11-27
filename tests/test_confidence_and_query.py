@@ -210,3 +210,21 @@ def test_confidence_caps_when_output_contradicts_itself():
     if "gold_torus position: (1.0, 2.0, 3.0)" in out and "gold_torus position: (5.5, 2.0, 3.0)" in out:
         assert r.confidence <= 0.5, f"contradictory output reported confidence {r.confidence}"
         assert "value_contradiction" in (r.reasons or [])
+
+
+def test_value_contradiction_scanner_case_matrix():
+    # The discriminator matrix the review loop established: traps must flag,
+    # stream shapes must not. Each pair is (text, flagged).
+    from tameru.compress_context import _output_value_contradictions as scan
+    cases = [
+        ("gold_torus position: (1.0, 2.0, 3.0)\ngold_torus position: (5.5, 2.0, 3.0)", True),
+        ("gold_torus position: (1.0, 2.0, 3.0)\n  gold_torus position: (1.0, 2.0, 3.0)\ngold_torus position: (5.5, 2.0, 3.0)", True),
+        ("2025-03-14T02:00:01Z INFO picked job id=aaa\n2025-03-14T02:00:01Z INFO picked job id=aaa\n2025-03-14T02:05:22Z INFO picked job id=bbb", False),
+        ("order id=ORD-111 status=paid\norder id=ORD-111 status=paid\norder id=ORD-222 status=paid", False),
+        ("endpoint = https://x/?a=1\nendpoint = https://x/?b=2", True),
+        ("2025-03-14 position: (1,2,3)\n2025-03-15 position: (4,5,6)", False),
+        ("2025-03-14 position: (1,2,3)\n2025-03-14 position: (4,5,6)", True),
+        ("2025-03-14T02:00 key state=on\n2025-03-14T02:00 key state=on\n2025-03-14T02:30 key state=off", False),
+    ]
+    for text, want in cases:
+        assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"
