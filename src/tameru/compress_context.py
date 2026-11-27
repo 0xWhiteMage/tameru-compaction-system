@@ -1574,6 +1574,18 @@ def _fact_parts(line: str) -> tuple[str, str] | None:
 
 
 
+# Stream-evidence prefix for the contradiction scan: time-of-day is mandatory
+# (ISO `T hh:mm`, syslog `Mon dd hh:mm:ss`, or a bare `hh:mm:ss`); a date-only
+# opener is a record key, not a log stamp.
+_CONTRA_TS_RE = re.compile(
+    r"^\s*[\[(]?(?:"
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}"
+    r"|[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}"
+    r"|\d{2}:\d{2}:\d{2}"
+    r")"
+)
+
+
 def _output_value_contradictions(text: str) -> int:
     """Count output keys that survive with two or more distinct values.
 
@@ -1597,13 +1609,23 @@ def _output_value_contradictions(text: str) -> int:
         if ln.lstrip().startswith(("[\u00d7", "[last] ", "[first] ")):
             continue
         probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
-        if _lead_ts_end(probe) > 0:
+        # Stream evidence needs a real log prefix — a time-of-day, not a bare
+        # date: a date opening a line keys a record more often than it stamps
+        # an event, so `2025-03-14 position: …` stays state evidence while
+        # `2025-03-14T02:00:01Z …` does not.
+        if _CONTRA_TS_RE.match(probe) is not None:
             continue
         parts = _fact_parts(ln)
         if parts is None:
             continue
         key = " ".join(parts[0].casefold().split())
         value = " ".join(parts[1].split())
+        # A value carrying further `key=value` structure is a multi-field
+        # event row (`order id=ORD-1 status=paid` parses the tail as one
+        # value), not a scalar restatement of one entity — repetition and
+        # variety are what such rows do, so they never testify.
+        if "=" in value:
+            continue
         values.setdefault(key, set()).add(value)
     return sum(1 for vals in values.values() if len(vals) > 1)
 
