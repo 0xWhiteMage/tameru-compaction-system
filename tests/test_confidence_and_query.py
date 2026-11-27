@@ -234,6 +234,7 @@ def test_value_contradiction_scanner_case_matrix():
         ("filter = price = 5\nfilter = price = 9", True),
         ("ValueError: bad state 1\nValueError: bad state 2", False),
         ("Traceback (most recent call last):\nValueError: bad state 1\nTypeError: other thing", False),
+        ("water_level: 12\nwater_level: 16", True),
     ]
     for text, want in cases:
         assert bool(scan(text)) == want, f"scan({text!r}) = {scan(text)}, want {want}"

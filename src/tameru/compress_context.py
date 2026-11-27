@@ -1613,13 +1613,16 @@ def _output_value_contradictions(text: str) -> int:
     for ln in text.split("\n"):
         if ln.lstrip().startswith(("[\u00d7", "[last] ", "[first] ")):
             continue
-        # An error-shaped line is an event — each raise of one exception type
-        # is a distinct occurrence, so `ValueError: bad state 1` beside
+        # An error line is an event — each raise of one exception type is a
+        # distinct occurrence, so `ValueError: bad state 1` beside
         # `ValueError: bad state 2` is a stream doing what streams do, never
         # a restated setting. Untimestamped stderr is the common case in tool
         # output; without this exemption every compressed exception trace
-        # reads as a contradiction.
-        if _ERROR_LINE_HINT_RE.search(ln) is not None:
+        # reads as a contradiction. The test is the real error-line
+        # discriminator, not the hint regex: the hint matches `level` and
+        # `severity` as bare substrings, so `water_level: 12` would pass for
+        # an event and a genuine contradiction would go unseen.
+        if _is_error_line(ln):
             continue
         probe = ln if ln.isascii() else unicodedata.normalize("NFKC", ln)
         # Stream evidence needs a real log prefix — a time-of-day, not a bare
