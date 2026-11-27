@@ -187,3 +187,26 @@ def test_kind_marker_receives_structural_kinds():
     compress_context.compress_context(text, "order=9912", gap_marker=marker, ccr=False, citations=False)
     from tameru.markers import GAP_KINDS
     assert seen and set(seen) <= set(GAP_KINDS)
+
+
+def test_confidence_caps_when_output_contradicts_itself():
+    # A stale value surviving beside its replacement is the worst compression
+    # outcome — silently wrong — so the reported confidence must not claim
+    # success when the output carries both spellings of one setting.
+    def scene(i, torus):
+        return (f"--- scene state report {i} ---\n"
+                "objects: cube at (0, 0, 0), camera at (7, -7, 5)\n"
+                f"gold_torus position: {torus}\n"
+                + "\n".join(f"obj.prop_{j} = {(i * j) % 100}" for j in range(30)))
+    parts = [scene(1, "(1.0, 2.0, 3.0)")]
+    for i in range(2, 13):
+        parts.append(scene(i, "(1.0, 2.0, 3.0)"))
+    parts.append(scene(13, "(5.5, 2.0, 3.0)"))
+    parts.append(scene(14, "(5.5, 2.0, 3.0)") + "\nERROR final render ok")
+    text = "\n\n".join(parts)
+    r = compress_context.compress_context(
+        text, "where is the gold torus now", ccr=False, citations=False)
+    out = r.compressed_text or ""
+    if "gold_torus position: (1.0, 2.0, 3.0)" in out and "gold_torus position: (5.5, 2.0, 3.0)" in out:
+        assert r.confidence <= 0.5, f"contradictory output reported confidence {r.confidence}"
+        assert "value_contradiction" in (r.reasons or [])

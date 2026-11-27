@@ -1573,6 +1573,48 @@ def _fact_parts(line: str) -> tuple[str, str] | None:
     return key.strip(), value
 
 
+
+def _output_value_contradictions(text: str) -> int:
+    """Count output keys that survive with two or more distinct values.
+
+    A compressed extract that carries both ``k: v1`` and ``k: v2`` for one
+    normalised key is internally contradictory — one spelling is stale, and a
+    reader cannot tell which. The count feeds only the reported confidence
+    (never the output itself): contradiction is a reason to distrust the
+    extract, not licence to rewrite it. A key carried by many distinct line
+    texts is a record-stream field (``user=…`` in rows that differ from one
+    another), not a redefinition history, so it does not count; a key surviving
+    as a few identical copies of each spelling does.
+    """
+    values: dict[str, set[str]] = {}
+    texts: dict[str, set[str]] = {}
+    for ln in text.split("\n"):
+        # A collapse-marker line ("[×N] …", "[last] …") is an explicit sample of a
+        # stream — the marker itself announces that other rows with other values
+        # exist — so its key/value is evidence of variety, never of a
+        # contradiction. Two fold samples of one stream with different ids must
+        # not read as the key being redefined.
+        if ln.lstrip().startswith(("[\u00d7", "[last] ", "[first] ")):
+            continue
+        parts = _fact_parts(ln)
+        if parts is None:
+            continue
+        key = " ".join(parts[0].casefold().split())
+        value = " ".join(parts[1].split())
+        values.setdefault(key, set()).add(value)
+        texts.setdefault(key, set()).add(ln)
+    # The count of DISTINCT line texts distinguishes a redefinition history from
+    # a record stream: rows of a stream differ from one another (timestamps,
+    # ids), so a record key carries many distinct texts, while a stale setting
+    # survives as a few identical copies of each spelling. The trap case is
+    # exactly high-occurrence — twelve copies of the stale line — so occurrence
+    # count must not exempt it.
+    return sum(
+        1 for key, vals in values.items()
+        if len(vals) > 1 and len(texts.get(key) or ()) <= 4
+    )
+
+
 def _protected_fact_lines(
     lines: list[str], fingerprint=_log_fingerprint
 ) -> list[tuple[int, str, str, str]]:
@@ -14420,6 +14462,13 @@ def _compress_context_impl(
         recall = min(recall, 0.98)
         if not query_has_distinctive_selectors(caller_query):
             recall = min(recall, max(0.0, 1.0 - 0.1 * fact_lines_dropped))
+    # A contradictory extract (one key surviving with two spellings) is the worst
+    # outcome compression can produce — silently wrong — so it never reports
+    # confidence above 0.5 regardless of what the recall measured.
+    if not fail_open and _output_value_contradictions(result_text):
+        recall = min(recall, 0.5)
+        if "value_contradiction" not in reasons:
+            reasons.append("value_contradiction")
     __cr = CompressResult(
         compressed_text=result_text,
         original_tokens=original_tokens,
