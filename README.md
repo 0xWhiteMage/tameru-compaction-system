@@ -129,8 +129,10 @@ The engine is harness-agnostic. Each plugin lives in its own repository and vend
 
 | Harness | Plugin | Status |
 |---|---|---|
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | **v1.9.1** released · engine-1.10.0 update on `feat/engine-1.10.0` |
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | [dsh-tameru-plugin](https://github.com/0xWhiteMage/dsh-tameru-plugin) | v0.2.0, in development (Beta) |
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | **v0.1.0** released; independent plugin versioning; release vendors engine v1.10.0 |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | [dsh-tameru-plugin](https://github.com/0xWhiteMage/dsh-tameru-plugin) | **v0.1.0 Beta** evaluation tag; GitHub release is still draft |
+
+Both plugins version independently of the engine. Their `v0.1.0` tags vendor the v1.10.0 release commit `d37fd43`; their current `main` branches re-vendor later 1.10.0-line fixes at `6ea331c`.
 
 Writing your own: [harness plugin guide](docs/INTEGRATION.md#4-writing-a-harness-plugin) · [what each repo owns](docs/REPOSITORIES.md).
 
@@ -145,6 +147,8 @@ Writing your own: [harness plugin guide](docs/INTEGRATION.md#4-writing-a-harness
 
 | I want to… | Go to |
 |---|---|
+| Read the stable user documentation | [public Tameru documentation](https://thewhitemage.gitbook.io/tameru-documentation/) |
+| Understand the v1.10.0 release | [docs/releases/v1.10.0.md](docs/releases/v1.10.0.md) |
 | Use the API, budgets, receipts, recovery | [docs/USAGE.md](docs/USAGE.md) |
 | Integrate with a harness / write a plugin | [docs/INTEGRATION.md](docs/INTEGRATION.md) |
 | See every benchmark measurement | [benchmarks/COMPARISON.md](benchmarks/COMPARISON.md) |
