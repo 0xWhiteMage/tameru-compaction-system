@@ -174,7 +174,7 @@ this engine unchanged. Two exist, built on very different harnesses:
 
 | | Hermes Agent | DeepSeek Harness |
 |---|---|---|
-| Plugin | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | `dsh-tameru` (in development) |
+| Plugin | [hermes-tameru-plugin](https://github.com/0xWhiteMage/hermes-tameru-plugin) | [`dsh-tameru`](https://github.com/0xWhiteMage/dsh-tameru-plugin) (Beta) |
 | Plugin language | Python, in the harness's own process | TypeScript on Node, with the engine as a worker process |
 | How it calls the engine | Imports the vendored `tameru` package | Sends one JSON line per request to a long-lived Python worker and reads one JSON line back |
 | Where state lives | The harness's per-plugin state | The harness's storage service |

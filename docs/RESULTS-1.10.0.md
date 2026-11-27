@@ -4,7 +4,7 @@ All numbers come from `benchmarks/engine_bench`, a replay of recorded and genera
 None of them is a measurement against a real model, an answer-quality check or a bill. Plan, margins and rules: [`ANALYSIS-PLAN-1.10.md`](ANALYSIS-PLAN-1.10.md).
 Result files are committed under `benchmarks/engine_bench/results/`.
 
-This page records the historical look on `99db5bd`, not a fresh evaluation of every later 1.10.0 commit. Later development changes (fact-line protection, bounded caches and the shipped calibration table) are described in the [changelog](../CHANGELOG.md#1100---unreleased). Do not rebuild or rerun the sealed split or corpus holdout to reproduce this page during routine checks.
+This page records the historical look on `99db5bd`, not a fresh evaluation of every later 1.10.0 commit. Later development changes (fact-line protection, bounded caches and the shipped calibration table) are described in the [changelog](../CHANGELOG.md). Do not rebuild or rerun the sealed split or corpus holdout to reproduce this page during routine checks.
 
 ## The sealed look (one, on commit 99db5bd, taken 2026-11-19)
 

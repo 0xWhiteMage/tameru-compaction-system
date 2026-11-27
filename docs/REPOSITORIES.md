@@ -3,7 +3,7 @@
 Tameru (ためる) is split on purpose. **This repository is the engine**: it works on any agent harness and knows nothing about any of them. Each harness gets its own
 plugin repository that vendors the engine unchanged and owns everything specific to that harness.
 
-| | **Engine** (this repository) | **Hermes plugin** [`hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin) | **DeepSeek Harness plugin** `dsh-tameru-plugin` (in development) |
+| | **Engine** (this repository) | **Hermes plugin** [`hermes-tameru-plugin`](https://github.com/0xWhiteMage/hermes-tameru-plugin) | **DeepSeek Harness plugin** [`dsh-tameru-plugin`](https://github.com/0xWhiteMage/dsh-tameru-plugin) (Beta) |
 |---|---|---|---|
 | Purpose | Deterministic, query-aware compaction of tool outputs, logs and documents | Everything that makes Tameru work well *inside Hermes* | Everything that makes Tameru work well *inside DeepSeek Harness* |
 | Runs on | Any harness: Python API, CLI, or the generic transcript adapter for OpenAI-style `role`/`content` messages | Hermes Agent only: Desktop, CLI, TUI and messaging | DeepSeek Harness only |
@@ -11,7 +11,7 @@ plugin repository that vendors the engine unchanged and owns everything specific
 | Contains | Extraction and reducers, structured-format handling, folding, supersession, Unicode handling, credential screening for recovery storage, the benchmarks | The context-engine subclass, adaptive policy and self-tuning, Restore and Keep, the Desktop panel, `/tameru` commands, per-chat state, security gates for chat surfaces, catalogue packaging | The harness-side policy, pins, Keep and Restore, sidebar tab, settings page, `/tameru` commands, the worker bootstrap |
 | Depends on | The Python standard library only | Hermes' plugin interfaces; the engine, vendored | The harness's plugin interfaces; the engine, vendored |
 | Knows about | Text in, smaller text out | Chats, sessions, tools, the prompt cache, Hermes settings and surfaces | The same, for DeepSeek Harness |
-| Version | Semantic; `ENGINE_VERSION` | Semantic, separate from the engine's (plugin 1.9.1 vendors engine 1.9.0; `/tameru stats` shows both) | Semantic, separate from both |
+| Version | Semantic; `ENGINE_VERSION` | Semantic, separate from the engine's (plugin 0.1.0 vendors engine 1.10.0; `/tameru stats` shows both) | Semantic, separate from both |
 | Pins the host version it was tested on | n/a | `HERMES_PIN` | `DSH_PIN` |
 
 ## The rules all three repositories follow
