@@ -1119,7 +1119,7 @@ _ERR_TRACEBACK = "Traceback (most recent call last)"
 # count.
 _ERR_NEGATED_RE = re.compile(
     r"\b0\s+(?:errors?|failures?|failed|fatals?)\b"
-    r"|\b(?:errors?|failures?|failed|fatals?|critical)\s*[=:]\s*0(?!\w|\.\d)",
+    r"|\b(?:errors?|failures?|failed|fatals?|critical)(?:_\w+)?\s*[=:]\s*0(?!\w|\.\d)",
     re.IGNORECASE,
 )
 _COUNT_PREFIX_RE = re.compile(r"^\s*\[(?:\u00d7\d+|last)\]\s*")
