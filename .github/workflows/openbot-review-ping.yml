@@ -1,0 +1,91 @@
+name: OpenBot review ping
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize, edited]
+  issues:
+    types: [opened, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    if: github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify OpenBot
+        env:
+          WEBHOOK_SECRET: ${{ secrets.OPENBOT_WEBHOOK_SECRET }}
+          WEBHOOK_URL: https://signal.openbot.run/v1/webhooks/4242918f-f684-435e-a716-126832455a43
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK_SECRET}" ]; then
+            echo "OPENBOT_WEBHOOK_SECRET is not set on this repository."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import hashlib, hmac, json, os, time, urllib.request
+          from datetime import datetime, timezone
+
+          event = os.environ["GITHUB_EVENT_NAME"]
+          path = os.environ["GITHUB_EVENT_PATH"]
+          with open(path, encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          if event == "pull_request":
+              pr = payload["pull_request"]
+              kind = "pull_request"
+              number = pr["number"]
+              action = payload.get("action", "")
+              base = pr["base"]["ref"]
+              base_sha = pr["base"]["sha"]
+              head_sha = pr["head"]["sha"]
+              delivery = f"pr{number}-{head_sha}-{action}"
+          else:
+              issue = payload["issue"]
+              kind = "issue"
+              number = issue["number"]
+              action = payload.get("action", "")
+              base = ""
+              base_sha = ""
+              head_sha = ""
+              updated = issue.get("updated_at", "").replace(":", "").replace("-", "")
+              delivery = f"issue{number}-{action}-{updated}"
+
+          body = json.dumps(
+              {
+                  "type": "tameru.review",
+                  "occurredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                  "data": {
+                      "repo": "0xWhiteMage/tameru-compaction-system",
+                      "kind": kind,
+                      "action": action,
+                      "number": number,
+                      "base": base,
+                      "baseSha": base_sha,
+                      "headSha": head_sha,
+                  },
+              },
+              separators=(",", ":"),
+          ).encode()
+          timestamp = str(int(time.time()))
+          secret = os.environ["WEBHOOK_SECRET"].encode()
+          signature = hmac.new(secret, f"{timestamp}.{delivery}.".encode() + body, hashlib.sha256).hexdigest()
+          request = urllib.request.Request(
+              os.environ["WEBHOOK_URL"],
+              data=body,
+              method="POST",
+              headers={
+                  "Content-Type": "application/json",
+                  "X-OpenBot-Timestamp": timestamp,
+                  "X-OpenBot-Delivery-Id": delivery,
+                  "X-OpenBot-Signature": f"sha256={signature}",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              status = response.status
+          if status not in (200, 202):
+              raise SystemExit(f"OpenBot returned {status}")
+          print(f"OpenBot accepted {delivery} ({status})")
+          PY
