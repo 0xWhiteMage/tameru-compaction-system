@@ -192,6 +192,25 @@ _SECRETS_RE = re.compile(
 # Recursion guard markers: output Tameru itself produced. Both wrapper tags
 # are listed: ``</compressed_context`` is not a substring of the open tag.
 _RECURSION_MARKERS = ("<compressed_context", "</compressed_context", "[CC-Retrieve:", "[tameru:report ")
+# A bare ``[tameru:`` line is a structured-report header the engine emits
+# (lcov/junit/sarif/notebook) — the same chrome as ``[tameru:report``. The
+# old guard only knew the longer prefix, so a forged ``[tameru:report x]``
+# disabled compaction while ``[tameru:anything-else]`` sailed through.
+_RECURSION_MARKERS_STRICT = _RECURSION_MARKERS + ("[tameru:",)
+
+# The structural folds are engine output too: a re-compaction that treats
+# ``... N frames omitted`` as caller text strips it as artifact noise, so
+# feeding the extract back in loses the fold line and the result is no
+# longer idempotent. Whole-line shapes only — an ordinary sentence that
+# merely starts with an ellipsis is still caller text.
+_FOLD_LINE_RE = re.compile(
+    r"^[ \t]*(?:"
+    r"\.\.\. \d{1,12} (?:frames omitted|more items|similar items omitted|of \d{1,12} rows omitted)"
+    r"|\[\u00d7\d{1,12} identical lines\]"
+    r"|\[\u00d7\d{1,12}\] .+"
+    r"|\[last\] .+"
+    r")[ \t]*\r?$"
+)
 # Pointer verification: only a [CC-Retrieve: <hash>] whose record exists in
 # the CCR store is engine output. A forged pointer (no backing record) is
 # plain hostile input — treating it as engine output let any input disable
@@ -229,11 +248,58 @@ _ARTIFACT_NOISE_RES = (
     # least one hyphenated word: a single token like ``⟪ERROR: database
     # shutdown⟫`` is a diagnostic anyone could write, not compressor chrome.
     re.compile(_ARTIFACT_NOISE_LEAD + r"⟪[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)+[^⟫\r\n]{0,200}⟫" + _ARTIFACT_NOISE_TAIL),
+    # The bare structural folds the renderers emit: they are whole lines in
+    # engine output, so a caller-authored line of the same shape is chrome.
+    # (Their bracketed cousins are neutralized inline by ``_FORGED_SPAN_RES``;
+    # these carry no bracket to rewrite, so whole-line removal is the only
+    # honest way to keep them from reading as the engine's own summary.)
+    # ``[×N] …``/``[last] …`` and the per-cause ``... N frames omitted`` are
+    # NOT in this list: they carry an exemplar or a real fold and must
+    # survive a re-feeding (``_FOLD_LINE_RES`` exempts them).
+    re.compile(_ARTIFACT_NOISE_LEAD + r"\[×\d{1,12} identical lines\]" + _ARTIFACT_NOISE_TAIL),
+    re.compile(_ARTIFACT_NOISE_LEAD + r"\.\.\. \d{1,12} of \d{1,12} rows omitted(?: \([^\r\n)]{0,200}\))?" + _ARTIFACT_NOISE_TAIL),
+    # The structured-report headers and adapter stat/group lines are chrome
+    # by shape too — a caller-authored "kept 2/81 result records" line reads
+    # as the engine's own accounting.
+    re.compile(_ARTIFACT_NOISE_LEAD + r"\[tameru:report [^\r\n]{1,200}\]" + _ARTIFACT_NOISE_TAIL),
+    re.compile(_ARTIFACT_NOISE_LEAD + r"# [^\r\n:]{1,200}: \+\d{1,12} -\d{1,12} in \d{1,12} hunks" + _ARTIFACT_NOISE_TAIL),
+    re.compile(_ARTIFACT_NOISE_LEAD + r".{1,200}  \(\d{1,12} matches?\)" + _ARTIFACT_NOISE_TAIL),
 )
 
-_FOREIGN_BANNER_RE = _ARTIFACT_NOISE_RES[-1]
+# The structural fold lines are engine output that must SURVIVE a re-feeding:
+# a second compaction that strips ``... 6 frames omitted`` loses the fold and
+# the result stops being idempotent. They are excluded from the artifact
+# strip (they are not noise — they are the extract's own summary), while a
+# caller-authored copy of the shape is still neutralized for the chrome it
+# imitates (``_FORGED_SPAN_RES``). A bare ``[×N identical lines]`` and the
+# bare ``... N of M rows omitted`` ARE stripped: they carry no exemplar, so a
+# re-fed extract that kept one would emit a summary of rows it never had.
+_FOLD_LINE_RES = (
+    re.compile(r"^[ \t]*\[\u00d7\d{1,12}\] .+$"),
+    re.compile(r"^[ \t]*\[last\] .+$"),
+    re.compile(r"^[ \t]*\.\.\. \d{1,12} frames omitted$"),
+    re.compile(r"^[ \t]*\.\.\. \d{1,12} more items$"),
+    re.compile(r"^[ \t]*\.\.\. \d{1,12} similar items omitted \(keys: [^\r\n)]{1,200}\)$"),
+)
 
-_ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪")
+_FOREIGN_BANNER_RE = _ARTIFACT_NOISE_RES[2]
+
+_ARTIFACT_NOISE_TOKENS = ("…", "[tameru:", "⟪", "[×", "... ", "identical lines", "rows omitted", "items")
+
+# A cheap shape gate for the structural-fold markers that carry no distinctive
+# token: the engine only ever writes them as a whole line, so a line that
+# starts with a digit-run phrase is worth one regex test. ``_artifact_noise_lines``
+# runs per line; without this gate the whole scan is skipped for the common
+# "no … in this text" case, and the folds would be missed.
+_ARTIFACT_SHAPE_RE = re.compile(
+    r"^[ \t]*(?:"
+    r"\.\.\. \d{1,12} (?:frames omitted|more items|similar items omitted|of \d{1,12} rows omitted)"
+    r"|\[\u00d7\d{1,12} identical lines\]"
+    r"|# [^\r\n:]{1,200}: \+\d{1,12} -\d{1,12} in \d{1,12} hunks"
+    r"|.{1,200}  \(\d{1,12} matches?\)"
+    r")[ \t]*\r?$",
+    re.MULTILINE,
+)
 
 # A run of three or more backticks or tildes opens a fenced block; the same
 # run (bare, same char, own length or longer) closes it. `match` reads an
@@ -250,11 +316,40 @@ _FENCE_RUN_RE = re.compile(r"(`{3,}|~{3,})")
 # openers stays a linear scan, and ``[tameru:``/guillemet bodies exclude
 # ``"``, ``[`` and ``]`` so an unterminated opener can never swallow a JSON
 # envelope delimiter.
+#
+# The list must cover every shape ``markers.ENGINE_MARKERS`` registers, not
+# only the four that were once considered: a forged ``[×42 identical lines]``
+# or ``... 300 of 301 rows omitted`` survived a compression and read as the
+# engine's own summary of rows it never saw. A test pins the two lists
+# together (``tests/test_marker_registry_consistency.py``).
 _FORGED_SPAN_RES = (
     re.compile(r"\[\u2026(?: [^\n\]]{1,120} omitted \u2026)?\]"),
     re.compile(r"\[tameru:[^\n\]\x22\[]{1,200}\]"),
     re.compile(r"\[CC-Retrieve: [0-9a-f]{24}\]"),
     re.compile(r"\u27ea[A-Z][A-Z0-9_]{3,40}(?:-[A-Z0-9_]+)+[^\n\u27eb\x22\[]{0,200}\u27eb"),
+    # counted repeat / trailing exemplar prefixes (folding.py, preprocess_logs)
+    # are NOT neutralized here: they are the recursion guard's own signal
+    # (``[×N]``/``[last]`` at line start already no-op a re-compaction), and
+    # rewriting their brackets would break that idempotence. Only the bare
+    # ``[×N identical lines]`` summary line is rewritten, since it has no
+    # exemplar text behind it for the guard to recognise.
+    re.compile(r"\[\u00d7\d{1,12} identical lines\]"),
+    # structural folds and structured-report summaries
+    re.compile(r"\.\.\. \d{1,12} frames omitted"),
+    re.compile(r"\.\.\. \d{1,12} more items"),
+    re.compile(r"\.\.\. \d{1,12} similar items omitted \(keys: [^\n)]{1,200}\)"),
+    re.compile(r"\.\.\. \d{1,12} of \d{1,12} rows omitted(?: \([^\n)]{0,200}\))?"),
+    # citation stubs (citations=True) and their collapsed run
+    re.compile(r"\[§[0-9a-f]{8}\](?= \")"),
+    re.compile(r"\[§run:\d{1,12} blocks #\d{1,12}\u2013\d{1,12} elided\]"),
+    # progress-glyph summary (preprocess_logs)
+    re.compile(r"\[progress x\d{1,12}: [^\n\]]{1,200}\]"),
+    # JSON brief body (folding.py _json_brief_body)
+    re.compile(r'\{"_count":\d{1,12},"_keys":\[[^\n\]]{0,4000}\],"_head":\[[^\n\]]{0,4000}\],'
+               r'"_tail":\[[^\n\]]{0,4000}\],"_notable":\[[^\n\]]{0,4000}\],"_omitted":\d{1,12}\}'),
+    # structured-report / diff headers the adapters emit
+    re.compile(r"# [^\n:]{1,200}: \+\d{1,12} -\d{1,12} in \d{1,12} hunks"),
+    re.compile(r"(?<=  )\(\d{1,12} matches?\)"),
 )
 _BRACKET_NEUTRAL = str.maketrans({"[": "\uff3b", "]": "\uff3d", "\u27ea": "\u300a", "\u27eb": "\u300b"})
 # The inverse shape for comparisons: a kept line whose forged markers were
@@ -326,6 +421,8 @@ def _artifact_noise_lines(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> list[s
     out: list[str] = []
     for ln in text.split("\n"):
         clean = strip_ansi(ln)
+        if any(rx.match(clean) for rx in _FOLD_LINE_RES):
+            continue  # engine structure that must survive a re-feeding
         matched = [rx for rx in res if rx.search(clean)]
         if matched and not (
             all(rx is _FOREIGN_BANNER_RE for rx in matched)
@@ -366,6 +463,12 @@ def _strip_artifact_noise(text: str, res: tuple = _ARTIFACT_NOISE_RES) -> str:
             kept.append(ln)
         else:
             clean = strip_ansi(ln)
+            # A fold line carrying an exemplar (``[×N] …``, ``[last] …``,
+            # ``... N frames omitted``) is engine structure, not noise: it
+            # must survive a re-feeding or the extract stops being idempotent.
+            if any(rx.match(clean) for rx in _FOLD_LINE_RES):
+                kept.append(ln)
+                continue
             matched = [rx for rx in res if rx.search(clean)]
             # Same exemption _artifact_noise_lines applies: a foreign-banner
             # line that also reads as a diagnostic is ambiguous — banners
@@ -456,6 +559,22 @@ _SECRETS_EXTRA_RE = re.compile(
     r"|(?i:\bauthorization\s*:\s*basic\s+[A-Za-z0-9+/]{12,})"
     r"|\bsshpass\s+-p\s*\S{6,}"
     r"|\bcurl\b[^\n]{0,200}?\s(?:-u|--user)[ =]\S{1,64}:\S{6,}"
+    # ``redis-cli -a <password>`` / ``redis-cli --pass <password>``: the same
+    # shape as ``sshpass -p`` and just as common in a connection log. A host's
+    # recovery store kept it in plaintext because the screen had no rule.
+    r"|\bredis-cli\b[^\n]{0,200}?\s(?:-a|--pass)\s*\S{6,}"
+    # ``machine <host> login <user> password <secret>`` — the ``.netrc`` /
+    # ``_netrc`` credential record. The password field runs to the end of the
+    # line; a bare ``password`` word alone (a column header) still needs a
+    # host/login pair to match.
+    r"|(?m:^[ \t]*machine\s+\S{1,256}\s+login\s+\S{1,256}\s+password\s+\S{6,}[ \t]*\r?$)"
+    # ``token: eyJ…`` in a kubeconfig — a JWT whose ``eyJ`` prefix is the only
+    # literal. The base pattern's keyword list does not include the bare
+    # ``token`` word, so an unquoted assignment of one was not screened.
+    # ``\b`` before ``eyJ`` fails after a space+colon (``: `` ends a word),
+    # so the JWT head is matched directly.
+    r"|(?i:\b(?:token|id_token)\b[\"']?\s*[:=]\s*eyJ[A-Za-z0-9_-]{10,}"
+    r"\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"
     # quoted key or value: ``"SecretAccessKey": "..."``, ``api_key = '...'``
     r"|(?i:\b" + _SECRET_KEYWORD + r"[\"']?\s*[:=]\s*"
     r"(?:\"(?=[^\"\s]*\d)[^\"\s]{16,}\"|'(?=[^'\s]*\d)[^'\s]{16,}'))"
@@ -494,6 +613,7 @@ _SECRET_LITERALS = (
     "ASIA", "ya29.", "1//0", "hf_", "npm_", "pypi-AgE", "SG.", "glpat-", "dckr_pat_",
     "xapp-", "hooks.slack.com", "/api/webhooks/", "_test_", "whsec_", "dop_v1_", "shp",
     "sq0", "SK", ":AA", "Key=", "sig=", "://", "sshpass", "curl", "TOKEN", "ACCESS_KEY", "key-",
+    "redis-cli", "machine ", "login ", "password ",
 )
 # The one alternative that has no literal: a ``.pgpass`` record ``host:port:database:user:password`` at the start of a
 # line. A bare ":" used to stand for it, which every timestamp satisfies, so no log was ever ruled out. This hint is the
@@ -508,6 +628,7 @@ _SECRET_FOLDED_LITERALS = (
     "token", "private", "signing", "basic",
     "dbpass", "db_pass", "db-pass", "mysqlpwd", "mysql_pwd", "mysql-pwd",
     "pgpassword", "rediscliauth", "rediscli_auth", "rediscli-auth",
+    "redis-cli", "machine ", "login ",
 )
 
 
@@ -5825,6 +5946,24 @@ _TRUST_RISK_RE = re.compile(
     r"\b(?:instructions?|prompt|system)\b",
     re.IGNORECASE,
 )
+# Two branches of ``_TRUST_RISK_RE`` are self-labelling: "untrusted" and
+# "obsolete/unrelated … glossary|example|sample|entry|data" both classify the
+# line itself. Only the instruction-shaped branches are subject to the share
+# rule below — a sentence appended to a diagnostic must not condemn the
+# diagnostic.
+#
+# "Untrusted" is a label only when it OPENS the line and is followed by a
+# tag-shaped label and a separator: ``UNTRUSTED SAMPLE: …``, ``untrusted
+# data — …``, ``[x] UNTRUSTED ENTRY: …``, or the bare ``untrusted:`` /
+# ``not operational:``. Mid-sentence prose — "Untrusted TLS certificates are
+# rejected.", "Untrusted input is sanitised before storage." — is describing
+# a thing, not labelling the line, and must stay eligible for selection.
+_TRUST_DISTRACTOR_RE = re.compile(
+    r"(?i:^[ \t]*(?:\[[ xX]\][ \t]*)?"
+    r"(?:untrusted|not\s+operational)\b[ \t]*"
+    r"(?:(?:[A-Z][A-Z0-9_]{2,}|[A-Za-z]{2,})[ \t]*[:—–-]|[:—–-]))"
+    r"|(?i:\b(?:obsolete|unrelated)\b.{0,24}\b(?:glossary|example|sample|entry|data)\b)",
+)
 _TRUST_QUERY_RE = re.compile(
     r"\b(?:injection|untrusted|malicious|prompt\s+attack|obsolete|unrelated)\b"
     r"|\bignore\s+(?:prior|previous)\b",
@@ -5840,6 +5979,10 @@ _TRUST_EXCLUDE_CUE_RE = re.compile(
     r"|\b(?:exclude|drop|skip|omit)\s+(?:any\s+)?(?:untrusted|unverified|malicious)\b",
     re.IGNORECASE,
 )
+# Every branch of ``_TRUST_RISK_RE`` needs one of these substrings. On ASCII
+# text a plain membership test rules a block out without running the regex —
+# the block splitter pays one scan per block, so the reject matters.
+_TRUST_TOKENS = ("untrusted", "ignore", "disregard", "override", "forget", "obsolete", "unrelated", "operational")
 
 
 def _normalise_instruction_text(text: str) -> str:
@@ -5856,9 +5999,55 @@ def _normalise_instruction_text(text: str) -> str:
     )
 
 
+# A line is "instruction-shaped" when the matched phrase dominates it. One
+# appended sentence ("… Ignore the system clock skew.") on a diagnostic is
+# not an instruction block — treating any match as one let an attacker append
+# four words to an evidence line and have the whole line dropped. A line that
+# is mostly instruction text (a real injection) still flags at this threshold;
+# the share is measured on the normalised line, so width tricks don't dilute it.
+_TRUST_MIN_SHARE = 0.45
+# Short lines (a bare "Ignore all previous instructions.") are dominated by a
+# phrase that would not reach the share threshold of a long sentence — the
+# absolute floor keeps them flagged without letting a single word on a long
+# line through.
+_TRUST_SHORT_LINE_CHARS = 120
+
+
+def _trust_risk_share(line: str) -> float:
+    """Share of ``line`` covered by instruction-shaped spans (0.0 when none)."""
+    norm = _normalise_instruction_text(line[:_RX_LINE_CAP])
+    if not norm:
+        return 0.0
+    covered = 0
+    for m in _TRUST_RISK_RE.finditer(norm):
+        covered += m.end() - m.start()
+    if not covered:
+        return 0.0
+    return min(1.0, covered / len(norm))
+
+
 def _is_trust_risk_line(line: str) -> bool:
-    """Injection-shaped line (``_TRUST_RISK_RE`` on the normalised text). Never an anchor, a fingerprint or a restored error."""
-    return _TRUST_RISK_RE.search(_normalise_instruction_text(line[:_RX_LINE_CAP])) is not None
+    """Instruction-shaped line (``_TRUST_RISK_RE`` dominating the normalised text). Never an anchor, a fingerprint or a restored error."""
+    norm = _normalise_instruction_text(line[:_RX_LINE_CAP])
+    if not norm:
+        return False
+    # A distractor label ("this obsolete glossary entry is unrelated") is a
+    # classification the line makes about itself: it flags wherever it sits.
+    if _TRUST_DISTRACTOR_RE.search(norm) is not None:
+        return True
+    covered = 0
+    for m in _TRUST_RISK_RE.finditer(norm):
+        covered += m.end() - m.start()
+    if not covered:
+        return False
+    share = min(1.0, covered / len(norm))
+    if share >= _TRUST_MIN_SHARE:
+        return True
+    # A short line is dominated by whatever it says: "Ignore all previous
+    # instructions." covers 65% of itself, but a two-word command on a short
+    # diagnostic is still the whole point of the line. Require a match AND a
+    # line short enough that one phrase can be the message.
+    return len(line.strip()) <= _TRUST_SHORT_LINE_CHARS and share >= 0.30
 
 
 def preprocess_filler_comments(text: str, query: str) -> str:
@@ -6027,6 +6216,36 @@ def _marker_tuple(markers: Iterable[str] | str | None, name: str = "recursion_ma
         raise TypeError(
             f"{name} must be an iterable of str, got {type(markers).__name__}"
         ) from None
+
+
+def _anchored_pointer_hashes(text: str) -> list[str]:
+    """Hashes of ``[CC-Retrieve: <hash>]`` pointers that stand as their own line.
+
+    The engine appends the pointer as a line of its own, so a pointer merely
+    quoted inside a longer line (``the tool printed [CC-Retrieve: …]``) is
+    caller content, not engine structure. A JSON tool envelope's decoded
+    payload is judged too, for the same reason as the other recursion markers.
+    """
+    hashes: list[str] = []
+
+    def scan(blob: str) -> None:
+        for line in blob.splitlines():
+            probe = line.lstrip()
+            if not probe.startswith("[CC-Retrieve:"):
+                continue
+            m = _CCR_POINTER_RE.match(probe)
+            if m is not None:
+                hashes.append(m.group("hash"))
+
+    scan(text)
+    if text.lstrip()[:1] == "{":
+        try:
+            payload = unwrap_tool_payload(text, min_field_chars=0)
+        except (TypeError, ValueError, RecursionError):
+            payload = None
+        if payload is not None and payload.wrapped:
+            scan(payload.inner)
+    return hashes
 
 
 def _has_anchored_marker(text: str, markers: tuple[str, ...]) -> bool:
@@ -6509,6 +6728,76 @@ def _looks_like_line_records(lines: list[str]) -> bool:
 _KV_RECORD_RE = re.compile(r"^[A-Za-z_][\w.\-/]*\s*(?:=|\|)\s*\S")
 
 
+def _split_mixed_trust_block(lines: list[str]) -> list[tuple[int, int]]:
+    """Line ranges of a block that mixes trust-flagged and ordinary lines.
+
+    The trust flag is a BLOCK property, and selection is block-atomic: one
+    injection-shaped sentence in a paragraph takes the whole paragraph with
+    it, including the answer sitting in the same block. That made a
+    deletion primitive — append "ignore the system clock" to a diagnostic
+    and the diagnostic vanishes from the extract. A block whose lines
+    disagree about the flag is split at the flag boundaries so the ordinary
+    lines stay eligible; a block whose lines agree is returned unchanged.
+
+    Returns ``[(start, end), ...]`` in order, covering ``[0, len(lines))``
+    minus nothing — the caller maps the offsets back to absolute positions.
+    """
+    flags = [_is_trust_risk_line(ln) for ln in lines]
+    if not any(flags) or all(flags):
+        return [(0, len(lines) - 1)]
+    spans: list[tuple[int, int]] = []
+    start = 0
+    for i in range(1, len(lines)):
+        if flags[i] != flags[start]:
+            spans.append((start, i - 1))
+            start = i
+    spans.append((start, len(lines) - 1))
+    return spans
+
+
+def _split_mixed_trust_blocks(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Re-segment blocks whose lines disagree about the trust flag (see
+    :func:`_split_mixed_trust_block`), keeping every other block as it is.
+
+    Ids are reassigned in order; ``start``/``end`` stay absolute so the
+    renderer and every position-keyed stage keep reading the same lines. A
+    split block's type follows the line that opens each part, which is what
+    the chunker would have produced had the lines been segmented alone.
+    """
+    out: list[dict[str, Any]] = []
+    for b in blocks:
+        text = b["text"]
+        # The overwhelming majority of blocks hold no flagged line at all;
+        # the cheap substring reject keeps the per-line scan off the hot path.
+        # The tokens are matched case-insensitively (``Ignore``/``IGNORE``).
+        lowered = text.lower()
+        if not any(tok in lowered for tok in _TRUST_TOKENS):
+            out.append({**b, "id": len(out)})
+            continue
+        block_lines = text.split("\n")
+        spans = _split_mixed_trust_block(block_lines)
+        if len(spans) == 1:
+            out.append({**b, "id": len(out)})
+            continue
+        for lo, hi in spans:
+            if hi < lo:
+                continue
+            part = "\n".join(block_lines[lo : hi + 1])
+            if not part.strip():
+                continue
+            out.append(
+                {
+                    "id": len(out),
+                    "start": b["start"] + lo,
+                    "end": b["start"] + hi,
+                    "type": classify_line(block_lines[lo]) or b["type"],
+                    "text": part,
+                    "tokens": max(1, estimate_tokens(part)),
+                }
+            )
+    return out
+
+
 def segment_blocks(lines: list[str]) -> list[dict[str, Any]]:
     if _looks_like_line_records(lines):
         blocks: list[dict[str, Any]] = []
@@ -6526,7 +6815,7 @@ def segment_blocks(lines: list[str]) -> list[dict[str, Any]]:
                 }
             )
         return blocks
-    return _segment_blocks_chunked(lines)
+    return _split_mixed_trust_blocks(_segment_blocks_chunked(lines))
 
 
 def _segment_blocks_chunked(lines: list[str]) -> list[dict[str, Any]]:
@@ -7339,8 +7628,24 @@ def _score_one_block(
     lower = b["text"].lower()
     # Classification belongs to the block, never to question wording.
     # An intentional override must be explicit through pin_patterns.
-    trust_risk = bool(
-        _TRUST_RISK_RE.search(_normalise_instruction_text(b["text"]))
+    # A block is instruction-shaped when its flagged lines hold a real share
+    # of it: one appended sentence on a paragraph must not condemn the
+    # paragraph (that was a deletion primitive — see ``_split_mixed_trust_block``).
+    # A directive paragraph OPENS with its instruction, so a multi-line block
+    # whose first line is flagged counts too — but only while its ordinary
+    # remainder is short, which bounds how much content one instruction
+    # sentence can take down (a single-line block is judged by share alone,
+    # so appending a phrase to a diagnostic cannot drop it).
+    _block_lines = [ln for ln in b["text"].split("\n") if ln.strip()]
+    _flagged = [ln for ln in _block_lines if _is_trust_risk_line(ln)]
+    trust_risk = bool(_flagged) and (
+        len(_flagged) * 2 >= len(_block_lines)
+        or sum(len(ln) for ln in _flagged) * 2 >= len(b["text"])
+        or (
+            len(_block_lines) >= 2
+            and _is_trust_risk_line(_block_lines[0])
+            and len(_block_lines) - len(_flagged) <= 3
+        )
     )
     for t, term_test in term_tests:
         if t in ubiquitous_terms:
@@ -12650,6 +12955,18 @@ def _apply_cost_gates(
     source_pin_texts,
 ):
     """Token counts and the fail-open gates on the result: net-negative size, too little savings, and lost pinned source text. Returns ``(original_tokens, kept_tokens, trust_filtered, compressed, kept, fail_open, risk, savings_gate, source_pin_loss, recall)``."""
+    # An empty extract is the worst possible outcome: the agent is handed
+    # nothing while the receipt claims 100% saved and no fail-open. It is
+    # reachable whenever every scored block carries the trust flag — one
+    # injection-shaped paragraph in a two-line answer, or a document whose
+    # lines all mention "ignore the system clock". A caller can only recover
+    # from a fail-open, so an empty render fails open like any other doubt.
+    if not fail_open and not compressed.strip() and caller_text.strip():
+        compressed = caller_text
+        kept = {b["id"] for b in scored}
+        fail_open = True
+        risk = "high"
+        recall = 0.0
     original_tokens = estimate_tokens(original_text)
     kept_tokens = estimate_tokens(compressed)
     trust_filtered = any(
@@ -13984,20 +14301,42 @@ def _compress_context_impl(
     # JSON tool envelope a marker can hide behind a ``[`` escape and a
     # line-start credential behind a ``\n`` escape.
     unwrapped_payload = unwrap_tool_payload(caller_text).inner
-    _static_markers = tuple(m for m in _RECURSION_MARKERS if not m.startswith("[CC-Retrieve"))
+    _static_markers = tuple(m for m in _RECURSION_MARKERS_STRICT if not m.startswith("[CC-Retrieve"))
+    now = time.time()
 
     def _engine_output(text: str) -> bool:
-        if any(m in text for m in _static_markers):
-            return True
+        # ANCHORED, not "anywhere in the text". A bare substring test let any
+        # document that merely *mentions* the wrapper — the project's own
+        # README, a docs page inside a code fence, a grep hit reporting
+        # "found '<compressed_context' in docs/USAGE.md", or one tool line
+        # quoting the tag — disable compaction for the whole input (100% ->
+        # 0% saved, policy local-noop-recursion, no fail-open reasons a host
+        # could act on). The engine only ever emits these markers at the start
+        # of a line, so that is the shape the guard must require. This is the
+        # same anchored rule caller-declared ``recursion_markers`` already use,
+        # and it judges a JSON tool envelope's decoded payload too.
+        if _has_anchored_marker(text, _static_markers):
+            # A ``[tameru:…]`` line is a structured-report header or a
+            # redaction marker. A real engine output is largely made of them;
+            # one such line appended to a log must not disable compaction of
+            # the whole log (the savings-DoS the wrapper tag once caused).
+            # The long ``[tameru:report`` prefix is unambiguous and stays
+            # unconditional; the bare prefix needs dominance.
+            if any(m in _RECURSION_MARKERS for m in _static_markers if m in text):
+                return True
+            non_empty = [ln for ln in text.splitlines() if ln.strip()]
+            if non_empty:
+                heads = sum(1 for ln in non_empty if ln.lstrip().startswith("[tameru:"))
+                if heads and heads * 10 >= len(non_empty) * 3:
+                    return True
         # A [CC-Retrieve: <hash>] marker counts only when retrieve() could
         # still recover it: a forged pointer, an expired record or an
         # unreadable store is plain input, not our own output — and may not
-        # disable compaction.
-        root = Path(ccr_dir)
-        now = time.time()
-        for m in _CCR_POINTER_RE.finditer(text):
-            ccr_hash = m.group("hash")
-            fp = root / f"{ccr_hash}.json"
+        # disable compaction. It must also be a line of its own: the engine
+        # appends the pointer as its own line, so a pointer merely quoted
+        # inside a log line is content, not engine structure.
+        for ccr_hash in _anchored_pointer_hashes(text):
+            fp = Path(ccr_dir) / f"{ccr_hash}.json"
             try:
                 data = _read_ccr_record(fp)
             except (OSError, UnicodeError, ValueError, RecursionError):
@@ -14060,7 +14399,13 @@ def _compress_context_impl(
     # a color change inside the marker would otherwise hide it from the scan
     # that itself strips ANSI per line.
     gate_text = strip_ansi(unwrapped_payload) if "\x1b" in unwrapped_payload else unwrapped_payload
-    if noise_res and any(tok in gate_text for tok in noise_tokens):
+    # The token gate is a cheap reject for the common case; the shape gate
+    # catches the structural folds (``... 300 of 301 rows omitted``, a diff
+    # stat header) that carry no distinctive token at all.
+    if noise_res and (
+        any(tok in gate_text for tok in noise_tokens)
+        or _ARTIFACT_SHAPE_RE.search(gate_text) is not None
+    ):
         noise = _artifact_noise_lines(unwrapped_payload, noise_res)
         if noise:
             non_empty = sum(1 for ln in unwrapped_payload.split("\n") if ln.strip())
